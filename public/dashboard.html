@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SP Inmobiliaria - Panel de Leads</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:system-ui,-apple-system,sans-serif; background:#f0f2f5; color:#1a1a2e; padding:20px; }
+.header { background:linear-gradient(135deg,#1a1a2e,#16213e); color:#fff; padding:20px 30px; border-radius:12px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; }
+.header h1 { font-size:22px; }
+.header span { font-size:14px; opacity:.8; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
+.stat-card { background:#fff; padding:20px; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+.stat-card .number { font-size:32px; font-weight:700; color:#1a1a2e; }
+.stat-card .label { font-size:13px; color:#666; margin-top:4px; }
+.stat-card .sub { font-size:12px; color:#999; margin-top:2px; }
+.leads-table { background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; }
+.leads-table table { width:100%; border-collapse:collapse; }
+.leads-table th { background:#f8f9fa; padding:12px 16px; text-align:left; font-size:12px; color:#666; text-transform:uppercase; letter-spacing:.5px; }
+.leads-table td { padding:12px 16px; border-top:1px solid #eee; font-size:14px; }
+.leads-table .status { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.status-nuevo { background:#e3f2fd; color:#1565c0; }
+.status-asignado { background:#fff3e0; color:#e65100; }
+.status-contactado { background:#e8f5e9; color:#2e7d32; }
+.status-cerrado { background:#fce4ec; color:#c62828; }
+.badge { display:inline-block; background:#e8eaf6; color:#283593; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.refresh-btn { background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.3); padding:8px 16px; border-radius:8px; cursor:pointer; font-size:13px; }
+.refresh-btn:hover { background:rgba(255,255,255,.25); }
+.empty { text-align:center; padding:40px; color:#999; }
+.empty svg { margin-bottom:12px; }
+.vendedores-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.vendedor-chip { background:#e8eaf6; color:#283593; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:500; }
+footer { text-align:center; margin-top:24px; font-size:12px; color:#999; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🏠 SP Inmobiliaria — Leads</h1>
+    <span>Distribución automática de leads de WhatsApp</span>
+  </div>
+  <button class="refresh-btn" onclick="cargarDatos()">⟳ Actualizar</button>
+</div>
+
+<div class="stats" id="stats">
+  <div class="stat-card"><div class="number" id="leadsCount">0</div><div class="label">Total Leads</div></div>
+  <div class="stat-card"><div class="number" id="vendedoresCount">0</div><div class="label">Vendedores</div><div class="sub" id="vendedoresList"></div></div>
+  <div class="stat-card"><div class="number" id="hoyCount">0</div><div class="label">Leads Hoy</div></div>
+</div>
+
+<div class="leads-table">
+  <table>
+    <thead>
+      <tr><th>Cliente</th><th>Teléfono</th><th>Asignado a</th><th>Mensajes</th><th>Estado</th><th>Último mensaje</th><th>Recibido</th></tr>
+    </thead>
+    <tbody id="leadsBody">
+    </tbody>
+  </table>
+  <div class="empty" id="emptyState">
+    <svg width="48" height="48" fill="none" stroke="#ccc" stroke-width="2"><path d="M12 8h24a4 4 0 014 4v20a4 4 0 01-4 4H12a4 4 0 01-4-4V12a4 4 0 014-4z"/><path d="M16 16h16M16 22h12M16 28h8"/></svg>
+    <p>No hay leads registrados todavía</p>
+    <p style="font-size:12px;margin-top:4px;">Los leads aparecerán aquí cuando lleguen mensajes por WhatsApp</p>
+  </div>
+</div>
+
+<footer>SP Inmobiliaria — Sistema de Distribución de Leads v1.0</footer>
+
+<script>
+async function cargarDatos() {
+  try {
+    const [statsRes, leadsRes] = await Promise.all([
+      fetch('/api/stats'),
+      fetch('/api/leads'),
+    ]);
+    const stats = await statsRes.json();
+    const leads = await leadsRes.json();
+
+    document.getElementById('leadsCount').textContent = stats.leadsRegistrados;
+    document.getElementById('vendedoresCount').textContent = stats.totalVendedores;
+    document.getElementById('vendedoresList').innerHTML = stats.vendedores.map(v =>
+      `<span class="vendedor-chip">${v}</span>`
+    ).join('');
+
+    const hoy = leads.filter(l => {
+      const d = new Date(l.created_at);
+      const ahora = new Date();
+      return d.toDateString() === ahora.toDateString();
+    }).length;
+    document.getElementById('hoyCount').textContent = hoy;
+
+    const tbody = document.getElementById('leadsBody');
+    const emptyState = document.getElementById('emptyState');
+
+    if (leads.length === 0) {
+      tbody.innerHTML = '';
+      emptyState.style.display = 'block';
+      return;
+    }
+    emptyState.style.display = 'none';
+
+    tbody.innerHTML = leads.map(l => {
+      const fecha = new Date(l.created_at + 'Z');
+      const diff = Math.floor((Date.now() - fecha.getTime()) / 60000);
+      const tiempo = diff < 60 ? `hace ${diff} min` : `hace ${Math.floor(diff/60)}h`;
+      return `
+        <tr>
+          <td><strong>${l.customer_name || 'Cliente'}</strong></td>
+          <td><span class="badge">${l.customer_phone}</span></td>
+          <td><span class="badge">${l.assigned_to}</span></td>
+          <td>${l.messages_count}</td>
+          <td><span class="status status-${l.status}">${l.status}</span></td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.last_message || ''}</td>
+          <td style="font-size:12px;color:#666;">${tiempo}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error('Error cargando datos:', e);
+  }
+}
+
+cargarDatos();
+setInterval(cargarDatos, 10000);
+</script>
+</body>
+</html>
