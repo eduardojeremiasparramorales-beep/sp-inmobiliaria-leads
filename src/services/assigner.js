@@ -1,46 +1,89 @@
-const { saveLead, saveMessage } = require('../db/store');
+const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse } = require('../db/store');
 
-let currentIndex = 0;
+function assignLead(customerPhone, customerName, messageBody) {
+  const { saveLead } = require('../db/store');
+  const result = saveLead(customerPhone, customerName, messageBody);
 
-function getVendedores() {
-  return (process.env.VENDEDORES || '').split(',').map(v => v.trim()).filter(Boolean);
-}
-
-function nextVendedor() {
-  const vendedores = getVendedores();
-  if (vendedores.length === 0) return null;
-  const v = vendedores[currentIndex % vendedores.length];
-  currentIndex++;
-  return v;
-}
-
-function assignLead(customerPhone, messageBody) {
-  const vendedor = nextVendedor();
-  const result = saveLead(customerPhone, vendedor, messageBody);
-
-  if (result.isNew) {
-    saveMessage(result.leadId, customerPhone, vendedor, messageBody, 'incoming');
+  const activos = getVendedoresActivos();
+  if (activos.length === 0) {
+    return { leadId: result.leadId, vendedor: null, isNew: result.isNew, error: 'no_hay_vendedores' };
   }
 
-  return {
-    leadId: result.leadId,
-    vendedor,
-    isNew: result.isNew,
-  };
+  const vendedor = activos[0];
+  assignLeadToVendedor(result.leadId, vendedor);
+  saveMessage(result.leadId, customerPhone, vendedor.telefono, messageBody, 'incoming');
+
+  return { leadId: result.leadId, vendedor, isNew: result.isNew };
+}
+
+function routeReply(fromPhone, messageBody, callback) {
+  const { getLeadByCustomerPhone, getVendedores, saveLead, assignLeadToVendedor, getLeadById } = require('../db/store');
+
+  const vendedores = getVendedores();
+  const vendedor = vendedores.find(v => v.telefono === fromPhone);
+
+  if (vendedor) {
+    const leads = require('../db/store').getLeads();
+    const activeLead = leads.find(l => l.assigned_to_id === vendedor.id && l.status !== 'cerrado');
+
+    if (activeLead) {
+      saveMessage(activeLead.id, fromPhone, activeLead.customer_phone, messageBody, 'outgoing');
+      setFirstResponse(activeLead.id);
+      updateLeadStatus(activeLead.id, 'contactado');
+
+      const { sendMessage } = require('./whatsapp');
+      sendMessage(activeLead.customer_phone, messageBody)
+        .then(() => callback(null, { forwarded: true, to: activeLead.customer_phone }))
+        .catch(callback);
+      return;
+    }
+  }
+
+  const lead = getLeadByCustomerPhone(fromPhone);
+  if (lead) {
+    const activos = getVendedoresActivos();
+    if (activos.length === 0) {
+      callback(null, { message: 'cliente_espera' });
+      return;
+    }
+    const v = lead.assigned_to_id
+      ? vendedores.find(vd => vd.id === lead.assigned_to_id) || activos[0]
+      : activos[0];
+
+    saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming');
+
+    const { sendMessage } = require('./whatsapp');
+    const prefix = lead.messages_count <= 1
+      ? `🆕 Nuevo lead\nCliente: ${lead.customer_name}\nTel: ${fromPhone}\n\n`
+      : `↩️ Respuesta de ${lead.customer_name}\n\n`;
+
+    sendMessage(v.telefono, prefix + messageBody)
+      .then(() => callback(null, { forwarded: true, to: v.telefono }))
+      .catch(callback);
+    return;
+  }
+
+  const { saveLead: saveL } = require('../db/store');
+  const r = saveL(fromPhone, 'Cliente', messageBody);
+  const a = getVendedoresActivos();
+  if (a.length > 0) {
+    assignLeadToVendedor(r.leadId, a[0]);
+    saveMessage(r.leadId, fromPhone, a[0].telefono, messageBody, 'incoming');
+    const { sendMessage } = require('./whatsapp');
+    sendMessage(a[0].telefono, `🆕 Nuevo lead\nTel: ${fromPhone}\n\n${messageBody}`)
+      .then(() => callback(null, { forwarded: true, to: a[0].telefono }))
+      .catch(callback);
+  } else {
+    callback(null, { message: 'no_hay_vendedores' });
+  }
 }
 
 function getLeadCount() {
-  const { getLeadCount } = require('../db/store');
-  return getLeadCount();
+  return require('../db/store').getLeadCount();
 }
 
 function getLeads() {
-  const { getLeads } = require('../db/store');
-  return getLeads();
+  return require('../db/store').getLeads();
 }
 
-function resetAssigner() {
-  currentIndex = 0;
-}
-
-module.exports = { assignLead, getLeadCount, getLeads, resetAssigner };
+module.exports = { assignLead, routeReply, getLeadCount, getLeads };

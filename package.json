@@ -1,7 +1,7 @@
 {
   "name": "sp-inmobiliaria-leads",
   "version": "1.0.0",
-  "description": "Sistema de distribución de leads de WhatsApp con asignación automática",
+  "description": "CRM Propietario SP Inmobiliaria - Distribución automática de leads WhatsApp",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

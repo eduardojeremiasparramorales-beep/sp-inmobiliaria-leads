@@ -1,12 +1,10 @@
-const { assignLead } = require('../services/assigner');
+const { assignLead, routeReply } = require('../services/assigner');
 const { sendMessage } = require('../services/whatsapp');
-const { saveMessage } = require('../db/store');
 
 function handleMessage(req, res) {
   res.sendStatus(200);
 
   const body = req.body;
-
   if (body.object !== 'whatsapp_business_account') return;
 
   for (const entry of body.entry || []) {
@@ -16,36 +14,33 @@ function handleMessage(req, res) {
       const value = change.value;
       const messages = value.messages || [];
       const contacts = value.contacts || [];
-      const metadata = value.metadata || {};
 
       for (const msg of messages) {
-        if (msg.type === 'text') {
-          const customerPhone = msg.from;
-          const messageBody = msg.text.body;
-          const customerName = contacts.find(c => c.wa_id === customerPhone)?.profile?.name || 'Cliente';
+        if (msg.type !== 'text') continue;
 
-          const { leadId, vendedor, isNew } = assignLead(customerPhone, messageBody);
+        const fromPhone = msg.from;
+        const messageBody = msg.text.body;
+        const contact = contacts.find(c => c.wa_id === fromPhone);
+        const customerName = contact?.profile?.name || 'Cliente';
 
-          saveMessage(leadId, customerPhone, vendedor, messageBody, 'incoming');
-
-          const prefix = isNew
-            ? `🆕 *Nuevo Lead SP Inmobiliaria*\nCliente: ${customerName}\nTeléfono: ${customerPhone}\n\n`
-            : `↩️ *Respuesta de ${customerName}*\n\n`;
-
-          const notif = `${prefix}${messageBody}`;
-
-          sendMessage(vendedor, notif).catch(err =>
-            console.error('Error enviando notificación a vendedor:', err.message)
-          );
-
-          if (isNew) {
-            const bienvenida = `👋 ¡Hola ${customerName}! Gracias por contactar a SP Inmobiliaria. Uno de nuestros asesores te atenderá en breve.`;
-
-            sendMessage(customerPhone, bienvenida).catch(err =>
-              console.error('Error enviando bienvenida:', err.message)
-            );
+        routeReply(fromPhone, messageBody, (err, result) => {
+          if (err) {
+            console.error('Error routing message:', err.message);
+            return;
           }
-        }
+
+          if (result.forwarded) {
+            console.log(`Mensaje reenviado a ${result.to}`);
+          }
+
+          if (result.message === 'no_hay_vendedores') {
+            sendMessage(fromPhone,
+              '👋 Gracias por contactar a SP Inmobiliaria. ' +
+              'Todos nuestros asesores están ocupados en este momento. ' +
+              'Te responderemos lo antes posible. ¡Gracias por tu paciencia!'
+            ).catch(e => console.error('Error:', e.message));
+          }
+        });
       }
     }
   }
