@@ -210,7 +210,7 @@ function setVendedorEstado(id, estado) {
 }
 
 module.exports = {
-  initDB, saveLead, assignLeadToVendedor, saveMessage,
+  initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
