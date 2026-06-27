@@ -88,8 +88,9 @@ function saveLead(customerPhone, customerName, messageBody) {
   }
   d.run(`INSERT INTO leads (customer_phone, customer_name, first_message, last_message) VALUES (${q(customerPhone)}, ${q(customerName)}, ${q(messageBody)}, ${q(messageBody)})`);
   saveDB();
-  const r = d.exec('SELECT last_insert_rowid()');
-  return { leadId: r[0].values[0][0], isNew: true };
+  const r = d.exec(`SELECT id FROM leads WHERE customer_phone = ${q(customerPhone)} ORDER BY id DESC LIMIT 1`);
+  const leadId = (r.length > 0 && r[0].values.length > 0) ? r[0].values[0][0] : null;
+  return { leadId, isNew: true };
 }
 
 function assignLeadToVendedor(leadId, vendedor) {
