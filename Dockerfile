@@ -1,12 +1,18 @@
-FROM node:22-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --production
+COPY package*.json ./
+
+RUN npm ci --only=production
 
 COPY . .
 
+RUN mkdir -p public logs
+
 EXPOSE 3000
 
-CMD ["node", "src/index.js"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+CMD ["npm", "start"]
