@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SP Panel">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<title>SP Inmobiliaria — Mi Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --negro:#0A0A0A; --oro:#C8A45A; --verde:#4E7B46;
+    --marfil:#F5F2EB; --gris:#6D6D6D; --panel:#121212; --panel2:#1a1a1a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);height:100vh;height:100dvh;overflow:hidden;-webkit-text-size-adjust:100%}
+  .app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;min-height:0}
+
+  /* Barra superior */
+  .topbar{
+    grid-column:1/3;display:flex;align-items:center;justify-content:space-between;
+    padding:12px 20px;background:var(--panel);border-bottom:1px solid rgba(200,164,90,.2);
+  }
+  .topbar .brand{font-family:'Cinzel',serif;color:var(--oro);letter-spacing:.1em;font-size:1.2rem}
+  .topbar .right{display:flex;align-items:center;gap:14px;font-size:.85rem}
+  .estado-select{background:var(--panel2);color:var(--marfil);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px 8px;font-family:inherit}
+  .logout{color:var(--gris);cursor:pointer;text-decoration:none;font-size:.8rem}
+  .logout:hover{color:var(--oro)}
+
+  /* Layout principal bajo la topbar */
+  .app{grid-template-rows:auto minmax(0,1fr)}
+  .sidebar{grid-row:2;grid-column:1;background:var(--panel);border-right:1px solid rgba(255,255,255,.08);overflow-y:auto;min-height:0}
+  .chat{grid-row:2;grid-column:2;display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden}
+
+  .sidebar h3{font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.1em;padding:16px 18px 8px}
+  .lead-item{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background .15s}
+  .lead-item:hover{background:var(--panel2)}
+  .lead-item.active{background:var(--panel2);border-left:3px solid var(--oro)}
+  .lead-item .name{font-weight:600;font-size:.92rem;display:flex;justify-content:space-between;align-items:center}
+  .lead-item .phone{font-size:.78rem;color:var(--gris);margin-top:2px}
+  .lead-item .preview{font-size:.8rem;color:#999;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{font-size:.62rem;padding:2px 7px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+  .b-nuevo{background:var(--oro);color:#000}
+  .b-asignado{background:#2b4d6b;color:#cfe3f5}
+  .b-contactado{background:var(--verde);color:#dff3da}
+  .b-cerrado{background:#444;color:#bbb}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--oro);display:inline-block;margin-left:6px}
+
+  /* Chat */
+  .chat-header{padding:14px 22px;background:var(--panel);border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center}
+  .chat-header .cname{font-weight:600;font-size:1rem}
+  .chat-header .cphone{font-size:.78rem;color:var(--gris)}
+  .chat-header button{background:transparent;border:1px solid rgba(255,255,255,.2);color:var(--gris);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;font-family:inherit}
+  .chat-header button:hover{border-color:var(--oro);color:var(--oro)}
+  .messages{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.2))}
+  .msg{max-width:70%;padding:10px 14px;border-radius:12px;font-size:.9rem;line-height:1.45;word-wrap:break-word}
+  .msg .time{display:block;font-size:.65rem;color:rgba(255,255,255,.4);margin-top:4px;text-align:right}
+  .msg.in{align-self:flex-start;background:var(--panel2);border-bottom-left-radius:3px}
+  .msg.out{align-self:flex-end;background:var(--verde);border-bottom-right-radius:3px}
+  .empty{margin:auto;color:var(--gris);text-align:center;font-size:.9rem}
+
+  /* Respuestas rápidas */
+  .templates{display:flex;gap:8px;padding:10px 18px 0;flex-wrap:wrap}
+  .tpl-chip{background:var(--panel2);border:1px solid rgba(200,164,90,.3);color:var(--oro);padding:5px 11px;border-radius:14px;font-size:.74rem;cursor:pointer;white-space:nowrap}
+  .tpl-chip:hover{background:var(--oro);color:#000}
+
+  /* Composer */
+  .composer{padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));background:var(--panel);border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:flex-end;flex-shrink:0}
+  .composer textarea{flex:1;resize:none;background:var(--panel2);border:1px solid rgba(255,255,255,.15);border-radius:12px;color:var(--marfil);padding:12px 14px;font-family:inherit;font-size:16px;line-height:1.35;max-height:120px}
+  .composer textarea:focus{outline:none;border-color:var(--oro)}
+  .composer button{background:var(--oro);color:#000;border:none;border-radius:12px;padding:12px 20px;font-weight:600;cursor:pointer;font-family:inherit;font-size:.95rem;min-height:46px;white-space:nowrap}
+  .composer button:disabled{opacity:.5;cursor:not-allowed}
+  .composer.disabled{opacity:.5;pointer-events:none}
+  .composer .attach{background:var(--panel2);color:var(--oro);border:1px solid rgba(200,164,90,.3);padding:0 14px;min-height:46px;font-size:1.2rem;border-radius:12px}
+
+  /* Multimedia dentro de los mensajes */
+  .msg .media-img{max-width:230px;max-height:280px;border-radius:8px;display:block;cursor:pointer}
+  .msg .media-video{max-width:240px;border-radius:8px;display:block}
+  .msg .media-audio{width:230px;display:block}
+  .msg .media-file{display:inline-block;color:#fff;text-decoration:underline;word-break:break-all}
+  .msg .cap{margin-top:6px;font-size:.88rem}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--oro);color:var(--marfil);padding:12px 22px;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .3s;z-index:50}
+  .toast.show{opacity:1}
+  @media(max-width:760px){
+    .app{grid-template-columns:1fr}
+    .sidebar{grid-row:2;grid-column:1}
+    .chat{grid-row:2;grid-column:1}
+    .chat.hidden,.sidebar.hidden{display:none}
+    .topbar{padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top))}
+    .topbar .brand{font-size:1rem}
+    .topbar .right{gap:8px;font-size:.78rem}
+    .topbar #miNombre{display:none}
+    .estado-select{padding:8px 6px;font-size:.8rem}
+    .messages{padding:16px 14px}
+    .chat-header{padding:12px 14px}
+    .chat-header button{padding:8px 12px}
+    .lead-item{padding:16px}
+    .tpl-chip{padding:7px 13px;font-size:.8rem}
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">SP · Mi Panel</div>
+      <div class="right">
+        <span id="miNombre"></span>
+        <select class="estado-select" id="estadoSelect" title="Mi disponibilidad">
+          <option value="activo">🟢 Activo</option>
+          <option value="ocupado">🟡 Ocupado</option>
+          <option value="vacaciones">🌴 Vacaciones</option>
+          <option value="inactivo">⚪ Inactivo</option>
+        </select>
+        <a class="logout" id="logout">Salir</a>
+      </div>
+    </div>
+
+    <div class="sidebar" id="sidebar">
+      <h3>Mis Leads (<span id="leadCount">0</span>)</h3>
+      <div id="leadsList"></div>
+    </div>
+
+    <div class="chat hidden" id="chat">
+      <div id="chatBody" style="flex:1;min-height:0;display:flex;flex-direction:column;height:100%">
+        <div class="empty" id="emptyState">Selecciona un lead para ver la conversación</div>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+  let me = null;
+  let leads = [];
+  let currentLead = null;
+  let templates = [];
+
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  function badgeClass(s){return 'badge b-' + (s||'nuevo');}
+
+  function fmtTime(ts){
+    if(!ts) return '';
+    const d = new Date(ts.replace(' ','T') + 'Z');
+    if(isNaN(d)) return '';
+    return d.toLocaleString('es-CO',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
+
+  async function api(url, opts){
+    const res = await fetch(url, opts);
+    if(res.status === 401){ location.href = '/login.html'; throw new Error('no_auth'); }
+    return res;
+  }
+
+  // --- Carga inicial ---
+  async function init(){
+    const r = await api('/api/me');
+    me = await r.json();
+    document.getElementById('miNombre').textContent = me.nombre;
+    await cargarTemplates();
+    await cargarLeads();
+    conectarStream();
+
+    // Abrir lead desde URL (?lead=123) o desde notificación push
+    const params = new URLSearchParams(location.search);
+    const leadFromUrl = params.get('lead');
+    if(leadFromUrl) abrirLead(Number(leadFromUrl));
+  }
+
+  async function cargarTemplates(){
+    try{
+      const r = await api('/api/templates');
+      templates = await r.json();
+    }catch(e){ templates = []; }
+  }
+
+  async function cargarLeads(){
+    const r = await api('/api/mis-leads');
+    leads = await r.json();
+    renderLeads();
+  }
+
+  function renderLeads(){
+    document.getElementById('leadCount').textContent = leads.length;
+    const cont = document.getElementById('leadsList');
+    if(leads.length === 0){
+      cont.innerHTML = '<div class="empty" style="padding:30px 18px">Aún no tienes leads asignados. Llegarán automáticamente.</div>';
+      return;
+    }
+    cont.innerHTML = leads.map(l => `
+      <div class="lead-item ${currentLead && currentLead.id===l.id?'active':''}" data-id="${l.id}">
+        <div class="name">
+          <span>${escapeHtml(l.customer_name||'Cliente')}</span>
+          <span class="${badgeClass(l.status)}">${l.status||'nuevo'}</span>
+        </div>
+        <div class="phone">${escapeHtml(l.customer_phone)}</div>
+        <div class="preview">${escapeHtml(l.last_message||l.first_message||'')}</div>
+      </div>`).join('');
+    cont.querySelectorAll('.lead-item').forEach(el =>
+      el.addEventListener('click', () => abrirLead(Number(el.dataset.id))));
+  }
+
+  async function abrirLead(id){
+    const r = await api('/api/leads/'+id+'/mensajes');
+    const data = await r.json();
+    currentLead = data.lead;
+    renderLeads();
+    renderChat(data.lead, data.mensajes);
+    if(window.innerWidth <= 760){
+      document.getElementById('sidebar').classList.add('hidden');
+      document.getElementById('chat').classList.remove('hidden');
+    }
+  }
+
+  function renderChat(lead, mensajes){
+    const cerrado = lead.status === 'cerrado';
+    const chips = templates.map(t =>
+      `<span class="tpl-chip" data-cuerpo="${escapeHtml(t.cuerpo)}">${escapeHtml(t.titulo)}</span>`).join('');
+    const body = document.getElementById('chatBody');
+    body.innerHTML = `
+      <div class="chat-header">
+        <div>
+          <div class="cname">${escapeHtml(lead.customer_name||'Cliente')}</div>
+          <div class="cphone">${escapeHtml(lead.customer_phone)} · ${lead.status}</div>
+        </div>
+        <div>
+          ${window.innerWidth<=760?'<button id="volver">← Leads</button> ':''}
+          ${cerrado?'':'<button id="cerrarBtn">Cerrar lead</button>'}
+        </div>
+      </div>
+      <div class="messages" id="messages">
+        ${mensajes.map(m => `
+          <div class="msg ${m.direction==='incoming'?'in':'out'}">
+            ${msgInner(m)}
+            <span class="time">${fmtTime(m.timestamp)}</span>
+          </div>`).join('') || '<div class="empty">Sin mensajes todavía</div>'}
+      </div>
+      <div class="templates">${chips}</div>
+      <form class="composer ${cerrado?'disabled':''}" onsubmit="enviarMensaje();return false;">
+        <button type="button" id="adjuntar" class="attach" title="Adjuntar archivo" ${cerrado?'disabled':''}>📎</button>
+        <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" style="display:none">
+        <textarea id="input" rows="1" placeholder="${cerrado?'Lead cerrado':'Escribe tu respuesta…'}" ${cerrado?'disabled':''}></textarea>
+        <button type="submit" id="enviar" ${cerrado?'disabled':''}>Enviar</button>
+      </form>`;
+
+    const msgs = document.getElementById('messages');
+    msgs.scrollTop = msgs.scrollHeight;
+
+    if(!cerrado){
+      const input = document.getElementById('input');
+      const enviar = document.getElementById('enviar');
+      input.addEventListener('input', () => {
+        input.style.height='auto'; input.style.height=input.scrollHeight+'px';
+      });
+      input.addEventListener('keydown', e => {
+        if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); enviarMensaje(); }
+      });
+      enviar.addEventListener('click', enviarMensaje);
+
+      const adjuntar = document.getElementById('adjuntar');
+      const fileInput = document.getElementById('fileInput');
+      if(adjuntar && fileInput){
+        adjuntar.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+          if(fileInput.files && fileInput.files[0]) enviarMedia(fileInput.files[0]);
+        });
+      }
+
+      body.querySelectorAll('.tpl-chip').forEach(c =>
+        c.addEventListener('click', () => {
+          input.value = c.dataset.cuerpo; input.focus();
+          input.style.height='auto'; input.style.height=input.scrollHeight+'px';
+        }));
+      const cerrarBtn = document.getElementById('cerrarBtn');
+      if(cerrarBtn) cerrarBtn.addEventListener('click', cerrarLead);
+    }
+    const volver = document.getElementById('volver');
+    if(volver) volver.addEventListener('click', () => {
+      document.getElementById('chat').classList.add('hidden');
+      document.getElementById('sidebar').classList.remove('hidden');
+    });
+  }
+
+  async function enviarMensaje(){
+    const input = document.getElementById('input');
+    const enviar = document.getElementById('enviar');
+    const mensaje = input.value.trim();
+    if(!mensaje || !currentLead) return;
+    enviar.disabled = true;
+    try{
+      const r = await api('/api/leads/'+currentLead.id+'/responder', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mensaje }),
+      });
+      const data = await r.json();
+      if(!r.ok) throw new Error(data.detalle || 'No se pudo enviar');
+      input.value=''; input.style.height='auto';
+      await abrirLead(currentLead.id);
+      await cargarLeads();
+    }catch(e){
+      toast('Error: ' + e.message);
+    }finally{
+      enviar.disabled = false;
+    }
+  }
+
+  // Render del contenido de un mensaje (texto o multimedia)
+  function msgInner(m){
+    if(m.media_type && m.id){
+      const src = '/api/media/' + m.id;
+      const cap = (m.body && !/^\[(image|audio|video|document|sticker)\]$/.test(m.body))
+        ? `<div class="cap">${escapeHtml(m.body)}</div>` : '';
+      if(m.media_type === 'image' || m.media_type === 'sticker')
+        return `<a href="${src}" target="_blank"><img class="media-img" src="${src}" alt="imagen"></a>${cap}`;
+      if(m.media_type === 'audio')
+        return `<audio class="media-audio" controls src="${src}"></audio>${cap}`;
+      if(m.media_type === 'video')
+        return `<video class="media-video" controls src="${src}"></video>${cap}`;
+      const nombre = escapeHtml(m.media_filename || 'archivo');
+      return `<a class="media-file" href="${src}" target="_blank">📄 ${nombre}</a>${cap}`;
+    }
+    return escapeHtml(m.body);
+  }
+
+  async function enviarMedia(file){
+    if(!currentLead || !file) return;
+    if(file.size > 18*1024*1024){ toast('Archivo muy grande (máx 18 MB)'); return; }
+    toast('Enviando archivo…');
+    try{
+      const dataBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const r = await api('/api/leads/'+currentLead.id+'/responder-media', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mime: file.type || 'application/octet-stream', filename: file.name, dataBase64 }),
+      });
+      const data = await r.json();
+      if(!r.ok) throw new Error(data.detalle || 'No se pudo enviar el archivo');
+      await abrirLead(currentLead.id);
+      await cargarLeads();
+    }catch(e){
+      toast('Error: ' + e.message);
+    }
+  }
+
+  async function cerrarLead(){
+    if(!currentLead) return;
+    await api('/api/leads/'+currentLead.id+'/cerrar', {method:'POST'});
+    toast('Lead cerrado');
+    await cargarLeads();
+    await abrirLead(currentLead.id);
+  }
+
+  // --- Tiempo real (SSE) ---
+  function conectarStream(){
+    const es = new EventSource('/api/stream');
+    es.addEventListener('nuevo_mensaje', async (ev) => {
+      try{
+        const data = JSON.parse(ev.data);
+        await cargarLeads();
+        if(currentLead && data.leadId === currentLead.id){
+          const r = await api('/api/leads/'+currentLead.id+'/mensajes');
+          const d = await r.json();
+          renderChat(d.lead, d.mensajes);
+        }
+        if(data.tipo === 'mensaje_cliente'){
+          toast('💬 Nuevo mensaje de un cliente');
+          try{ new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play(); }catch(e){}
+          try{ if(navigator.vibrate) navigator.vibrate([120,60,120]); }catch(e){}
+        }
+      }catch(err){ console.error('SSE handler error:', err); }
+    });
+    es.onerror = () => { es.close(); setTimeout(conectarStream, 5000); };
+  }
+
+  // --- Auto-poll fallback (cada 15s refresca mensajes del lead abierto) ---
+  setInterval(async () => {
+    if(!currentLead) return;
+    try{
+      const r = await api('/api/leads/'+currentLead.id+'/mensajes');
+      const d = await r.json();
+      renderChat(d.lead, d.mensajes);
+      await cargarLeads();
+    }catch(e){}
+  }, 15000);
+
+  // --- Registro del Service Worker (PWA) ---
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => activarPush())
+      .catch(e => console.log('SW no registrado', e));
+    navigator.serviceWorker.addEventListener('message', (ev) => {
+      if(ev.data && ev.data.type === 'open_lead' && ev.data.leadId) abrirLead(Number(ev.data.leadId));
+    });
+  }
+
+  function urlBase64ToUint8Array(base64String){
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g,'+').replace(/_/g,'/');
+    const raw = atob(base64);
+    const arr = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  // Pide permiso y suscribe el dispositivo a notificaciones push
+  async function activarPush(){
+    try{
+      if(!('Notification' in window) || !('PushManager' in window)) return;
+      const r = await fetch('/api/push/clave');
+      if(!r.ok) return;
+      const { publicKey, enabled } = await r.json();
+      if(!enabled || !publicKey) return;
+
+      if(Notification.permission === 'denied') return;
+      if(Notification.permission === 'default'){
+        const perm = await Notification.requestPermission();
+        if(perm !== 'granted') return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if(!sub){
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+      await fetch('/api/push/suscribir', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ subscription: sub }),
+      });
+    }catch(e){ console.log('Push no activado:', e.message); }
+  }
+
+  // --- Estado de disponibilidad ---
+  document.getElementById('estadoSelect').addEventListener('change', async (e) => {
+    if(!me.vendedorId) return;
+    await api('/api/vendedores/'+me.vendedorId+'/estado', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ estado: e.target.value }),
+    });
+    toast('Disponibilidad actualizada');
+  });
+
+  document.getElementById('logout').addEventListener('click', async () => {
+    await fetch('/api/logout', {method:'POST'});
+    location.href = '/login.html';
+  });
+
+  function escapeHtml(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  init().catch(e => { if(e.message!=='no_auth') console.error(e); });
+</script>
+</body>
+</html>

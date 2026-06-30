@@ -1,4 +1,27 @@
 const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse } = require('../db/store');
+const { emitToVendedor, emitToAdmins } = require('./events');
+
+// Notifica al panel del vendedor (y a admins) que hubo movimiento en un lead
+function notificarPanel(vendedorId, leadId, tipo) {
+  const data = { leadId, tipo, ts: Date.now() };
+  if (vendedorId) emitToVendedor(vendedorId, 'nuevo_mensaje', data);
+  emitToAdmins('nuevo_mensaje', data);
+
+  // Push al celular solo cuando llega un mensaje de un cliente
+  if (vendedorId && tipo === 'mensaje_cliente') {
+    try {
+      const push = require('./push');
+      const store = require('../db/store');
+      const lead = store.getLeadById(leadId);
+      push.sendToVendedor(vendedorId, {
+        title: '💬 Nuevo mensaje',
+        body: lead ? `${lead.customer_name || 'Cliente'}: ${(lead.last_message || '').slice(0, 80)}` : 'Tienes un nuevo mensaje de un cliente.',
+        leadId,
+        tag: 'lead-' + leadId,
+      }).catch(() => {});
+    } catch (e) { /* push opcional */ }
+  }
+}
 
 function assignLead(customerPhone, customerName, messageBody) {
   const { saveLead } = require('../db/store');
@@ -16,7 +39,9 @@ function assignLead(customerPhone, customerName, messageBody) {
   return { leadId: result.leadId, vendedor, isNew: result.isNew };
 }
 
-function routeReply(fromPhone, messageBody, callback) {
+function routeReply(fromPhone, messageBody, customerName, callback) {
+  // customerName es opcional; si no llega, se usa 'Cliente'
+  if (typeof customerName === 'function') { callback = customerName; customerName = undefined; }
   const { getLeadByCustomerPhone, getVendedores, saveLead, assignLeadToVendedor, getLeadById } = require('../db/store');
 
   const vendedores = getVendedores();
@@ -30,6 +55,7 @@ function routeReply(fromPhone, messageBody, callback) {
       saveMessage(activeLead.id, fromPhone, activeLead.customer_phone, messageBody, 'outgoing');
       setFirstResponse(activeLead.id);
       updateLeadStatus(activeLead.id, 'contactado');
+      notificarPanel(vendedor.id, activeLead.id, 'respuesta_vendedor');
 
       const { sendMessage } = require('./whatsapp');
       sendMessage(activeLead.customer_phone, messageBody)
@@ -41,6 +67,7 @@ function routeReply(fromPhone, messageBody, callback) {
 
   const lead = getLeadByCustomerPhone(fromPhone);
   if (lead) {
+    console.log(`[routeReply] Lead existente #${lead.id} de ${fromPhone} — ${lead.customer_name}`);
     const activos = getVendedoresActivos();
     if (activos.length === 0) {
       callback(null, { message: 'cliente_espera' });
@@ -51,6 +78,7 @@ function routeReply(fromPhone, messageBody, callback) {
       : activos[0];
 
     saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming');
+    notificarPanel(v.id, lead.id, 'mensaje_cliente');
 
     const { sendMessage } = require('./whatsapp');
     const prefix = lead.messages_count <= 1
@@ -64,17 +92,61 @@ function routeReply(fromPhone, messageBody, callback) {
   }
 
   const { saveLead: saveL } = require('../db/store');
-  const r = saveL(fromPhone, 'Cliente', messageBody);
+  const r = saveL(fromPhone, customerName || 'Cliente', messageBody);
   const a = getVendedoresActivos();
   if (a.length > 0) {
-    assignLeadToVendedor(r.leadId, a[0]);
-    saveMessage(r.leadId, fromPhone, a[0].telefono, messageBody, 'incoming');
+    const vendedorAsignado = a[0];
+    try {
+      assignLeadToVendedor(r.leadId, vendedorAsignado);
+    } catch (e) {
+      console.error('Error asignando lead:', e.message);
+    }
+    saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming');
+    notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
     const { sendMessage } = require('./whatsapp');
-    sendMessage(a[0].telefono, `🆕 Nuevo lead\nTel: ${fromPhone}\n\n${messageBody}`)
-      .then(() => callback(null, { forwarded: true, to: a[0].telefono }))
+    sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nTel: ${fromPhone}\n\n${messageBody}`)
+      .then(() => callback(null, { forwarded: true, to: vendedorAsignado.telefono }))
       .catch(callback);
   } else {
     callback(null, { message: 'no_hay_vendedores' });
+  }
+}
+
+// Enruta un mensaje multimedia entrante de un cliente: guarda el lead/mensaje con
+// la referencia del archivo, avisa al panel y notifica al vendedor asignado.
+function routeIncomingMedia(fromPhone, customerName, mediaData, callback) {
+  const store = require('../db/store');
+  const { sendMessage } = require('./whatsapp');
+
+  const etiquetas = { image: 'una imagen', audio: 'un audio', video: 'un video', document: 'un archivo', sticker: 'un sticker', voice: 'una nota de voz' };
+  const label = etiquetas[mediaData.media_type] || 'un archivo';
+  const body = mediaData.caption || `[${mediaData.media_type}]`;
+
+  // Buscar lead activo del cliente o crear uno nuevo
+  let lead = store.getLeadByCustomerPhone(fromPhone);
+  let vendedor;
+  const activos = store.getVendedoresActivos();
+
+  if (lead && lead.assigned_to_id) {
+    const vendedores = store.getVendedores();
+    vendedor = vendedores.find(v => v.id === lead.assigned_to_id) || activos[0];
+  } else {
+    const r = store.saveLead(fromPhone, customerName || 'Cliente', body);
+    lead = store.getLeadById(r.leadId);
+    if (activos.length === 0) { callback(null, { message: 'no_hay_vendedores' }); return; }
+    vendedor = activos[0];
+    try { store.assignLeadToVendedor(lead.id, vendedor); } catch (e) { console.error('Error asignando lead media:', e.message); }
+  }
+
+  store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', body, 'incoming', mediaData);
+  notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
+
+  if (vendedor) {
+    sendMessage(vendedor.telefono, `📎 ${customerName || 'Cliente'} te envió ${label}. Ábrelo en tu panel.`)
+      .then(() => callback(null, { forwarded: true, to: vendedor.telefono }))
+      .catch(() => callback(null, { forwarded: false }));
+  } else {
+    callback(null, { forwarded: false });
   }
 }
 
@@ -86,4 +158,4 @@ function getLeads() {
   return require('../db/store').getLeads();
 }
 
-module.exports = { assignLead, routeReply, getLeadCount, getLeads };
+module.exports = { assignLead, routeReply, routeIncomingMedia, getLeadCount, getLeads };

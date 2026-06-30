@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SP Inmobiliaria — CRM</title>
+<script>
+  (function(){
+    fetch('/api/me').then(function(r){
+      if(!r.ok) throw 0;
+      return r.json();
+    }).then(function(u){
+      if(u.rol !== 'admin'){ location.href = '/vendedor.html'; return; }
+    }).catch(function(){ location.href = '/login.html'; });
+  })();
+</script>
 <style>
 :root { --primary: #1a1a2e; --secondary: #16213e; --accent: #0f3460; --gold: #e94560; --bg: #f0f2f5; --card: #fff; --text: #1a1a2e; --muted: #666; --border: #e2e8f0; }
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -70,6 +80,19 @@ td { padding:10px 14px; border-top:1px solid var(--border); font-size:13px; }
 </style>
 </head>
 <body>
+<script>
+  window.addEventListener('DOMContentLoaded', function(){
+    var bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;top:12px;right:16px;z-index:9999;display:flex;gap:10px;font-family:Inter,sans-serif';
+    bar.innerHTML = '<a href="/equipo.html" style="background:#C8A45A;color:#000;padding:8px 14px;border-radius:7px;text-decoration:none;font-weight:600;font-size:.82rem">Gestión de Equipo</a>' +
+      '<a href="#" id="spLogout" style="background:#1a1a1a;color:#C8A45A;border:1px solid #C8A45A;padding:8px 14px;border-radius:7px;text-decoration:none;font-size:.82rem">Salir</a>';
+    document.body.appendChild(bar);
+    document.getElementById('spLogout').addEventListener('click', function(e){
+      e.preventDefault();
+      fetch('/api/logout',{method:'POST'}).then(function(){ location.href='/login.html'; });
+    });
+  });
+</script>
 <div class="app">
   <aside class="sidebar">
     <div class="logo"><h2>SP</h2><small>CRM Inmobiliario</small></div>
@@ -127,8 +150,8 @@ td { padding:10px 14px; border-top:1px solid var(--border); font-size:13px; }
         <div class="section-header"><h3>⚙️ Configuración del sistema</h3></div>
         <div style="padding:16px 20px;">
           <div style="margin-bottom:12px;"><strong>Estado del webhook:</strong> <span style="color:#2e7d32;">✅ Conectado</span></div>
-          <div style="margin-bottom:12px;"><strong>URL del webhook:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;">https://sp-inmobiliaria-leads-production.up.railway.app/webhook</code></div>
-          <div style="margin-bottom:12px;"><strong>Verify Token:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;">spInmobiliaria2026</code></div>
+          <div style="margin-bottom:12px;"><strong>URL del webhook:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;" id="webhookUrl">https://sullivan-precisely-consistently-comment.trycloudflare.com/webhook</code></div>
+          <div style="margin-bottom:12px;"><strong>Verify Token:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;">spInmobiliaria2026SecureVerifyToken</code></div>
           <div style="margin-bottom:12px;"><strong>Phone Number ID:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;" id="configPhoneId">—</code></div>
           <div style="margin-bottom:12px;"><strong>Número oficial:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;" id="configPhone">—</code></div>
           <div style="margin-bottom:12px;"><strong>Token WhatsApp:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;">EAA... (oculto)</code></div>

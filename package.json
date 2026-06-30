@@ -8,8 +8,10 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "sql.js": "^1.11.0",
+    "axios": "^1.7.0",
+    "dotenv": "^17.4.2",
     "express": "^4.21.0",
-    "axios": "^1.7.0"
+    "sql.js": "^1.14.1",
+    "web-push": "^3.6.7"
   }
 }

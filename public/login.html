@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SP Panel">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<title>SP Inmobiliaria — Acceso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --negro:#0A0A0A; --oro:#C8A45A; --verde:#4E7B46;
+    --marfil:#F5F2EB; --gris:#6D6D6D;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Inter',sans-serif;background:var(--negro);
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    color:var(--marfil);padding:20px;
+  }
+  .card{
+    width:100%;max-width:380px;background:#121212;
+    border:1px solid rgba(200,164,90,.25);border-radius:14px;
+    padding:40px 32px;box-shadow:0 20px 60px rgba(0,0,0,.5);
+  }
+  .brand{text-align:center;margin-bottom:28px}
+  .brand .sp{
+    font-family:'Cinzel',serif;font-size:2rem;color:var(--oro);
+    letter-spacing:.12em;font-weight:600;
+  }
+  .brand .sub{
+    font-family:'Cormorant Garamond',serif;font-size:1rem;
+    color:var(--gris);letter-spacing:.18em;text-transform:uppercase;margin-top:4px;
+  }
+  .linea{height:2px;width:48px;background:var(--oro);margin:14px auto 0}
+  label{display:block;font-size:.75rem;color:var(--gris);margin:18px 0 6px;letter-spacing:.05em;text-transform:uppercase}
+  input{
+    width:100%;padding:13px 14px;background:#0A0A0A;
+    border:1px solid rgba(255,255,255,.12);border-radius:8px;
+    color:var(--marfil);font-size:16px;font-family:inherit;transition:border .2s;
+  }
+  input:focus{outline:none;border-color:var(--oro)}
+  button{
+    width:100%;margin-top:26px;padding:13px;background:var(--oro);
+    color:var(--negro);border:none;border-radius:8px;font-weight:600;
+    font-size:.95rem;cursor:pointer;letter-spacing:.04em;transition:opacity .2s;
+  }
+  button:hover{opacity:.9}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .error{
+    margin-top:16px;padding:10px 12px;background:rgba(180,40,40,.15);
+    border:1px solid rgba(180,40,40,.4);border-radius:8px;
+    color:#e88;font-size:.85rem;display:none;text-align:center;
+  }
+  .foot{text-align:center;margin-top:24px;font-size:.72rem;color:var(--gris)}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="sp">SP</div>
+      <div class="sub">Inmobiliaria · CRM</div>
+      <div class="linea"></div>
+    </div>
+    <form id="form">
+      <label for="email">Correo</label>
+      <input id="email" type="email" autocomplete="username" required placeholder="tu@correo.com">
+      <label for="password">Contraseña</label>
+      <input id="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+      <button id="btn" type="submit">Ingresar</button>
+      <div class="error" id="error"></div>
+    </form>
+    <div class="foot">Acceso exclusivo del equipo SP</div>
+  </div>
+<script>
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW no registrado', e));
+  }
+
+  const form = document.getElementById('form');
+  const btn = document.getElementById('btn');
+  const errorBox = document.getElementById('error');
+
+  // Si ya hay sesión, redirigir según rol
+  fetch('/api/me').then(r => r.ok ? r.json() : null).then(u => {
+    if (u) location.href = u.rol === 'admin' ? '/index.html' : '/vendedor.html';
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Verificando...';
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error === 'credenciales_invalidas' ? 'Correo o contraseña incorrectos' : 'Error al ingresar');
+      location.href = data.usuario.rol === 'admin' ? '/index.html' : '/vendedor.html';
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Ingresar';
+    }
+  });
+</script>
+</body>
+</html>

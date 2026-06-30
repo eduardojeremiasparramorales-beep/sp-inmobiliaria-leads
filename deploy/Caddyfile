@@ -1,0 +1,13 @@
+# Reemplaza TU_DOMINIO por tu subdominio de DuckDNS
+# Ejemplo: sp-crm.duckdns.org
+TU_DOMINIO {
+    reverse_proxy localhost:3000
+
+    # Logs de acceso
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}

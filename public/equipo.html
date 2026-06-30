@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SP Inmobiliaria — Gestión de Equipo</title>
+<script>
+  // Solo admin
+  fetch('/api/me').then(r=>r.ok?r.json():Promise.reject()).then(u=>{
+    if(u.rol!=='admin') location.href='/vendedor.html';
+  }).catch(()=>location.href='/login.html');
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--negro:#0A0A0A;--oro:#C8A45A;--verde:#4E7B46;--marfil:#F5F2EB;--gris:#6D6D6D;--panel:#121212;--panel2:#1a1a1a}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);min-height:100vh}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--panel);border-bottom:1px solid rgba(200,164,90,.2)}
+  .brand{font-family:'Cinzel',serif;color:var(--oro);letter-spacing:.1em;font-size:1.25rem}
+  .nav a{color:var(--gris);text-decoration:none;margin-left:18px;font-size:.85rem}
+  .nav a:hover{color:var(--oro)}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .card{background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:22px}
+  .card.full{grid-column:1/3}
+  h2{font-size:1rem;color:var(--oro);margin-bottom:16px;font-weight:600;letter-spacing:.03em}
+  label{display:block;font-size:.72rem;color:var(--gris);margin:12px 0 5px;text-transform:uppercase;letter-spacing:.05em}
+  input{width:100%;padding:10px 12px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:7px;color:var(--marfil);font-family:inherit;font-size:.9rem}
+  input:focus{outline:none;border-color:var(--oro)}
+  textarea{width:100%;padding:10px 12px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:7px;color:var(--marfil);font-family:inherit;font-size:.9rem;resize:vertical;min-height:70px}
+  button{margin-top:16px;padding:11px 18px;background:var(--oro);color:#000;border:none;border-radius:7px;font-weight:600;cursor:pointer;font-family:inherit;font-size:.88rem}
+  button:hover{opacity:.9}
+  button.del{background:transparent;border:1px solid rgba(180,40,40,.5);color:#e88;padding:5px 10px;margin:0;font-size:.75rem}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.85rem}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.06)}
+  th{color:var(--gris);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+  .pill{font-size:.68rem;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--oro)}
+  .msg{margin-top:12px;font-size:.82rem;padding:9px 12px;border-radius:7px;display:none}
+  .msg.ok{background:rgba(78,123,70,.18);border:1px solid var(--verde);color:#cfe9c8;display:block}
+  .msg.err{background:rgba(180,40,40,.15);border:1px solid rgba(180,40,40,.4);color:#e88;display:block}
+  .tpl-row{background:var(--panel2);border-radius:8px;padding:12px 14px;margin-top:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .tpl-row .t{font-weight:600;font-size:.88rem;color:var(--oro)}
+  .tpl-row .b{font-size:.82rem;color:#bbb;margin-top:4px}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">SP · Gestión de Equipo</div>
+    <div class="nav">
+      <a href="/index.html">Dashboard</a>
+      <a href="#" id="logout">Salir</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- Alta de vendedor con login -->
+    <div class="card">
+      <h2>Nuevo vendedor (con acceso)</h2>
+      <form id="formVendedor">
+        <label>Nombre completo</label>
+        <input id="v_nombre" required placeholder="Carlos Méndez">
+        <label>Teléfono WhatsApp (con +57)</label>
+        <input id="v_telefono" required placeholder="+573001112233">
+        <label>Correo de acceso</label>
+        <input id="v_email" type="email" required placeholder="carlos@sp.com">
+        <label>Contraseña</label>
+        <input id="v_password" required minlength="6" placeholder="mínimo 6 caracteres">
+        <button type="submit">Crear vendedor</button>
+        <div class="msg" id="msgVendedor"></div>
+      </form>
+    </div>
+
+    <!-- Nueva respuesta rápida -->
+    <div class="card">
+      <h2>Nueva respuesta rápida</h2>
+      <form id="formTpl">
+        <label>Título corto</label>
+        <input id="t_titulo" required placeholder="Saludo inicial">
+        <label>Mensaje</label>
+        <textarea id="t_cuerpo" required placeholder="Hola, gracias por contactar a SP Inmobiliaria…"></textarea>
+        <button type="submit">Guardar plantilla</button>
+        <div class="msg" id="msgTpl"></div>
+      </form>
+    </div>
+
+    <!-- Tabla de usuarios -->
+    <div class="card full">
+      <h2>Equipo con acceso</h2>
+      <table>
+        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th></tr></thead>
+        <tbody id="tablaUsuarios"></tbody>
+      </table>
+    </div>
+
+    <!-- Lista de templates -->
+    <div class="card full">
+      <h2>Respuestas rápidas guardadas</h2>
+      <div id="listaTpl"></div>
+    </div>
+  </div>
+
+<script>
+  function showMsg(id, texto, ok){
+    const el=document.getElementById(id);
+    el.textContent=texto; el.className='msg '+(ok?'ok':'err');
+    setTimeout(()=>{el.className='msg';},4000);
+  }
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+  async function cargarUsuarios(){
+    const r=await fetch('/api/usuarios'); if(!r.ok)return;
+    const us=await r.json();
+    document.getElementById('tablaUsuarios').innerHTML=us.map(u=>`
+      <tr><td>${esc(u.nombre)}</td><td>${esc(u.email)}</td><td><span class="pill">${u.rol}</span></td></tr>`).join('');
+  }
+  async function cargarTemplates(){
+    const r=await fetch('/api/templates'); if(!r.ok)return;
+    const ts=await r.json();
+    document.getElementById('listaTpl').innerHTML = ts.length? ts.map(t=>`
+      <div class="tpl-row">
+        <div><div class="t">${esc(t.titulo)}</div><div class="b">${esc(t.cuerpo)}</div></div>
+        <button class="del" data-id="${t.id}">Eliminar</button>
+      </div>`).join('') : '<div style="color:#777;font-size:.85rem;margin-top:8px">Aún no hay plantillas.</div>';
+    document.querySelectorAll('.del').forEach(b=>b.addEventListener('click',async()=>{
+      await fetch('/api/templates/'+b.dataset.id,{method:'DELETE'});
+      cargarTemplates();
+    }));
+  }
+
+  document.getElementById('formVendedor').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const body={
+      nombre:v_nombre.value, telefono:v_telefono.value,
+      email:v_email.value, password:v_password.value,
+    };
+    const r=await fetch('/api/usuarios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(r.ok){ showMsg('msgVendedor','Vendedor creado. Ya puede ingresar con su correo.',true); e.target.reset(); cargarUsuarios(); }
+    else showMsg('msgVendedor', d.error==='email_ya_existe'?'Ese correo ya está registrado':'Error: '+d.error, false);
+  });
+
+  document.getElementById('formTpl').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const r=await fetch('/api/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo:t_titulo.value,cuerpo:t_cuerpo.value})});
+    if(r.ok){ showMsg('msgTpl','Plantilla guardada.',true); e.target.reset(); cargarTemplates(); }
+    else showMsg('msgTpl','Error al guardar',false);
+  });
+
+  document.getElementById('logout').addEventListener('click',async e=>{
+    e.preventDefault(); await fetch('/api/logout',{method:'POST'}); location.href='/login.html';
+  });
+
+  cargarUsuarios(); cargarTemplates();
+</script>
+</body>
+</html>

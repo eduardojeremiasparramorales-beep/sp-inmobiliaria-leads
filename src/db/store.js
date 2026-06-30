@@ -9,6 +9,19 @@ let db;
 
 function q(v) { return `'${String(v).replace(/'/g, "''")}'`; }
 
+// Añade una columna a una tabla solo si aún no existe (migración segura)
+function ensureColumn(table, column, type) {
+  try {
+    const info = db.exec(`PRAGMA table_info(${table})`);
+    const cols = info.length ? info[0].values.map(r => r[1]) : [];
+    if (!cols.includes(column)) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
+  } catch (e) {
+    console.error(`ensureColumn ${table}.${column}:`, e.message);
+  }
+}
+
 async function initDB() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const SQL = await initSqlJs();
@@ -62,14 +75,59 @@ async function initDB() {
       vendedor_id INTEGER,
       created_at DATETIME DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT NOT NULL,
+      cuerpo TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
   `);
+
+  // Crear índices para mejorar performance en queries frecuentes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_customer_phone ON leads(customer_phone)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_id ON leads(assigned_to_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_phone ON leads(assigned_to_phone)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_vendedores_telefono ON vendedores(telefono)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_vendedores_estado ON vendedores(estado)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_usuarios_vendedor_id ON usuarios(vendedor_id)`);
+
+  // Migración: columnas de multimedia en messages (añadir si no existen)
+  ensureColumn('messages', 'media_type', 'TEXT');
+  ensureColumn('messages', 'media_id', 'TEXT');
+  ensureColumn('messages', 'media_mime', 'TEXT');
+  ensureColumn('messages', 'media_filename', 'TEXT');
+
+  // Tabla de suscripciones push (Fase push)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_push_vendedor ON push_subscriptions(vendedor_id)`);
+
   saveDB();
   return db;
 }
 
 function saveDB() {
   if (db) {
-    fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+    try {
+      fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+    } catch (error) {
+      console.error('ERROR CRÍTICO al guardar base de datos:', error.message);
+      console.error('Posibles causas: volumen lleno, permisos insuficientes, ruta inválida');
+      console.error('Archivo intentado:', DB_PATH);
+      throw error;
+    }
   }
 }
 
@@ -79,6 +137,10 @@ function esc(v) { return String(v).replace(/'/g, "''"); }
 
 function saveLead(customerPhone, customerName, messageBody) {
   const d = getDB();
+  if (!customerPhone || !messageBody) {
+    throw new Error('saveLead: customerPhone y messageBody son obligatorios');
+  }
+
   const existing = d.exec(`SELECT id, messages_count, status FROM leads WHERE customer_phone = ${q(customerPhone)} AND status != 'cerrado'`);
   if (existing.length > 0 && existing[0].values.length > 0) {
     const r = existing[0].values[0];
@@ -86,24 +148,59 @@ function saveLead(customerPhone, customerName, messageBody) {
     saveDB();
     return { leadId: r[0], isNew: false };
   }
+
   d.run(`INSERT INTO leads (customer_phone, customer_name, first_message, last_message) VALUES (${q(customerPhone)}, ${q(customerName)}, ${q(messageBody)}, ${q(messageBody)})`);
   saveDB();
+
+  // Obtener el ID del nuevo lead
   const r = d.exec(`SELECT id FROM leads WHERE customer_phone = ${q(customerPhone)} ORDER BY id DESC LIMIT 1`);
   const leadId = (r.length > 0 && r[0].values.length > 0) ? r[0].values[0][0] : null;
+  if (!leadId) {
+    throw new Error('No se pudo obtener ID del lead después de INSERT');
+  }
   return { leadId, isNew: true };
 }
 
 function assignLeadToVendedor(leadId, vendedor) {
+  if (!leadId || !vendedor || !vendedor.id || !vendedor.telefono) {
+    throw new Error('assignLeadToVendedor: leadId y vendedor (con id y telefono) son obligatorios');
+  }
+
   const d = getDB();
+
+  // Validar que el lead existe
+  const leadExists = d.exec(`SELECT id FROM leads WHERE id = ${leadId}`);
+  if (leadExists.length === 0 || leadExists[0].values.length === 0) {
+    throw new Error(`Lead ${leadId} no existe`);
+  }
+
+  // Validar que el vendedor existe
+  const vendedorExists = d.exec(`SELECT id FROM vendedores WHERE id = ${vendedor.id}`);
+  if (vendedorExists.length === 0 || vendedorExists[0].values.length === 0) {
+    throw new Error(`Vendedor ${vendedor.id} no existe`);
+  }
+
   d.run(`UPDATE leads SET assigned_to_id = ${vendedor.id}, assigned_to_phone = ${q(vendedor.telefono)}, status = 'asignado', updated_at = datetime('now') WHERE id = ${leadId}`);
   d.run(`UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ${vendedor.id}`);
   saveDB();
 }
 
-function saveMessage(leadId, from, to, body, direction) {
+function saveMessage(leadId, from, to, body, direction, media) {
   const d = getDB();
-  d.run(`INSERT INTO messages (lead_id, from_number, to_number, body, direction) VALUES (${leadId}, ${q(from)}, ${q(to)}, ${q(body)}, ${q(direction)})`);
+  const m = media || {};
+  const mediaType = m.media_type ? q(m.media_type) : 'NULL';
+  const mediaId = m.media_id ? q(m.media_id) : 'NULL';
+  const mediaMime = m.media_mime ? q(m.media_mime) : 'NULL';
+  const mediaFile = m.media_filename ? q(m.media_filename) : 'NULL';
+  d.run(`INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename) VALUES (${leadId}, ${q(from)}, ${q(to)}, ${q(body)}, ${q(direction)}, ${mediaType}, ${mediaId}, ${mediaMime}, ${mediaFile})`);
   saveDB();
+  const r = d.exec(`SELECT id FROM messages WHERE lead_id = ${Number(leadId)} ORDER BY id DESC LIMIT 1`);
+  return (r.length && r[0].values.length) ? r[0].values[0][0] : null;
+}
+
+function getMessageById(id) {
+  const d = getDB();
+  return rowOne(d.exec(`SELECT * FROM messages WHERE id = ${Number(id)} LIMIT 1`));
 }
 
 function getVendedoresActivos() {
@@ -190,6 +287,107 @@ function addVendedor(nombre, telefono) {
   const d = getDB();
   d.run(`INSERT OR IGNORE INTO vendedores (nombre, telefono) VALUES (${q(nombre)}, ${q(telefono)})`);
   saveDB();
+  const r = d.exec(`SELECT id FROM vendedores WHERE telefono = ${q(telefono)} LIMIT 1`);
+  return (r.length > 0 && r[0].values.length > 0) ? r[0].values[0][0] : null;
+}
+
+// --- Helper: convierte el resultado de sql.js en array de objetos ---
+function rows(result) {
+  if (!result || result.length === 0) return [];
+  const cols = result[0].columns;
+  return result[0].values.map(row => {
+    const o = {};
+    cols.forEach((c, i) => { o[c] = row[i]; });
+    return o;
+  });
+}
+
+function rowOne(result) {
+  const r = rows(result);
+  return r.length > 0 ? r[0] : null;
+}
+
+// --- Usuarios (login) ---
+function createUsuario(email, passwordHash, nombre, rol, vendedorId) {
+  const d = getDB();
+  d.run(`INSERT INTO usuarios (email, password, nombre, rol, vendedor_id) VALUES (${q(email)}, ${q(passwordHash)}, ${q(nombre)}, ${q(rol)}, ${vendedorId ? Number(vendedorId) : 'NULL'})`);
+  saveDB();
+  return rowOne(d.exec(`SELECT * FROM usuarios WHERE email = ${q(email)} LIMIT 1`));
+}
+
+function getUsuarioByEmail(email) {
+  const d = getDB();
+  return rowOne(d.exec(`SELECT * FROM usuarios WHERE email = ${q(email)} LIMIT 1`));
+}
+
+function getUsuarioById(id) {
+  const d = getDB();
+  return rowOne(d.exec(`SELECT * FROM usuarios WHERE id = ${Number(id)} LIMIT 1`));
+}
+
+function getUsuarios() {
+  const d = getDB();
+  return rows(d.exec(`SELECT id, email, nombre, rol, vendedor_id, created_at FROM usuarios ORDER BY nombre`));
+}
+
+function countUsuarios() {
+  const d = getDB();
+  const r = d.exec('SELECT COUNT(*) as c FROM usuarios');
+  return r[0]?.values[0]?.[0] || 0;
+}
+
+function updateUsuarioPassword(id, passwordHash) {
+  const d = getDB();
+  d.run(`UPDATE usuarios SET password = ${q(passwordHash)} WHERE id = ${Number(id)}`);
+  saveDB();
+}
+
+// --- Leads y mensajes por vendedor (para el panel) ---
+function getLeadsByVendedorId(vendedorId) {
+  const d = getDB();
+  return rows(d.exec(`SELECT * FROM leads WHERE assigned_to_id = ${Number(vendedorId)} ORDER BY updated_at DESC`));
+}
+
+function getMessagesByLead(leadId) {
+  const d = getDB();
+  return rows(d.exec(`SELECT * FROM messages WHERE lead_id = ${Number(leadId)} ORDER BY timestamp ASC, id ASC`));
+}
+
+// --- Templates (respuestas rápidas) ---
+function getTemplates() {
+  const d = getDB();
+  return rows(d.exec('SELECT * FROM templates ORDER BY titulo'));
+}
+
+function addTemplate(titulo, cuerpo) {
+  const d = getDB();
+  d.run(`INSERT INTO templates (titulo, cuerpo) VALUES (${q(titulo)}, ${q(cuerpo)})`);
+  saveDB();
+}
+
+function deleteTemplate(id) {
+  const d = getDB();
+  d.run(`DELETE FROM templates WHERE id = ${Number(id)}`);
+  saveDB();
+}
+
+// --- Suscripciones push ---
+function savePushSubscription(vendedorId, sub) {
+  const d = getDB();
+  const keys = sub.keys || {};
+  d.run(`INSERT OR REPLACE INTO push_subscriptions (vendedor_id, endpoint, p256dh, auth) VALUES (${Number(vendedorId)}, ${q(sub.endpoint)}, ${q(keys.p256dh || '')}, ${q(keys.auth || '')})`);
+  saveDB();
+}
+
+function getPushSubscriptionsByVendedor(vendedorId) {
+  const d = getDB();
+  return rows(d.exec(`SELECT * FROM push_subscriptions WHERE vendedor_id = ${Number(vendedorId)}`));
+}
+
+function deletePushSubscription(endpoint) {
+  const d = getDB();
+  d.run(`DELETE FROM push_subscriptions WHERE endpoint = ${q(endpoint)}`);
+  saveDB();
 }
 
 function getVendedores() {
@@ -216,4 +414,9 @@ module.exports = {
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   addVendedor, getVendedores, setVendedorEstado,
+  createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarios,
+  countUsuarios, updateUsuarioPassword,
+  getLeadsByVendedorId, getMessagesByLead, getMessageById,
+  getTemplates, addTemplate, deleteTemplate,
+  savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
 };

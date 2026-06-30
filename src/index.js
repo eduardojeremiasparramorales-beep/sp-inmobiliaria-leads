@@ -1,11 +1,18 @@
+require('dotenv').config();
+
 const express = require('express');
-const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB } = require('./db/store');
+const store = require('./db/store');
+const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
-const { sendMessage } = require('./services/whatsapp');
+const { sendMessage, uploadMedia, sendMedia } = require('./services/whatsapp');
+const mediaStore = require('./services/media');
+const auth = require('./services/auth');
+const events = require('./services/events');
+const push = require('./services/push');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '30mb' }));
 app.use(express.static('public'));
 
 const PORT = process.env.PORT || 3000;
@@ -15,7 +22,7 @@ app.get('/webhook', handleVerification);
 app.post('/webhook', handleMessage);
 
 // API stats
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', auth.requireAuth, (req, res) => {
   const vendedores = getVendedores();
   res.json({
     totalVendedores: vendedores.length,
@@ -25,27 +32,251 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
-app.get('/api/leads', (req, res) => res.json(getLeads()));
+app.get('/api/leads', auth.requireAuth, (req, res) => res.json(getLeads()));
 
-app.get('/api/vendedores', (req, res) => res.json(getVendedores()));
+app.get('/api/vendedores', auth.requireAuth, (req, res) => res.json(getVendedores()));
 
-app.post('/api/vendedores', (req, res) => {
+app.post('/api/vendedores', auth.requireAdmin, (req, res) => {
   const { nombre, telefono } = req.body;
   if (!nombre || !telefono) return res.status(400).json({ error: 'nombre y telefono requeridos' });
   addVendedor(nombre, telefono);
   res.json({ ok: true });
 });
 
-app.post('/api/vendedores/:id/estado', (req, res) => {
+app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
   const { estado } = req.body;
   const estadosValidos = ['activo', 'ocupado', 'inactivo', 'vacaciones', 'suspendido'];
   if (!estadosValidos.includes(estado)) return res.status(400).json({ error: 'estado invalido' });
+  // Un vendedor solo puede cambiar su propio estado; el admin, el de cualquiera
+  if (req.session.rol !== 'admin' && Number(req.params.id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
   setVendedorEstado(req.params.id, estado);
   res.json({ ok: true });
 });
 
+// ===================== AUTENTICACIÓN =====================
+
+app.post('/api/login', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
+  const usuario = store.getUsuarioByEmail(String(email).toLowerCase().trim());
+  if (!usuario || !auth.verifyPassword(password, usuario.password)) {
+    return res.status(401).json({ error: 'credenciales_invalidas' });
+  }
+  const token = auth.createSession(usuario);
+  const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=43200; SameSite=Lax${secure}`);
+  res.json({
+    ok: true, token,
+    usuario: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, vendedorId: usuario.vendedor_id },
+  });
+});
+
+app.post('/api/logout', auth.requireAuth, (req, res) => {
+  auth.destroySession(req.token);
+  const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `sp_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secure}`);
+  res.json({ ok: true });
+});
+
+app.get('/api/me', auth.requireAuth, (req, res) => {
+  res.json({
+    nombre: req.session.nombre, email: req.session.email,
+    rol: req.session.rol, vendedorId: req.session.vendedorId,
+  });
+});
+
+// ===================== PANEL DEL VENDEDOR =====================
+
+// Leads asignados al vendedor logueado (admin ve todos)
+app.get('/api/mis-leads', auth.requireAuth, (req, res) => {
+  if (req.session.rol === 'admin') return res.json(getLeads());
+  if (!req.session.vendedorId) return res.json([]);
+  res.json(store.getLeadsByVendedorId(req.session.vendedorId));
+});
+
+// Historial de mensajes de un lead (solo si le pertenece o es admin)
+app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  res.json({ lead, mensajes: store.getMessagesByLead(lead.id) });
+});
+
+// Responder a un cliente DESDE EL PANEL → se envía por el número oficial
+app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
+  const { mensaje } = req.body || {};
+  if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_vacio' });
+
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+
+  try {
+    await sendMessage(lead.customer_phone, String(mensaje));
+    const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing');
+    store.setFirstResponse(lead.id);
+    if (lead.status === 'nuevo' || lead.status === 'asignado') {
+      store.updateLeadStatus(lead.id, 'contactado');
+    }
+    events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error enviando respuesta desde panel:', e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// Servir un archivo multimedia de un mensaje (validando propiedad del lead)
+app.get('/api/media/:messageId', auth.requireAuth, (req, res) => {
+  const msg = store.getMessageById(req.params.messageId);
+  if (!msg || !msg.media_filename) return res.status(404).json({ error: 'media_no_existe' });
+  const lead = store.getLeadById(msg.lead_id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const filePath = mediaStore.getMediaPath(msg.media_filename);
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
+  if (msg.media_mime) res.setHeader('Content-Type', msg.media_mime);
+  res.sendFile(filePath);
+});
+
+// Responder a un cliente con un archivo (imagen/audio/video/documento) desde el panel.
+// Body JSON: { mime, filename, dataBase64, caption }
+app.post('/api/leads/:id/responder-media', auth.requireAuth, async (req, res) => {
+  const { mime, filename, dataBase64, caption } = req.body || {};
+  if (!mime || !dataBase64) return res.status(400).json({ error: 'mime y dataBase64 requeridos' });
+
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+
+  // Determinar el tipo de WhatsApp según el mime
+  let tipo = 'document';
+  if (mime.startsWith('image/')) tipo = 'image';
+  else if (mime.startsWith('audio/')) tipo = 'audio';
+  else if (mime.startsWith('video/')) tipo = 'video';
+
+  try {
+    const buffer = Buffer.from(dataBase64, 'base64');
+    const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
+    const mediaId = await uploadMedia(buffer, mime, filename);
+    await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
+
+    const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, caption || `[${tipo}]`, 'outgoing', {
+      media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+    });
+    store.setFirstResponse(lead.id);
+    if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
+    events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error enviando media desde panel:', e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// Cerrar un lead
+app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.updateLeadStatus(lead.id, 'cerrado');
+  res.json({ ok: true });
+});
+
+// ===================== TIEMPO REAL (SSE) =====================
+
+app.get('/api/stream', auth.requireAuth, (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.write(`event: conectado\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+
+  // Admin escucha en el canal 0; vendedor en su propio id
+  const canal = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
+  events.addClient(canal, res);
+
+  // Heartbeat para mantener viva la conexión
+  const hb = setInterval(() => {
+    try { res.write(': hb\n\n'); } catch (e) { clearInterval(hb); }
+  }, 25000);
+  res.on('close', () => clearInterval(hb));
+});
+
+// ===================== NOTIFICACIONES PUSH =====================
+
+app.get('/api/push/clave', auth.requireAuth, (req, res) => {
+  res.json({ publicKey: push.getPublicKey(), enabled: push.isEnabled() });
+});
+
+app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
+  const sub = req.body && req.body.subscription;
+  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'subscription requerida' });
+  const vendedorId = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
+  if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
+  store.savePushSubscription(vendedorId, sub);
+  res.json({ ok: true });
+});
+
+// ===================== TEMPLATES (respuestas rápidas) =====================
+
+app.get('/api/templates', auth.requireAuth, (req, res) => res.json(store.getTemplates()));
+
+app.post('/api/templates', auth.requireAdmin, (req, res) => {
+  const { titulo, cuerpo } = req.body || {};
+  if (!titulo || !cuerpo) return res.status(400).json({ error: 'titulo y cuerpo requeridos' });
+  store.addTemplate(titulo, cuerpo);
+  res.json({ ok: true });
+});
+
+app.delete('/api/templates/:id', auth.requireAdmin, (req, res) => {
+  store.deleteTemplate(req.params.id);
+  res.json({ ok: true });
+});
+
+// ===================== USUARIOS (admin) =====================
+
+app.get('/api/usuarios', auth.requireAdmin, (req, res) => res.json(store.getUsuarios()));
+
+// Crea un vendedor + su usuario de login en un solo paso
+app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
+  const { nombre, telefono, email, password, rol } = req.body || {};
+  if (!nombre || !email || !password) {
+    return res.status(400).json({ error: 'nombre, email y password requeridos' });
+  }
+  const emailNorm = String(email).toLowerCase().trim();
+  if (store.getUsuarioByEmail(emailNorm)) {
+    return res.status(409).json({ error: 'email_ya_existe' });
+  }
+  let vendedorId = null;
+  const rolFinal = rol === 'admin' ? 'admin' : 'vendedor';
+  if (rolFinal === 'vendedor') {
+    if (!telefono) return res.status(400).json({ error: 'telefono requerido para vendedores' });
+    vendedorId = store.addVendedor(nombre, telefono);
+  }
+  store.createUsuario(emailNorm, auth.hashPassword(password), nombre, rolFinal, vendedorId);
+  res.json({ ok: true, vendedorId });
+});
+
 // Seed vendedores de prueba
-app.post('/api/seed', (req, res) => {
+app.post('/api/seed', auth.requireAdmin, (req, res) => {
   const demo = [
     ['Carlos Méndez', '+5218112345601'],
     ['María Fernanda López', '+5218112345602'],
@@ -58,7 +289,7 @@ app.post('/api/seed', (req, res) => {
 });
 
 // Test webhook simulator
-app.post('/api/test-webhook', (req, res) => {
+app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
   const { phone, name, message } = req.body;
   const customerPhone = phone || '+5218112345000';
   const customerName = name || 'Cliente Prueba';
@@ -71,7 +302,7 @@ app.post('/api/test-webhook', (req, res) => {
         field: 'messages',
         value: {
           messaging_product: 'whatsapp',
-          metadata: { phone_number_id: '1224496694078803' },
+          metadata: { phone_number_id: process.env.PHONE_NUMBER_ID },
           contacts: [{ profile: { name: customerName }, wa_id: customerPhone }],
           messages: [{
             from: customerPhone,
@@ -89,7 +320,7 @@ app.post('/api/test-webhook', (req, res) => {
 });
 
 // Test vendedor reply simulator
-app.post('/api/test-reply', (req, res) => {
+app.post('/api/test-reply', auth.requireAdmin, (req, res) => {
   const { vendedorPhone, message } = req.body;
   if (!vendedorPhone) return res.status(400).json({ error: 'vendedorPhone requerido' });
 
@@ -100,7 +331,7 @@ app.post('/api/test-reply', (req, res) => {
         field: 'messages',
         value: {
           messaging_product: 'whatsapp',
-          metadata: { phone_number_id: '1224496694078803' },
+          metadata: { phone_number_id: process.env.PHONE_NUMBER_ID },
           contacts: [{ profile: { name: 'Vendedor' }, wa_id: vendedorPhone }],
           messages: [{
             from: vendedorPhone,
@@ -118,7 +349,7 @@ app.post('/api/test-reply', (req, res) => {
 });
 
 // Logs
-app.get('/api/logs', (req, res) => {
+app.get('/api/logs', auth.requireAuth, (req, res) => {
   const d = getDB();
   if (!d) return res.json([]);
   const r = d.exec('SELECT * FROM messages ORDER BY timestamp DESC LIMIT 50');
@@ -158,7 +389,23 @@ async function checkEscalation() {
   }
 }
 
+// Crea el usuario administrador inicial si no existe ninguno
+function ensureAdminUser() {
+  if (store.countUsuarios() > 0) return;
+  const email = (process.env.ADMIN_EMAIL || process.env.ADMIN_USERNAME || 'admin@spinmobiliaria.com').toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || 'changeme123';
+  store.createUsuario(email, auth.hashPassword(password), 'Administrador', 'admin', null);
+  console.log('===========================================');
+  console.log('Usuario ADMIN inicial creado:');
+  console.log(`  Email:    ${email}`);
+  console.log(`  Password: ${password}`);
+  console.log('  (cámbialo en .env: ADMIN_EMAIL / ADMIN_PASSWORD)');
+  console.log('===========================================');
+}
+
 initDB().then(() => {
+  ensureAdminUser();
+  push.init();
   app.listen(PORT, () => {
     console.log(`SP Inmobiliaria CRM corriendo en puerto ${PORT}`);
   });
