@@ -105,8 +105,20 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
 
     const vendidosTotal = porEtiqueta['vendido'] || 0;
 
+    // Conteo total de mensajes (entrantes + salientes) del número principal
+    let totalMensajes = 0, mensajesEntrantes = 0;
+    try {
+      const dbx = getDB();
+      const rm = dbx.exec('SELECT COUNT(*) FROM messages');
+      totalMensajes = (rm.length && rm[0].values.length) ? rm[0].values[0][0] : 0;
+      const ri = dbx.exec("SELECT COUNT(*) FROM messages WHERE direction = 'incoming'");
+      mensajesEntrantes = (ri.length && ri[0].values.length) ? ri[0].values[0][0] : 0;
+    } catch (e) { /* noop */ }
+
     res.json({
       total,
+      totalMensajes,
+      mensajesEntrantes,
       vendidos: vendidosTotal,
       conversionGlobal: total ? Math.round((vendidosTotal / total) * 100) : 0,
       tiempoRespuestaPromedio: respondidos ? Math.round(sumaRespuestaMin / respondidos) : null,

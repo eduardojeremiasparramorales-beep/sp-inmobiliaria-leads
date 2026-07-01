@@ -128,7 +128,7 @@
         <header>
             <div class="header-left">
                 <div>
-                    <div class="logo">SP</div>
+                    <div class="logo">SP LEONS GROUP</div>
                     <div class="logo-text">Inmobiliaria · CRM</div>
                 </div>
             </div>
@@ -142,6 +142,7 @@
             <sidebar>
                 <div class="menu-title">Principal</div>
                 <div class="menu-item active" onclick="showSection('dashboard')">📊 Dashboard</div>
+                <div class="menu-item" onclick="location.href='/vendedor.html'" style="background:rgba(78,123,70,.15);border:1px solid rgba(78,123,70,.4);color:#b8dbb4;font-weight:600">💬 Bandeja de Chats</div>
                 <div class="menu-item" onclick="showSection('leads')">📋 Bandeja de Leads</div>
                 <div class="menu-item" onclick="showSection('vendors')">👥 Vendedores</div>
 
@@ -180,6 +181,11 @@
                             <div class="stat-label">Resp. Promedio</div>
                             <div class="stat-value" id="avgResponse">0m</div>
                             <div class="stat-change">Meta: &lt;15 min</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Mensajes Totales</div>
+                            <div class="stat-value" id="totalMensajes">0</div>
+                            <div class="stat-change" id="entrantesMsg">Recibidos: 0</div>
                         </div>
                     </div>
 
@@ -349,6 +355,10 @@
                 document.getElementById('conversionRate').textContent = (m.conversionGlobal || 0) + '%';
                 document.getElementById('avgResponse').textContent =
                     m.tiempoRespuestaPromedio != null ? m.tiempoRespuestaPromedio + 'm' : '—';
+                const tm = document.getElementById('totalMensajes');
+                if (tm) tm.textContent = m.totalMensajes || 0;
+                const em = document.getElementById('entrantesMsg');
+                if (em) em.textContent = 'Recibidos: ' + (m.mensajesEntrantes || 0);
                 loadRecentActivity();
             }).catch(() => console.log('Error cargando stats'));
         }

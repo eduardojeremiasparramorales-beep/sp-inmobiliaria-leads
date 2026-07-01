@@ -61,12 +61,17 @@
   .date-sep{align-self:center;background:rgba(0,0,0,.4);color:rgba(255,255,255,.6);font-size:.68rem;padding:3px 12px;border-radius:10px;margin:6px 0;text-transform:uppercase;letter-spacing:.05em}
   /* Ticks de estado del mensaje */
   .msg .ticks{color:rgba(255,255,255,.55);font-size:.72rem;margin-left:4px}
-  .lead-item{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background .15s}
+  .lead-item{padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background .15s;display:flex;gap:12px;align-items:center}
   .lead-item:hover{background:var(--panel2)}
-  .lead-item.active{background:var(--panel2);border-left:3px solid var(--oro)}
-  .lead-item .name{font-weight:600;font-size:.92rem;display:flex;justify-content:space-between;align-items:center}
-  .lead-item .phone{font-size:.78rem;color:var(--gris);margin-top:2px}
-  .lead-item .preview{font-size:.8rem;color:#999;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lead-item.active{background:var(--panel2)}
+  .lead-item.active .avatar{box-shadow:0 0 0 2px var(--oro)}
+  .avatar{width:46px;height:46px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:1rem;color:#fff;letter-spacing:.02em}
+  .lead-main{flex:1;min-width:0}
+  .lead-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .lead-item .name{font-weight:600;font-size:.94rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lead-time{font-size:.68rem;color:var(--gris);flex-shrink:0}
+  .lead-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:3px}
+  .lead-item .preview{font-size:.8rem;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
   .badge{font-size:.62rem;padding:2px 7px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
   .b-nuevo{background:var(--oro);color:#000}
   .b-asignado{background:#2b4d6b;color:#cfe3f5}
@@ -175,13 +180,13 @@
 <body>
   <div class="splash" id="splash">
     <img src="/icons/icon-512.png" alt="SP" onerror="this.style.display='none'">
-    <div class="brand">SP INMOBILIARIA</div>
-    <div class="sub">Panel del vendedor</div>
+    <div class="brand">SP LEONS GROUP</div>
+    <div class="sub">Inmobiliaria</div>
     <div class="spin"></div>
   </div>
   <div class="app">
     <div class="topbar">
-      <div class="brand">SP · Mi Panel</div>
+      <div class="brand">SP LEONS GROUP</div>
       <div class="right">
         <span id="miNombre"></span>
         <select class="estado-select" id="estadoSelect" title="Mi disponibilidad">
@@ -206,7 +211,7 @@
         <span class="filtro-chip" data-f="cita">Cita</span>
         <span class="filtro-chip" data-f="vendido">Vendido</span>
       </div>
-      <h3>Mis Leads (<span id="leadCount">0</span>)</h3>
+      <h3><span id="tituloLista">Chats</span> (<span id="leadCount">0</span>)</h3>
       <div id="leadsList"></div>
     </div>
 
@@ -244,6 +249,30 @@
 
   function badgeClass(s){return 'badge b-' + (s||'nuevo');}
 
+  // Iniciales para el avatar (máx 2 letras)
+  function iniciales(nombre){
+    const p = String(nombre||'C').trim().split(/\s+/);
+    return ((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase() || 'C';
+  }
+  // Color de avatar estable según el nombre (paleta sobria de marca)
+  function avatarColor(nombre){
+    const cols = ['#4E7B46','#7a5c1e','#2b4d6b','#6b3f5b','#8a6d3b','#3b6b6b','#7a3b3b','#5b5b8a'];
+    let h = 0; const s = String(nombre||'');
+    for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) & 0xffffff;
+    return cols[Math.abs(h) % cols.length];
+  }
+  // Hora corta para la lista (hoy: hora; otro día: dd/mm)
+  function horaCorta(ts){
+    if(!ts) return '';
+    const d = new Date(ts.replace(' ','T') + 'Z');
+    if(isNaN(d)) return '';
+    const hoy = new Date();
+    const mismoDia = d.getFullYear()===hoy.getFullYear()&&d.getMonth()===hoy.getMonth()&&d.getDate()===hoy.getDate();
+    return mismoDia
+      ? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})
+      : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'});
+  }
+
   function fmtTime(ts){
     if(!ts) return '';
     const d = new Date(ts.replace(' ','T') + 'Z');
@@ -262,6 +291,8 @@
     const r = await api('/api/me');
     me = await r.json();
     document.getElementById('miNombre').textContent = me.nombre;
+    const tl = document.getElementById('tituloLista');
+    if(tl) tl.textContent = me.rol==='admin' ? 'Todos los chats' : 'Mis chats';
     await cargarTemplates();
     await cargarWATemplates();
     if(me.rol === 'admin') await cargarVendedores();
@@ -348,15 +379,25 @@
         : '<div class="empty" style="padding:30px 18px">Ningún lead coincide con la búsqueda.</div>';
       return;
     }
-    cont.innerHTML = lista.map(l => `
+    cont.innerHTML = lista.map(l => {
+      const nombre = l.customer_name||'Cliente';
+      const etq = l.etiqueta && l.etiqueta!=='sin_clasificar'
+        ? `<span class="etq e-${l.etiqueta}">${etqLabel(l.etiqueta)}</span>` : '';
+      return `
       <div class="lead-item ${currentLead && currentLead.id===l.id?'active':''}" data-id="${l.id}">
-        <div class="name">
-          <span>${escapeHtml(l.customer_name||'Cliente')}</span>
-          <span class="${badgeClass(l.status)}">${l.status||'nuevo'}</span>
+        <div class="avatar" style="background:${avatarColor(nombre)}">${iniciales(nombre)}</div>
+        <div class="lead-main">
+          <div class="lead-top">
+            <span class="name">${escapeHtml(nombre)}</span>
+            <span class="lead-time">${horaCorta(l.updated_at||l.created_at)}</span>
+          </div>
+          <div class="lead-bottom">
+            <span class="preview">${escapeHtml(l.last_message||l.first_message||'')}</span>
+            ${etq}
+          </div>
         </div>
-        <div class="phone">${escapeHtml(l.customer_phone)}${l.etiqueta && l.etiqueta!=='sin_clasificar' ? `<span class="etq e-${l.etiqueta}">${etqLabel(l.etiqueta)}</span>` : ''}</div>
-        <div class="preview">${escapeHtml(l.last_message||l.first_message||'')}</div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     cont.querySelectorAll('.lead-item').forEach(el =>
       el.addEventListener('click', () => abrirLead(Number(el.dataset.id))));
   }
@@ -380,14 +421,16 @@
     const body = document.getElementById('chatBody');
     body.innerHTML = `
       <div class="chat-header">
-        <div>
-          <div class="cname">${escapeHtml(lead.customer_name||'Cliente')}</div>
-          <div class="cphone">${escapeHtml(lead.customer_phone)} · ${lead.status}</div>
+        <div style="display:flex;align-items:center;gap:12px;min-width:0">
+          <div class="avatar" style="width:40px;height:40px;font-size:.9rem;background:${avatarColor(lead.customer_name||'Cliente')}">${iniciales(lead.customer_name||'Cliente')}</div>
+          <div style="min-width:0">
+            <div class="cname">${escapeHtml(lead.customer_name||'Cliente')}</div>
+            <div class="cphone">${escapeHtml(lead.customer_phone)}</div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          ${window.innerWidth<=760?'<button id="volver">← Leads</button>':''}
-          ${!cerrado && waTemplates.length>0 ? '<button id="reactivarBtn" title="Enviar plantilla aprobada de Meta (para leads sin respuesta +24h)">📨 Reactivar</button>':''}
-          ${cerrado?'':'<button id="cerrarBtn">Cerrar lead</button>'}
+          ${window.innerWidth<=760?'<button id="volver">← Chats</button>':''}
+          ${waTemplates.length>0 ? '<button id="reactivarBtn" title="Enviar plantilla aprobada de Meta (para leads sin respuesta +24h)">📨 Reactivar</button>':''}
         </div>
       </div>
       <div class="lead-tools">
@@ -550,9 +593,6 @@
           input.value = c.dataset.cuerpo; input.focus();
           input.style.height='auto'; input.style.height=input.scrollHeight+'px';
         }));
-      const cerrarBtn = document.getElementById('cerrarBtn');
-      if(cerrarBtn) cerrarBtn.addEventListener('click', cerrarLead);
-
       const reactivarBtn = document.getElementById('reactivarBtn');
       const reactivarPanel = document.getElementById('reactivarPanel');
       if(reactivarBtn && reactivarPanel){
@@ -766,14 +806,6 @@
     }catch(e){
       toast('Error: ' + e.message);
     }
-  }
-
-  async function cerrarLead(){
-    if(!currentLead) return;
-    await api('/api/leads/'+currentLead.id+'/cerrar', {method:'POST'});
-    toast('Lead cerrado');
-    await cargarLeads();
-    await abrirLead(currentLead.id);
   }
 
   // --- Tiempo real (SSE) ---
