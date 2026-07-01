@@ -1,9 +1,9 @@
-// Autenticación: hash de contraseñas + sesiones por token.
+// Autenticación: hash de contraseñas + sesiones persistentes en DB.
 // Usa el módulo crypto nativo de Node (sin dependencias externas).
 
 const crypto = require('crypto');
 
-// --- Hash de contraseñas (scrypt) ---
+// --- Hash de contraseñas/PINs (scrypt) ---
 
 function hashPassword(plain) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -21,37 +21,44 @@ function verifyPassword(plain, stored) {
   return crypto.timingSafeEqual(a, b);
 }
 
-// --- Sesiones en memoria ---
-// token -> { userId, vendedorId, rol, nombre, email, createdAt }
-const sessions = new Map();
-const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 horas
+// --- Sesiones persistentes en DB (30 días) ---
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 días
 
-function createSession(usuario) {
+function createSession(data) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, {
-    userId: usuario.id,
-    vendedorId: usuario.vendedor_id || null,
-    rol: usuario.rol || 'vendedor',
-    nombre: usuario.nombre || '',
-    email: usuario.email || '',
-    createdAt: Date.now(),
+  const store = require('../db/store');
+  store.createDBSession(token, {
+    userId: data.id || data.userId || null,
+    vendedorId: data.vendedor_id || data.vendedorId || null,
+    rol: data.rol || 'vendedor',
+    nombre: data.nombre || '',
+    email: data.email || '',
   });
   return token;
 }
 
 function getSession(token) {
   if (!token) return null;
-  const s = sessions.get(token);
+  const store = require('../db/store');
+  const s = store.getDBSession(token);
   if (!s) return null;
-  if (Date.now() - s.createdAt > SESSION_TTL_MS) {
-    sessions.delete(token);
+  if (Date.now() - s.created_at > SESSION_TTL_MS) {
+    store.deleteDBSession(token);
     return null;
   }
-  return s;
+  return {
+    userId: s.user_id,
+    vendedorId: s.vendedor_id,
+    rol: s.rol,
+    nombre: s.nombre,
+    email: s.email || '',
+  };
 }
 
 function destroySession(token) {
-  if (token) sessions.delete(token);
+  if (!token) return;
+  const store = require('../db/store');
+  store.deleteDBSession(token);
 }
 
 // --- Lectura del token desde la petición (cookie o header) ---

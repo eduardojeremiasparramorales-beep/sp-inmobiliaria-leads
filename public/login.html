@@ -44,6 +44,12 @@
     color:var(--marfil);font-size:16px;font-family:inherit;transition:border .2s;
   }
   input:focus{outline:none;border-color:var(--oro)}
+  /* PIN: 4 cuadros grandes */
+  .pin-wrap{display:flex;gap:10px;justify-content:center;margin-top:4px}
+  .pin-wrap input{
+    width:58px;height:62px;text-align:center;font-size:1.6rem;
+    font-weight:600;letter-spacing:0;padding:0;
+  }
   button{
     width:100%;margin-top:26px;padding:13px;background:var(--oro);
     color:var(--negro);border:none;border-radius:8px;font-weight:600;
@@ -56,7 +62,12 @@
     border:1px solid rgba(180,40,40,.4);border-radius:8px;
     color:#e88;font-size:.85rem;display:none;text-align:center;
   }
-  .foot{text-align:center;margin-top:24px;font-size:.72rem;color:var(--gris)}
+  .toggle{
+    text-align:center;margin-top:22px;font-size:.75rem;color:var(--gris);
+  }
+  .toggle a{color:rgba(200,164,90,.7);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .toggle a:hover{color:var(--oro)}
+  .foot{text-align:center;margin-top:16px;font-size:.72rem;color:var(--gris)}
 </style>
 </head>
 <body>
@@ -66,50 +77,128 @@
       <div class="sub">Inmobiliaria · CRM</div>
       <div class="linea"></div>
     </div>
-    <form id="form">
-      <label for="email">Correo</label>
-      <input id="email" type="email" autocomplete="username" required placeholder="tu@correo.com">
+
+    <!-- Formulario vendedor: teléfono + PIN -->
+    <form id="formVendedor">
+      <label for="telefono">Tu número WhatsApp</label>
+      <input id="telefono" type="tel" inputmode="tel" autocomplete="tel"
+             placeholder="+573001112233" required>
+      <label>PIN de 4 dígitos</label>
+      <div class="pin-wrap">
+        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+      </div>
+      <button id="btnV" type="submit">Ingresar</button>
+      <div class="error" id="errorV"></div>
+    </form>
+
+    <!-- Formulario admin: oculto por defecto -->
+    <form id="formAdmin" style="display:none">
+      <label for="email">Correo admin</label>
+      <input id="email" type="email" autocomplete="username" required placeholder="admin@spinmobiliaria.com">
       <label for="password">Contraseña</label>
       <input id="password" type="password" autocomplete="current-password" required placeholder="••••••••">
-      <button id="btn" type="submit">Ingresar</button>
-      <div class="error" id="error"></div>
+      <button id="btnA" type="submit">Ingresar como admin</button>
+      <div class="error" id="errorA"></div>
     </form>
+
+    <div class="toggle" id="toggleWrap">
+      <a id="toggleLink">Acceso administrador</a>
+    </div>
     <div class="foot">Acceso exclusivo del equipo SP</div>
   </div>
+
 <script>
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW no registrado', e));
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
   }
 
-  const form = document.getElementById('form');
-  const btn = document.getElementById('btn');
-  const errorBox = document.getElementById('error');
-
   // Si ya hay sesión, redirigir según rol
-  fetch('/api/me').then(r => r.ok ? r.json() : null).then(u => {
-    if (u) location.href = u.rol === 'admin' ? '/index.html' : '/vendedor.html';
+  fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
+    if(u) location.href = u.rol==='admin' ? '/index.html' : '/vendedor.html';
   });
 
-  form.addEventListener('submit', async (e) => {
+  // Toggle entre modos
+  let modoAdmin = false;
+  document.getElementById('toggleLink').addEventListener('click', () => {
+    modoAdmin = !modoAdmin;
+    document.getElementById('formVendedor').style.display = modoAdmin ? 'none' : '';
+    document.getElementById('formAdmin').style.display = modoAdmin ? '' : 'none';
+    document.getElementById('toggleLink').textContent = modoAdmin ? 'Acceso vendedor' : 'Acceso administrador';
+  });
+
+  // --- PIN: auto-avanzar entre dígitos ---
+  const digits = document.querySelectorAll('.pin-digit');
+  digits.forEach((d, i) => {
+    d.addEventListener('input', () => {
+      d.value = d.value.replace(/\D/g, '').slice(-1);
+      if (d.value && i < digits.length - 1) digits[i+1].focus();
+    });
+    d.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !d.value && i > 0) digits[i-1].focus();
+    });
+    d.addEventListener('paste', e => {
+      e.preventDefault();
+      const pasted = (e.clipboardData||window.clipboardData).getData('text').replace(/\D/g,'').slice(0,4);
+      pasted.split('').forEach((ch, j) => { if(digits[j]) digits[j].value = ch; });
+      const last = Math.min(pasted.length, digits.length-1);
+      digits[last].focus();
+    });
+  });
+
+  // --- Login vendedor ---
+  document.getElementById('formVendedor').addEventListener('submit', async e => {
     e.preventDefault();
-    errorBox.style.display = 'none';
+    const errBox = document.getElementById('errorV');
+    const btn = document.getElementById('btnV');
+    errBox.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Verificando...';
+
+    const pin = Array.from(digits).map(d=>d.value).join('');
+    if (pin.length !== 4) {
+      errBox.textContent = 'Ingresa los 4 dígitos del PIN';
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Ingresar';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/login', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ telefono: document.getElementById('telefono').value.trim(), pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error==='credenciales_invalidas' ? 'Número o PIN incorrecto' : 'Error al ingresar');
+      location.href = '/vendedor.html';
+    } catch(err) {
+      errBox.textContent = err.message;
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Ingresar';
+      digits.forEach(d=>d.value=''); digits[0].focus();
+    }
+  });
+
+  // --- Login admin ---
+  document.getElementById('formAdmin').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errBox = document.getElementById('errorA');
+    const btn = document.getElementById('btnA');
+    errBox.style.display = 'none';
     btn.disabled = true; btn.textContent = 'Verificando...';
     try {
       const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: document.getElementById('email').value,
-          password: document.getElementById('password').value,
-        }),
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email: document.getElementById('email').value, password: document.getElementById('password').value }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error === 'credenciales_invalidas' ? 'Correo o contraseña incorrectos' : 'Error al ingresar');
-      location.href = data.usuario.rol === 'admin' ? '/index.html' : '/vendedor.html';
-    } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Ingresar';
+      if (!res.ok) throw new Error(data.error==='credenciales_invalidas' ? 'Correo o contraseña incorrectos' : 'Error al ingresar');
+      location.href = data.usuario.rol==='admin' ? '/index.html' : '/vendedor.html';
+    } catch(err) {
+      errBox.textContent = err.message;
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Ingresar como admin';
     }
   });
 </script>

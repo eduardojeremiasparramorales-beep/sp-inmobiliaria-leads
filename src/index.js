@@ -37,9 +37,19 @@ app.get('/api/leads', auth.requireAuth, (req, res) => res.json(getLeads()));
 app.get('/api/vendedores', auth.requireAuth, (req, res) => res.json(getVendedores()));
 
 app.post('/api/vendedores', auth.requireAdmin, (req, res) => {
-  const { nombre, telefono } = req.body;
+  const { nombre, telefono, pin } = req.body;
   if (!nombre || !telefono) return res.status(400).json({ error: 'nombre y telefono requeridos' });
-  addVendedor(nombre, telefono);
+  const vendedorId = addVendedor(nombre, telefono);
+  if (pin && String(pin).length === 4 && /^\d{4}$/.test(String(pin))) {
+    store.setVendedorPin(vendedorId, auth.hashPassword(String(pin)));
+  }
+  res.json({ ok: true, vendedorId });
+});
+
+app.post('/api/vendedores/:id/pin', auth.requireAdmin, (req, res) => {
+  const { pin } = req.body || {};
+  if (!pin || !/^\d{4}$/.test(String(pin))) return res.status(400).json({ error: 'PIN debe ser 4 dígitos' });
+  store.setVendedorPin(req.params.id, auth.hashPassword(String(pin)));
   res.json({ ok: true });
 });
 
@@ -58,19 +68,33 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 // ===================== AUTENTICACIÓN =====================
 
 app.post('/api/login', (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
-  const usuario = store.getUsuarioByEmail(String(email).toLowerCase().trim());
-  if (!usuario || !auth.verifyPassword(password, usuario.password)) {
-    return res.status(401).json({ error: 'credenciales_invalidas' });
-  }
-  const token = auth.createSession(usuario);
+  const { email, password, telefono, pin } = req.body || {};
   const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=43200; SameSite=Lax${secure}`);
-  res.json({
-    ok: true, token,
-    usuario: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, vendedorId: usuario.vendedor_id },
-  });
+  const MAX_AGE = 60 * 60 * 24 * 30; // 30 días en segundos
+
+  // Modo vendedor: teléfono + PIN de 4 dígitos
+  if (telefono && pin) {
+    const vendedor = store.getVendedorByTelefono(String(telefono).trim());
+    if (!vendedor || !vendedor.pin || !auth.verifyPassword(String(pin), vendedor.pin)) {
+      return res.status(401).json({ error: 'credenciales_invalidas' });
+    }
+    const token = auth.createSession({ vendedorId: vendedor.id, rol: 'vendedor', nombre: vendedor.nombre });
+    res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
+    return res.json({ ok: true, token, usuario: { nombre: vendedor.nombre, rol: 'vendedor', vendedorId: vendedor.id } });
+  }
+
+  // Modo admin: email + contraseña
+  if (email && password) {
+    const usuario = store.getUsuarioByEmail(String(email).toLowerCase().trim());
+    if (!usuario || !auth.verifyPassword(password, usuario.password)) {
+      return res.status(401).json({ error: 'credenciales_invalidas' });
+    }
+    const token = auth.createSession(usuario);
+    res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
+    return res.json({ ok: true, token, usuario: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, vendedorId: usuario.vendedor_id } });
+  }
+
+  return res.status(400).json({ error: 'credenciales_requeridas' });
 });
 
 app.post('/api/logout', auth.requireAuth, (req, res) => {
@@ -410,4 +434,6 @@ initDB().then(() => {
     console.log(`SP Inmobiliaria CRM corriendo en puerto ${PORT}`);
   });
   setInterval(checkEscalation, 60000);
+  // Limpiar sesiones expiradas (>30 días) cada 24 horas
+  setInterval(() => store.cleanExpiredSessions(1000 * 60 * 60 * 24 * 30), 1000 * 60 * 60 * 24);
 });

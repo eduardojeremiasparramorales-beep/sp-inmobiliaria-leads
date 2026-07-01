@@ -101,6 +101,22 @@ async function initDB() {
   ensureColumn('messages', 'media_mime', 'TEXT');
   ensureColumn('messages', 'media_filename', 'TEXT');
 
+  // Migración: PIN para vendedores
+  ensureColumn('vendedores', 'pin', 'TEXT');
+
+  // Tabla de sesiones persistentes (30 días, sobrevive reinicios)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER,
+      vendedor_id INTEGER,
+      rol TEXT DEFAULT 'vendedor',
+      nombre TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
+  `);
+
   // Tabla de suscripciones push (Fase push)
   db.run(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -402,6 +418,38 @@ function getVendedores() {
   });
 }
 
+function getVendedorByTelefono(telefono) {
+  return rowOne(getDB().exec(`SELECT * FROM vendedores WHERE telefono = ${q(telefono)} LIMIT 1`));
+}
+
+function setVendedorPin(id, pinHash) {
+  getDB().run(`UPDATE vendedores SET pin = ${q(pinHash)} WHERE id = ${Number(id)}`);
+  saveDB();
+}
+
+// --- Sesiones persistentes en DB ---
+
+function createDBSession(token, data) {
+  const d = getDB();
+  d.run(`INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at)
+    VALUES (${q(token)}, ${data.userId != null ? Number(data.userId) : 'NULL'}, ${data.vendedorId != null ? Number(data.vendedorId) : 'NULL'}, ${q(data.rol || 'vendedor')}, ${q(data.nombre || '')}, ${q(data.email || '')}, ${Date.now()})`);
+  saveDB();
+}
+
+function getDBSession(token) {
+  return rowOne(getDB().exec(`SELECT * FROM sessions WHERE token = ${q(token)} LIMIT 1`));
+}
+
+function deleteDBSession(token) {
+  getDB().run(`DELETE FROM sessions WHERE token = ${q(token)}`);
+  saveDB();
+}
+
+function cleanExpiredSessions(ttlMs) {
+  getDB().run(`DELETE FROM sessions WHERE created_at < ${Date.now() - ttlMs}`);
+  saveDB();
+}
+
 function setVendedorEstado(id, estado) {
   const d = getDB();
   d.run(`UPDATE vendedores SET estado = ${q(estado)} WHERE id = ${Number(id)}`);
@@ -413,10 +461,11 @@ module.exports = {
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
-  addVendedor, getVendedores, setVendedorEstado,
+  addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarios,
   countUsuarios, updateUsuarioPassword,
   getLeadsByVendedorId, getMessagesByLead, getMessageById,
   getTemplates, addTemplate, deleteTemplate,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
+  createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,
 };

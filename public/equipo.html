@@ -54,16 +54,14 @@
   <div class="wrap">
     <!-- Alta de vendedor con login -->
     <div class="card">
-      <h2>Nuevo vendedor (con acceso)</h2>
+      <h2>Nuevo vendedor</h2>
       <form id="formVendedor">
         <label>Nombre completo</label>
         <input id="v_nombre" required placeholder="Carlos Méndez">
         <label>Teléfono WhatsApp (con +57)</label>
         <input id="v_telefono" required placeholder="+573001112233">
-        <label>Correo de acceso</label>
-        <input id="v_email" type="email" required placeholder="carlos@sp.com">
-        <label>Contraseña</label>
-        <input id="v_password" required minlength="6" placeholder="mínimo 6 caracteres">
+        <label>PIN de acceso (4 dígitos)</label>
+        <input id="v_pin" type="text" inputmode="numeric" required maxlength="4" pattern="\d{4}" placeholder="Ej: 1234" style="letter-spacing:.3em;font-size:1.3rem">
         <button type="submit">Crear vendedor</button>
         <div class="msg" id="msgVendedor"></div>
       </form>
@@ -82,11 +80,11 @@
       </form>
     </div>
 
-    <!-- Tabla de usuarios -->
+    <!-- Tabla de vendedores -->
     <div class="card full">
       <h2>Equipo con acceso</h2>
       <table>
-        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Estado</th><th>PIN</th></tr></thead>
         <tbody id="tablaUsuarios"></tbody>
       </table>
     </div>
@@ -107,10 +105,30 @@
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
   async function cargarUsuarios(){
-    const r=await fetch('/api/usuarios'); if(!r.ok)return;
-    const us=await r.json();
-    document.getElementById('tablaUsuarios').innerHTML=us.map(u=>`
-      <tr><td>${esc(u.nombre)}</td><td>${esc(u.email)}</td><td><span class="pill">${u.rol}</span></td></tr>`).join('');
+    const r=await fetch('/api/vendedores'); if(!r.ok)return;
+    const vs=await r.json();
+    document.getElementById('tablaUsuarios').innerHTML = vs.length ? vs.map(v=>`
+      <tr>
+        <td>${esc(v.nombre)}</td>
+        <td>${esc(v.telefono)}</td>
+        <td><span class="pill">${v.estado||'activo'}</span></td>
+        <td>
+          <button class="del" style="border-color:rgba(200,164,90,.4);color:var(--oro)"
+            onclick="resetPin(${v.id},'${esc(v.nombre)}')">Cambiar PIN</button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" style="color:#777;font-size:.85rem;padding:12px 8px">Aún no hay vendedores.</td></tr>';
+  }
+
+  async function resetPin(id, nombre){
+    const pin = prompt(`Nuevo PIN (4 dígitos) para ${nombre}:`);
+    if (!pin) return;
+    if (!/^\d{4}$/.test(pin)) { alert('El PIN debe ser exactamente 4 dígitos numéricos.'); return; }
+    const r = await fetch('/api/vendedores/'+id+'/pin', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pin})
+    });
+    if(r.ok) alert('PIN actualizado correctamente.');
+    else alert('Error al actualizar PIN.');
   }
   async function cargarTemplates(){
     const r=await fetch('/api/templates'); if(!r.ok)return;
@@ -128,14 +146,13 @@
 
   document.getElementById('formVendedor').addEventListener('submit',async e=>{
     e.preventDefault();
-    const body={
-      nombre:v_nombre.value, telefono:v_telefono.value,
-      email:v_email.value, password:v_password.value,
-    };
-    const r=await fetch('/api/usuarios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const pin = document.getElementById('v_pin').value.trim();
+    if(!/^\d{4}$/.test(pin)){ showMsg('msgVendedor','El PIN debe ser exactamente 4 dígitos.',false); return; }
+    const body={ nombre:v_nombre.value.trim(), telefono:v_telefono.value.trim(), pin };
+    const r=await fetch('/api/vendedores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
-    if(r.ok){ showMsg('msgVendedor','Vendedor creado. Ya puede ingresar con su correo.',true); e.target.reset(); cargarUsuarios(); }
-    else showMsg('msgVendedor', d.error==='email_ya_existe'?'Ese correo ya está registrado':'Error: '+d.error, false);
+    if(r.ok){ showMsg('msgVendedor',`Vendedor creado. Ingresa con ${body.telefono} y PIN ${pin}.`,true); e.target.reset(); cargarUsuarios(); }
+    else showMsg('msgVendedor','Error: '+d.error, false);
   });
 
   document.getElementById('formTpl').addEventListener('submit',async e=>{
