@@ -315,7 +315,7 @@
             document.getElementById(sectionId).classList.add('active');
 
             document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
-            event.target.classList.add('active');
+            if (event && event.target) event.target.classList.add('active');
 
             loadSectionData(sectionId);
         }
@@ -491,7 +491,7 @@
         }
 
         function addVendor() {
-            alert('Abre formulario para agregar nuevo vendedor');
+            location.href = '/equipo.html';
         }
 
         function exportReport() {
@@ -504,6 +504,11 @@
 
         function clearLogs() {
             alert('Logs limpiados');
+        }
+
+        // Service Worker (PWA)
+        if('serviceWorker' in navigator){
+            navigator.serviceWorker.register('/sw.js').catch(()=>{});
         }
 
         // Cargar datos al iniciar

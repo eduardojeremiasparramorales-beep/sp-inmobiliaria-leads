@@ -15,12 +15,12 @@
   })();
 </script>
 <style>
-:root { --primary: #1a1a2e; --secondary: #16213e; --accent: #0f3460; --gold: #e94560; --bg: #f0f2f5; --card: #fff; --text: #1a1a2e; --muted: #666; --border: #e2e8f0; }
+:root { --negro:#0A0A0A; --oro:#C8A45A; --verde:#4E7B46; --marfil:#F5F2EB; --gris:#6D6D6D; --panel:#121212; --panel2:#1a1a1a; --bg:var(--negro); --card:var(--panel); --text:var(--marfil); --muted:var(--gris); --border:rgba(255,255,255,.08); --sidebar-bg:linear-gradient(180deg,#0A0A0A,#1A1A1A); --gold:var(--oro); }
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
 /* Layout */
 .app { display:flex; min-height:100vh; }
-.sidebar { width:240px; background:linear-gradient(180deg,var(--primary),var(--secondary)); color:#fff; padding:20px 0; flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto; }
+.sidebar { width:240px; background:var(--sidebar-bg); border-right:2px solid var(--oro); color:#fff; padding:20px 0; flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto; }
 .sidebar .logo { padding:0 20px 20px; border-bottom:1px solid rgba(255,255,255,.1); margin-bottom:16px; }
 .sidebar .logo h2 { font-size:16px; font-weight:700; }
 .sidebar .logo small { font-size:11px; opacity:.7; display:block; margin-top:2px; }
@@ -73,7 +73,7 @@ td { padding:10px 14px; border-top:1px solid var(--border); font-size:13px; }
 .empty-state { text-align:center; padding:40px 20px; color:#999; }
 .empty-state p { margin-top:8px; }
 /* Toast */
-.toast { position:fixed; bottom:20px; right:20px; background:var(--primary); color:#fff; padding:12px 20px; border-radius:8px; font-size:13px; z-index:200; display:none; animation:slideIn .3s; }
+.toast { position:fixed; bottom:20px; right:20px; background:var(--negro); border:1px solid var(--oro); color:var(--marfil); padding:12px 20px; border-radius:8px; font-size:13px; z-index:200; display:none; animation:slideIn .3s; }
 @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
 /* Responsive */
 @media(max-width:768px) { .sidebar { width:60px; } .sidebar .logo h2, .sidebar .logo small, .sidebar nav a span { display:none; } .sidebar nav a { justify-content:center; padding:12px; } }

@@ -7,7 +7,26 @@ const DB_PATH = path.join(DATA_DIR, 'sp-leads.db');
 
 let db;
 
-function q(v) { return `'${String(v).replace(/'/g, "''")}'`; }
+// Helper: ejecuta SELECT y devuelve array de objetos (parameterizado)
+function all(sql, params = []) {
+  if (!db) return [];
+  const stmt = db.prepare(sql);
+  if (params.length > 0) stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+
+function one(sql, params = []) {
+  const rows = all(sql, params);
+  return rows.length > 0 ? rows[0] : null;
+}
+
+function run(sql, params = []) {
+  if (!db) return;
+  db.run(sql, params);
+}
 
 // Añade una columna a una tabla solo si aún no existe (migración segura)
 function ensureColumn(table, column, type) {
@@ -83,7 +102,6 @@ async function initDB() {
     );
   `);
 
-  // Crear índices para mejorar performance en queries frecuentes
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_customer_phone ON leads(customer_phone)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_id ON leads(assigned_to_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_phone ON leads(assigned_to_phone)`);
@@ -95,19 +113,13 @@ async function initDB() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_usuarios_vendedor_id ON usuarios(vendedor_id)`);
 
-  // Migración: columnas de multimedia en messages (añadir si no existen)
   ensureColumn('messages', 'media_type', 'TEXT');
   ensureColumn('messages', 'media_id', 'TEXT');
   ensureColumn('messages', 'media_mime', 'TEXT');
   ensureColumn('messages', 'media_filename', 'TEXT');
-
-  // Migración: PIN para vendedores
   ensureColumn('vendedores', 'pin', 'TEXT');
-
-  // Migración: etiqueta de pipeline en leads (interesado, negociacion, cita, vendido, no_interesado)
   ensureColumn('leads', 'etiqueta', 'TEXT');
 
-  // Tabla de notas internas por lead (privadas del equipo, no se envían al cliente)
   db.run(`
     CREATE TABLE IF NOT EXISTS lead_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +131,6 @@ async function initDB() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_lead_notes_lead ON lead_notes(lead_id)`);
 
-  // Tabla de configuración general
   db.run(`
     CREATE TABLE IF NOT EXISTS config (
       key TEXT PRIMARY KEY,
@@ -127,7 +138,6 @@ async function initDB() {
     );
   `);
 
-  // Tabla de sesiones persistentes (30 días, sobrevive reinicios)
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
@@ -140,7 +150,6 @@ async function initDB() {
     );
   `);
 
-  // Templates de WhatsApp aprobados por Meta
   db.run(`
     CREATE TABLE IF NOT EXISTS wa_templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +160,6 @@ async function initDB() {
     );
   `);
 
-  // Tabla de suscripciones push (Fase push)
   db.run(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,7 +179,6 @@ async function initDB() {
 let _saveTimer = null;
 
 function saveDB() {
-  // Debounce: escribe en disco máximo 1 vez cada 500ms
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     _saveTimer = null;
@@ -192,32 +199,26 @@ function saveDBImmediate() {
 
 function getDB() { return db; }
 
-function esc(v) { return String(v).replace(/'/g, "''"); }
-
 function saveLead(customerPhone, customerName, messageBody) {
-  const d = getDB();
   if (!customerPhone || !messageBody) {
     throw new Error('saveLead: customerPhone y messageBody son obligatorios');
   }
 
-  const existing = d.exec(`SELECT id, messages_count, status FROM leads WHERE customer_phone = ${q(customerPhone)} AND status != 'cerrado'`);
-  if (existing.length > 0 && existing[0].values.length > 0) {
-    const r = existing[0].values[0];
-    d.run(`UPDATE leads SET messages_count = ${r[1] + 1}, last_message = ${q(messageBody)}, updated_at = datetime('now') WHERE id = ${r[0]}`);
+  const existing = one('SELECT id, messages_count, status FROM leads WHERE customer_phone = ? AND status != ?', [customerPhone, 'cerrado']);
+  if (existing) {
+    run('UPDATE leads SET messages_count = ?, last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [existing.messages_count + 1, messageBody, existing.id]);
     saveDB();
-    return { leadId: r[0], isNew: false };
+    return { leadId: existing.id, isNew: false };
   }
 
-  d.run(`INSERT INTO leads (customer_phone, customer_name, first_message, last_message) VALUES (${q(customerPhone)}, ${q(customerName)}, ${q(messageBody)}, ${q(messageBody)})`);
+  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message) VALUES (?, ?, ?, ?)', [customerPhone, customerName, messageBody, messageBody]);
   saveDB();
 
-  // Obtener el ID del nuevo lead
-  const r = d.exec(`SELECT id FROM leads WHERE customer_phone = ${q(customerPhone)} ORDER BY id DESC LIMIT 1`);
-  const leadId = (r.length > 0 && r[0].values.length > 0) ? r[0].values[0][0] : null;
-  if (!leadId) {
+  const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [customerPhone]);
+  if (!r || !r.id) {
     throw new Error('No se pudo obtener ID del lead después de INSERT');
   }
-  return { leadId, isNew: true };
+  return { leadId: r.id, isNew: true };
 }
 
 function assignLeadToVendedor(leadId, vendedor) {
@@ -225,343 +226,319 @@ function assignLeadToVendedor(leadId, vendedor) {
     throw new Error('assignLeadToVendedor: leadId y vendedor (con id y telefono) son obligatorios');
   }
 
-  const d = getDB();
+  const leadExists = one('SELECT id FROM leads WHERE id = ?', [leadId]);
+  if (!leadExists) throw new Error(`Lead ${leadId} no existe`);
 
-  // Validar que el lead existe
-  const leadExists = d.exec(`SELECT id FROM leads WHERE id = ${leadId}`);
-  if (leadExists.length === 0 || leadExists[0].values.length === 0) {
-    throw new Error(`Lead ${leadId} no existe`);
-  }
+  const vExists = one('SELECT id FROM vendedores WHERE id = ?', [vendedor.id]);
+  if (!vExists) throw new Error(`Vendedor ${vendedor.id} no existe`);
 
-  // Validar que el vendedor existe
-  const vendedorExists = d.exec(`SELECT id FROM vendedores WHERE id = ${vendedor.id}`);
-  if (vendedorExists.length === 0 || vendedorExists[0].values.length === 0) {
-    throw new Error(`Vendedor ${vendedor.id} no existe`);
-  }
-
-  d.run(`UPDATE leads SET assigned_to_id = ${vendedor.id}, assigned_to_phone = ${q(vendedor.telefono)}, status = 'asignado', updated_at = datetime('now') WHERE id = ${leadId}`);
-  d.run(`UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ${vendedor.id}`);
+  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
+  run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
   saveDB();
 }
 
 function saveMessage(leadId, from, to, body, direction, media) {
-  const d = getDB();
   const m = media || {};
-  const mediaType = m.media_type ? q(m.media_type) : 'NULL';
-  const mediaId = m.media_id ? q(m.media_id) : 'NULL';
-  const mediaMime = m.media_mime ? q(m.media_mime) : 'NULL';
-  const mediaFile = m.media_filename ? q(m.media_filename) : 'NULL';
-  d.run(`INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename) VALUES (${leadId}, ${q(from)}, ${q(to)}, ${q(body)}, ${q(direction)}, ${mediaType}, ${mediaId}, ${mediaMime}, ${mediaFile})`);
+  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+    leadId, from, to, body, direction,
+    m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
+  ]);
   saveDB();
-  const r = d.exec(`SELECT id FROM messages WHERE lead_id = ${Number(leadId)} ORDER BY id DESC LIMIT 1`);
-  return (r.length && r[0].values.length) ? r[0].values[0][0] : null;
+  const r = one('SELECT id FROM messages WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
+  return r ? r.id : null;
 }
 
 function getMessageById(id) {
-  const d = getDB();
-  return rowOne(d.exec(`SELECT * FROM messages WHERE id = ${Number(id)} LIMIT 1`));
+  return one('SELECT * FROM messages WHERE id = ? LIMIT 1', [id]);
 }
 
 function getVendedoresActivos() {
-  const d = getDB();
-  // Ordena por leads activos (no cerrados) para round-robin justo
-  const r = d.exec(`
+  return all(`
     SELECT v.*, COUNT(l.id) as leads_activos
     FROM vendedores v
-    LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != 'cerrado'
-    WHERE v.estado = 'activo'
+    LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != ?
+    WHERE v.estado = ?
     GROUP BY v.id
     ORDER BY leads_activos ASC
-  `);
-  if (r.length === 0) return [];
-  const cols = r[0].columns;
-  return r[0].values.map(row => {
-    const o = {};
-    cols.forEach((c, i) => { o[c] = row[i]; });
-    return o;
-  });
+  `, ['cerrado', 'activo']);
 }
 
 function getLeadById(id) {
-  const d = getDB();
-  const r = d.exec(`SELECT * FROM leads WHERE id = ${Number(id)}`);
-  if (r.length === 0 || r[0].values.length === 0) return null;
-  const cols = r[0].columns;
-  const o = {};
-  cols.forEach((c, i) => { o[c] = r[0].values[0][i]; });
-  return o;
+  return one('SELECT * FROM leads WHERE id = ?', [id]);
 }
 
 function getLeadByCustomerPhone(phone) {
-  const d = getDB();
-  const r = d.exec(`SELECT * FROM leads WHERE customer_phone = ${q(phone)} AND status != 'cerrado'`);
-  if (r.length === 0 || r[0].values.length === 0) return null;
-  const cols = r[0].columns;
-  const o = {};
-  cols.forEach((c, i) => { o[c] = r[0].values[0][i]; });
-  return o;
+  return one('SELECT * FROM leads WHERE customer_phone = ? AND status != ?', [phone, 'cerrado']);
 }
 
 function updateLeadStatus(leadId, status) {
-  const d = getDB();
-  d.run(`UPDATE leads SET status = ${q(status)}, updated_at = datetime('now') WHERE id = ${leadId}`);
+  run('UPDATE leads SET status = ?, updated_at = datetime(\'now\') WHERE id = ?', [status, leadId]);
   saveDB();
 }
 
 function setFirstResponse(leadId) {
-  const d = getDB();
-  d.run(`UPDATE leads SET first_response_at = datetime('now') WHERE id = ${leadId} AND first_response_at IS NULL`);
+  run('UPDATE leads SET first_response_at = datetime(\'now\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
   saveDB();
 }
 
 function getLeads() {
-  const d = getDB();
-  const r = d.exec('SELECT * FROM leads ORDER BY created_at DESC');
-  if (r.length === 0) return [];
-  const cols = r[0].columns;
-  return r[0].values.map(row => {
-    const o = {};
-    cols.forEach((c, i) => { o[c] = row[i]; });
-    return o;
-  });
+  return all('SELECT * FROM leads ORDER BY created_at DESC');
 }
 
 function getLeadCount() {
-  const d = getDB();
-  const r = d.exec('SELECT COUNT(*) as c FROM leads');
-  return r[0]?.values[0]?.[0] || 0;
+  const r = one('SELECT COUNT(*) as c FROM leads');
+  return r ? r.c : 0;
 }
 
 function getLeadsSinRespuesta(minutos) {
-  const d = getDB();
-  const r = d.exec(`SELECT * FROM leads WHERE status = 'asignado' AND first_response_at IS NULL AND created_at <= datetime('now', '-${minutos} minutes')`);
-  if (r.length === 0) return [];
-  const cols = r[0].columns;
-  return r[0].values.map(row => {
-    const o = {};
-    cols.forEach((c, i) => { o[c] = row[i]; });
-    return o;
-  });
+  return all('SELECT * FROM leads WHERE status = ? AND first_response_at IS NULL AND created_at <= datetime(\'now\', ?)', ['asignado', `-${minutos} minutes`]);
 }
 
 function incrementEscalation(leadId) {
-  const d = getDB();
-  d.run(`UPDATE leads SET escalation_level = escalation_level + 1 WHERE id = ${leadId}`);
+  run('UPDATE leads SET escalation_level = escalation_level + 1 WHERE id = ?', [leadId]);
   saveDB();
 }
 
 function addVendedor(nombre, telefono) {
-  const d = getDB();
-  d.run(`INSERT OR IGNORE INTO vendedores (nombre, telefono) VALUES (${q(nombre)}, ${q(telefono)})`);
+  run('INSERT OR IGNORE INTO vendedores (nombre, telefono) VALUES (?, ?)', [nombre, telefono]);
   saveDB();
-  const r = d.exec(`SELECT id FROM vendedores WHERE telefono = ${q(telefono)} LIMIT 1`);
-  return (r.length > 0 && r[0].values.length > 0) ? r[0].values[0][0] : null;
-}
-
-// --- Helper: convierte el resultado de sql.js en array de objetos ---
-function rows(result) {
-  if (!result || result.length === 0) return [];
-  const cols = result[0].columns;
-  return result[0].values.map(row => {
-    const o = {};
-    cols.forEach((c, i) => { o[c] = row[i]; });
-    return o;
-  });
-}
-
-function rowOne(result) {
-  const r = rows(result);
-  return r.length > 0 ? r[0] : null;
+  const r = one('SELECT id FROM vendedores WHERE telefono = ? LIMIT 1', [telefono]);
+  return r ? r.id : null;
 }
 
 // --- Usuarios (login) ---
 function createUsuario(email, passwordHash, nombre, rol, vendedorId) {
-  const d = getDB();
-  d.run(`INSERT INTO usuarios (email, password, nombre, rol, vendedor_id) VALUES (${q(email)}, ${q(passwordHash)}, ${q(nombre)}, ${q(rol)}, ${vendedorId ? Number(vendedorId) : 'NULL'})`);
+  run('INSERT INTO usuarios (email, password, nombre, rol, vendedor_id) VALUES (?, ?, ?, ?, ?)', [email, passwordHash, nombre, rol, vendedorId]);
   saveDB();
-  return rowOne(d.exec(`SELECT * FROM usuarios WHERE email = ${q(email)} LIMIT 1`));
+  return one('SELECT * FROM usuarios WHERE email = ? LIMIT 1', [email]);
 }
 
 function getUsuarioByEmail(email) {
-  const d = getDB();
-  return rowOne(d.exec(`SELECT * FROM usuarios WHERE email = ${q(email)} LIMIT 1`));
+  return one('SELECT * FROM usuarios WHERE email = ? LIMIT 1', [email]);
 }
 
 function getUsuarioById(id) {
-  const d = getDB();
-  return rowOne(d.exec(`SELECT * FROM usuarios WHERE id = ${Number(id)} LIMIT 1`));
+  return one('SELECT * FROM usuarios WHERE id = ? LIMIT 1', [id]);
 }
 
 function getUsuarios() {
-  const d = getDB();
-  return rows(d.exec(`SELECT id, email, nombre, rol, vendedor_id, created_at FROM usuarios ORDER BY nombre`));
+  return all('SELECT id, email, nombre, rol, vendedor_id, created_at FROM usuarios ORDER BY nombre');
 }
 
 function countUsuarios() {
-  const d = getDB();
-  const r = d.exec('SELECT COUNT(*) as c FROM usuarios');
-  return r[0]?.values[0]?.[0] || 0;
+  const r = one('SELECT COUNT(*) as c FROM usuarios');
+  return r ? r.c : 0;
 }
 
 function updateUsuarioPassword(id, passwordHash) {
-  const d = getDB();
-  d.run(`UPDATE usuarios SET password = ${q(passwordHash)} WHERE id = ${Number(id)}`);
+  run('UPDATE usuarios SET password = ? WHERE id = ?', [passwordHash, id]);
   saveDB();
 }
 
-// --- Leads y mensajes por vendedor (para el panel) ---
+// --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
-  const d = getDB();
-  return rows(d.exec(`SELECT * FROM leads WHERE assigned_to_id = ${Number(vendedorId)} ORDER BY updated_at DESC`));
+  return all('SELECT * FROM leads WHERE assigned_to_id = ? ORDER BY updated_at DESC', [vendedorId]);
 }
 
 function getMessagesByLead(leadId) {
-  const d = getDB();
-  return rows(d.exec(`SELECT * FROM messages WHERE lead_id = ${Number(leadId)} ORDER BY timestamp ASC, id ASC`));
+  return all('SELECT * FROM messages WHERE lead_id = ? ORDER BY timestamp ASC, id ASC', [leadId]);
 }
 
 // --- Templates (respuestas rápidas) ---
 function getTemplates() {
-  const d = getDB();
-  return rows(d.exec('SELECT * FROM templates ORDER BY titulo'));
+  return all('SELECT * FROM templates ORDER BY titulo');
 }
 
 function addTemplate(titulo, cuerpo) {
-  const d = getDB();
-  d.run(`INSERT INTO templates (titulo, cuerpo) VALUES (${q(titulo)}, ${q(cuerpo)})`);
+  run('INSERT INTO templates (titulo, cuerpo) VALUES (?, ?)', [titulo, cuerpo]);
   saveDB();
 }
 
 function deleteTemplate(id) {
-  const d = getDB();
-  d.run(`DELETE FROM templates WHERE id = ${Number(id)}`);
+  run('DELETE FROM templates WHERE id = ?', [id]);
   saveDB();
 }
 
 // --- Suscripciones push ---
 function savePushSubscription(vendedorId, sub) {
-  const d = getDB();
   const keys = sub.keys || {};
-  d.run(`INSERT OR REPLACE INTO push_subscriptions (vendedor_id, endpoint, p256dh, auth) VALUES (${Number(vendedorId)}, ${q(sub.endpoint)}, ${q(keys.p256dh || '')}, ${q(keys.auth || '')})`);
+  run('INSERT OR REPLACE INTO push_subscriptions (vendedor_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)', [vendedorId, sub.endpoint, keys.p256dh || '', keys.auth || '']);
   saveDB();
 }
 
 function getPushSubscriptionsByVendedor(vendedorId) {
-  const d = getDB();
-  return rows(d.exec(`SELECT * FROM push_subscriptions WHERE vendedor_id = ${Number(vendedorId)}`));
+  return all('SELECT * FROM push_subscriptions WHERE vendedor_id = ?', [vendedorId]);
 }
 
 function deletePushSubscription(endpoint) {
-  const d = getDB();
-  d.run(`DELETE FROM push_subscriptions WHERE endpoint = ${q(endpoint)}`);
+  run('DELETE FROM push_subscriptions WHERE endpoint = ?', [endpoint]);
   saveDB();
 }
 
 function getVendedores() {
-  const d = getDB();
-  const r = d.exec('SELECT * FROM vendedores ORDER BY nombre');
-  if (r.length === 0) return [];
-  const cols = r[0].columns;
-  return r[0].values.map(row => {
-    const o = {};
-    cols.forEach((c, i) => { o[c] = row[i]; });
-    return o;
-  });
+  return all('SELECT * FROM vendedores ORDER BY nombre');
 }
 
 function getVendedorByTelefono(telefono) {
-  return rowOne(getDB().exec(`SELECT * FROM vendedores WHERE telefono = ${q(telefono)} LIMIT 1`));
+  return one('SELECT * FROM vendedores WHERE telefono = ? LIMIT 1', [telefono]);
 }
 
 function setVendedorPin(id, pinHash) {
-  getDB().run(`UPDATE vendedores SET pin = ${q(pinHash)} WHERE id = ${Number(id)}`);
+  run('UPDATE vendedores SET pin = ? WHERE id = ?', [pinHash, id]);
   saveDB();
 }
 
 // --- Sesiones persistentes en DB ---
-
 function createDBSession(token, data) {
-  const d = getDB();
-  d.run(`INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at)
-    VALUES (${q(token)}, ${data.userId != null ? Number(data.userId) : 'NULL'}, ${data.vendedorId != null ? Number(data.vendedorId) : 'NULL'}, ${q(data.rol || 'vendedor')}, ${q(data.nombre || '')}, ${q(data.email || '')}, ${Date.now()})`);
+  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+    token,
+    data.userId != null ? Number(data.userId) : null,
+    data.vendedorId != null ? Number(data.vendedorId) : null,
+    data.rol || 'vendedor',
+    data.nombre || '',
+    data.email || '',
+    Date.now(),
+  ]);
   saveDB();
 }
 
 function getDBSession(token) {
-  return rowOne(getDB().exec(`SELECT * FROM sessions WHERE token = ${q(token)} LIMIT 1`));
+  return one('SELECT * FROM sessions WHERE token = ? LIMIT 1', [token]);
 }
 
 function deleteDBSession(token) {
-  getDB().run(`DELETE FROM sessions WHERE token = ${q(token)}`);
+  run('DELETE FROM sessions WHERE token = ?', [token]);
   saveDB();
 }
 
 function cleanExpiredSessions(ttlMs) {
-  getDB().run(`DELETE FROM sessions WHERE created_at < ${Date.now() - ttlMs}`);
+  run('DELETE FROM sessions WHERE created_at < ?', [Date.now() - ttlMs]);
   saveDB();
 }
 
 // --- Configuración general ---
 function getConfig(key) {
-  const r = rowOne(getDB().exec(`SELECT value FROM config WHERE key = ${q(key)} LIMIT 1`));
+  const r = one('SELECT value FROM config WHERE key = ? LIMIT 1', [key]);
   return r ? r.value : null;
 }
 
 function setConfig(key, value) {
-  getDB().run(`INSERT OR REPLACE INTO config (key, value) VALUES (${q(key)}, ${q(value)})`);
+  run('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', [key, value]);
   saveDB();
 }
 
 // --- Templates de WhatsApp aprobados por Meta ---
 function getWATemplates() {
-  return rows(getDB().exec(`SELECT * FROM wa_templates ORDER BY nombre`));
+  return all('SELECT * FROM wa_templates ORDER BY nombre');
 }
 
 function addWATemplate(nombre, idioma, params) {
-  getDB().run(`INSERT OR REPLACE INTO wa_templates (nombre, idioma, params) VALUES (${q(nombre)}, ${q(idioma || 'es')}, ${q(params || '')})`);
+  run('INSERT OR REPLACE INTO wa_templates (nombre, idioma, params) VALUES (?, ?, ?)', [nombre, idioma || 'es', params || '']);
   saveDB();
 }
 
 function deleteWATemplate(id) {
-  getDB().run(`DELETE FROM wa_templates WHERE id = ${Number(id)}`);
+  run('DELETE FROM wa_templates WHERE id = ?', [id]);
   saveDB();
 }
 
 function setVendedorEstado(id, estado) {
-  const d = getDB();
-  d.run(`UPDATE vendedores SET estado = ${q(estado)} WHERE id = ${Number(id)}`);
+  run('UPDATE vendedores SET estado = ? WHERE id = ?', [estado, id]);
   saveDB();
 }
 
 // --- Etiqueta de pipeline del lead ---
 function setLeadEtiqueta(leadId, etiqueta) {
-  const d = getDB();
-  d.run(`UPDATE leads SET etiqueta = ${q(etiqueta)}, updated_at = datetime('now') WHERE id = ${Number(leadId)}`);
+  run('UPDATE leads SET etiqueta = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, leadId]);
   saveDB();
 }
 
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
-  return rows(getDB().exec(`SELECT * FROM lead_notes WHERE lead_id = ${Number(leadId)} ORDER BY created_at DESC, id DESC`));
+  return all('SELECT * FROM lead_notes WHERE lead_id = ? ORDER BY created_at DESC, id DESC', [leadId]);
 }
 
 function addNota(leadId, autor, nota) {
-  const d = getDB();
-  d.run(`INSERT INTO lead_notes (lead_id, autor, nota) VALUES (${Number(leadId)}, ${q(autor || '')}, ${q(nota)})`);
+  run('INSERT INTO lead_notes (lead_id, autor, nota) VALUES (?, ?, ?)', [leadId, autor || '', nota]);
   saveDB();
 }
 
 function deleteNota(id) {
-  getDB().run(`DELETE FROM lead_notes WHERE id = ${Number(id)}`);
+  run('DELETE FROM lead_notes WHERE id = ?', [id]);
   saveDB();
 }
 
-// --- Reasignación manual de un lead a otro vendedor (admin) ---
+// --- Reasignación manual de un lead ---
 function reassignLead(leadId, vendedor) {
-  const d = getDB();
-  d.run(`UPDATE leads SET assigned_to_id = ${Number(vendedor.id)}, assigned_to_phone = ${q(vendedor.telefono)}, updated_at = datetime('now') WHERE id = ${Number(leadId)}`);
-  d.run(`UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ${Number(vendedor.id)}`);
+  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, leadId]);
+  run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
   saveDB();
+}
+
+// --- Eliminar vendedor y reasignar sus leads ---
+function deleteVendedor(id) {
+  const activos = all('SELECT * FROM vendedores WHERE estado = ? AND id != ? ORDER BY total_leads ASC LIMIT 1', ['activo', id]);
+  if (activos.length > 0) {
+    const siguiente = activos[0];
+    const leadsReasignar = all('SELECT id FROM leads WHERE assigned_to_id = ? AND status != ?', [id, 'cerrado']);
+    leadsReasignar.forEach(lead => {
+      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
+      run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [siguiente.id]);
+    });
+  }
+  run('DELETE FROM push_subscriptions WHERE vendedor_id = ?', [id]);
+  run('DELETE FROM sessions WHERE vendedor_id = ?', [id]);
+  run('DELETE FROM usuarios WHERE vendedor_id = ?', [id]);
+  run('DELETE FROM vendedores WHERE id = ?', [id]);
+  saveDB();
+  return activos.length > 0 ? activos[0] : null;
+}
+
+// --- Inbox global admin: lista de conversaciones con filtros ---
+function getAdminInbox({ busqueda, etiqueta, vendedorId, limite, offset } = {}) {
+  const conditions = [];
+  const params = [];
+  if (busqueda) {
+    conditions.push('(l.customer_name LIKE ? OR l.customer_phone LIKE ?)');
+    params.push(`%${busqueda}%`, `%${busqueda}%`);
+  }
+  if (etiqueta && etiqueta !== 'todos') {
+    if (etiqueta === 'remarketing') {
+      conditions.push("l.etiqueta IN ('no_interesado', 'sin_clasificar')");
+    } else {
+      conditions.push('l.etiqueta = ?');
+      params.push(etiqueta);
+    }
+  }
+  if (vendedorId) {
+    conditions.push('l.assigned_to_id = ?');
+    params.push(Number(vendedorId));
+  }
+  const whereStr = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  const lim = Number(limite) || 50;
+  const off = Number(offset) || 0;
+  return all(`
+    SELECT l.*, v.nombre as vendedor_nombre, v.estado as vendedor_estado,
+      (SELECT COUNT(*) FROM messages m WHERE m.lead_id = l.id) as total_mensajes,
+      (SELECT COUNT(*) FROM messages m WHERE m.lead_id = l.id AND m.direction = ? AND m.timestamp > COALESCE(
+        (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.lead_id = l.id AND m2.direction = ?), ?)) as sin_leer
+    FROM leads l
+    LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+    ${whereStr}
+    ORDER BY l.updated_at DESC, l.id DESC
+    LIMIT ? OFFSET ?
+  `, [...params, 'incoming', 'outgoing', '2000-01-01', lim, off]);
+}
+
+function getAdminInboxStats() {
+  const total = one('SELECT COUNT(*) as c FROM leads');
+  const sinResponder = one("SELECT COUNT(*) as c FROM leads WHERE status IN (?, ?)", ['nuevo', 'asignado']);
+  const hoy = one("SELECT COUNT(*) as c FROM leads WHERE date(created_at) = date('now')");
+  return {
+    total: total ? total.c : 0,
+    sinResponder: sinResponder ? sinResponder.c : 0,
+    hoy: hoy ? hoy.c : 0,
+  };
 }
 
 module.exports = {
@@ -579,4 +556,5 @@ module.exports = {
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate,
   setLeadEtiqueta, getNotasByLead, addNota, deleteNota, reassignLead,
+  deleteVendedor, getAdminInbox, getAdminInboxStats,
 };

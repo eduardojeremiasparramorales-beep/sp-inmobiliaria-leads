@@ -1,15 +1,29 @@
 #!/bin/bash
-# Backup diario del SQLite — agregar al cron
-# crontab -e → 0 3 * * * /home/ubuntu/sp-crm/app/deploy/backup.sh
+# backup.sh — Backup automático de DB y .env del CRM
+# Instalar en cron: 0 3 * * * /home/ubuntu/sp-crm/app/deploy/backup.sh
+set -euo pipefail
 
-DB_PATH="/home/ubuntu/sp-crm/app/data/sp-leads.db"
-BACKUP_DIR="/home/ubuntu/sp-crm/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
+SRC="/home/ubuntu/sp-crm/app"
+DST="/home/ubuntu/sp-crm/backups"
+RETENTION=7
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-mkdir -p "$BACKUP_DIR"
-cp "$DB_PATH" "$BACKUP_DIR/sp-leads-$DATE.db"
+mkdir -p "$DST"
 
-# Mantener solo los últimos 30 backups
-ls -t "$BACKUP_DIR"/*.db | tail -n +31 | xargs -r rm
+# Backup de la base de datos
+if [ -f "$SRC/data/sp-leads.db" ]; then
+    cp "$SRC/data/sp-leads.db" "$DST/sp-leads_$TIMESTAMP.db"
+    gzip "$DST/sp-leads_$TIMESTAMP.db"
+    echo "DB backed up: sp-leads_$TIMESTAMP.db.gz"
+fi
 
-echo "Backup completado: $BACKUP_DIR/sp-leads-$DATE.db"
+# Backup del .env (sin token real por seguridad, solo estructura)
+if [ -f "$SRC/.env" ]; then
+    grep -v '^WHATSAPP_TOKEN=' "$SRC/.env" > "$DST/env_$TIMESTAMP.txt"
+    echo "Config backed up (token excluded)"
+fi
+
+# Limpiar backups viejos
+find "$DST" -name "sp-leads_*.db.gz" -mtime +$RETENTION -delete
+find "$DST" -name "env_*.txt" -mtime +$RETENTION -delete
+echo "Cleaned backups older than $RETENTION days"

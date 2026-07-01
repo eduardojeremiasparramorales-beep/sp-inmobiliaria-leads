@@ -4,7 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const store = require('./db/store');
-const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB } = store;
+const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
 const { sendMessage, uploadMedia, sendMedia } = require('./services/whatsapp');
@@ -16,6 +16,7 @@ const push = require('./services/push');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '30mb' }));
 
 // Rate limiting: protección básica anti-DoS
@@ -38,6 +39,11 @@ app.get('/sw.js', (req, res) => {
 
 app.use(express.static('public'));
 
+// Validación de teléfono colombiano (formato: +57 3XX XXX XXXX)
+function validarTelefono(phone) {
+  return /^\+57\d{10}$/.test(String(phone).replace(/[\s-]/g, ''));
+}
+
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'SP Inmobiliaria CRM', version: '1.0' }));
@@ -55,14 +61,21 @@ app.get('/api/stats', auth.requireAuth, (req, res) => {
   });
 });
 
-app.get('/api/leads', auth.requireAuth, (req, res) => res.json(getLeads()));
+app.get('/api/leads', auth.requireAuth, (req, res) => {
+  const { limite, offset, busqueda, etiqueta, vendedorId } = req.query;
+  if (limite || offset || busqueda || etiqueta || vendedorId) {
+    return res.json(store.getAdminInbox({ busqueda, etiqueta, vendedorId, limite, offset }));
+  }
+  return res.json(getLeads());
+});
 
 app.get('/api/vendedores', auth.requireAuth, (req, res) => res.json(getVendedores()));
 
 app.post('/api/vendedores', auth.requireAdmin, (req, res) => {
   const { nombre, telefono, pin } = req.body;
   if (!nombre || !telefono) return res.status(400).json({ error: 'nombre y telefono requeridos' });
-  const vendedorId = addVendedor(nombre, telefono);
+  if (!validarTelefono(telefono)) return res.status(400).json({ error: 'formato_telefono_invalido_debe_ser_57' });
+  const vendedorId = addVendedor(nombre.trim(), telefono.replace(/[\s-]/g, ''));
   if (pin && String(pin).length === 4 && /^\d{4}$/.test(String(pin))) {
     store.setVendedorPin(vendedorId, auth.hashPassword(String(pin)));
   }
@@ -94,6 +107,10 @@ app.post('/api/login', loginLimiter, (req, res) => {
   const { email, password, telefono, pin } = req.body || {};
   const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
   const MAX_AGE = 60 * 60 * 24 * 30; // 30 días en segundos
+
+  // Destruir sesión anterior si existe (session fixation prevention)
+  const oldToken = auth.getTokenFromReq(req);
+  if (oldToken) auth.destroySession(oldToken);
 
   // Modo vendedor: teléfono + PIN de 4 dígitos
   if (telefono && pin) {
@@ -140,7 +157,9 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
 app.get('/api/mis-leads', auth.requireAuth, (req, res) => {
   if (req.session.rol === 'admin') return res.json(getLeads());
   if (!req.session.vendedorId) return res.json([]);
-  res.json(store.getLeadsByVendedorId(req.session.vendedorId));
+  const leads = store.getLeadsByVendedorId(req.session.vendedorId);
+  const limite = Math.min(Number(req.query.limite) || leads.length, 200);
+  res.json(leads.slice(0, limite));
 });
 
 // Historial de mensajes de un lead (solo si le pertenece o es admin)
@@ -216,6 +235,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
 
   try {
     const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
     const mediaId = await uploadMedia(buffer, mime, filename);
     await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
@@ -235,7 +255,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   }
 });
 
-// Cerrar un lead
+// Cerrar un lead (mantenido por compatibilidad, pero la UI ya no lo usa)
 app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
@@ -422,6 +442,9 @@ app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: 'nombre, email y password requeridos' });
   }
+  if (telefono && !validarTelefono(telefono)) {
+    return res.status(400).json({ error: 'formato_telefono_invalido_debe_ser_57' });
+  }
   const emailNorm = String(email).toLowerCase().trim();
   if (store.getUsuarioByEmail(emailNorm)) {
     return res.status(409).json({ error: 'email_ya_existe' });
@@ -521,6 +544,57 @@ app.get('/api/logs', auth.requireAuth, (req, res) => {
     cols.forEach((c, i) => { o[c] = row[i]; });
     return o;
   }));
+});
+
+// ===================== ADMIN INBOX GLOBAL =====================
+
+// Lista de conversaciones para el inbox del admin (con filtros)
+app.get('/api/admin/inbox', auth.requireAdmin, (req, res) => {
+  const { busqueda, etiqueta, vendedorId, limite, offset } = req.query;
+  const leads = getAdminInbox({ busqueda, etiqueta, vendedorId, limite, offset });
+  res.json(leads);
+});
+
+// Estadísticas del inbox admin
+app.get('/api/admin/inbox/stats', auth.requireAdmin, (req, res) => {
+  res.json(getAdminInboxStats());
+});
+
+// El admin puede responder desde el inbox global (mismo endpoint que el vendedor)
+// ya cubierto por /api/leads/:id/responder (admin tiene permiso automático)
+
+// ===================== GESTIÓN DE VENDEDORES (eliminar) =====================
+
+app.delete('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const vendedor = getVendedores().find(v => Number(v.id) === id);
+  if (!vendedor) return res.status(404).json({ error: 'vendedor_no_existe' });
+  const reasignadoA = deleteVendedor(id);
+  events.emitToAdmins('vendedor_eliminado', { vendedorId: id, reasignadoA: reasignadoA ? reasignadoA.nombre : null, ts: Date.now() });
+  res.json({ ok: true, reasignadoA: reasignadoA ? { id: reasignadoA.id, nombre: reasignadoA.nombre } : null });
+});
+
+// ===================== EXPORTAR LEADS (CSV) =====================
+
+app.get('/api/admin/export/leads', auth.requireAdmin, (req, res) => {
+  const leads = getLeads();
+  const vendedores = getVendedores();
+  const vMap = {};
+  vendedores.forEach(v => { vMap[v.id] = v.nombre; });
+  const header = 'ID,Nombre,Telefono,Vendedor,Estado,Etiqueta,Mensajes,Fecha\n';
+  const rows = leads.map(l => [
+    l.id,
+    `"${(l.customer_name || '').replace(/"/g, '""')}"`,
+    l.customer_phone || '',
+    `"${(vMap[l.assigned_to_id] || 'Sin asignar').replace(/"/g, '""')}"`,
+    l.status || '',
+    l.etiqueta || '',
+    l.messages_count || 0,
+    (l.created_at || '').slice(0, 10),
+  ].join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="leads-sp.csv"');
+  res.send('﻿' + header + rows);
 });
 
 // Escalation check

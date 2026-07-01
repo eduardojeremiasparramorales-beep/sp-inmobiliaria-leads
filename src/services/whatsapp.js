@@ -1,11 +1,13 @@
 const axios = require('axios');
 
+const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
+
 function getApiConfig() {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
   return {
-    url: `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
+    url: `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   };
 }
@@ -47,7 +49,7 @@ async function markAsRead(messageId) {
   return res.data;
 }
 
-const GRAPH = 'https://graph.facebook.com/v22.0';
+const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
 
 // Devuelve la URL temporal y el mime de un media entrante (por su id)
 async function getMediaUrl(mediaId) {

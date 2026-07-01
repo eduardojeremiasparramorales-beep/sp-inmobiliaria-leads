@@ -678,7 +678,7 @@
     es.onerror = () => { es.close(); setTimeout(conectarStream, 5000); };
   }
 
-  // --- Auto-poll fallback (cada 15s refresca mensajes del lead abierto) ---
+  // --- Auto-poll fallback (cada 30s si SSE se desconecta) ---
   setInterval(async () => {
     if(!currentLead) return;
     try{
@@ -687,7 +687,7 @@
       renderChat(d.lead, d.mensajes);
       await cargarLeads();
     }catch(e){}
-  }, 15000);
+  }, 30000);
 
   // --- Registro del Service Worker (PWA) ---
   if('serviceWorker' in navigator){

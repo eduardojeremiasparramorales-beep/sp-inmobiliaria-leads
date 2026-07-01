@@ -175,14 +175,18 @@ netfilter-persistent save > /dev/null 2>&1
 log_ok "iptables persistido para Oracle Cloud."
 
 # =============================================================================
-# PASO 6 — HABILITAR SERVICIOS
+# PASO 6 — HABILITAR SERVICIOS + CRON
 # =============================================================================
 
-log_step "PASO 6/6 — Habilitando servicios al inicio..."
+log_step "PASO 6/6 — Habilitando servicios al inicio + backup automático..."
 
 for SVC in docker caddy fail2ban; do
     systemctl enable "$SVC" --quiet 2>/dev/null && log_ok "$SVC habilitado."
 done
+
+# Backup automático diario (3 AM)
+(crontab -l 2>/dev/null | grep -v 'backup.sh'; echo "0 3 * * * /home/ubuntu/sp-crm/app/deploy/backup.sh") | crontab -
+log_ok "Backup automático configurado (diario 3 AM)"
 
 # =============================================================================
 # VERIFICACIÓN FINAL
