@@ -64,7 +64,17 @@
         .btn-secondary{background:var(--panel2);color:var(--oro);border:1px solid rgba(200,164,90,.3)}
         .btn-secondary:hover{background:var(--oro);color:#000}
         .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
-        .stat-card{background:var(--panel2);border:1px solid var(--border);padding:22px;border-radius:12px;border-top:2px solid var(--oro)}
+        .stat-card{background:linear-gradient(160deg,#1d1a15,#191919 55%);border:1px solid var(--border);padding:22px;border-radius:12px;border-top:2px solid var(--oro);transition:transform .2s,box-shadow .2s}
+        .stat-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+        /* Funnel del pipeline */
+        .funnel{display:flex;flex-direction:column;gap:8px;margin-bottom:28px}
+        .funnel-row{display:flex;align-items:center;gap:12px}
+        .funnel-row .fl{width:130px;font-size:12px;color:var(--gris);text-align:right;flex-shrink:0}
+        .funnel-row .fbar{height:26px;border-radius:6px;background:linear-gradient(90deg,rgba(200,164,90,.85),rgba(200,164,90,.55));min-width:4px;transition:width .6s ease;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:11px;font-weight:700;color:#000}
+        .funnel-row.f-vendido .fbar{background:linear-gradient(90deg,#4E7B46,#6a9c61)}
+        .funnel-row.f-no_interesado .fbar{background:linear-gradient(90deg,#5a2b2b,#7a4040);color:#fff}
+        @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+        :focus-visible{outline:2px solid var(--oro);outline-offset:2px}
         .stat-label{font-size:11px;color:var(--gris);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
         .stat-value{font-size:30px;font-weight:700;color:var(--marfil)}
         .stat-change{font-size:11px;margin-top:6px;color:var(--gris)}
@@ -127,6 +137,7 @@
     <div class="container">
         <header>
             <div class="header-left">
+                <img src="/icons/logo.png" alt="SP Leons Group" style="width:52px;height:52px;border-radius:12px;object-fit:cover" onerror="this.style.display='none'">
                 <div>
                     <div class="logo">SP LEONS GROUP</div>
                     <div class="logo-text">Inmobiliaria · CRM</div>
@@ -187,6 +198,13 @@
                             <div class="stat-value" id="totalMensajes">0</div>
                             <div class="stat-change" id="entrantesMsg">Recibidos: 0</div>
                         </div>
+                    </div>
+
+                    <div class="content-header">
+                        <h2>Pipeline de Ventas</h2>
+                    </div>
+                    <div class="funnel" id="funnel">
+                        <div class="no-data">Cargando pipeline...</div>
                     </div>
 
                     <div class="content-header">
@@ -344,21 +362,60 @@
 
         let metricasCache = null;
 
+        // Animación count-up de los números del dashboard
+        function countUp(el, target, suffix) {
+            if (!el) return;
+            const fin = Number(target) || 0;
+            const dur = 600, t0 = performance.now();
+            function step(t) {
+                const p = Math.min((t - t0) / dur, 1);
+                el.textContent = Math.round(fin * (1 - Math.pow(1 - p, 3))) + (suffix || '');
+                if (p < 1) requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+        }
+
+        const ETQ_FUNNEL = [
+            ['sin_clasificar', 'Sin clasificar'],
+            ['interesado', 'Interesado'],
+            ['negociacion', 'Negociación'],
+            ['cita', 'Cita agendada'],
+            ['vendido', 'Vendido'],
+            ['no_interesado', 'No interesado'],
+        ];
+
+        function renderFunnel(m) {
+            const cont = document.getElementById('funnel');
+            if (!cont) return;
+            const pe = m.porEtiqueta || {};
+            const max = Math.max(1, ...ETQ_FUNNEL.map(([k]) => pe[k] || 0));
+            if (!m.total) { cont.innerHTML = '<div class="no-data">Aún no hay leads para mostrar</div>'; return; }
+            cont.innerHTML = ETQ_FUNNEL.map(([k, label]) => {
+                const n = pe[k] || 0;
+                const w = Math.max(3, Math.round((n / max) * 100));
+                return `<div class="funnel-row f-${k}">
+                    <span class="fl">${label}</span>
+                    <div class="fbar" style="width:${w}%">${n || ''}</div>
+                </div>`;
+            }).join('');
+        }
+
         function loadStats() {
             Promise.all([
                 fetch('/api/stats').then(r => r.json()),
                 fetch('/api/metricas').then(r => r.json()),
             ]).then(([stats, m]) => {
                 metricasCache = m;
-                document.getElementById('totalLeads').textContent = m.total || 0;
-                document.getElementById('activeVendors').textContent = stats.vendedoresActivos || 0;
-                document.getElementById('conversionRate').textContent = (m.conversionGlobal || 0) + '%';
-                document.getElementById('avgResponse').textContent =
-                    m.tiempoRespuestaPromedio != null ? m.tiempoRespuestaPromedio + 'm' : '—';
-                const tm = document.getElementById('totalMensajes');
-                if (tm) tm.textContent = m.totalMensajes || 0;
+                countUp(document.getElementById('totalLeads'), m.total || 0);
+                countUp(document.getElementById('activeVendors'), stats.vendedoresActivos || 0);
+                countUp(document.getElementById('conversionRate'), m.conversionGlobal || 0, '%');
+                const avg = document.getElementById('avgResponse');
+                if (m.tiempoRespuestaPromedio != null) countUp(avg, m.tiempoRespuestaPromedio, 'm');
+                else avg.textContent = '—';
+                countUp(document.getElementById('totalMensajes'), m.totalMensajes || 0);
                 const em = document.getElementById('entrantesMsg');
                 if (em) em.textContent = 'Recibidos: ' + (m.mensajesEntrantes || 0);
+                renderFunnel(m);
                 loadRecentActivity();
             }).catch(() => console.log('Error cargando stats'));
         }
@@ -543,7 +600,7 @@
         }
 
         function exportReport() {
-            alert('Descargando reporte en Excel...');
+            location.href = '/api/leads/export.csv';
         }
 
         function testConnection() {

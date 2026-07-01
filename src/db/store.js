@@ -119,6 +119,7 @@ async function initDB() {
   ensureColumn('messages', 'media_filename', 'TEXT');
   ensureColumn('vendedores', 'pin', 'TEXT');
   ensureColumn('leads', 'etiqueta', 'TEXT');
+  ensureColumn('leads', 'unread_count', 'INTEGER DEFAULT 0');
 
   db.run(`
     CREATE TABLE IF NOT EXISTS lead_notes (
@@ -206,12 +207,12 @@ function saveLead(customerPhone, customerName, messageBody) {
 
   const existing = one('SELECT id, messages_count, status FROM leads WHERE customer_phone = ? AND status != ?', [customerPhone, 'cerrado']);
   if (existing) {
-    run('UPDATE leads SET messages_count = ?, last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [existing.messages_count + 1, messageBody, existing.id]);
+    run('UPDATE leads SET messages_count = ?, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\') WHERE id = ?', [existing.messages_count + 1, messageBody, existing.id]);
     saveDB();
     return { leadId: existing.id, isNew: false };
   }
 
-  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message) VALUES (?, ?, ?, ?)', [customerPhone, customerName, messageBody, messageBody]);
+  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count) VALUES (?, ?, ?, ?, 1)', [customerPhone, customerName, messageBody, messageBody]);
   saveDB();
 
   const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [customerPhone]);
@@ -282,7 +283,24 @@ function setFirstResponse(leadId) {
 }
 
 function getLeads() {
-  return all('SELECT * FROM leads ORDER BY created_at DESC');
+  return all(`
+    SELECT l.*, v.nombre AS assigned_to_nombre
+    FROM leads l
+    LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+    ORDER BY l.updated_at DESC, l.created_at DESC
+  `);
+}
+
+// Marcar todos los mensajes de un lead como leídos
+function marcarLeido(leadId) {
+  run('UPDATE leads SET unread_count = 0 WHERE id = ?', [Number(leadId)]);
+  saveDB();
+}
+
+// Editar el nombre del contacto
+function setLeadNombre(leadId, nombre) {
+  run('UPDATE leads SET customer_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(nombre), Number(leadId)]);
+  saveDB();
 }
 
 function getLeadCount() {
@@ -546,6 +564,7 @@ module.exports = {
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
+  marcarLeido, setLeadNombre,
   addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarios,
   countUsuarios, updateUsuarioPassword,

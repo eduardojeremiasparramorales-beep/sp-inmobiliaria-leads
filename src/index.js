@@ -14,14 +14,51 @@ const events = require('./services/events');
 const push = require('./services/push');
 
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '30mb' }));
+// Guardar el body crudo para verificar la firma del webhook de Meta
+app.use(express.json({
+  limit: '30mb',
+  verify: (req, res, buf) => { if (req.originalUrl.startsWith('/webhook')) req.rawBody = buf; },
+}));
+
+// Headers de seguridad en todas las respuestas
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'microphone=(self), camera=(), geolocation=()');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");
+  next();
+});
+
+// Verificación de firma del webhook (X-Hub-Signature-256, requiere APP_SECRET en .env)
+function verifyWebhookSignature(req, res, next) {
+  const secret = process.env.APP_SECRET || process.env.META_APP_SECRET;
+  if (!secret) return next(); // sin APP_SECRET configurado: no bloquear
+  const sig = req.headers['x-hub-signature-256'];
+  if (!sig || !req.rawBody) {
+    console.warn('Webhook sin firma — rechazado');
+    return res.sendStatus(401);
+  }
+  const esperado = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(esperado))) {
+      console.warn('Webhook con firma inválida — rechazado');
+      return res.sendStatus(401);
+    }
+  } catch (e) { return res.sendStatus(401); }
+  next();
+}
 
 // Rate limiting: protección básica anti-DoS
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos' } });
 const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: false, legacyHeaders: false });
 
 // SW con versión dinámica (se invalida el caché en cada reinicio del servidor)
 const SW_VERSION = `sp-panel-${Date.now()}`;
@@ -37,7 +74,12 @@ app.get('/sw.js', (req, res) => {
   }
 });
 
-app.use(express.static('public'));
+app.use(express.static('public', {
+  setHeaders: (res, filePath) => {
+    // Íconos y logo: caché de 1 día; el resto sin caché larga
+    if (filePath.includes('icons')) res.setHeader('Cache-Control', 'public, max-age=86400');
+  },
+}));
 
 // Validación de teléfono colombiano (formato: +57 3XX XXX XXXX)
 function validarTelefono(phone) {
@@ -48,7 +90,7 @@ const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'SP Inmobiliaria CRM', version: '1.0' }));
 app.get('/webhook', handleVerification);
-app.post('/webhook', handleMessage);
+app.post('/webhook', webhookLimiter, verifyWebhookSignature, handleMessage);
 
 // API stats
 app.get('/api/stats', auth.requireAuth, (req, res) => {
@@ -170,7 +212,7 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 
 app.post('/api/login', loginLimiter, (req, res) => {
   const { email, password, telefono, pin } = req.body || {};
-  const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
+  const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
   const MAX_AGE = 60 * 60 * 24 * 30; // 30 días en segundos
 
   // Destruir sesión anterior si existe (session fixation prevention)
@@ -204,7 +246,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
 
 app.post('/api/logout', auth.requireAuth, (req, res) => {
   auth.destroySession(req.token);
-  const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
+  const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
   res.setHeader('Set-Cookie', `sp_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secure}`);
   res.json({ ok: true });
 });
@@ -241,6 +283,7 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
 app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
   const { mensaje } = req.body || {};
   if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_vacio' });
+  if (String(mensaje).length > 4096) return res.status(400).json({ error: 'mensaje_muy_largo' });
 
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
@@ -348,6 +391,50 @@ app.post('/api/leads/:id/etiqueta', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Marcar conversación como leída (al abrir el chat)
+app.post('/api/leads/:id/leido', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.marcarLeido(lead.id);
+  res.json({ ok: true });
+});
+
+// Editar el nombre del contacto
+app.post('/api/leads/:id/nombre', auth.requireAuth, (req, res) => {
+  const { nombre } = req.body || {};
+  const limpio = String(nombre || '').trim();
+  if (!limpio || limpio.length > 100) return res.status(400).json({ error: 'nombre_invalido' });
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.setLeadNombre(lead.id, limpio);
+  events.emitToAdmins('lead_actualizado', { leadId: lead.id, ts: Date.now() });
+  res.json({ ok: true });
+});
+
+// Exportar leads a CSV (solo admin)
+app.get('/api/leads/export.csv', auth.requireAdmin, (req, res) => {
+  const leads = getLeads();
+  const cab = ['id', 'nombre', 'telefono', 'estado', 'etiqueta', 'vendedor', 'mensajes', 'creado', 'actualizado'];
+  const csvCell = (v) => {
+    const s = String(v == null ? '' : v);
+    return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const filas = leads.map(l => [
+    l.id, l.customer_name, l.customer_phone, l.status, l.etiqueta || 'sin_clasificar',
+    l.assigned_to_nombre || l.assigned_to_phone || '', l.messages_count, l.created_at, l.updated_at,
+  ].map(csvCell).join(';'));
+  const csv = '﻿' + cab.join(';') + '\n' + filas.join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="leads-sp-leons.csv"');
+  res.send(csv);
+});
+
 // Notas internas de un lead (equipo, no se envían al cliente)
 app.get('/api/leads/:id/notas', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
@@ -361,6 +448,7 @@ app.get('/api/leads/:id/notas', auth.requireAuth, (req, res) => {
 app.post('/api/leads/:id/notas', auth.requireAuth, (req, res) => {
   const { nota } = req.body || {};
   if (!nota || !String(nota).trim()) return res.status(400).json({ error: 'nota_vacia' });
+  if (String(nota).length > 500) return res.status(400).json({ error: 'nota_muy_larga' });
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {

@@ -1,6 +1,6 @@
 {
-  "name": "SP Inmobiliaria — Panel del Vendedor",
-  "short_name": "SP Panel",
+  "name": "SP Leons Group — CRM Inmobiliaria",
+  "short_name": "SP Leons",
   "description": "Atiende tus leads de WhatsApp en tiempo real.",
   "start_url": "/vendedor.html",
   "scope": "/",
