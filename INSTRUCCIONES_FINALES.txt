@@ -1,0 +1,198 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║                    SP CRM — INSTRUCCIONES FINALES                              ║
+║                                                                                ║
+║                   ¡CASI LISTO! Solo 3 PASOS para activar                      ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+📅 FECHA: Junio 28, 2026
+⏱️ DURACIÓN: 10 minutos máximo
+✅ ESTADO: 99% completo
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        ¿QUÉ YA ESTÁ HECHO?
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ Código CRM auditado y corregido
+✅ Credenciales Meta extraídas automáticamente (3 de 3)
+✅ .env configurado con valores REALES
+✅ Desplegado en Railway (ONLINE)
+✅ Base de datos conectada (Postgres)
+✅ Cache activo (Redis)
+✅ Documentación completa generada
+
+
+═══════════════════════════════════════════════════════════════════════════════
+            ÚNICA COSA FALTANTE: VINCULAR WEBHOOK CON META
+═══════════════════════════════════════════════════════════════════════════════
+
+Tienes 2 opciones:
+
+OPCIÓN A — AUTOMÁTICA (RECOMENDADA - 5 minutos):
+─────────────────────────────────────────────────
+
+1. Abre terminal PowerShell o CMD en esta carpeta
+
+2. Ejecuta:
+   obtener-url-railway.bat
+
+3. Sigue las instrucciones que aparecerán
+
+4. El script te pedirá tu URL de Railway y generará todo
+
+
+OPCIÓN B — MANUAL (10 minutos):
+───────────────────────────────
+
+Lee el archivo: RAILWAY_WEBHOOK_MANUAL.md
+(Está en esta misma carpeta)
+
+Sigue los 4 pasos:
+   PASO 1: Obtener URL de Railway
+   PASO 2: Vincular webhook en Meta
+   PASO 3: Verificar en Railway logs
+   PASO 4: ¡Sistema en vivo!
+
+
+═══════════════════════════════════════════════════════════════════════════════
+              CREDENCIALES QUE NECESITARÁS (ya las tienes):
+═══════════════════════════════════════════════════════════════════════════════
+
+WHATSAPP_TOKEN:
+  EAAkAKq5U2xQBRZCxy8ZB2c7HT8Yp0EqSbv0EtdgzZBk7ahOMqAkU4zymWOjJ2M54IGCx...
+
+PHONE_NUMBER_ID:
+  119056413747250
+
+WHATSAPP_BUSINESS_ACCOUNT_ID:
+  2292669058229593
+
+VERIFY_TOKEN:
+  spInmobiliaria2026SecureVerifyToken
+
+RAILWAY_URL:
+  [Obtendrás en el paso siguiente]
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        PASO A PASO (MÁS CORTO)
+═══════════════════════════════════════════════════════════════════════════════
+
+📍 PASO 1 — Obtener URL de Railway (2 minutos)
+
+  1. Abre: https://railway.app
+  2. Ve a proyecto: sp-inmobiliaria-leads
+  3. Haz clic en servicio: "main"
+  4. Ve a: Deployments
+  5. Copia la URL (ej: https://sp-crm-production-abc123.railway.app)
+
+
+📍 PASO 2 — Vincular en Meta (5 minutos)
+
+  1. Abre: https://developers.facebook.com
+  2. Tu App → WhatsApp → Configuración
+  3. Busca: "Webhook"
+  4. Llena:
+     - URL: https://[TU_URL_RAILWAY]/webhook
+     - Token: spInmobiliaria2026SecureVerifyToken
+     - Marca: ☑ messages
+  5. Guarda (Save)
+  6. Espera a que diga "✓ Webhook verified" (verde)
+
+
+📍 PASO 3 — Verificar (2 minutos)
+
+  1. Ve a Railway dashboard
+  2. Servicio "main"
+  3. Logs
+  4. Busca: "✓ Webhook verificado por Meta"
+  5. Si lo ves, ¡TODO LISTO! 🎉
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    RESULTADO FINAL (CUANDO TERMINES)
+═══════════════════════════════════════════════════════════════════════════════
+
+Una vez vincles el webhook:
+
+✅ Tu CRM recibe leads desde Meta Ads automáticamente
+✅ Asigna automáticamente a vendedores (round-robin)
+✅ Escala leads no respondidos (30 min alerta, 60 min reasignación)
+✅ Dashboard activo para monitoreo en tiempo real
+✅ WhatsApp automático a clientes
+
+SISTEMA 100% OPERATIVO 🚀
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                         ARCHIVOS DE REFERENCIA
+═══════════════════════════════════════════════════════════════════════════════
+
+Ubicación: C:\Sp Inmobiliaria\sp-inmobiliaria-leads-UPDATED\
+
+📄 RAILWAY_WEBHOOK_MANUAL.md       ← Guía paso a paso completa
+📄 obtener-url-railway.bat         ← Script automático
+📄 configurar-webhook.js           ← Script Node.js
+📄 validate-env.js                 ← Validador de credenciales
+📄 .env                            ← Tus credenciales (NO COMPARTIR)
+📄 INICIO_RÁPIDO.md                ← Resumen general
+
++ Muchos más archivos de documentación
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        TROUBLESHOOTING RÁPIDO
+═══════════════════════════════════════════════════════════════════════════════
+
+❌ "Webhook could not be verified"
+   → Verifica que la URL termina en "/webhook"
+   → Verifica que Railway está Online (verde)
+
+❌ "SSL certificate error"
+   → Espera 5 minutos (SSL tarda en propagarse)
+   → Intenta de nuevo
+
+❌ "Connection timeout"
+   → Railway podría estar apagado
+   → Ve a dashboard y verifica status
+
+❌ Script no funciona
+   → Asegúrate que estás en carpeta correcta
+   → Ejecuta: node --version (debe decir v14+)
+   → Ejecuta: npm --version (debe decir v6+)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                              ¿LISTO?
+═══════════════════════════════════════════════════════════════════════════════
+
+👉 EJECUTA AHORA:
+
+   obtener-url-railway.bat
+
+   (O lee RAILWAY_WEBHOOK_MANUAL.md si prefieres hacerlo manual)
+
+
+En 10 minutos tu CRM estará 100% operativo. 🚀
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                           CONTACTO Y SOPORTE
+═══════════════════════════════════════════════════════════════════════════════
+
+Email: eduardojeremiasparramorales@gmail.com
+WhatsApp: +57 322 431 2518
+Instagram: @sp.inmobiliaria
+
+Documentación completa en carpeta del proyecto.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+                    ¡Gracias por usar SP CRM! 🎉
+                  Sistema de Leads Inmobiliario Profesional
+                     Sergio Parra Inversiones & Finca Raíz
+
+═══════════════════════════════════════════════════════════════════════════════

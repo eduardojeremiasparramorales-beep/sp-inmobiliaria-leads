@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SP CRM — Formulario de Credenciales Meta</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --negro: #0A0A0A;
+            --oro: #C8A45A;
+            --verde: #4E7B46;
+            --marfil: #F5F2EB;
+            --gris: #6D6D6D;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--marfil) 0%, #ffffff 100%);
+            color: var(--negro);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--negro) 0%, #1a1a1a 100%);
+            color: var(--marfil);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border-left: 4px solid var(--oro);
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-family: 'Cinzel', serif;
+        }
+
+        header p {
+            font-size: 14px;
+            color: #bbb;
+        }
+
+        .form-container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 25px 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--marfil);
+            color: var(--negro);
+            font-family: 'Cormorant Garamond', serif;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--negro);
+            font-size: 14px;
+        }
+
+        label .required {
+            color: var(--oro);
+            margin-left: 4px;
+        }
+
+        label .hint {
+            display: block;
+            font-size: 12px;
+            font-weight: normal;
+            color: var(--gris);
+            margin-top: 4px;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="password"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--oro);
+            box-shadow: 0 0 0 3px rgba(200,164,90,0.1);
+        }
+
+        input.valid {
+            border-color: var(--verde);
+            background: rgba(78,123,70,0.02);
+        }
+
+        input.invalid {
+            border-color: #d32f2f;
+            background: rgba(211,47,47,0.02);
+        }
+
+        .validation-msg {
+            font-size: 12px;
+            margin-top: 6px;
+            display: none;
+        }
+
+        .validation-msg.show {
+            display: block;
+        }
+
+        .validation-msg.success {
+            color: var(--verde);
+        }
+
+        .validation-msg.error {
+            color: #d32f2f;
+        }
+
+        .info-box {
+            background: rgba(200,164,90,0.1);
+            border-left: 4px solid var(--oro);
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .info-box strong {
+            color: var(--oro);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: var(--oro);
+            color: var(--negro);
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #b8944a;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(200,164,90,0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--verde);
+            color: white;
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .btn-secondary:hover {
+            background: #3d6b36;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(78,123,70,0.3);
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 11px;
+            flex: 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--verde), var(--oro));
+            transition: width 0.3s ease;
+        }
+
+        .output-section {
+            background: linear-gradient(135deg, var(--negro) 0%, #1a1a1a 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 30px;
+            display: none;
+        }
+
+        .output-section.show {
+            display: block;
+        }
+
+        .output-section h3 {
+            color: var(--oro);
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        .code-output {
+            background: rgba(0,0,0,0.3);
+            color: #0f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+
+        .copy-btn {
+            background: var(--oro);
+            color: var(--negro);
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .copy-btn:hover {
+            background: #b8944a;
+        }
+
+        .copy-btn.copied {
+            background: var(--verde);
+            color: white;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: rgba(200,164,90,0.1);
+            border-color: var(--oro);
+            color: #6d5a3a;
+        }
+
+        .alert-success {
+            background: rgba(78,123,70,0.1);
+            border-color: var(--verde);
+            color: #3d6b36;
+        }
+
+        .alert-warning {
+            background: rgba(211,47,47,0.1);
+            border-color: #d32f2f;
+            color: #7d1a1a;
+        }
+
+        .form-step {
+            display: none;
+        }
+
+        .form-step.active {
+            display: block;
+        }
+
+        .step-indicator {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .step-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--gris);
+        }
+
+        .step-dot.active {
+            background: var(--oro);
+            color: var(--negro);
+        }
+
+        .step-dot.completed {
+            background: var(--verde);
+            color: white;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--gris);
+            font-size: 12px;
+            margin-top: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 0;
+            }
+
+            .form-container {
+                padding: 20px;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔐 Recopilador de Credenciales Meta</h1>
+            <p>Ingresa tus datos de Meta de forma segura y obtén tu .env listo para desplegar</p>
+        </header>
+
+        <div class="form-container">
+            <!-- PROGRESS -->
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+
+            <!-- STEP INDICATOR -->
+            <div class="step-indicator">
+                <div class="step-dot active" id="step1-dot">1</div>
+                <div class="step-dot" id="step2-dot">2</div>
+                <div class="step-dot" id="step3-dot">3</div>
+            </div>
+
+            <!-- STEP 1: CREDENCIALES META -->
+            <div class="form-step active" id="step1">
+                <h2 class="section-title">Paso 1 — Credenciales de Meta</h2>
+
+                <div class="alert alert-info">
+                    <strong>📖 Instrucciones:</strong> Ve a <strong>Meta Business Suite → WhatsApp → Configuración API</strong> y copia cada valor abajo.
+                    Ver <strong>SETUP_META_WEBHOOK.md</strong> para instrucciones detalladas con screenshots.
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        WHATSAPP_TOKEN <span class="required">*</span>
+                        <span class="hint">Token Bearer permanente de Meta (empieza con "EAA")</span>
+                    </label>
+                    <input type="password" id="whatsappToken" placeholder="EAAz4k6qL9..." />
+                    <div class="validation-msg" id="token-msg"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        PHONE_NUMBER_ID <span class="required">*</span>
+                        <span class="hint">ID del número de teléfono WhatsApp (números solamente)</span>
+                    </label>
+                    <input type="text" id="phoneNumberId" placeholder="1234567890123" />
+                    <div class="validation-msg" id="phone-msg"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        WHATSAPP_BUSINESS_ACCOUNT_ID <span class="required">*</span>
+                        <span class="hint">ID de cuenta comercial WhatsApp (ej: wa_0123456789)</span>
+                    </label>
+                    <input type="text" id="businessAccountId" placeholder="wa_0123456789" />
+                    <div class="validation-msg" id="account-msg"></div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-primary" onclick="goToStep(2)">Siguiente →</button>
+                </div>
+            </div>
+
+            <!-- STEP 2: TOKENS DE SEGURIDAD -->
+            <div class="form-step" id="step2">
+                <h2 class="section-title">Paso 2 — Tokens de Seguridad</h2>
+
+                <div class="alert alert-info">
+                    <strong>📝 Genera tus propios tokens:</strong> Puedes usar cualquier string fuerte (mínimo 20 caracteres).
+                    Para generar: <code>openssl rand -hex 32</code> (en terminal) o inventa un string fuerte.
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        VERIFY_TOKEN <span class="required">*</span>
+                        <span class="hint">Token para verificar webhook en Meta (crea uno nuevo)</span>
+                    </label>
+                    <input type="text" id="verifyToken" placeholder="spInmobiliaria2026SecretXYZ" />
+                    <button class="btn-small" onclick="generateToken('verifyToken')">Generar aleatorio</button>
+                    <div class="validation-msg" id="verify-msg"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        API_TOKEN <span class="required">*</span>
+                        <span class="hint">Token para proteger tus endpoints internos</span>
+                    </label>
+                    <input type="text" id="apiToken" placeholder="sp_api_secret_xyz" />
+                    <button class="btn-small" onclick="generateToken('apiToken')">Generar aleatorio</button>
+                    <div class="validation-msg" id="api-msg"></div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="goToStep(1)">← Atrás</button>
+                    <button class="btn-primary" onclick="goToStep(3)">Siguiente →</button>
+                </div>
+            </div>
+
+            <!-- STEP 3: VERIFICACIÓN Y DESCARGA -->
+            <div class="form-step" id="step3">
+                <h2 class="section-title">Paso 3 — Verifica y Descarga tu .env</h2>
+
+                <div class="alert alert-success">
+                    <strong>✓ Todos los datos ingresados correctamente.</strong>
+                    Tu archivo <code>.env</code> está listo. Cópialo o descárgalo abajo.
+                </div>
+
+                <div class="info-box">
+                    <strong>🔒 Seguridad:</strong> Este formulario no envía tus datos a ningún servidor.
+                    Todo se procesa localmente en tu navegador. Nadie verá tus credenciales.
+                </div>
+
+                <div class="output-section show">
+                    <h3>📄 Tu archivo .env (lista para copiar):</h3>
+                    <div class="code-output" id="envOutput"></div>
+                    <button class="copy-btn" id="copyBtn" onclick="copyToClipboard()">📋 Copiar al portapapeles</button>
+                    <button class="btn-secondary" style="flex: 0; padding: 10px 16px; margin-top: 10px;" onclick="downloadEnv()">⬇️ Descargar como .env</button>
+                </div>
+
+                <h3 style="margin-top: 25px;">📋 Instrucciones finales:</h3>
+                <ol style="margin-left: 20px; margin-top: 10px;">
+                    <li>Copia el contenido arriba (botón azul) <strong>O</strong> descarga el archivo</li>
+                    <li>Abre tu carpeta: <code>C:\Sp Inmobiliaria\sp-inmobiliaria-leads-UPDATED\</code></li>
+                    <li>Crea (o abre) un archivo llamado <code>.env</code></li>
+                    <li>Pega el contenido (si copiaste) o reemplaza con el archivo descargado</li>
+                    <li>Guarda el archivo</li>
+                    <li>¡Listo! Ahora puedes hacer <code>npm start</code></li>
+                </ol>
+
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="goToStep(2)">← Editar datos</button>
+                    <button class="btn-primary" onclick="resetForm()">Nuevo formulario</button>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p><strong>SP CRM — Formulario Seguro de Credenciales</strong></p>
+            <p>Los datos se procesan solo en tu navegador. Nada se almacena ni se envía a servidores.</p>
+            <p>© 2026 Sergio Parra Inversiones & Finca Raíz</p>
+        </footer>
+    </div>
+
+    <script>
+        const inputs = {
+            whatsappToken: document.getElementById('whatsappToken'),
+            phoneNumberId: document.getElementById('phoneNumberId'),
+            businessAccountId: document.getElementById('businessAccountId'),
+            verifyToken: document.getElementById('verifyToken'),
+            apiToken: document.getElementById('apiToken')
+        };
+
+        // Validación en tiempo real
+        inputs.whatsappToken.addEventListener('input', function() {
+            validateToken(this.value);
+        });
+
+        inputs.phoneNumberId.addEventListener('input', function() {
+            validatePhoneNumberId(this.value);
+        });
+
+        inputs.businessAccountId.addEventListener('input', function() {
+            validateBusinessAccountId(this.value);
+        });
+
+        inputs.verifyToken.addEventListener('input', function() {
+            validateVerifyToken(this.value);
+        });
+
+        inputs.apiToken.addEventListener('input', function() {
+            validateApiToken(this.value);
+        });
+
+        function validateToken(value) {
+            const msg = document.getElementById('token-msg');
+            if (value.length === 0) {
+                msg.classList.remove('show');
+                inputs.whatsappToken.classList.remove('valid', 'invalid');
+            } else if (value.startsWith('EAA') && value.length > 50) {
+                msg.textContent = '✓ Token válido';
+                msg.classList.add('show', 'success');
+                inputs.whatsappToken.classList.add('valid');
+                inputs.whatsappToken.classList.remove('invalid');
+                updateProgress();
+            } else {
+                msg.textContent = '✗ Debe empezar con "EAA" y tener más de 50 caracteres';
+                msg.classList.add('show', 'error');
+                inputs.whatsappToken.classList.add('invalid');
+                inputs.whatsappToken.classList.remove('valid');
+            }
+        }
+
+        function validatePhoneNumberId(value) {
+            const msg = document.getElementById('phone-msg');
+            if (value.length === 0) {
+                msg.classList.remove('show');
+                inputs.phoneNumberId.classList.remove('valid', 'invalid');
+            } else if (/^\d{10,}$/.test(value)) {
+                msg.textContent = '✓ ID válido';
+                msg.classList.add('show', 'success');
+                inputs.phoneNumberId.classList.add('valid');
+                inputs.phoneNumberId.classList.remove('invalid');
+                updateProgress();
+            } else {
+                msg.textContent = '✗ Solo números (mínimo 10 dígitos)';
+                msg.classList.add('show', 'error');
+                inputs.phoneNumberId.classList.add('invalid');
+                inputs.phoneNumberId.classList.remove('valid');
+            }
+        }
+
+        function validateBusinessAccountId(value) {
+            const msg = document.getElementById('account-msg');
+            if (value.length === 0) {
+                msg.classList.remove('show');
+                inputs.businessAccountId.classList.remove('valid', 'invalid');
+            } else if (value.length > 5) {
+                msg.textContent = '✓ ID válido';
+                msg.classList.add('show', 'success');
+                inputs.businessAccountId.classList.add('valid');
+                inputs.businessAccountId.classList.remove('invalid');
+                updateProgress();
+            } else {
+                msg.textContent = '✗ ID muy corto';
+                msg.classList.add('show', 'error');
+                inputs.businessAccountId.classList.add('invalid');
+                inputs.businessAccountId.classList.remove('valid');
+            }
+        }
+
+        function validateVerifyToken(value) {
+            const msg = document.getElementById('verify-msg');
+            if (value.length === 0) {
+                msg.classList.remove('show');
+                inputs.verifyToken.classList.remove('valid', 'invalid');
+            } else if (value.length >= 20) {
+                msg.textContent = '✓ Token válido';
+                msg.classList.add('show', 'success');
+                inputs.verifyToken.classList.add('valid');
+                inputs.verifyToken.classList.remove('invalid');
+                updateProgress();
+            } else {
+                msg.textContent = '✗ Mínimo 20 caracteres';
+                msg.classList.add('show', 'error');
+                inputs.verifyToken.classList.add('invalid');
+                inputs.verifyToken.classList.remove('valid');
+            }
+        }
+
+        function validateApiToken(value) {
+            const msg = document.getElementById('api-msg');
+            if (value.length === 0) {
+                msg.classList.remove('show');
+                inputs.apiToken.classList.remove('valid', 'invalid');
+            } else if (value.length >= 20) {
+                msg.textContent = '✓ Token válido';
+                msg.classList.add('show', 'success');
+                inputs.apiToken.classList.add('valid');
+                inputs.apiToken.classList.remove('invalid');
+                updateProgress();
+            } else {
+                msg.textContent = '✗ Mínimo 20 caracteres';
+                msg.classList.add('show', 'error');
+                inputs.apiToken.classList.add('invalid');
+                inputs.apiToken.classList.remove('valid');
+            }
+        }
+
+        function generateToken(fieldId) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let token = '';
+            for (let i = 0; i < 32; i++) {
+                token += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            document.getElementById(fieldId).value = token;
+            document.getElementById(fieldId).dispatchEvent(new Event('input'));
+        }
+
+        function updateProgress() {
+            let filled = 0;
+            let total = 5;
+
+            if (inputs.whatsappToken.classList.contains('valid')) filled++;
+            if (inputs.phoneNumberId.classList.contains('valid')) filled++;
+            if (inputs.businessAccountId.classList.contains('valid')) filled++;
+            if (inputs.verifyToken.classList.contains('valid')) filled++;
+            if (inputs.apiToken.classList.contains('valid')) filled++;
+
+            const percent = (filled / total) * 100;
+            document.getElementById('progressFill').style.width = percent + '%';
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.form-step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step' + step).classList.add('active');
+
+            // Update step indicator
+            document.querySelectorAll('.step-dot').forEach((dot, idx) => {
+                dot.classList.remove('active', 'completed');
+                if (idx + 1 === step) {
+                    dot.classList.add('active');
+                } else if (idx + 1 < step) {
+                    dot.classList.add('completed');
+                }
+            });
+
+            if (step === 3) {
+                generateEnvOutput();
+            }
+
+            window.scrollTo(0, 0);
+        }
+
+        function generateEnvOutput() {
+            const env = `# ========================================
+# SP CRM — Configuración de Entorno
+# ========================================
+# Credenciales Meta WhatsApp Cloud API
+WHATSAPP_TOKEN=${inputs.whatsappToken.value}
+PHONE_NUMBER_ID=${inputs.phoneNumberId.value}
+WHATSAPP_BUSINESS_ACCOUNT_ID=${inputs.businessAccountId.value}
+
+# Tokens de Seguridad
+VERIFY_TOKEN=${inputs.verifyToken.value}
+API_TOKEN=${inputs.apiToken.value}
+
+# Entorno
+NODE_ENV=production
+
+# Puerto (cambiar si es necesario)
+PORT=3000
+
+# Base de datos
+DATABASE_PATH=./data/database.sqlite
+
+# Logging
+LOG_LEVEL=info
+
+# ========================================
+# Generado: ${new Date().toLocaleString('es-CO')}
+# ========================================`;
+
+            document.getElementById('envOutput').textContent = env;
+        }
+
+        function copyToClipboard() {
+            const text = document.getElementById('envOutput').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copyBtn');
+                btn.textContent = '✓ ¡Copiado!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = '📋 Copiar al portapapeles';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function downloadEnv() {
+            const text = document.getElementById('envOutput').textContent;
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', '.env');
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        function resetForm() {
+            inputs.whatsappToken.value = '';
+            inputs.phoneNumberId.value = '';
+            inputs.businessAccountId.value = '';
+            inputs.verifyToken.value = '';
+            inputs.apiToken.value = '';
+
+            document.querySelectorAll('input').forEach(inp => {
+                inp.classList.remove('valid', 'invalid');
+            });
+            document.querySelectorAll('.validation-msg').forEach(msg => {
+                msg.classList.remove('show');
+            });
+
+            document.getElementById('progressFill').style.width = '0%';
+            goToStep(1);
+        }
+    </script>
+</body>
+</html>

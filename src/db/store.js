@@ -153,16 +153,25 @@ async function initDB() {
   return db;
 }
 
+let _saveTimer = null;
+
 function saveDB() {
-  if (db) {
-    try {
-      fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
-    } catch (error) {
-      console.error('ERROR CRÍTICO al guardar base de datos:', error.message);
-      console.error('Posibles causas: volumen lleno, permisos insuficientes, ruta inválida');
-      console.error('Archivo intentado:', DB_PATH);
-      throw error;
-    }
+  // Debounce: escribe en disco máximo 1 vez cada 500ms
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    saveDBImmediate();
+  }, 500);
+}
+
+function saveDBImmediate() {
+  if (!db) return;
+  try {
+    fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+  } catch (error) {
+    console.error('ERROR CRÍTICO al guardar base de datos:', error.message);
+    console.error('Archivo intentado:', DB_PATH);
+    throw error;
   }
 }
 
@@ -240,7 +249,15 @@ function getMessageById(id) {
 
 function getVendedoresActivos() {
   const d = getDB();
-  const r = d.exec("SELECT * FROM vendedores WHERE estado = 'activo' ORDER BY total_leads ASC");
+  // Ordena por leads activos (no cerrados) para round-robin justo
+  const r = d.exec(`
+    SELECT v.*, COUNT(l.id) as leads_activos
+    FROM vendedores v
+    LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != 'cerrado'
+    WHERE v.estado = 'activo'
+    GROUP BY v.id
+    ORDER BY leads_activos ASC
+  `);
   if (r.length === 0) return [];
   const cols = r[0].columns;
   return r[0].values.map(row => {

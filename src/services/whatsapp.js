@@ -75,19 +75,18 @@ async function uploadMedia(buffer, mime, filename) {
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
 
+  const FormData = require('form-data');
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('type', mime);
-  form.append('file', new Blob([buffer], { type: mime }), filename || 'archivo');
+  form.append('file', buffer, { filename: filename || 'archivo', contentType: mime });
 
-  const res = await fetch(`${GRAPH}/${phoneNumberId}/media`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
+  const res = await axios.post(`${GRAPH}/${phoneNumberId}/media`, form, {
+    headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error('Error subiendo media: ' + JSON.stringify(data));
-  return data.id;
+  return res.data.id;
 }
 
 // Envía un media (por id) al cliente. type: image|audio|video|document|sticker

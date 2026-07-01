@@ -1,0 +1,141 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║          🚀 DESPLEGAR A RAILWAY CON VARIABLES DE ENTORNO CORRECTAS             ║
+║                                                                                ║
+║                        Solución para webhook de Meta                           ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PROBLEMA ACTUAL
+═════════════════════════════════════════════════════════════════════════════════
+
+Meta rechaza la validación del webhook con error:
+"No se pudo validar la URL de devolución de llamada o el token de verificación"
+
+Causa: El archivo .env no se carga correctamente en Railway.
+
+Solución: Agregar las variables de entorno directamente en Railway (en lugar de un archivo .env).
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PASO 1 — IR A RAILWAY
+═════════════════════════════════════════════════════════════════════════════════
+
+1. Abre: https://railway.app
+2. Inicia sesión con tu cuenta
+3. Abre el proyecto: "sp-inmobiliaria-leads"
+4. Click en el servicio principal (main o app)
+5. Busca la sección "Variables" o "Environment"
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PASO 2 — AGREGAR VARIABLES DE ENTORNO
+═════════════════════════════════════════════════════════════════════════════════
+
+Copia y pega EXACTAMENTE estas variables en Railway:
+
+NODE_ENV=production
+PORT=3000
+
+WHATSAPP_BUSINESS_ACCOUNT_ID=2292669058229593
+PHONE_NUMBER_ID=119056413747250
+WHATSAPP_TOKEN=EAAkAKq5U2xQBRZCxy8ZB2c7HT8Yp0EqSbv0EtdgzZBk7ahOMqAkU4zymWOjJ2M54IGCxEZBsl0qA1e7oA7U4X1yHDvcvtzrnNxQGsDxNajANxIW1YVqo6fCQyPoVrly9i5uZCgycFQKOEPwO2bB9kvuOV41PdOL2Ch81dklDMtwNe9SEHRwx3kuB3gTEBImiIgtZAZBZAwA5sC4FYugOegZDZD
+VERIFY_TOKEN=spInmobiliaria2026SecureVerifyToken
+
+META_APP_ID=2533458103819028
+META_APP_SECRET=your_meta_app_secret
+
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=changeme123
+
+API_TOKEN=sp_api_secret_2026_secure_token_xyz_cryptographic
+
+LOG_LEVEL=info
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PASO 3 — GUARDAR Y DESPLEGAR
+═════════════════════════════════════════════════════════════════════════════════
+
+1. Haz click en "Save" o "Apply"
+2. Railway automáticamente re-despliega la aplicación
+3. Espera a que el estado sea "Active" (verde)
+4. Verifica en el log que dice: "SP Inmobiliaria CRM corriendo en puerto..."
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PASO 4 — VALIDAR EL WEBHOOK EN META
+═════════════════════════════════════════════════════════════════════════════════
+
+Una vez que Railway esté actualizado:
+
+1. Ve a: https://developers.facebook.com/apps/2533458103819028/whatsapp/
+2. En "Webhook Configuration", haz click en "Verify and Save"
+3. Meta intentará validar nuevamente
+4. Debería decir ✓ "Verified" o "Validado"
+
+Si aún falla, comprueba:
+- Las variables están exactamente como arriba
+- NODE_ENV=production (sin espacios)
+- VERIFY_TOKEN=spInmobiliaria2026SecureVerifyToken (exacto)
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    ALTERNATIVA — VÍA RAILWAY CLI
+═════════════════════════════════════════════════════════════════════════════════
+
+Si prefieres usar la línea de comandos:
+
+1. Instala Railway CLI: https://docs.railway.app/guides/cli
+2. Abre terminal en C:\Sp Inmobiliaria\sp-inmobiliaria-leads-UPDATED\
+3. Ejecuta:
+
+   railway login
+   railway link
+   railway variables set NODE_ENV=production
+   railway variables set VERIFY_TOKEN=spInmobiliaria2026SecureVerifyToken
+   railway variables set WHATSAPP_TOKEN=EAAkAKq5U2xQBRZCxy8ZB2c7HT8Yp0EqSbv0EtdgzZBk7ahOMqAkU4zymWOjJ2M54IGCxEZBsl0qA1e7oA7U4X1yHDvcvtzrnNxQGsDxNajANxIW1YVqo6fCQyPoVrly9i5uZCgycFQKOEPwO2bB9kvuOV41PdOL2Ch81dklDMtwNe9SEHRwx3kuB3gTEBImiIgtZAZBZAwA5sC4FYugOegZDZD
+   railway variables set PHONE_NUMBER_ID=119056413747250
+   railway variables set WHATSAPP_BUSINESS_ACCOUNT_ID=2292669058229593
+
+4. Redeploy: railway up
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    VERIFICAR QUE FUNCIONA
+═════════════════════════════════════════════════════════════════════════════════
+
+Después de desplegar, comprueba que el webhook responde:
+
+Abre en navegador:
+https://main-production-063e.up.railway.app/webhook?hub.mode=subscribe&hub.challenge=TEST&hub.verify_token=spInmobiliaria2026SecureVerifyToken
+
+Debería ver: TEST (solo ese texto)
+
+Si ves eso = ¡Meta puede validar!
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PASOS FINALES
+═════════════════════════════════════════════════════════════════════════════════
+
+Una vez que el webhook está validado en Meta:
+
+1. ✓ Webhook URL: https://main-production-063e.up.railway.app/webhook
+2. ✓ Verify Token: spInmobiliaria2026SecureVerifyToken
+3. ✓ Eventos suscritos: messages, message_status
+4. ✓ Número oficial: +57 3214625618 (verificado)
+5. ✓ Vendedor registrado: +57 3214312518 (activo)
+
+Ahora Meta enviará automáticamente los mensajes al webhook.
+
+
+═════════════════════════════════════════════════════════════════════════════════
+
+                    ⏱️ TIEMPO ESTIMADO: 5 minutos
+
+        Todo lo que necesitas está aquí. Solo sigue los pasos.
+
+═════════════════════════════════════════════════════════════════════════════════

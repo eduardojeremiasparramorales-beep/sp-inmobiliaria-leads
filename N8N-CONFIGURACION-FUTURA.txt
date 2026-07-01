@@ -1,0 +1,194 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║                    📋 N8N — AUTOMATIZACIÓN FUTURA                              ║
+║                                                                                ║
+║                        Configuración desde cero (cuando sea necesario)          ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                        NOTA IMPORTANTE
+═════════════════════════════════════════════════════════════════════════════════
+
+Actualmente, el CRM en Node.js MANEJA TODOS los flujos automáticamente:
+✓ Recibe leads de Meta
+✓ Asigna a vendedores
+✓ Reenvía mensajes
+✓ Escalamiento automático
+✓ Dashboard en tiempo real
+
+N8N es OPCIONAL y se usar ía solo si quieres:
+- Integraciones adicionales (Google Sheets, Slack, etc.)
+- Automatizaciones complejas beyond del CRM
+- Workflows visuales más fáciles de editar
+
+Por ahora, RECOMENDACIÓN:
+Mantén el CRM en Node.js que ya funciona.
+Agrega n8n solo si necesitas integraciones adicionales.
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    SI DECIDES USAR N8N
+═════════════════════════════════════════════════════════════════════════════════
+
+OPCIÓN 1 — N8N Cloud (Recomendado para empezar)
+────────────────────────────────────────────────────────────────────────────────
+
+1. Ve a: https://n8n.cloud
+2. Crea una cuenta gratis
+3. Crea un nuevo workflow
+4. Busca los nodos de:
+   - Webhook (para recibir datos)
+   - HTTP Request (para enviar a Meta API)
+   - Database (para guardar en DB)
+   - WhatsApp (si existe)
+
+Ventajas:
+✓ Sin instalar nada
+✓ Interfaz visual
+✓ Hosting incluido
+✓ Gratis hasta 100 execuciones/mes
+
+Desventajas:
+✗ Limitado en execuciones
+✗ Puede ser más lento
+
+
+OPCIÓN 2 — N8N Self-Hosted en Railway (Más control)
+────────────────────────────────────────────────────────────────────────────────
+
+1. Ve a: https://railway.app
+2. Agrega nuevo servicio
+3. Selecciona "n8n" del marketplace
+4. Deploy automático
+5. Accede en: https://tu-dominio.railway.app
+
+Ventajas:
+✓ Control total
+✓ Sin límites de execuciones
+✓ Conectado con tu BD
+
+Desventajas:
+✗ Necesita más recursos
+✗ Más complejo de configurar
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    FLUJO N8N BÁSICO — RECIBIR Y RESPONDER
+═════════════════════════════════════════════════════════════════════════════════
+
+Si quisieras usar n8n (completamente opcional):
+
+Nodo 1: Webhook
+  └─ Escucha: POST /leads
+  └─ Recibe datos de Meta
+
+Nodo 2: Switch/If
+  └─ Verifica si es nuevo lead
+  └─ o respuesta de vendedor
+
+Nodo 3A: Database
+  └─ Guarda el lead en BD
+  └─ Asigna a vendedor
+
+Nodo 3B: HTTP Request
+  └─ Envía respuesta a Meta API
+  └─ Reenvía al cliente
+
+Nodo 4: Slack (Opcional)
+  └─ Notifica al equipo
+  └─ "Nuevo lead recibido"
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    INTEGRACIÓN DE N8N CON TU CRM ACTUAL
+═════════════════════════════════════════════════════════════════════════════════
+
+Si quieres agregar n8n SIN reemplazar el CRM:
+
+Opción A — N8N complementario:
+────────────────────────────────────────────────────────────────────────────────
+Tu CRM (Node.js) → Recibe y procesa leads → Guarda en BD
+                ↓
+             N8N → Lee BD → Envía a Slack/Sheets/etc
+                ↓
+             Integraciones extras
+
+Ventaja: El CRM sigue funcionando, n8n agrega funcionalidad
+
+
+Opción B — N8N recibe todo (Reemplaza webhook del CRM):
+────────────────────────────────────────────────────────────────────────────────
+Meta → N8N → Procesa → Guarda en BD → Llama a tu CRM API
+                    ↓
+                Envía a Slack
+                Guarda en Sheets
+                etc.
+
+Ventaja: N8N es el maestro, más flexible
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    CUÁNDO USAR N8N
+═════════════════════════════════════════════════════════════════════════════════
+
+Usa N8N si necesitas:
+
+✓ Google Sheets en tiempo real
+✓ Notificaciones por Slack
+✓ Enviar a CRM externo
+✓ Filtros complejos de leads
+✓ A/B testing de respuestas
+✓ Reportes automáticos
+✓ Respuestas con IA
+✓ Webhooks a múltiples servicios
+
+NO necesitas N8N si solo quieres:
+✗ Recibir y responder leads (lo hace el CRM)
+✗ Asignar a vendedores (lo hace el CRM)
+✗ Dashboard (lo hace el CRM)
+✗ Escalamiento (lo hace el CRM)
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    PRÓXIMOS PASOS
+═════════════════════════════════════════════════════════════════════════════════
+
+AHORA (Prioridad Alta):
+  1. Valida el webhook en Meta
+  2. Recibe los primeros leads
+  3. Verifica que se asignan
+  4. Comprueba que el vendedor responde
+
+PRÓXIMA SEMANA (Prioridad Media):
+  1. Monitorea el dashboard
+  2. Ajusta la asignación si es necesario
+  3. Agrega más vendedores
+
+PRÓXIMO MES (Prioridad Baja):
+  1. Considera agregar integraciones
+  2. Estudia n8n si lo necesitas
+  3. Configura Google Sheets + alertas
+
+
+═════════════════════════════════════════════════════════════════════════════════
+
+                    ⚡ RECOMENDACIÓN FINAL
+
+        Mantén el CRM de Node.js tal como está.
+        Es robusto, rápido y hace todo lo que necesitas.
+
+        Agrega n8n SOLO si surgen necesidades específicas
+        de integraciones que el CRM no cubre.
+
+        Por ahora: Usa lo que tienes y funciona.
+        Es lo mejor. 🚀
+
+═════════════════════════════════════════════════════════════════════════════════
+
+Fecha:    Junio 28, 2026
+Status:   Información de referencia
+Prioridad: BAJA (después de validar webhook en Meta)
+
+═════════════════════════════════════════════════════════════════════════════════

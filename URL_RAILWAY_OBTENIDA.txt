@@ -1,0 +1,84 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║                   🎉 URL DE RAILWAY OBTENIDA AUTOMÁTICAMENTE                   ║
+║                                                                                ║
+║                            ÚLTIMO PASO — 2 MINUTOS                             ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+📍 URL RAILWAY (OBTENIDA POR EL AGENTE):
+═════════════════════════════════════════════════════════════════════════════════
+
+https://main-production-063e.up.railway.app
+
+
+✅ WEBHOOK URL (COMPLETA):
+═════════════════════════════════════════════════════════════════════════════════
+
+https://main-production-063e.up.railway.app/webhook
+
+
+✅ VERIFY TOKEN (YA TIENES):
+═════════════════════════════════════════════════════════════════════════════════
+
+spInmobiliaria2026SecureVerifyToken
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                         ÚLTIMO PASO — 2 MINUTOS
+═════════════════════════════════════════════════════════════════════════════════
+
+1. Abre: https://developers.facebook.com/apps/2533458103819028/whatsapp/
+
+2. Busca sección "Webhook" o "Webhook Settings"
+
+3. Completa LOS 3 CAMPOS:
+
+   CAMPO 1 — Webhook URL:
+   https://main-production-063e.up.railway.app/webhook
+
+   CAMPO 2 — Verify Token:
+   spInmobiliaria2026SecureVerifyToken
+
+   CAMPO 3 — Suscribirse a:
+   ☑ messages (MARCA ESTO)
+
+4. Haz clic en "Save" o "Guardar"
+
+5. Espera a que valide (~5 segundos)
+
+6. Verifica que diga "✓ Webhook verified" (verde)
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                           VALIDAR QUE FUNCIONA
+═════════════════════════════════════════════════════════════════════════════════
+
+Una vez que hayas guardado en Meta:
+
+1. Ve a Railway dashboard:
+   https://railway.app/project/fdd4bb1d-6cbc-4907-a700-5b94f2fe88f9
+
+2. Haz clic en servicio "Principal" (main)
+
+3. Ve a pestaña "Logs"
+
+4. Busca el mensaje:
+   ✓ Webhook verificado por Meta
+
+5. Si lo ves = ¡SISTEMA 100% OPERATIVO! 🚀
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                              ¡CASI LISTO!
+═════════════════════════════════════════════════════════════════════════════════
+
+El sistema está 99% completado. Solo falta vincular el webhook (2 minutos).
+
+Copia los datos de arriba y sigue los pasos. ¡Eso es todo!
+
+
+Fecha: Junio 28, 2026
+Generado automáticamente por: Agentes de SP CRM
+Estado: ✅ LISTO PARA COMPLETAR MANUALMENTE

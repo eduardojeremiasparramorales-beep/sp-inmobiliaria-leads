@@ -1,0 +1,288 @@
+================================================================================
+DATOS REQUERIDOS PARA LANZAR EN PRODUCCIÓN
+SP Inmobiliaria CRM - 2026-06-28
+================================================================================
+
+INSTRUCCIONES:
+Completa cada sección abajo con los valores reales. Luego copia estos valores
+a tu archivo .env usando el formato que aparece en .env.example.
+
+================================================================================
+1. CREDENCIALES DE META BUSINESS (OBLIGATORIO)
+================================================================================
+
+Necesitas acceso a: https://developers.facebook.com
+
+A. WHATSAPP_TOKEN
+   Cómo obtenerlo:
+   1. Ir a Meta App > Configuración > Tokens de Acceso del Sistema
+   2. O: Meta App > WhatsApp > API Setup > API Tokens
+   3. Copiar un token que tenga permisos:
+      - whatsapp_business_messaging
+      - whatsapp_business_management
+
+   El token empieza con: EAABsZC...
+   Duración: Tokens temporales de 1 hora, System User Tokens de 60 días
+   Para producción: Usa System User Token (no temporal)
+
+   INGRESA AQUÍ:
+   WHATSAPP_TOKEN = _______________________________________________________________
+
+   IMPORTANTE: NO expires en 1 hora. Verifica que sea System User Token.
+
+
+B. PHONE_NUMBER_ID
+   Cómo obtenerlo:
+   1. Meta App > WhatsApp > Sender Phone Numbers
+   2. Busca tu número WhatsApp Business
+   3. Copia el "Phone Number ID" (solo números, largo)
+   Ejemplo: 1224496694078803
+
+   INGRESA AQUÍ:
+   PHONE_NUMBER_ID = _______________________________________________________________
+
+   IMPORTANTE: Debe estar verificado en Meta Business Manager
+
+
+C. VERIFY_TOKEN (Lo generas tú - NO viene de Meta)
+   Cómo generarlo:
+
+   En Linux/macOS:
+   $ openssl rand -hex 32
+
+   En Windows (si tienes Git Bash o WSL):
+   $ openssl rand -hex 32
+
+   Si no tienes openssl instalado, crea algo así (32+ caracteres aleatorios):
+   spInmobiliaria_webhook_verify_token_abc123def456ghi789jkl012mno345pqr
+
+   Requisitos:
+   - Mínimo 32 caracteres
+   - Caracteres alfanuméricos + guiones
+   - Único y secreto (no compartas)
+
+   INGRESA AQUÍ:
+   VERIFY_TOKEN = _______________________________________________________________
+
+   IMPORTANTE: Guarda este valor. Lo necesitas en Meta App > WhatsApp > Webhook Settings
+
+
+D. WHATSAPP_BUSINESS_ACCOUNT_ID (Opcional por ahora, mantén el existente)
+   Cómo obtenerlo:
+   1. Meta App > Configuración > Básico
+   2. Busca "ID de Cuenta de Negocio"
+
+   En .env.example ya está: 2533458103819028
+
+   PUEDES USAR: 2533458103819028 (o tu número de cuenta si es diferente)
+
+================================================================================
+2. TOKEN DE API LOCAL (LO GENERAS TÚ)
+================================================================================
+
+Este token protege los endpoints como /api/leads, /api/vendedores, etc.
+
+Cómo generarlo:
+En Linux/macOS:
+$ openssl rand -hex 32
+
+En Windows:
+$ openssl rand -hex 32
+
+Requisitos:
+- Mínimo 32 caracteres
+- Único y secreto
+- Distribuye SOLO a personas/aplicaciones autorizadas
+
+INGRESA AQUÍ:
+API_TOKEN = _______________________________________________________________
+
+IMPORTANTE: Solo comparte este token con aplicaciones que necesiten acceder a la API.
+
+
+================================================================================
+3. DATOS INICIALES DE VENDEDORES
+================================================================================
+
+Cada vendedor que use el CRM necesita:
+- Nombre completo
+- Número de WhatsApp Business (o personal verificado)
+
+El número DEBE:
+- Ser un teléfono activo (recibe/envía WhatsApp)
+- Estar en formato internacional: +57XXXXXXXXXX
+- Ser del equipo de ventas de SP
+
+Ejemplo:
+┌─────────────────────────────────────────┐
+│ Vendedor 1:                             │
+│ Nombre: Carlos Méndez                   │
+│ Teléfono: +5718112345601                │
+└─────────────────────────────────────────┘
+
+COMPLETA PARA CADA VENDEDOR:
+
+VENDEDOR 1:
+Nombre: _____________________________________________________________________
+Teléfono: ___________________________________________________________________
+
+VENDEDOR 2:
+Nombre: _____________________________________________________________________
+Teléfono: ___________________________________________________________________
+
+VENDEDOR 3:
+Nombre: _____________________________________________________________________
+Teléfono: ___________________________________________________________________
+
+VENDEDOR 4:
+Nombre: _____________________________________________________________________
+Teléfono: ___________________________________________________________________
+
+VENDEDOR 5:
+Nombre: _____________________________________________________________________
+Teléfono: ___________________________________________________________________
+
+(Agrega más si necesitas)
+
+CÓMO REGISTRAR EN EL CRM:
+Una vez que tengas .env configurado, ejecuta:
+
+curl -X POST http://localhost:3000/api/vendedores \
+  -H "Authorization: Bearer <API_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"nombre":"Nombre Aqui", "telefono":"+57XXXXXXXXXX"}'
+
+O usa el endpoint de seed en desarrollo:
+
+curl -X POST http://localhost:3000/api/seed \
+  -H "Authorization: Bearer <API_TOKEN>"
+
+(Esto crea 5 vendedores de prueba)
+
+================================================================================
+4. CONFIGURACIÓN DE RAILWAY (PRODUCCIÓN)
+================================================================================
+
+Railway es el servidor donde correrá el CRM en producción.
+
+CUENTA DE RAILWAY:
+Email: ______________________________________________________________________
+Contraseña: __________________________________________________________________
+(Crea una en railway.app si no tienes)
+
+VARIABLES DE ENTORNO EN RAILWAY:
+Copia estas variables exactamente en Railway > Project > Variables:
+
+PORT=3000
+NODE_ENV=production
+WHATSAPP_TOKEN=<valor del paso 1.A>
+PHONE_NUMBER_ID=<valor del paso 1.B>
+VERIFY_TOKEN=<valor del paso 1.C>
+API_TOKEN=<valor del paso 2>
+WHATSAPP_BUSINESS_ACCOUNT_ID=2533458103819028
+
+WEBHOOK URL EN META:
+Una vez que Railway esté activo, obtendrás una URL como:
+https://sp-inmobiliaria-leads.up.railway.app
+
+Esta URL la usarás en Meta App > WhatsApp > Webhook Settings:
+
+Webhook URL: https://sp-inmobiliaria-leads.up.railway.app/webhook
+Verify Token: <el valor que generaste en paso 1.C>
+
+================================================================================
+5. EQUIPO Y ACCESO
+================================================================================
+
+¿Quién tiene acceso a qué?
+
+DESARROLLADOR (Eduardo):
+- Acceso a GitHub repo
+- Acceso a Railway dashboard
+- API_TOKEN para testing
+
+VENDEDORES:
+- Solo sus números WhatsApp personales
+- NO necesitan credenciales de Meta
+- NO necesitan API_TOKEN
+- Reciben mensajes de clientes en su WhatsApp
+
+ADMIN (Sergio):
+- Acceso a Railway para ver logs
+- API_TOKEN para monitorear /api/stats y /api/logs
+
+¿Quién necesita API_TOKEN?
+__________________________________________________________________________
+__________________________________________________________________________
+
+================================================================================
+6. CHECKLIST FINAL
+================================================================================
+
+Antes de llenar esto, asegúrate de que:
+
+Meta Business Setup:
+[ ] Tienes cuenta en developers.facebook.com
+[ ] Tienes número WhatsApp Business verificado
+[ ] Puedes acceder a Meta App configuración
+[ ] Obtuviste WHATSAPP_TOKEN (System User Token, no temporal)
+[ ] Obtuviste PHONE_NUMBER_ID
+
+CRM Setup:
+[ ] Cloné el repo sp-inmobiliaria-leads-UPDATED
+[ ] Generé VERIFY_TOKEN con openssl rand -hex 32
+[ ] Generé API_TOKEN con openssl rand -hex 32
+[ ] Creé .env con todos los valores
+
+Vendedores:
+[ ] Registré al menos 1 vendedor con número WhatsApp activo
+[ ] El número del vendedor puede recibir/enviar WhatsApp
+[ ] Teléfono está en formato internacional (+57...)
+
+Testing:
+[ ] Ejecuté npm install
+[ ] Ejecuté npm start
+[ ] Probé curl http://localhost:3000/ (devuelve {"status":"ok"})
+[ ] Probé /api/test-webhook (funciona sin errores)
+[ ] Probé /api/leads (devuelve lista de leads)
+
+Lanzamiento:
+[ ] Configuré Railway con las 7 variables de entorno
+[ ] Obtuve URL pública de Railway
+[ ] Configuré webhook en Meta App (URL + Verify Token)
+[ ] Probé webhook en Meta (status: OK)
+[ ] Completé PRODUCTION_CHECKLIST.md
+[ ] Está listo para rollout gradual
+
+================================================================================
+7. NOTAS Y PREGUNTAS
+================================================================================
+
+¿Cuántos leads esperas en el primer mes?
+____________________________________________________________________
+
+¿Número de vendedores inicial?
+____________________________________________________________________
+
+¿Horario de operación? (para deshabilitar escalaciones fuera de horario)
+____________________________________________________________________
+
+¿Hay integraciones que necesites? (Leadsales, Google Sheets, etc)
+____________________________________________________________________
+
+Notas adicionales:
+____________________________________________________________________
+____________________________________________________________________
+____________________________________________________________________
+
+================================================================================
+CUANDO COMPLETES TODO ESTO:
+1. Copia los datos a .env.example
+2. Registra vendedores con los endpoints
+3. Prueba localmente
+4. Copia a Railway
+5. Completra PRODUCTION_CHECKLIST.md
+6. ¡Lanza!
+
+Para preguntas: eduardojeremiasparramorales@gmail.com
+================================================================================

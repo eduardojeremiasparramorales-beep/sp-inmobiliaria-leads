@@ -79,9 +79,11 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
       callback(null, { message: 'cliente_espera' });
       return;
     }
-    const v = lead.assigned_to_id
-      ? vendedores.find(vd => vd.id === lead.assigned_to_id) || activos[0]
-      : activos[0];
+    // Verificar que el vendedor asignado siga activo; si no, reasignar al primero disponible
+    let v = lead.assigned_to_id
+      ? vendedores.find(vd => vd.id === lead.assigned_to_id && vd.estado === 'activo')
+      : null;
+    if (!v) v = activos[0];
 
     saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming');
     notificarPanel(v.id, lead.id, 'mensaje_cliente');

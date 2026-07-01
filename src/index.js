@@ -1,6 +1,8 @@
 require('dotenv').config();
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const store = require('./db/store');
 const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB } = store;
 const { handleVerification } = require('./webhook/verify');
@@ -11,8 +13,29 @@ const auth = require('./services/auth');
 const events = require('./services/events');
 const push = require('./services/push');
 
+const rateLimit = require('express-rate-limit');
+
 const app = express();
 app.use(express.json({ limit: '30mb' }));
+
+// Rate limiting: protección básica anti-DoS
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos' } });
+const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
+
+// SW con versión dinámica (se invalida el caché en cada reinicio del servidor)
+const SW_VERSION = `sp-panel-${Date.now()}`;
+app.get('/sw.js', (req, res) => {
+  try {
+    const content = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8')
+      .replace('__SW_VERSION__', SW_VERSION);
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(content);
+  } catch (e) {
+    res.status(500).send('// sw.js not found');
+  }
+});
+
 app.use(express.static('public'));
 
 const PORT = process.env.PORT || 3000;
@@ -67,7 +90,7 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 
 // ===================== AUTENTICACIÓN =====================
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   const { email, password, telefono, pin } = req.body || {};
   const secure = process.env.SECURE_COOKIES === 'true' ? '; Secure' : '';
   const MAX_AGE = 60 * 60 * 24 * 30; // 30 días en segundos
@@ -175,7 +198,7 @@ app.get('/api/media/:messageId', auth.requireAuth, (req, res) => {
 
 // Responder a un cliente con un archivo (imagen/audio/video/documento) desde el panel.
 // Body JSON: { mime, filename, dataBase64, caption }
-app.post('/api/leads/:id/responder-media', auth.requireAuth, async (req, res) => {
+app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async (req, res) => {
   const { mime, filename, dataBase64, caption } = req.body || {};
   if (!mime || !dataBase64) return res.status(400).json({ error: 'mime y dataBase64 requeridos' });
 
@@ -239,9 +262,9 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
 
   // Heartbeat para mantener viva la conexión
   const hb = setInterval(() => {
-    try { res.write(': hb\n\n'); } catch (e) { clearInterval(hb); }
+    try { res.write(': hb\n\n'); } catch (e) { clearInterval(hb); events.removeClient(canal, res); }
   }, 25000);
-  res.on('close', () => clearInterval(hb));
+  res.on('close', () => { clearInterval(hb); events.removeClient(canal, res); });
 });
 
 // ===================== NOTIFICACIONES PUSH =====================

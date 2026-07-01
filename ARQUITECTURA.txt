@@ -1,0 +1,292 @@
+================================================================================
+ARQUITECTURA - SP INMOBILIARIA CRM
+================================================================================
+
+1. FLUJO DE LEAD (END-TO-END)
+================================================================================
+
+    [CLIENTE]
+        │
+        │ Envía WhatsApp a +57 ___
+        ↓
+    [META CLOUD API]
+        │ (Recibe mensaje)
+        │ (Envía webhook)
+        ↓
+    [SERVIDOR CRM]
+        │ POST /webhook
+        │ (procesa request inmediatamente)
+        │ res.sendStatus(200)
+        ├─→ Valida payload
+        ├─→ Crea lead en DB
+        ├─→ Asigna a vendedor (round-robin)
+        ├─→ Guarda mensaje en DB
+        │
+        └─→ Reenvía a vendedor vía Meta API
+            │
+            ↓
+        [VENDEDOR]
+        (recibe en su WhatsApp)
+            │
+            │ Responde por WhatsApp
+            ↓
+        [META CLOUD API]
+        (recibe mensaje del vendedor)
+            │
+            │ Envía webhook
+            ↓
+        [SERVIDOR CRM]
+        POST /webhook (nueva solicitud)
+        ├─→ Detecta que es vendedor
+        ├─→ Encuentra lead asignado
+        ├─→ Marca como "contactado"
+        ├─→ Guarda mensaje en DB
+        │
+        └─→ Reenvía a cliente vía Meta API
+            │
+            ↓
+        [CLIENTE]
+        (recibe respuesta en WhatsApp)
+
+
+2. COMPONENTES DEL SISTEMA
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  EXTERNA: META CLOUD API                                                  │
+│  ├─ Recibe mensajes de clientes/vendedores                                │
+│  ├─ Envía webhooks a /webhook                                             │
+│  └─ Envía mensajes cuando llamamos a /messages endpoint                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  SERVIDOR EXPRESS (localhost:3000)                                        │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │ ENDPOINTS PÚBLICOS (sin autenticación)                              │ │
+│  │ GET /                 → status check                                 │ │
+│  │ GET /webhook          → verificación Meta (webhook validation)      │ │
+│  │ POST /webhook         → recibir mensajes de Meta                    │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │ ENDPOINTS PROTEGIDOS (requieren Authorization: Bearer <API_TOKEN>) │ │
+│  │ GET /api/stats                → estadísticas generales              │ │
+│  │ GET /api/leads                → lista de leads                      │ │
+│  │ GET /api/vendedores           → lista de vendedores                 │ │
+│  │ POST /api/vendedores          → crear vendedor                      │ │
+│  │ POST /api/vendedores/:id/estado → cambiar estado                    │ │
+│  │ GET /api/logs                 → ver últimos mensajes                │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │ ENDPOINTS DE TEST (solo NODE_ENV=development)                       │ │
+│  │ POST /api/seed          → crear 5 vendedores de prueba              │ │
+│  │ POST /api/test-webhook  → simular webhook de cliente                │ │
+│  │ POST /api/test-reply    → simular respuesta de vendedor             │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  BASE DE DATOS: SQLite (data/sp-leads.db)                                 │
+│                                                                             │
+│  ┌─ TABLA: leads ─────────────────────────────────────────────────────┐  │
+│  │ id, customer_phone, customer_name, assigned_to_id, status,        │  │
+│  │ messages_count, first_message, last_message, first_response_at,   │  │
+│  │ escalation_level, created_at, updated_at                          │  │
+│  │ + 5 índices para performance                                      │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ TABLA: vendedores ────────────────────────────────────────────────┐  │
+│  │ id, nombre, telefono, email, estado, rol, total_leads, created_at│  │
+│  │ + 2 índices (telefono, estado)                                    │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ TABLA: messages ──────────────────────────────────────────────────┐  │
+│  │ id, lead_id, from_number, to_number, body, direction, timestamp   │  │
+│  │ + 1 índice (lead_id)                                              │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ TABLA: usuarios ──────────────────────────────────────────────────┐  │
+│  │ id, email, password, nombre, rol, vendedor_id, created_at        │  │
+│  │ (para futura integración con panel)                               │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+3. PROCESOS EN BACKGROUND
+================================================================================
+
+┌─────────────────────────────────────────────┐
+│ checkEscalation (cada 60 segundos)         │
+├─────────────────────────────────────────────┤
+│                                             │
+│ if (lead sin respuesta > 30 min)           │
+│   escalation_level = 1                     │
+│   → envía alerta al vendedor               │
+│                                             │
+│ if (lead sin respuesta > 60 min)           │
+│   escalation_level = 2                     │
+│   → marca para reasignación (futuro)       │
+│                                             │
+└─────────────────────────────────────────────┘
+
+
+4. SEGURIDAD
+================================================================================
+
+LAYER 1: Validación de Webhook
+  • GET /webhook: Valida que 'hub.verify_token' == VERIFY_TOKEN del .env
+  • Si token NO coincide: 403 Forbidden
+  • VERIFY_TOKEN es obligatorio (error si no existe)
+
+LAYER 2: Autenticación de API
+  • Header requerido: Authorization: Bearer <API_TOKEN>
+  • API_TOKEN viene de .env
+  • Si no coincide: 401 Unauthorized
+  • Aplicado a todos los endpoints sensibles
+
+LAYER 3: Validación de Input
+  • Webhook: valida estructura de payload antes de procesar
+  • Vendedores: valida nombre (no vacío), teléfono (formato)
+  • Database: escapeado SQL para evitar inyección (sql.js tiene limitaciones)
+  • Asignación: valida que lead y vendedor existan antes de actualizar
+
+LAYER 4: Errores Controlados
+  • try-catch en handleMessage para evitar crash por payload malformado
+  • try-catch en saveDB para detectar errores de persistencia
+  • Error handling en sendMessage (logging de failures)
+
+
+5. FLUJO DE AUTENTICACIÓN
+================================================================================
+
+REQUEST → [requireAuth Middleware]
+            ↓
+          Busca header: Authorization: Bearer <token>
+            ↓
+          ¿Token existe?
+            ├─ NO → 401 Unauthorized
+            ├─ SÍ → ¿Coincide con API_TOKEN de .env?
+            │         ├─ NO → 401 Unauthorized
+            │         ├─ SÍ → next() → Procesar request
+            │
+          En DESARROLLO (NODE_ENV=development):
+            Si API_TOKEN no está seteado, permite acceso sin validar
+
+
+6. FLUJO DE ESCALACIÓN
+================================================================================
+
+  ┌─────────────────────────┐
+  │ Lead creado             │
+  │ created_at = ahora      │
+  │ first_response_at = NULL│
+  └───────────┬─────────────┘
+              │
+              ↓
+  ┌─────────────────────────────────────────────┐
+  │ 30 min después (checkEscalation corre)      │
+  ├─────────────────────────────────────────────┤
+  │ if (created_at ≤ ahora - 30 min) &&        │
+  │    (first_response_at == NULL)              │
+  │                                             │
+  │   escalation_level++ → 1                    │
+  │   Envía alerta al vendedor                  │
+  │   "Llevas 30 min sin responder al lead..."  │
+  └─────────────────────────────────────────────┘
+              │
+              ↓
+  ┌─────────────────────────────────────────────┐
+  │ 60 min después (checkEscalation corre)      │
+  ├─────────────────────────────────────────────┤
+  │ if (created_at ≤ ahora - 60 min) &&        │
+  │    (first_response_at == NULL)              │
+  │                                             │
+  │   escalation_level++ → 2                    │
+  │   MARCAR PARA REASIGNACIÓN (futuro)         │
+  └─────────────────────────────────────────────┘
+
+
+7. VARIABLES DE ENTORNO
+================================================================================
+
+REQUERIDAS (SIN ESTAS NO FUNCIONA):
+  • WHATSAPP_TOKEN      → Token de Meta API (Bearer token)
+  • PHONE_NUMBER_ID     → ID del número WhatsApp Business
+  • VERIFY_TOKEN        → Token para verificar webhooks
+  • API_TOKEN           → Token para proteger endpoints (en prod)
+
+OPCIONALES:
+  • PORT                → Puerto servidor (default 3000)
+  • NODE_ENV            → development o production
+  • WHATSAPP_BUSINESS_ACCOUNT_ID → Para futuro
+  • META_APP_ID, META_APP_SECRET → Para futuro
+  • ADMIN_USERNAME, ADMIN_PASSWORD → Para panel futuro
+
+
+8. DEPENDENCIAS
+================================================================================
+
+  • express ^4.21.0       → Framework web
+  • axios ^1.7.0          → HTTP client para llamar Meta API
+  • sql.js ^1.11.0        → SQLite en JavaScript
+
+
+9. ARCHIVOS IMPORTANTES
+================================================================================
+
+  src/index.js                    → Servidor Express, endpoints, escalation
+  src/services/whatsapp.js        → Comunicación con Meta API
+  src/services/assigner.js        → Lógica de asignación de leads
+  src/webhook/verify.js           → Validación de webhook
+  src/webhook/messages.js         → Procesamiento de mensajes
+  src/db/store.js                 → Base de datos SQLite, funciones CRUD
+
+  .env.example                    → Plantilla de configuración
+  CONFIGURATION.md                → Guía completa de setup
+  PRODUCTION_CHECKLIST.md         → Checklist pre-deploy
+  TEST_COMMANDS.sh                → Comandos curl para testing
+
+
+10. DEPLOYMENT
+================================================================================
+
+DESARROLLO:
+  $ npm install
+  $ NODE_ENV=development npm run dev    → con auto-reload
+  $ NODE_ENV=development npm start      → sin auto-reload
+
+PRODUCCIÓN (Railway):
+  • Railway clona repo de GitHub
+  • Railway instala dependencias (npm install)
+  • Railway ejecuta: npm start
+  • NODE_ENV debe estar seteado a "production"
+  • Volumen persistente en data/sp-leads.db
+  • URL pública: https://sp-inmobiliaria-leads.up.railway.app
+
+
+11. PERFORMANCE
+================================================================================
+
+Optimizaciones aplicadas:
+  ✓ 8 índices en base de datos
+  ✓ Queries reencritas para evitar SELECT duplicados
+  ✓ Validación de entrada antes de procesar
+  ✓ Webhook responde inmediatamente (res.sendStatus(200))
+  ✓ Procesamiento de mensaje en background
+
+Capacidad estimada:
+  • ~10 leads/segundo (limitado por Meta, no por servidor)
+  • <100ms respuesta en /api/stats
+  • <500ms respuesta en /api/leads (1000 leads)
+  • ~50k leads antes de migrar a PostgreSQL
+
+
+================================================================================
