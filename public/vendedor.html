@@ -52,6 +52,31 @@
   .b-contactado{background:var(--verde);color:#dff3da}
   .b-cerrado{background:#444;color:#bbb}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--oro);display:inline-block;margin-left:6px}
+  /* Etiquetas de pipeline */
+  .etq{font-size:.6rem;padding:2px 7px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;margin-left:6px}
+  .e-interesado{background:#2b4d6b;color:#cfe3f5}
+  .e-negociacion{background:#7a5c1e;color:#f2dca0}
+  .e-cita{background:#4E7B46;color:#dff3da}
+  .e-vendido{background:#C8A45A;color:#000}
+  .e-no_interesado{background:#5a2b2b;color:#f5c5c5}
+  .e-sin_clasificar{background:#333;color:#999}
+
+  /* Barra de gestión bajo el header */
+  .lead-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 18px;background:#141414;border-bottom:1px solid rgba(255,255,255,.06);font-size:.8rem}
+  .lead-tools select{background:var(--panel2);color:var(--marfil);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.8rem}
+  .lead-tools label{color:var(--gris);font-size:.72rem}
+  .notas-btn{background:var(--panel2);border:1px solid rgba(200,164,90,.3);color:var(--oro);padding:5px 11px;border-radius:8px;cursor:pointer;font-size:.78rem;font-family:inherit}
+  .notas-btn:hover{background:var(--oro);color:#000}
+
+  /* Panel de notas internas */
+  .notas-panel{display:none;padding:12px 18px;background:#101010;border-bottom:1px solid rgba(255,255,255,.08)}
+  .notas-panel.show{display:block}
+  .notas-panel .nota-item{background:var(--panel2);border-left:2px solid var(--oro);padding:8px 10px;border-radius:6px;margin-bottom:6px;font-size:.82rem}
+  .notas-panel .nota-item .meta{color:var(--gris);font-size:.68rem;margin-top:3px;display:flex;justify-content:space-between}
+  .notas-panel .nota-item .del{color:#a55;cursor:pointer;font-size:.68rem}
+  .notas-form{display:flex;gap:8px;margin-top:8px}
+  .notas-form input{flex:1;background:var(--panel2);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:var(--marfil);padding:8px 10px;font-family:inherit;font-size:.85rem}
+  .notas-form button{background:var(--oro);color:#000;border:none;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer;font-family:inherit;font-size:.82rem}
 
   /* Chat */
   .chat-header{padding:14px 22px;background:var(--panel);border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center}
@@ -152,6 +177,17 @@
   let currentLead = null;
   let templates = [];
   let waTemplates = [];
+  let vendedores = [];
+
+  const ETIQUETAS = [
+    {v:'sin_clasificar', t:'Sin clasificar'},
+    {v:'interesado', t:'Interesado'},
+    {v:'negociacion', t:'Negociación'},
+    {v:'cita', t:'Cita agendada'},
+    {v:'vendido', t:'Vendido'},
+    {v:'no_interesado', t:'No interesado'},
+  ];
+  function etqLabel(v){ const e = ETIQUETAS.find(x=>x.v===v); return e?e.t:''; }
 
   function toast(msg){
     const t = document.getElementById('toast');
@@ -181,6 +217,7 @@
     document.getElementById('miNombre').textContent = me.nombre;
     await cargarTemplates();
     await cargarWATemplates();
+    if(me.rol === 'admin') await cargarVendedores();
     await cargarLeads();
     conectarStream();
 
@@ -204,6 +241,13 @@
     }catch(e){ waTemplates = []; }
   }
 
+  async function cargarVendedores(){
+    try{
+      const r = await api('/api/vendedores');
+      vendedores = await r.json();
+    }catch(e){ vendedores = []; }
+  }
+
   async function cargarLeads(){
     const r = await api('/api/mis-leads');
     leads = await r.json();
@@ -223,7 +267,7 @@
           <span>${escapeHtml(l.customer_name||'Cliente')}</span>
           <span class="${badgeClass(l.status)}">${l.status||'nuevo'}</span>
         </div>
-        <div class="phone">${escapeHtml(l.customer_phone)}</div>
+        <div class="phone">${escapeHtml(l.customer_phone)}${l.etiqueta && l.etiqueta!=='sin_clasificar' ? `<span class="etq e-${l.etiqueta}">${etqLabel(l.etiqueta)}</span>` : ''}</div>
         <div class="preview">${escapeHtml(l.last_message||l.first_message||'')}</div>
       </div>`).join('');
     cont.querySelectorAll('.lead-item').forEach(el =>
@@ -258,6 +302,25 @@
           ${!cerrado && waTemplates.length>0 ? '<button id="reactivarBtn" title="Enviar plantilla aprobada de Meta (para leads sin respuesta +24h)">📨 Reactivar</button>':''}
           ${cerrado?'':'<button id="cerrarBtn">Cerrar lead</button>'}
         </div>
+      </div>
+      <div class="lead-tools">
+        <label>Etiqueta:</label>
+        <select id="etiquetaSelect">
+          ${ETIQUETAS.map(e=>`<option value="${e.v}" ${(lead.etiqueta||'sin_clasificar')===e.v?'selected':''}>${e.t}</option>`).join('')}
+        </select>
+        ${me.rol==='admin' ? `
+        <label style="margin-left:6px">Vendedor:</label>
+        <select id="reasignarSelect">
+          ${vendedores.map(v=>`<option value="${v.id}" ${Number(lead.assigned_to_id)===Number(v.id)?'selected':''}>${escapeHtml(v.nombre)}${v.estado!=='activo'?' ('+v.estado+')':''}</option>`).join('')}
+        </select>`:''}
+        <button type="button" class="notas-btn" id="notasBtn">📝 Notas</button>
+      </div>
+      <div class="notas-panel" id="notasPanel">
+        <div id="notasList" style="max-height:160px;overflow-y:auto"></div>
+        <form class="notas-form" id="notasForm">
+          <input type="text" id="notaInput" placeholder="Escribe una nota interna (solo la ve el equipo)…" maxlength="500">
+          <button type="submit">Guardar</button>
+        </form>
       </div>
       ${!cerrado && waTemplates.length>0 ? `
       <div id="reactivarPanel" style="display:none;padding:10px 18px;background:#1a1a1a;border-bottom:1px solid rgba(255,255,255,.08);font-size:.83rem">
@@ -415,11 +478,90 @@
         });
       }
     }
+    // --- Etiqueta de pipeline ---
+    const etiquetaSelect = document.getElementById('etiquetaSelect');
+    if(etiquetaSelect) etiquetaSelect.addEventListener('change', async () => {
+      try{
+        await api('/api/leads/'+lead.id+'/etiqueta', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ etiqueta: etiquetaSelect.value }),
+        });
+        if(currentLead) currentLead.etiqueta = etiquetaSelect.value;
+        toast('Etiqueta actualizada');
+        await cargarLeads();
+      }catch(e){ toast('Error al etiquetar'); }
+    });
+
+    // --- Reasignar (admin) ---
+    const reasignarSelect = document.getElementById('reasignarSelect');
+    if(reasignarSelect) reasignarSelect.addEventListener('change', async () => {
+      const nombre = reasignarSelect.options[reasignarSelect.selectedIndex].text;
+      if(!confirm('¿Reasignar este lead a '+nombre+'?')){ reasignarSelect.value = lead.assigned_to_id; return; }
+      try{
+        await api('/api/leads/'+lead.id+'/reasignar', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ vendedorId: reasignarSelect.value }),
+        });
+        toast('Lead reasignado a '+nombre);
+        await cargarLeads();
+      }catch(e){ toast('Error al reasignar'); }
+    });
+
+    // --- Notas internas ---
+    const notasBtn = document.getElementById('notasBtn');
+    const notasPanel = document.getElementById('notasPanel');
+    const notasForm = document.getElementById('notasForm');
+    const notaInput = document.getElementById('notaInput');
+    if(notasBtn && notasPanel){
+      notasBtn.addEventListener('click', async () => {
+        const abrir = !notasPanel.classList.contains('show');
+        notasPanel.classList.toggle('show', abrir);
+        if(abrir) await cargarNotas(lead.id);
+      });
+    }
+    if(notasForm) notasForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const nota = notaInput.value.trim();
+      if(!nota) return;
+      try{
+        await api('/api/leads/'+lead.id+'/notas', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ nota }),
+        });
+        notaInput.value = '';
+        await cargarNotas(lead.id);
+      }catch(e){ toast('Error al guardar nota'); }
+    });
+
     const volver = document.getElementById('volver');
     if(volver) volver.addEventListener('click', () => {
       document.getElementById('chat').classList.add('hidden');
       document.getElementById('sidebar').classList.remove('hidden');
     });
+  }
+
+  async function cargarNotas(leadId){
+    const cont = document.getElementById('notasList');
+    if(!cont) return;
+    try{
+      const r = await api('/api/leads/'+leadId+'/notas');
+      const notas = await r.json();
+      if(!notas.length){ cont.innerHTML = '<div style="color:var(--gris);font-size:.8rem;padding:6px 0">Sin notas todavía.</div>'; return; }
+      cont.innerHTML = notas.map(n => `
+        <div class="nota-item">
+          <div>${escapeHtml(n.nota)}</div>
+          <div class="meta">
+            <span>${escapeHtml(n.autor||'Equipo')} · ${fmtTime(n.created_at)}</span>
+            <span class="del" data-id="${n.id}">Eliminar</span>
+          </div>
+        </div>`).join('');
+      cont.querySelectorAll('.del').forEach(el =>
+        el.addEventListener('click', async () => {
+          if(!confirm('¿Eliminar esta nota?')) return;
+          await api('/api/leads/'+leadId+'/notas/'+el.dataset.id, {method:'DELETE'});
+          await cargarNotas(leadId);
+        }));
+    }catch(e){ cont.innerHTML = '<div style="color:#a55;font-size:.8rem">Error al cargar notas.</div>'; }
   }
 
   async function enviarMensaje(){

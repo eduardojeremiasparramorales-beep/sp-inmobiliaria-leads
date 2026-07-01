@@ -104,6 +104,21 @@ async function initDB() {
   // Migración: PIN para vendedores
   ensureColumn('vendedores', 'pin', 'TEXT');
 
+  // Migración: etiqueta de pipeline en leads (interesado, negociacion, cita, vendido, no_interesado)
+  ensureColumn('leads', 'etiqueta', 'TEXT');
+
+  // Tabla de notas internas por lead (privadas del equipo, no se envían al cliente)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS lead_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      autor TEXT DEFAULT '',
+      nota TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_lead_notes_lead ON lead_notes(lead_id)`);
+
   // Tabla de configuración general
   db.run(`
     CREATE TABLE IF NOT EXISTS config (
@@ -518,6 +533,37 @@ function setVendedorEstado(id, estado) {
   saveDB();
 }
 
+// --- Etiqueta de pipeline del lead ---
+function setLeadEtiqueta(leadId, etiqueta) {
+  const d = getDB();
+  d.run(`UPDATE leads SET etiqueta = ${q(etiqueta)}, updated_at = datetime('now') WHERE id = ${Number(leadId)}`);
+  saveDB();
+}
+
+// --- Notas internas por lead ---
+function getNotasByLead(leadId) {
+  return rows(getDB().exec(`SELECT * FROM lead_notes WHERE lead_id = ${Number(leadId)} ORDER BY created_at DESC, id DESC`));
+}
+
+function addNota(leadId, autor, nota) {
+  const d = getDB();
+  d.run(`INSERT INTO lead_notes (lead_id, autor, nota) VALUES (${Number(leadId)}, ${q(autor || '')}, ${q(nota)})`);
+  saveDB();
+}
+
+function deleteNota(id) {
+  getDB().run(`DELETE FROM lead_notes WHERE id = ${Number(id)}`);
+  saveDB();
+}
+
+// --- Reasignación manual de un lead a otro vendedor (admin) ---
+function reassignLead(leadId, vendedor) {
+  const d = getDB();
+  d.run(`UPDATE leads SET assigned_to_id = ${Number(vendedor.id)}, assigned_to_phone = ${q(vendedor.telefono)}, updated_at = datetime('now') WHERE id = ${Number(leadId)}`);
+  d.run(`UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ${Number(vendedor.id)}`);
+  saveDB();
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -532,4 +578,5 @@ module.exports = {
   createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate,
+  setLeadEtiqueta, getNotasByLead, addNota, deleteNota, reassignLead,
 };

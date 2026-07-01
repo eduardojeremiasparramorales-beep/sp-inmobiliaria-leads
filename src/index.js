@@ -246,6 +246,71 @@ app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Etiquetas válidas del pipeline
+const ETIQUETAS_VALIDAS = ['sin_clasificar', 'interesado', 'negociacion', 'cita', 'vendido', 'no_interesado'];
+
+// Cambiar la etiqueta de pipeline de un lead
+app.post('/api/leads/:id/etiqueta', auth.requireAuth, (req, res) => {
+  const { etiqueta } = req.body || {};
+  if (!ETIQUETAS_VALIDAS.includes(etiqueta)) return res.status(400).json({ error: 'etiqueta_invalida' });
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.setLeadEtiqueta(lead.id, etiqueta);
+  events.emitToAdmins('lead_actualizado', { leadId: lead.id, etiqueta, ts: Date.now() });
+  res.json({ ok: true });
+});
+
+// Notas internas de un lead (equipo, no se envían al cliente)
+app.get('/api/leads/:id/notas', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  res.json(store.getNotasByLead(lead.id));
+});
+
+app.post('/api/leads/:id/notas', auth.requireAuth, (req, res) => {
+  const { nota } = req.body || {};
+  if (!nota || !String(nota).trim()) return res.status(400).json({ error: 'nota_vacia' });
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.addNota(lead.id, req.session.nombre || 'Equipo', String(nota).trim());
+  res.json({ ok: true });
+});
+
+app.delete('/api/leads/:leadId/notas/:notaId', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.leadId);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.deleteNota(req.params.notaId);
+  res.json({ ok: true });
+});
+
+// Reasignar un lead a otro vendedor (solo admin)
+app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
+  const { vendedorId } = req.body || {};
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  const vendedor = getVendedores().find(v => Number(v.id) === Number(vendedorId));
+  if (!vendedor) return res.status(400).json({ error: 'vendedor_no_existe' });
+  const anteriorId = lead.assigned_to_id;
+  store.reassignLead(lead.id, vendedor);
+  // Notificar a ambos vendedores y admins para refrescar sus listas
+  events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+  if (anteriorId) events.emitToVendedor(anteriorId, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+  events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+  res.json({ ok: true, vendedor: { id: vendedor.id, nombre: vendedor.nombre } });
+});
+
 // ===================== TIEMPO REAL (SSE) =====================
 
 app.get('/api/stream', auth.requireAuth, (req, res) => {
