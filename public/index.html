@@ -36,7 +36,10 @@
             --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.12);
         }
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);min-height:100vh;padding:20px}
+        body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);min-height:100vh;padding:20px;
+          -webkit-user-select:none;-moz-user-select:none;user-select:none;
+          -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+        input,textarea,td,th{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
         .container{max-width:1400px;margin:0 auto}
         header{background:var(--panel);padding:20px 24px;border-radius:12px;margin-bottom:24px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
         .header-left{display:flex;align-items:center;gap:16px}

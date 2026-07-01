@@ -20,7 +20,16 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);height:100vh;height:100dvh;overflow:hidden;-webkit-text-size-adjust:100%}
+  body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);height:100vh;height:100dvh;overflow:hidden;-webkit-text-size-adjust:100%;
+    /* Bloqueo de selección estilo WhatsApp: la interfaz no se selecciona */
+    -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  /* Excepciones: el texto de los mensajes y los campos de escritura SÍ se pueden seleccionar/copiar */
+  .msg, .msg *, .nota-item, .nota-item *, input, textarea{
+    -webkit-user-select:text;-moz-user-select:text;-ms-user-select:text;user-select:text;-webkit-touch-callout:default}
+  /* Táctil: sin retardo ni zoom por doble-toque en botones/listas */
+  button,.lead-item,.tpl-chip,select,.notas-btn,a{touch-action:manipulation}
+  button:active,.lead-item:active,.tpl-chip:active{opacity:.75}
   .app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;min-height:0}
 
   /* Barra superior */

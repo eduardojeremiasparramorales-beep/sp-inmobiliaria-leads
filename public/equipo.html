@@ -14,7 +14,10 @@
 <style>
   :root{--negro:#0A0A0A;--oro:#C8A45A;--verde:#4E7B46;--marfil:#F5F2EB;--gris:#6D6D6D;--panel:#121212;--panel2:#1a1a1a}
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);min-height:100vh}
+  body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);min-height:100vh;
+    -webkit-user-select:none;-moz-user-select:none;user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  input,textarea,td,th{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
   .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--panel);border-bottom:1px solid rgba(200,164,90,.2)}
   .brand{font-family:'Cinzel',serif;color:var(--oro);letter-spacing:.1em;font-size:1.25rem}
   .nav a{color:var(--gris);text-decoration:none;margin-left:18px;font-size:.85rem}
