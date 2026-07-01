@@ -1,5 +1,11 @@
-const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse } = require('../db/store');
+const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse, getConfig } = require('../db/store');
 const { emitToVendedor, emitToAdmins } = require('./events');
+
+const WELCOME_DEFAULT = 'Hola 👋 Gracias por contactar a *SP Inmobiliaria*. Un asesor te atenderá en los próximos minutos. ¡Estamos para ayudarte!';
+
+function getWelcomeMsg() {
+  return getConfig('welcome_message') || WELCOME_DEFAULT;
+}
 
 // Notifica al panel del vendedor (y a admins) que hubo movimiento en un lead
 function notificarPanel(vendedorId, leadId, tipo) {
@@ -94,6 +100,14 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
   const { saveLead: saveL } = require('../db/store');
   const r = saveL(fromPhone, customerName || 'Cliente', messageBody);
   const a = getVendedoresActivos();
+  const { sendMessage } = require('./whatsapp');
+
+  // Enviar mensaje de bienvenida automático al nuevo lead
+  const welcome = getWelcomeMsg();
+  sendMessage(fromPhone, welcome)
+    .then(() => saveMessage(r.leadId, 'sistema', fromPhone, welcome, 'outgoing'))
+    .catch(e => console.error('Error enviando bienvenida:', e.message));
+
   if (a.length > 0) {
     const vendedorAsignado = a[0];
     try {
@@ -103,8 +117,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
     }
     saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming');
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
-    const { sendMessage } = require('./whatsapp');
-    sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nTel: ${fromPhone}\n\n${messageBody}`)
+    sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nCliente: ${customerName || 'Cliente'}\nTel: ${fromPhone}\n\n${messageBody}`)
       .then(() => callback(null, { forwarded: true, to: vendedorAsignado.telefono }))
       .catch(callback);
   } else {

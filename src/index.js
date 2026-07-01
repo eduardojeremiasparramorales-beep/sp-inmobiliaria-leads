@@ -259,6 +259,55 @@ app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ===================== CONFIGURACIÓN (admin) =====================
+
+app.get('/api/config', auth.requireAdmin, (req, res) => {
+  res.json({
+    welcome_message: store.getConfig('welcome_message') || '',
+  });
+});
+
+app.post('/api/config', auth.requireAdmin, (req, res) => {
+  const { welcome_message } = req.body || {};
+  if (welcome_message !== undefined) store.setConfig('welcome_message', String(welcome_message));
+  res.json({ ok: true });
+});
+
+// ===================== PLANTILLAS WHATSAPP (Meta aprobadas) =====================
+
+app.get('/api/wa-templates', auth.requireAuth, (req, res) => res.json(store.getWATemplates()));
+
+app.post('/api/wa-templates', auth.requireAdmin, (req, res) => {
+  const { nombre, idioma, params } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+  store.addWATemplate(nombre.trim(), idioma || 'es', params || '');
+  res.json({ ok: true });
+});
+
+app.delete('/api/wa-templates/:id', auth.requireAdmin, (req, res) => {
+  store.deleteWATemplate(req.params.id);
+  res.json({ ok: true });
+});
+
+// Enviar template aprobado de Meta a un lead
+app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) => {
+  const { nombre, idioma, params } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'nombre de template requerido' });
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  try {
+    const { sendTemplate } = require('./services/whatsapp');
+    await sendTemplate(lead.customer_phone, nombre, params || null);
+    store.saveMessage(lead.id, 'sistema', lead.customer_phone, `[Template: ${nombre}]`, 'outgoing');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
 // ===================== TEMPLATES (respuestas rápidas) =====================
 
 app.get('/api/templates', auth.requireAuth, (req, res) => res.json(store.getTemplates()));

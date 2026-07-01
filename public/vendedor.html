@@ -151,6 +151,7 @@
   let leads = [];
   let currentLead = null;
   let templates = [];
+  let waTemplates = [];
 
   function toast(msg){
     const t = document.getElementById('toast');
@@ -179,6 +180,7 @@
     me = await r.json();
     document.getElementById('miNombre').textContent = me.nombre;
     await cargarTemplates();
+    await cargarWATemplates();
     await cargarLeads();
     conectarStream();
 
@@ -193,6 +195,13 @@
       const r = await api('/api/templates');
       templates = await r.json();
     }catch(e){ templates = []; }
+  }
+
+  async function cargarWATemplates(){
+    try{
+      const r = await api('/api/wa-templates');
+      waTemplates = await r.json();
+    }catch(e){ waTemplates = []; }
   }
 
   async function cargarLeads(){
@@ -244,11 +253,18 @@
           <div class="cname">${escapeHtml(lead.customer_name||'Cliente')}</div>
           <div class="cphone">${escapeHtml(lead.customer_phone)} · ${lead.status}</div>
         </div>
-        <div>
-          ${window.innerWidth<=760?'<button id="volver">← Leads</button> ':''}
+        <div style="display:flex;gap:8px;align-items:center">
+          ${window.innerWidth<=760?'<button id="volver">← Leads</button>':''}
+          ${!cerrado && waTemplates.length>0 ? '<button id="reactivarBtn" title="Enviar plantilla aprobada de Meta (para leads sin respuesta +24h)">📨 Reactivar</button>':''}
           ${cerrado?'':'<button id="cerrarBtn">Cerrar lead</button>'}
         </div>
       </div>
+      ${!cerrado && waTemplates.length>0 ? `
+      <div id="reactivarPanel" style="display:none;padding:10px 18px;background:#1a1a1a;border-bottom:1px solid rgba(255,255,255,.08);font-size:.83rem">
+        <span style="color:var(--gris);margin-right:10px">Plantilla a enviar:</span>
+        ${waTemplates.map(t=>`<button onclick="enviarTemplate(${t.id},'${escapeHtml(t.nombre)}','${escapeHtml(t.idioma)}')"
+          style="background:rgba(200,164,90,.15);border:1px solid rgba(200,164,90,.4);color:var(--oro);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:.8rem;margin:2px">${escapeHtml(t.nombre)}</button>`).join('')}
+      </div>`:''}
       <div class="messages" id="messages">
         ${mensajes.map(m => `
           <div class="msg ${m.direction==='incoming'?'in':'out'}">
@@ -390,6 +406,14 @@
         }));
       const cerrarBtn = document.getElementById('cerrarBtn');
       if(cerrarBtn) cerrarBtn.addEventListener('click', cerrarLead);
+
+      const reactivarBtn = document.getElementById('reactivarBtn');
+      const reactivarPanel = document.getElementById('reactivarPanel');
+      if(reactivarBtn && reactivarPanel){
+        reactivarBtn.addEventListener('click', () => {
+          reactivarPanel.style.display = reactivarPanel.style.display==='none' ? 'block' : 'none';
+        });
+      }
     }
     const volver = document.getElementById('volver');
     if(volver) volver.addEventListener('click', () => {
@@ -458,6 +482,25 @@
       if(!r.ok) throw new Error(data.detalle || 'No se pudo enviar el archivo');
       await abrirLead(currentLead.id);
       await cargarLeads();
+    }catch(e){
+      toast('Error: ' + e.message);
+    }
+  }
+
+  async function enviarTemplate(id, nombre, idioma){
+    if(!currentLead) return;
+    if(!confirm(`¿Enviar la plantilla "${nombre}" a ${currentLead.customer_name || currentLead.customer_phone}?`)) return;
+    try{
+      const r = await api('/api/leads/'+currentLead.id+'/enviar-template', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre, idioma }),
+      });
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.detalle || 'Error al enviar');
+      toast('✅ Plantilla enviada');
+      const panel = document.getElementById('reactivarPanel');
+      if(panel) panel.style.display = 'none';
+      await abrirLead(currentLead.id);
     }catch(e){
       toast('Error: ' + e.message);
     }

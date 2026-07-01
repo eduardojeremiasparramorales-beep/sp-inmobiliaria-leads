@@ -94,6 +94,39 @@
       <h2>Respuestas rápidas guardadas</h2>
       <div id="listaTpl"></div>
     </div>
+
+    <!-- Mensaje de bienvenida automático -->
+    <div class="card full">
+      <h2>Mensaje de bienvenida automático</h2>
+      <p style="font-size:.82rem;color:#999;margin-bottom:12px">Se envía automáticamente cuando un lead escribe por primera vez al número oficial.</p>
+      <form id="formBienvenida">
+        <textarea id="welcomeMsg" style="width:100%;background:#0A0A0A;border:1px solid rgba(255,255,255,.12);border-radius:7px;color:var(--marfil);padding:10px 12px;font-family:inherit;font-size:.9rem;resize:vertical;min-height:80px" placeholder="Hola 👋 Gracias por contactar a SP Inmobiliaria…"></textarea>
+        <button type="submit">Guardar mensaje</button>
+        <div class="msg" id="msgBienvenida"></div>
+      </form>
+    </div>
+
+    <!-- Plantillas WhatsApp aprobadas por Meta -->
+    <div class="card full">
+      <h2>Plantillas WhatsApp (aprobadas por Meta)</h2>
+      <p style="font-size:.82rem;color:#999;margin-bottom:12px">
+        Regístralas aquí con el nombre exacto que aprobó Meta. Los vendedores las usan para reactivar leads que no respondieron en +24h.
+        <br><a href="https://business.facebook.com/wa/manage/message-templates/" target="_blank" style="color:var(--oro)">→ Crear plantillas en Meta Business Manager</a>
+      </p>
+      <form id="formWATemplate" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:200px">
+          <label style="font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Nombre exacto en Meta</label>
+          <input id="wt_nombre" required placeholder="saludo_sp_inmobiliaria">
+        </div>
+        <div style="width:100px">
+          <label style="font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Idioma</label>
+          <input id="wt_idioma" value="es" placeholder="es">
+        </div>
+        <button type="submit" style="margin-top:0;height:40px;padding:0 18px">Agregar</button>
+      </form>
+      <div class="msg" id="msgWAT" style="margin-top:8px"></div>
+      <div id="listaWAT" style="margin-top:14px"></div>
+    </div>
   </div>
 
 <script>
@@ -166,7 +199,46 @@
     e.preventDefault(); await fetch('/api/logout',{method:'POST'}); location.href='/login.html';
   });
 
-  cargarUsuarios(); cargarTemplates();
+  // --- Mensaje de bienvenida ---
+  async function cargarBienvenida(){
+    const r = await fetch('/api/config'); if(!r.ok) return;
+    const d = await r.json();
+    document.getElementById('welcomeMsg').value = d.welcome_message || '';
+  }
+  document.getElementById('formBienvenida').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({welcome_message:document.getElementById('welcomeMsg').value})});
+    if(r.ok) showMsg('msgBienvenida','Mensaje guardado.',true);
+    else showMsg('msgBienvenida','Error al guardar.',false);
+  });
+
+  // --- Plantillas WhatsApp ---
+  async function cargarWATemplates(){
+    const r = await fetch('/api/wa-templates'); if(!r.ok) return;
+    const ts = await r.json();
+    document.getElementById('listaWAT').innerHTML = ts.length ? ts.map(t=>`
+      <div class="tpl-row">
+        <div>
+          <div class="t">${esc(t.nombre)}</div>
+          <div class="b">Idioma: ${esc(t.idioma)} · Nombre en Meta: <code style="color:var(--oro)">${esc(t.nombre)}</code></div>
+        </div>
+        <button class="del" data-id="${t.id}">Eliminar</button>
+      </div>`).join('')
+    : '<div style="color:#777;font-size:.85rem;margin-top:8px">Aún no hay plantillas registradas.</div>';
+    document.querySelectorAll('#listaWAT .del').forEach(b=>b.addEventListener('click',async()=>{
+      await fetch('/api/wa-templates/'+b.dataset.id,{method:'DELETE'});
+      cargarWATemplates();
+    }));
+  }
+  document.getElementById('formWATemplate').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const body={nombre:wt_nombre.value.trim(), idioma:wt_idioma.value.trim()||'es'};
+    const r=await fetch('/api/wa-templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok){ showMsg('msgWAT','Plantilla registrada.',true); e.target.reset(); document.getElementById('wt_idioma').value='es'; cargarWATemplates(); }
+    else showMsg('msgWAT','Error al guardar.',false);
+  });
+
+  cargarUsuarios(); cargarTemplates(); cargarBienvenida(); cargarWATemplates();
 </script>
 </body>
 </html>

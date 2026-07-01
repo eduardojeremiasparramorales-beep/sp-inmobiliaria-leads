@@ -104,6 +104,14 @@ async function initDB() {
   // Migración: PIN para vendedores
   ensureColumn('vendedores', 'pin', 'TEXT');
 
+  // Tabla de configuración general
+  db.run(`
+    CREATE TABLE IF NOT EXISTS config (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+
   // Tabla de sesiones persistentes (30 días, sobrevive reinicios)
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -114,6 +122,17 @@ async function initDB() {
       nombre TEXT DEFAULT '',
       email TEXT DEFAULT '',
       created_at INTEGER NOT NULL
+    );
+  `);
+
+  // Templates de WhatsApp aprobados por Meta
+  db.run(`
+    CREATE TABLE IF NOT EXISTS wa_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL UNIQUE,
+      idioma TEXT DEFAULT 'es',
+      params TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now'))
     );
   `);
 
@@ -450,6 +469,32 @@ function cleanExpiredSessions(ttlMs) {
   saveDB();
 }
 
+// --- Configuración general ---
+function getConfig(key) {
+  const r = rowOne(getDB().exec(`SELECT value FROM config WHERE key = ${q(key)} LIMIT 1`));
+  return r ? r.value : null;
+}
+
+function setConfig(key, value) {
+  getDB().run(`INSERT OR REPLACE INTO config (key, value) VALUES (${q(key)}, ${q(value)})`);
+  saveDB();
+}
+
+// --- Templates de WhatsApp aprobados por Meta ---
+function getWATemplates() {
+  return rows(getDB().exec(`SELECT * FROM wa_templates ORDER BY nombre`));
+}
+
+function addWATemplate(nombre, idioma, params) {
+  getDB().run(`INSERT OR REPLACE INTO wa_templates (nombre, idioma, params) VALUES (${q(nombre)}, ${q(idioma || 'es')}, ${q(params || '')})`);
+  saveDB();
+}
+
+function deleteWATemplate(id) {
+  getDB().run(`DELETE FROM wa_templates WHERE id = ${Number(id)}`);
+  saveDB();
+}
+
 function setVendedorEstado(id, estado) {
   const d = getDB();
   d.run(`UPDATE vendedores SET estado = ${q(estado)} WHERE id = ${Number(id)}`);
@@ -468,4 +513,6 @@ module.exports = {
   getTemplates, addTemplate, deleteTemplate,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
   createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,
+  getConfig, setConfig,
+  getWATemplates, addWATemplate, deleteWATemplate,
 };

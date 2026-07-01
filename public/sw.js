@@ -3,7 +3,7 @@
    - NUNCA cachea /api/* (datos siempre frescos desde la red).
    - Maneja notificaciones push (Fase 4).
 */
-const CACHE = 'sp-panel-v1';
+const CACHE = 'sp-panel-v4';
 const SHELL = [
   '/vendedor.html',
   '/login.html',
