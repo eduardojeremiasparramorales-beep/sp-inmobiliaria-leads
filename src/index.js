@@ -69,6 +69,59 @@ app.get('/api/leads', auth.requireAuth, (req, res) => {
   return res.json(getLeads());
 });
 
+// Métricas reales para el dashboard (admin)
+app.get('/api/metricas', auth.requireAdmin, (req, res) => {
+  try {
+    const leads = getLeads();
+    const vendedores = getVendedores();
+    const total = leads.length;
+
+    const porEtiqueta = {};
+    ['sin_clasificar', 'interesado', 'negociacion', 'cita', 'vendido', 'no_interesado'].forEach(e => porEtiqueta[e] = 0);
+    const porEstado = {};
+    let respondidos = 0, sumaRespuestaMin = 0;
+    leads.forEach(l => {
+      const etq = l.etiqueta || 'sin_clasificar';
+      porEtiqueta[etq] = (porEtiqueta[etq] || 0) + 1;
+      const st = l.status || 'nuevo';
+      porEstado[st] = (porEstado[st] || 0) + 1;
+      if (l.first_response_at && l.created_at) {
+        const t0 = new Date(l.created_at.replace(' ', 'T') + 'Z').getTime();
+        const t1 = new Date(l.first_response_at.replace(' ', 'T') + 'Z').getTime();
+        if (t1 >= t0) { respondidos++; sumaRespuestaMin += (t1 - t0) / 60000; }
+      }
+    });
+
+    const porVendedor = vendedores.map(v => {
+      const suyos = leads.filter(l => Number(l.assigned_to_id) === Number(v.id));
+      const vendidos = suyos.filter(l => (l.etiqueta || '') === 'vendido').length;
+      const activos = suyos.filter(l => (l.status || '') !== 'cerrado').length;
+      return {
+        id: v.id, nombre: v.nombre, estado: v.estado,
+        total: suyos.length, activos, vendidos,
+        conversion: suyos.length ? Math.round((vendidos / suyos.length) * 100) : 0,
+      };
+    }).sort((a, b) => b.total - a.total);
+
+    const vendidosTotal = porEtiqueta['vendido'] || 0;
+
+    res.json({
+      total,
+      vendidos: vendidosTotal,
+      conversionGlobal: total ? Math.round((vendidosTotal / total) * 100) : 0,
+      tiempoRespuestaPromedio: respondidos ? Math.round(sumaRespuestaMin / respondidos) : null,
+      respondidos,
+      sinResponder: leads.filter(l => !l.first_response_at && (l.status || '') !== 'cerrado').length,
+      porEtiqueta,
+      porEstado,
+      porVendedor,
+    });
+  } catch (e) {
+    console.error('Error en /api/metricas:', e.message);
+    res.status(500).json({ error: 'error_metricas' });
+  }
+});
+
 app.get('/api/vendedores', auth.requireAuth, (req, res) => res.json(getVendedores()));
 
 app.post('/api/vendedores', auth.requireAdmin, (req, res) => {

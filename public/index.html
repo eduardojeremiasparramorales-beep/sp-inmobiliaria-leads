@@ -336,18 +336,48 @@
             }
         }
 
+        let metricasCache = null;
+
         function loadStats() {
-            // Cargar estadísticas desde API
-            fetch('/api/stats')
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('totalLeads').textContent = data.leadsRegistrados || 0;
-                    document.getElementById('activeVendors').textContent = data.vendedoresActivos || 0;
-                    document.getElementById('conversionRate').textContent = Math.round((data.tasaCierre || 0) * 100) / 100 + '%';
-                    document.getElementById('avgResponse').textContent = Math.round(data.tiempoPromRespuesta || 0) + 'm';
-                })
-                .catch(() => console.log('Error cargando stats'));
+            Promise.all([
+                fetch('/api/stats').then(r => r.json()),
+                fetch('/api/metricas').then(r => r.json()),
+            ]).then(([stats, m]) => {
+                metricasCache = m;
+                document.getElementById('totalLeads').textContent = m.total || 0;
+                document.getElementById('activeVendors').textContent = stats.vendedoresActivos || 0;
+                document.getElementById('conversionRate').textContent = (m.conversionGlobal || 0) + '%';
+                document.getElementById('avgResponse').textContent =
+                    m.tiempoRespuestaPromedio != null ? m.tiempoRespuestaPromedio + 'm' : '—';
+                loadRecentActivity();
+            }).catch(() => console.log('Error cargando stats'));
         }
+
+        // Actividad reciente real (últimos leads)
+        function loadRecentActivity() {
+            fetch('/api/leads')
+                .then(r => r.json())
+                .then(leads => {
+                    const tbody = document.getElementById('recentActivity');
+                    if (!Array.isArray(leads) || leads.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" class="no-data">Sin actividad todavía</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = leads.slice(0, 10).map(l => `
+                        <tr>
+                            <td>${esc(l.customer_name || 'Cliente')}<br><span style="color:var(--gris);font-size:11px">${esc(l.customer_phone || '')}</span></td>
+                            <td>${esc(l.assigned_to_phone || '—')}</td>
+                            <td>${l.created_at ? new Date(l.created_at.replace(' ','T')+'Z').toLocaleDateString('es-CO') : '—'}</td>
+                            <td><span class="badge badge-warning">${esc(l.etiqueta && l.etiqueta!=='sin_clasificar' ? l.etiqueta : (l.status||'nuevo'))}</span></td>
+                            <td><button class="btn btn-secondary" style="padding:5px 10px;font-size:11px" onclick="contactLead('${esc(l.customer_phone||'')}')">WhatsApp</button></td>
+                        </tr>`).join('');
+                })
+                .catch(() => {
+                    document.getElementById('recentActivity').innerHTML = '<tr><td colspan="5" class="no-data">Error cargando actividad</td></tr>';
+                });
+        }
+
+        function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
         function loadLeads() {
             fetch('/api/leads')
@@ -360,28 +390,28 @@
                         return;
                     }
                     leads.forEach(lead => {
+                        const etq = lead.etiqueta && lead.etiqueta !== 'sin_clasificar' ? lead.etiqueta : (lead.status || 'nuevo');
                         container.innerHTML += `
                             <div class="lead-card">
                                 <div class="lead-header">
                                     <div>
-                                        <div class="lead-name">${lead.nombre || 'N/A'}</div>
-                                        <div class="lead-phone">${lead.telefono || 'N/A'}</div>
+                                        <div class="lead-name">${esc(lead.customer_name || 'Cliente')}</div>
+                                        <div class="lead-phone">${esc(lead.customer_phone || 'N/A')}</div>
                                     </div>
-                                    <span class="badge badge-success">${lead.estado || 'Nuevo'}</span>
+                                    <span class="badge badge-warning">${esc(etq)}</span>
                                 </div>
                                 <div class="lead-info">
                                     <div>
                                         <label>Vendedor</label>
-                                        <strong>${lead.vendedor || '-'}</strong>
+                                        <strong>${esc(lead.assigned_to_phone || '-')}</strong>
                                     </div>
                                     <div>
                                         <label>Fecha</label>
-                                        <strong>${new Date(lead.fecha).toLocaleDateString('es')}</strong>
+                                        <strong>${lead.created_at ? new Date(lead.created_at.replace(' ','T')+'Z').toLocaleDateString('es-CO') : '-'}</strong>
                                     </div>
                                 </div>
                                 <div class="lead-actions">
-                                    <button class="btn-contact" onclick="contactLead('${lead.telefono}')">📞 Contactar</button>
-                                    <button class="btn-status" onclick="changeLead Status('${lead.id}')">➜ Cambiar</button>
+                                    <button class="btn-contact" onclick="contactLead('${esc(lead.customer_phone||'')}')">📞 WhatsApp</button>
                                 </div>
                             </div>
                         `;
@@ -393,37 +423,41 @@
         }
 
         function loadVendors() {
-            fetch('/api/vendedores')
-                .then(r => r.json())
-                .then(vendors => {
+            Promise.all([
+                fetch('/api/vendedores').then(r => r.json()),
+                fetch('/api/metricas').then(r => r.json()).catch(() => ({ porVendedor: [] })),
+            ]).then(([vendors, m]) => {
                     const container = document.getElementById('vendorsContainer');
                     container.innerHTML = '';
                     if (vendors.length === 0) {
                         container.innerHTML = '<div class="no-data">Sin vendedores registrados</div>';
                         return;
                     }
+                    const porV = {};
+                    (m.porVendedor || []).forEach(v => porV[v.id] = v);
                     vendors.forEach(vendor => {
+                        const met = porV[vendor.id] || { total: 0, activos: 0, conversion: 0 };
                         container.innerHTML += `
                             <div class="vendor-card ${vendor.estado === 'activo' ? 'active' : ''}">
                                 <div class="vendor-header">
                                     <div>
-                                        <div class="vendor-name">${vendor.nombre}</div>
-                                        <div class="vendor-phone">${vendor.telefono}</div>
+                                        <div class="vendor-name">${esc(vendor.nombre)}</div>
+                                        <div class="vendor-phone">${esc(vendor.telefono)}</div>
                                     </div>
-                                    <span class="badge ${vendor.estado === 'activo' ? 'badge-success' : 'badge-danger'}">${vendor.estado.toUpperCase()}</span>
+                                    <span class="badge ${vendor.estado === 'activo' ? 'badge-success' : 'badge-danger'}">${esc((vendor.estado||'').toUpperCase())}</span>
                                 </div>
                                 <div class="vendor-stats">
                                     <div>
                                         <label>Leads</label>
-                                        <value>${vendor.leads || 0}</value>
+                                        <value>${met.total}</value>
+                                    </div>
+                                    <div>
+                                        <label>Activos</label>
+                                        <value>${met.activos}</value>
                                     </div>
                                     <div>
                                         <label>Conversión</label>
-                                        <value>${vendor.tasa || 0}%</value>
-                                    </div>
-                                    <div>
-                                        <label>Promedio Resp.</label>
-                                        <value>${vendor.promedio || 0}m</value>
+                                        <value>${met.conversion}%</value>
                                     </div>
                                 </div>
                                 <div class="vendor-actions">
@@ -440,23 +474,24 @@
         }
 
         function loadReports() {
-            fetch('/api/vendedores')
+            fetch('/api/metricas')
                 .then(r => r.json())
-                .then(vendors => {
+                .then(m => {
                     const table = document.getElementById('reportsTable');
-                    table.innerHTML = '';
-                    vendors.forEach(v => {
-                        table.innerHTML += `
-                            <tr>
-                                <td>${v.nombre}</td>
-                                <td>${v.leads || 0}</td>
-                                <td>${Math.round((v.leads || 0) * 0.25)}</td>
-                                <td>${Math.round((v.leads || 0) * 0.15)}</td>
-                                <td><span class="badge badge-success">${v.tasa || 0}%</span></td>
-                                <td>${v.promedio || 0}m</td>
-                            </tr>
-                        `;
-                    });
+                    const filas = m.porVendedor || [];
+                    if (!filas.length) {
+                        table.innerHTML = '<tr><td colspan="6" class="no-data">Sin datos de vendedores</td></tr>';
+                        return;
+                    }
+                    table.innerHTML = filas.map(v => `
+                        <tr>
+                            <td>${esc(v.nombre)} ${v.estado!=='activo'?`<span class="badge badge-danger">${esc(v.estado)}</span>`:''}</td>
+                            <td>${v.total}</td>
+                            <td>${v.activos}</td>
+                            <td>${v.vendidos}</td>
+                            <td><span class="badge ${v.conversion>=15?'badge-success':'badge-warning'}">${v.conversion}%</span></td>
+                            <td>${m.tiempoRespuestaPromedio != null ? m.tiempoRespuestaPromedio+'m' : '—'}</td>
+                        </tr>`).join('');
                 })
                 .catch(() => {
                     document.getElementById('reportsTable').innerHTML = '<tr><td colspan="6" class="no-data">Error cargando reportes</td></tr>';

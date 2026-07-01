@@ -49,6 +49,18 @@
   .chat{grid-row:2;grid-column:2;display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden}
 
   .sidebar h3{font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.1em;padding:16px 18px 8px}
+  /* Búsqueda + filtros */
+  .search-wrap{padding:10px 14px 6px;position:sticky;top:0;background:var(--panel);z-index:5}
+  .search-wrap input{width:100%;background:var(--panel2);border:1px solid rgba(255,255,255,.12);border-radius:20px;color:var(--marfil);padding:9px 14px;font-family:inherit;font-size:.88rem}
+  .search-wrap input:focus{outline:none;border-color:var(--oro)}
+  .filtros{display:flex;gap:6px;padding:2px 14px 10px;overflow-x:auto;background:var(--panel);scrollbar-width:none}
+  .filtros::-webkit-scrollbar{display:none}
+  .filtro-chip{background:var(--panel2);border:1px solid rgba(255,255,255,.12);color:var(--gris);padding:5px 12px;border-radius:14px;font-size:.74rem;cursor:pointer;white-space:nowrap}
+  .filtro-chip.active{background:var(--oro);color:#000;border-color:var(--oro);font-weight:600}
+  /* Separador de fecha estilo WhatsApp */
+  .date-sep{align-self:center;background:rgba(0,0,0,.4);color:rgba(255,255,255,.6);font-size:.68rem;padding:3px 12px;border-radius:10px;margin:6px 0;text-transform:uppercase;letter-spacing:.05em}
+  /* Ticks de estado del mensaje */
+  .msg .ticks{color:rgba(255,255,255,.55);font-size:.72rem;margin-left:4px}
   .lead-item{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background .15s}
   .lead-item:hover{background:var(--panel2)}
   .lead-item.active{background:var(--panel2);border-left:3px solid var(--oro)}
@@ -131,6 +143,15 @@
   .msg .media-file{display:inline-block;color:#fff;text-decoration:underline;word-break:break-all}
   .msg .cap{margin-top:6px;font-size:.88rem}
 
+  /* Pantalla de bienvenida (splash) */
+  .splash{position:fixed;inset:0;background:radial-gradient(circle at 50% 40%, #161310, var(--negro));display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;transition:opacity .5s ease;gap:20px}
+  .splash.hide{opacity:0;pointer-events:none}
+  .splash img{width:120px;height:120px;border-radius:26px;object-fit:cover;box-shadow:0 8px 40px rgba(200,164,90,.25)}
+  .splash .brand{font-family:'Cinzel',serif;color:var(--oro);letter-spacing:.18em;font-size:1.25rem;text-align:center}
+  .splash .sub{color:var(--gris);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;margin-top:-10px}
+  .splash .spin{width:26px;height:26px;border:3px solid rgba(200,164,90,.2);border-top-color:var(--oro);border-radius:50%;animation:spin 1s linear infinite;margin-top:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--oro);color:var(--marfil);padding:12px 22px;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .3s;z-index:50}
   .toast.show{opacity:1}
   @media(max-width:760px){
@@ -152,6 +173,12 @@
 </style>
 </head>
 <body>
+  <div class="splash" id="splash">
+    <img src="/icons/icon-512.png" alt="SP" onerror="this.style.display='none'">
+    <div class="brand">SP INMOBILIARIA</div>
+    <div class="sub">Panel del vendedor</div>
+    <div class="spin"></div>
+  </div>
   <div class="app">
     <div class="topbar">
       <div class="brand">SP · Mi Panel</div>
@@ -168,6 +195,17 @@
     </div>
 
     <div class="sidebar" id="sidebar">
+      <div class="search-wrap">
+        <input type="text" id="buscar" placeholder="🔍 Buscar por nombre o teléfono…" autocomplete="off">
+      </div>
+      <div class="filtros" id="filtros">
+        <span class="filtro-chip active" data-f="todos">Todos</span>
+        <span class="filtro-chip" data-f="nuevo">Nuevos</span>
+        <span class="filtro-chip" data-f="interesado">Interesado</span>
+        <span class="filtro-chip" data-f="negociacion">Negociación</span>
+        <span class="filtro-chip" data-f="cita">Cita</span>
+        <span class="filtro-chip" data-f="vendido">Vendido</span>
+      </div>
       <h3>Mis Leads (<span id="leadCount">0</span>)</h3>
       <div id="leadsList"></div>
     </div>
@@ -229,6 +267,7 @@
     if(me.rol === 'admin') await cargarVendedores();
     await cargarLeads();
     conectarStream();
+    wireFiltros();
 
     // Abrir lead desde URL (?lead=123) o desde notificación push
     const params = new URLSearchParams(location.search);
@@ -263,14 +302,53 @@
     renderLeads();
   }
 
+  function wireFiltros(){
+    const buscar = document.getElementById('buscar');
+    if(buscar) buscar.addEventListener('input', () => {
+      terminoBusqueda = buscar.value.trim();
+      renderLeads();
+    });
+    document.querySelectorAll('#filtros .filtro-chip').forEach(chip =>
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('#filtros .filtro-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        filtroActivo = chip.dataset.f;
+        renderLeads();
+      }));
+  }
+
+  let filtroActivo = 'todos';
+  let terminoBusqueda = '';
+
+  function leadsFiltrados(){
+    let arr = leads;
+    if(filtroActivo !== 'todos'){
+      if(filtroActivo === 'nuevo'){
+        arr = arr.filter(l => (l.status||'nuevo')==='nuevo' || (l.status||'')==='asignado');
+      }else{
+        arr = arr.filter(l => (l.etiqueta||'')===filtroActivo);
+      }
+    }
+    if(terminoBusqueda){
+      const t = terminoBusqueda.toLowerCase();
+      arr = arr.filter(l =>
+        (l.customer_name||'').toLowerCase().includes(t) ||
+        (l.customer_phone||'').toLowerCase().includes(t));
+    }
+    return arr;
+  }
+
   function renderLeads(){
-    document.getElementById('leadCount').textContent = leads.length;
     const cont = document.getElementById('leadsList');
-    if(leads.length === 0){
-      cont.innerHTML = '<div class="empty" style="padding:30px 18px">Aún no tienes leads asignados. Llegarán automáticamente.</div>';
+    const lista = leadsFiltrados();
+    document.getElementById('leadCount').textContent = lista.length;
+    if(lista.length === 0){
+      cont.innerHTML = leads.length === 0
+        ? '<div class="empty" style="padding:30px 18px">Aún no tienes leads asignados. Llegarán automáticamente.</div>'
+        : '<div class="empty" style="padding:30px 18px">Ningún lead coincide con la búsqueda.</div>';
       return;
     }
-    cont.innerHTML = leads.map(l => `
+    cont.innerHTML = lista.map(l => `
       <div class="lead-item ${currentLead && currentLead.id===l.id?'active':''}" data-id="${l.id}">
         <div class="name">
           <span>${escapeHtml(l.customer_name||'Cliente')}</span>
@@ -338,11 +416,7 @@
           style="background:rgba(200,164,90,.15);border:1px solid rgba(200,164,90,.4);color:var(--oro);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:.8rem;margin:2px">${escapeHtml(t.nombre)}</button>`).join('')}
       </div>`:''}
       <div class="messages" id="messages">
-        ${mensajes.map(m => `
-          <div class="msg ${m.direction==='incoming'?'in':'out'}">
-            ${msgInner(m)}
-            <span class="time">${fmtTime(m.timestamp)}</span>
-          </div>`).join('') || '<div class="empty">Sin mensajes todavía</div>'}
+        ${renderMensajesHTML(mensajes)}
       </div>
       <div class="templates">${chips}</div>
       <div class="audio-preview" id="audioPreview">
@@ -596,6 +670,43 @@
     }
   }
 
+  // Etiqueta de fecha estilo WhatsApp (Hoy / Ayer / dd/mm/aaaa)
+  function dateLabel(ts){
+    if(!ts) return '';
+    const d = new Date(ts.replace(' ','T') + 'Z');
+    if(isNaN(d)) return '';
+    const hoy = new Date(); const ayer = new Date(); ayer.setDate(hoy.getDate()-1);
+    const sameDay = (a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
+    if(sameDay(d,hoy)) return 'Hoy';
+    if(sameDay(d,ayer)) return 'Ayer';
+    return d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'numeric'});
+  }
+  function soloHora(ts){
+    if(!ts) return '';
+    const d = new Date(ts.replace(' ','T') + 'Z');
+    if(isNaN(d)) return '';
+    return d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  // Construye el HTML de los mensajes con separadores de fecha y ticks
+  function renderMensajesHTML(mensajes){
+    if(!mensajes || !mensajes.length) return '<div class="empty">Sin mensajes todavía</div>';
+    let html = ''; let ultimaFecha = '';
+    for(const m of mensajes){
+      const fecha = dateLabel(m.timestamp);
+      if(fecha && fecha !== ultimaFecha){
+        html += `<div class="date-sep">${fecha}</div>`;
+        ultimaFecha = fecha;
+      }
+      const ticks = m.direction!=='incoming' ? '<span class="ticks">✓✓</span>' : '';
+      html += `<div class="msg ${m.direction==='incoming'?'in':'out'}">
+        ${msgInner(m)}
+        <span class="time">${soloHora(m.timestamp)}${ticks}</span>
+      </div>`;
+    }
+    return html;
+  }
+
   // Render del contenido de un mensaje (texto o multimedia)
   function msgInner(m){
     if(m.media_type && m.id){
@@ -761,12 +872,42 @@
     location.href = '/login.html';
   });
 
+  // --- Atajos de teclado estilo WhatsApp ---
+  document.addEventListener('keydown', (e) => {
+    const enCampo = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    // "/" enfoca la búsqueda (si no estás escribiendo)
+    if(e.key === '/' && !enCampo){
+      e.preventDefault();
+      const b = document.getElementById('buscar');
+      if(b){ b.focus(); b.select(); }
+      return;
+    }
+    // Esc: cierra el chat en móvil o limpia la búsqueda
+    if(e.key === 'Escape'){
+      if(window.innerWidth <= 760 && !document.getElementById('chat').classList.contains('hidden')){
+        document.getElementById('chat').classList.add('hidden');
+        document.getElementById('sidebar').classList.remove('hidden');
+      }else if(document.activeElement === document.getElementById('buscar')){
+        const b = document.getElementById('buscar'); b.value=''; terminoBusqueda=''; renderLeads(); b.blur();
+      }
+    }
+  });
+
   function escapeHtml(s){
     return String(s==null?'':s).replace(/[&<>"']/g, c =>
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  init().catch(e => { if(e.message!=='no_auth') console.error(e); });
+  function ocultarSplash(){
+    const s = document.getElementById('splash');
+    if(s) setTimeout(() => s.classList.add('hide'), 400);
+  }
+
+  init()
+    .then(ocultarSplash)
+    .catch(e => { ocultarSplash(); if(e.message!=='no_auth') console.error(e); });
+  // Respaldo: nunca dejar el splash pegado más de 4s
+  setTimeout(ocultarSplash, 4000);
 </script>
 </body>
 </html>
