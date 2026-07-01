@@ -20,6 +20,8 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
+  button{cursor:pointer;font-family:inherit}
+  .ic{display:inline-block;vertical-align:middle;flex-shrink:0}
   body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);height:100vh;height:100dvh;overflow:hidden;-webkit-text-size-adjust:100%;
     /* Bloqueo de selección estilo WhatsApp: la interfaz no se selecciona */
     -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;
@@ -271,7 +273,7 @@
 
     <div class="sidebar" id="sidebar">
       <div class="search-wrap">
-        <input type="text" id="buscar" placeholder="🔍 Buscar por nombre o teléfono…" autocomplete="off">
+        <input type="text" id="buscar" placeholder="Buscar por nombre o teléfono…" autocomplete="off" aria-label="Buscar chats">
       </div>
       <div class="filtros" id="filtros">
         <span class="filtro-chip active" data-f="todos">Todos</span>
@@ -314,6 +316,25 @@
   function etqLabel(v){ const e = ETIQUETAS.find(x=>x.v===v); return e?e.t:''; }
 
   const EMOJIS = ['😀','😂','😊','😍','🥰','😎','🤝','👍','👌','🙏','💪','👏','🎉','🔥','⭐','❤️','💛','💚','✅','❌','⏰','📍','📞','💬','🏡','🏠','🏘️','🌳','🌄','📐','📄','💰','💵','🤑','📈','🔑','🚪','🛣️','🚗','☀️','🌙','🎯','✨','💡','🙌','😅','🤔','😉','🥳','😇','🫡','👀','📸','🗺️','🏦','📝','🖊️','⚡','🌟','💎','🤗','🙋','👷','🧱'];
+
+  // Íconos SVG (estilo Lucide) — nada de emojis como íconos de interfaz
+  const ICONS = {
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+    send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>',
+    clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+    smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+    back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+    note: '<path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/>',
+    megaphone: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  };
+  function I(name, size){
+    size = size || 22;
+    return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]||''}</svg>`;
+  }
 
   // --- Menú "/" de respuestas rápidas (estilo respond.io) ---
   let slashIdx = -1;
@@ -571,8 +592,8 @@
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          ${window.innerWidth<=760?'<button id="volver">← Chats</button>':''}
-          ${waTemplates.length>0 ? '<button id="reactivarBtn" title="Enviar plantilla aprobada de Meta (para leads sin respuesta +24h)">📨 Reactivar</button>':''}
+          ${window.innerWidth<=760?`<button id="volver" aria-label="Volver a los chats">${I('back',16)} Chats</button>`:''}
+          ${waTemplates.length>0 ? `<button id="reactivarBtn" title="Enviar plantilla aprobada de Meta (para leads sin respuesta +24h)">${I('megaphone',15)} Reactivar</button>`:''}
         </div>
       </div>
       <div class="lead-tools">
@@ -585,7 +606,7 @@
         <select id="reasignarSelect">
           ${vendedores.map(v=>`<option value="${v.id}" ${Number(lead.assigned_to_id)===Number(v.id)?'selected':''}>${escapeHtml(v.nombre)}${v.estado!=='activo'?' ('+v.estado+')':''}</option>`).join('')}
         </select>`:''}
-        <button type="button" class="notas-btn" id="notasBtn">📝 Notas</button>
+        <button type="button" class="notas-btn" id="notasBtn">${I('note',14)} Notas</button>
       </div>
       <div class="notas-panel" id="notasPanel">
         <div id="notasList" style="max-height:160px;overflow-y:auto"></div>
@@ -605,22 +626,22 @@
       </div>
       <div class="templates">${chips}</div>
       <div class="audio-preview" id="audioPreview">
-        <button class="ap-cancel" id="apCancel">✕</button>
+        <button class="ap-cancel" id="apCancel" aria-label="Cancelar audio">${I('x',16)}</button>
         <audio id="audioPlayback" controls></audio>
         <button class="ap-send" id="apSend">Enviar audio</button>
       </div>
       <div class="slash-menu" id="slashMenu"></div>
       <form class="composer ${cerrado?'disabled':''}" onsubmit="enviarMensaje();return false;">
         <div class="pill" id="pill">
-          <button type="button" id="emojiBtn" class="icon-btn" aria-label="Emojis" ${cerrado?'disabled':''}>😊</button>
+          <button type="button" id="emojiBtn" class="icon-btn" aria-label="Emojis" ${cerrado?'disabled':''}>${I('smile')}</button>
           <textarea id="input" rows="1" placeholder="${cerrado?'Lead cerrado':'Mensaje'}" ${cerrado?'disabled':''} aria-label="Escribe un mensaje"></textarea>
-          <button type="button" id="adjuntar" class="icon-btn" aria-label="Adjuntar archivo" ${cerrado?'disabled':''}>📎</button>
+          <button type="button" id="adjuntar" class="icon-btn" aria-label="Adjuntar archivo" ${cerrado?'disabled':''}>${I('clip')}</button>
           <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" style="display:none">
         </div>
         <div class="rec-strip" id="recStrip" style="display:none">
           <span class="rec-dot"></span><span id="recTimer">0:00</span><span class="rec-hint">Grabando… toca para detener</span>
         </div>
-        <button type="button" id="mainBtn" class="fab" aria-label="Grabar audio" ${cerrado?'disabled':''}>🎙️</button>
+        <button type="button" id="mainBtn" class="fab" aria-label="Grabar audio" ${cerrado?'disabled':''}>${I('mic')}</button>
       </form>
       <div class="emoji-panel" id="emojiPanel"></div>`;
 
@@ -637,7 +658,7 @@
       function updateMainBtn(){
         if(mediaRec && mediaRec.state === 'recording') return;
         const hayTexto = input.value.trim().length > 0;
-        mainBtn.textContent = hayTexto ? '➤' : '🎙️';
+        mainBtn.innerHTML = hayTexto ? I('send') : I('mic');
         mainBtn.setAttribute('aria-label', hayTexto ? 'Enviar mensaje' : 'Grabar audio');
       }
 
@@ -714,7 +735,7 @@
           };
           mediaRec.start(200);
           mainBtn.classList.add('grabando');
-          mainBtn.textContent = '⏹';
+          mainBtn.innerHTML = I('stop');
           mainBtn.setAttribute('aria-label', 'Detener grabación');
           pill.style.display = 'none';
           if(emojiPanel) emojiPanel.classList.remove('show');
@@ -889,12 +910,12 @@
     const nombre = currentLead.customer_name || 'Cliente';
     const vend = currentLead.assigned_to_nombre || currentLead.assigned_to_phone || '—';
     d.innerHTML = `
-      <button class="dw-close" id="dwClose" aria-label="Cerrar panel">✕</button>
+      <button class="dw-close" id="dwClose" aria-label="Cerrar panel">${I('x',20)}</button>
       <div class="dw-head">
         <div class="avatar" style="background:${avatarColor(nombre)}">${iniciales(nombre)}</div>
         <div class="dw-name">
           <span id="dwNombre">${escapeHtml(nombre)}</span>
-          <button id="dwEditar" aria-label="Editar nombre">✏️</button>
+          <button id="dwEditar" aria-label="Editar nombre">${I('pencil',15)}</button>
         </div>
         <div class="dw-phone">
           <span>${escapeHtml(currentLead.customer_phone)}</span>
@@ -1102,7 +1123,7 @@
           renderChat(d.lead, d.mensajes);
         }
         if(data.tipo === 'mensaje_cliente'){
-          toast('💬 Nuevo mensaje de un cliente');
+          toast('Nuevo mensaje de un cliente');
           try{ new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play(); }catch(e){}
           try{ if(navigator.vibrate) navigator.vibrate([120,60,120]); }catch(e){}
         }
