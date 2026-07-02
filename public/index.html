@@ -28,54 +28,48 @@
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* ── Apple Design System · SP Inmobiliaria ── */
+        /* ── iOS 18 · Dashboard · SP Inmobiliaria ── */
         :root{
-            --bg:#040406; --bg2:#0A0A0E; --bg3:#121218; --bg4:#16161E;
-            --sep:rgba(255,255,255,.04);
-            --txt:#F5F0E8; --txt2:rgba(245,240,232,.45); --txt3:rgba(245,240,232,.22);
-            --oro:#D4AF37; --oro2:#A8872B; --verde:#4E7B46; --rojo:#FF453A;
+            --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33; --bg4:#2A3942;
+            --nav:#1F2C33; --sep:rgba(255,255,255,.06);
+            --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
+            --gold:#D4AF37; --gold2:#A8872B; --verde:#4E7B46; --red:#FF453A;
             --grad-gold:linear-gradient(135deg,#D4AF37,#A8872B);
-            --e1:0 2px 8px rgba(0,0,0,.4); --e2:0 8px 30px rgba(0,0,0,.5); --e3:0 20px 60px rgba(0,0,0,.6);
-            --ease:cubic-bezier(.22,1,.36,1);
-            --negro:#040406; --marfil:#F5F0E8; --gris:rgba(245,240,232,.45); --panel:#0A0A0E; --panel2:#121218;
+            --e1:0 1px 3px rgba(0,0,0,.4); --e2:0 4px 12px rgba(0,0,0,.5); --e3:0 12px 40px rgba(0,0,0,.6);
+            --ease:cubic-bezier(.32,.72,0,1);
         }
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;padding:20px;
-          -webkit-user-select:none;-moz-user-select:none;user-select:none;
+        body{font-family:'Inter',sans-serif;background:var(--black);color:var(--txt);min-height:100vh;
+          -webkit-user-select:none;user-select:none;
           -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
         input,textarea,td,th{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
-        .container{max-width:1400px;margin:0 auto}
-        header{background:var(--bg2);padding:20px 24px;border-radius:12px;margin-bottom:24px;box-shadow:var(--e1);display:flex;justify-content:space-between;align-items:center}
-        .header-left{display:flex;align-items:center;gap:16px}
-        .logo{font-family:'Cinzel',serif;font-size:22px;font-weight:600;letter-spacing:.1em;
-          background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-        .logo-text{font-size:11px;color:var(--txt2);margin-top:2px;letter-spacing:.08em}
-        .status{display:flex;align-items:center;gap:8px;background:var(--bg3);padding:8px 16px;border-radius:20px;font-size:11px;font-weight:600;color:var(--oro);box-shadow:var(--e1)}
-        .status-dot{width:8px;height:8px;background:var(--verde);border-radius:50%;animation:pulse 2s infinite}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-        .main{display:grid;grid-template-columns:220px 1fr;gap:24px}
-        sidebar{background:var(--bg2);border-radius:12px;padding:16px 12px;box-shadow:var(--e1);height:fit-content;position:sticky;top:20px;display:block}
-        .menu-title{font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.1em;margin:20px 0 8px;padding:0 12px}
-        .menu-title:first-child{margin-top:0}
-        .menu-item{padding:12px;margin:2px 0;border-radius:10px;cursor:pointer;transition:background .15s ease,color .15s ease;font-size:13px;color:var(--txt2);display:flex;align-items:center;gap:10px;font-weight:500;border-left:3px solid transparent}
-        .mi{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
-        button{cursor:pointer}
-        button .mi{vertical-align:-3px}
-        .menu-item:hover{background:rgba(255,255,255,.03);color:var(--txt)}
-        .menu-item.active{background:rgba(212,175,55,.06);color:var(--oro);font-weight:600;border-left:3px solid var(--oro)}
-        .content{background:var(--bg2);border-radius:12px;padding:24px;box-shadow:var(--e1)}
-        .content-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px}
-        .content-header h2{font-size:20px;color:var(--txt);font-weight:600;letter-spacing:-.01em}
-        .btn{padding:0 20px;height:40px;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;transition:filter .15s ease,transform .1s ease;font-family:inherit}
-        .btn:active{transform:scale(.97)}
-        .btn-primary{background:var(--grad-gold);color:#0A0A0E;box-shadow:var(--e1)}
-        .btn-primary:hover{filter:brightness(1.1)}
-        .btn-secondary{background:var(--bg3);color:var(--txt2);box-shadow:var(--e1)}
-        .btn-secondary:hover{color:var(--txt)}
-        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
-        .stat-card{background:var(--bg3);padding:20px;border-radius:12px;box-shadow:var(--e1);transition:transform .15s ease,box-shadow .15s ease}
+
+        /* iOS Status Bar */
+        .ios-statusbar{height:44px;background:var(--black);display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:13px;font-weight:600;flex-shrink:0}
+        .ios-statusbar .s-icons{display:flex;align-items:center;gap:5px}
+
+        /* iOS Nav */
+        .ios-nav{height:52px;background:var(--nav);display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0;border-bottom:1px solid var(--sep)}
+        .ios-nav .nav-title{font-family:'Cinzel',serif;font-size:17px;font-weight:600;letter-spacing:.5px;background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+        .ios-nav .nav-right{display:flex;align-items:center;gap:10px}
+        .ios-nav .nav-btn{background:none;border:none;color:var(--gold);padding:6px;border-radius:8px;font-size:13px;font-weight:500;transition:opacity .15s ease;display:flex;align-items:center;gap:4px}
+        .ios-nav .nav-btn:hover{opacity:.7}
+
+        .container{max-width:1200px;margin:0 auto;padding:16px 20px}
+
+        /* iOS Tab Bar */
+        .ios-tabbar{position:fixed;bottom:0;left:0;right:0;height:50px;padding-bottom:env(safe-area-inset-bottom);background:var(--nav);display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--sep);z-index:20}
+        .ios-tabbar .tab{background:none;border:none;color:var(--txt3);display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 16px;font-size:9px;font-weight:500;letter-spacing:.3px;transition:color .15s ease;position:relative;cursor:pointer}
+        .ios-tabbar .tab.active{color:var(--gold)}
+        .ios-tabbar .tab svg{width:24px;height:24px}
+
+        /* Page padding for tab bar */
+        .page-wrap{padding-bottom:70px}
+
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+        .stat-card{background:var(--bg2);padding:18px;border-radius:12px;box-shadow:var(--e1);transition:transform .15s ease,box-shadow .15s ease}
         .stat-card:hover{transform:translateY(-2px);box-shadow:var(--e2)}
         /* Funnel del pipeline */
         .funnel{display:flex;flex-direction:column;gap:8px;margin-bottom:28px}
@@ -154,36 +148,25 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="header-left">
-                <img src="/icons/logo.png" alt="SP Leons Group" style="width:44px;height:44px;border-radius:10px;object-fit:cover;box-shadow:0 2px 8px rgba(0,0,0,.4)" onerror="this.style.display='none'">
-                <div>
-                    <div class="logo">SP PANEL</div>
-                    <div class="logo-text">Inmobiliaria</div>
-                </div>
-            </div>
-            <div class="status">
-                <span class="status-dot"></span>
-                <span>En línea</span>
-            </div>
-        </header>
+    <!-- iOS Status Bar -->
+    <div class="ios-statusbar">
+        <span class="s-time" id="sTime" style="font-weight:700;letter-spacing:.5px;color:var(--txt)">9:41</span>
+        <div class="s-icons">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="2" width="3" height="8" rx=".5" fill="currentColor"/><rect x="4.5" y="1" width="3" height="9" rx=".5" fill="currentColor"/><rect x="9" y="0" width="3" height="10" rx=".5" fill="currentColor"/><rect x="13.5" y="2" width="2.5" height="8" rx=".5" fill="currentColor" opacity=".3"/></svg>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x=".5" y="2.5" width="11" height="7" rx="1.5" stroke="currentColor" stroke-width=".8"/><rect x="2" y="4" width="8" height="4" rx=".5" fill="currentColor"/></svg>
+        </div>
+    </div>
 
-        <div class="main">
-            <sidebar>
-                <div class="menu-title">Principal</div>
-                <div class="menu-item active" onclick="showSection('dashboard')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> Dashboard</div>
-                <div class="menu-item" onclick="location.href='/vendedor.html'" style="background:rgba(78,123,70,.08);color:#8FBF85;font-weight:600"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg> Bandeja de Chats</div>
-                <div class="menu-item" onclick="showSection('leads')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20v-5a2 2 0 0 0-2-2H4m0 0a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H4z"/></svg> Bandeja de Leads</div>
-                <div class="menu-item" onclick="showSection('vendors')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Vendedores</div>
+    <!-- iOS Nav -->
+    <div class="ios-nav">
+        <div class="nav-title">SP PANEL</div>
+        <div class="nav-right">
+            <span style="color:var(--txt2);font-size:13px">En línea</span>
+        </div>
+    </div>
 
-                <div class="menu-title">Gestión</div>
-                <div class="menu-item" onclick="location.href='/equipo.html'" style="background:rgba(212,175,55,.06);color:var(--oro);font-weight:600"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Gestión de Equipo</div>
-                <div class="menu-item" onclick="showSection('reports')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg> Reportes</div>
-                <div class="menu-item" onclick="showSection('config')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m5.08 5.08l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m5.08-5.08l4.24-4.24"/></svg> Configuración</div>
-            </sidebar>
-
-            <div class="content">
+    <div class="container page-wrap">
+        <!-- Sections content (keep original) -->
                 <!-- DASHBOARD -->
                 <div id="dashboard" class="section active">
                     <div class="content-header">
@@ -641,6 +624,32 @@
             loadLeads();
             loadVendors();
         });
+    </script>
+
+    <!-- iOS Tab Bar -->
+    <div class="ios-tabbar">
+        <button class="tab" onclick="location.href='/inbox.html'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>Chats</span>
+        </button>
+        <button class="tab active" onclick="location.href='/index.html'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Dashboard</span>
+        </button>
+        <button class="tab" onclick="location.href='/equipo.html'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Equipo</span>
+        </button>
+        <button class="tab" onclick="location.href='/dashboard.html'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+            <span>Analytics</span>
+        </button>
+    </div>
+
+    <script>
+    // iOS clock
+    function uSB(){const t=new Date();const h=t.getHours();const m=t.getMinutes().toString().padStart(2,'0');const el=document.getElementById('sTime');if(el)el.textContent=h+':'+m;}
+    uSB();setInterval(uSB,30000);
     </script>
 </body>
 </html>

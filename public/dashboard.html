@@ -3,192 +3,184 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#040406">
+<meta name="theme-color" content="#000000">
 <title>SP Inmobiliaria — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script>
-  (function(){
-    fetch('/api/me').then(function(r){
-      if(!r.ok) throw 0;
-      return r.json();
-    }).then(function(u){
-      if(u.rol !== 'admin'){ location.href = '/vendedor.html'; return; }
-    }).catch(function(){ location.href = '/login.html'; });
-  })();
+(function(){if(!localStorage.getItem('sp_user')){window.location.href='/login.html'}})();
 </script>
 <style>
+/* iOS 18 · Analytics · SP Inmobiliaria */
 :root {
-  --bg:#040406; --bg2:#0A0A0E; --bg3:#121218; --bg4:#16161E;
-  --txt:#F5F0E8; --txt2:rgba(245,240,232,.45); --txt3:rgba(245,240,232,.22);
-  --oro:#D4AF37; --oro2:#A8872B; --verde:#4E7B46; --rojo:#FF453A;
+  --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33; --bg4:#2A3942;
+  --nav:#1F2C33; --sep:rgba(255,255,255,.06);
+  --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
+  --gold:#D4AF37; --gold2:#A8872B; --verde:#4E7B46; --red:#FF453A;
   --grad-gold:linear-gradient(135deg,#D4AF37,#A8872B);
-  --e1:0 2px 8px rgba(0,0,0,.4); --e2:0 8px 30px rgba(0,0,0,.5); --e3:0 20px 60px rgba(0,0,0,.6);
-  --ease:cubic-bezier(.22,1,.36,1);
+  --e1:0 1px 3px rgba(0,0,0,.4); --e2:0 4px 12px rgba(0,0,0,.5); --e3:0 12px 40px rgba(0,0,0,.6);
+  --ease:cubic-bezier(.32,.72,0,1);
 }
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--txt); min-height:100vh; -webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent; }
-/* Layout */
-.app { display:flex; min-height:100vh; }
-.sidebar { width:260px; background:var(--bg2); border-right:1px solid rgba(212,175,55,.1); color:var(--txt); padding:24px 0; flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto; box-shadow:1px 0 0 rgba(255,255,255,.04); }
-.sidebar .logo { padding:0 24px 20px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:20px; }
-.sidebar .logo h2 { font-size:18px; font-weight:600; font-family:'Cinzel',serif; background:linear-gradient(135deg,#E8C84A,var(--oro),var(--oro2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:.04em; }
-.sidebar .logo small { font-size:11px; color:var(--txt3); display:block; margin-top:6px; letter-spacing:.08em; text-transform:uppercase; }
-.sidebar nav a { display:flex; align-items:center; gap:12px; padding:12px 20px; color:var(--txt2); text-decoration:none; font-size:13px; transition:all .15s ease; cursor:pointer; border-left:3px solid transparent; margin:2px 8px 2px 0; border-radius:0 10px 10px 0; }
-.sidebar nav a:hover { background:rgba(255,255,255,.03); color:var(--txt); }
-.sidebar nav a.active { background:rgba(212,175,55,.08); color:var(--oro); border-left:3px solid var(--oro); font-weight:600; }
-.main { flex:1; padding:32px; }
-.header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; }
-.header-bar h1 { font-size:26px; font-weight:600; letter-spacing:-.01em; }
-.header-bar .badge { background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; box-shadow:var(--e1); }
+body { font-family:'Inter',sans-serif; background:var(--black); color:var(--txt); min-height:100vh; -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent; }
+
+/* iOS Status */
+.ios-statusbar{height:44px;background:var(--black);display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:13px;font-weight:600;flex-shrink:0}
+.ios-statusbar .s-icons{display:flex;align-items:center;gap:5px}
+
+/* iOS Nav */
+.ios-nav{height:52px;background:var(--nav);display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0;border-bottom:1px solid var(--sep)}
+.ios-nav .nav-title{font-family:'Cinzel',serif;font-size:17px;font-weight:600;letter-spacing:.5px;background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.ios-nav .nav-right{display:flex;gap:8px}
+.ios-nav .nav-btn{background:none;border:none;color:var(--gold);padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500;transition:opacity .15s ease;cursor:pointer;font-family:inherit}
+.ios-nav .nav-btn:hover{opacity:.7}
+
+/* iOS Tab Bar */
+.ios-tabbar{position:fixed;bottom:0;left:0;right:0;height:50px;padding-bottom:env(safe-area-inset-bottom);background:var(--nav);display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--sep);z-index:20}
+.ios-tabbar .tab{background:none;border:none;color:var(--txt3);display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 16px;font-size:9px;font-weight:500;letter-spacing:.3px;transition:color .15s ease;position:relative;cursor:pointer}
+.ios-tabbar .tab.active{color:var(--gold)}
+.ios-tabbar .tab svg{width:24px;height:24px}
+.page-wrap{padding-bottom:70px}
+
+/* Content */
+.app { max-width:800px; margin:0 auto; padding:16px; }
+.header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.header-bar h1 { font-size:22px; font-weight:600; letter-spacing:-.01em; }
+.header-bar .badge { background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; }
 /* Stats */
-.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:28px; }
-.stat-card { background:var(--bg2); border-radius:12px; padding:22px; box-shadow:var(--e1); transition:transform .15s ease,box-shadow .15s ease; }
-.stat-card:hover { transform:translateY(-2px); box-shadow:var(--e2); }
-.stat-card .num { font-size:32px; font-weight:700; color:var(--txt); font-feature-settings:'tnum'; }
-.stat-card .lbl { font-size:12px; color:var(--txt3); margin-top:8px; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
-.stat-card .sub { font-size:11px; color:var(--txt3); margin-top:4px; }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+.stat-card { background:var(--bg2); border-radius:12px; padding:18px; box-shadow:var(--e1); }
+.stat-card .num { font-size:28px; font-weight:700; color:var(--txt); font-feature-settings:'tnum'; }
+.stat-card .lbl { font-size:11px; color:var(--txt3); margin-top:6px; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+.stat-card .sub { font-size:10px; color:var(--txt3); margin-top:4px; }
 /* Sections */
-.section { background:var(--bg2); border-radius:12px; box-shadow:var(--e1); margin-bottom:24px; overflow:hidden; }
-.section-header { padding:22px 24px; border-bottom:1px solid rgba(255,255,255,.04); display:flex; justify-content:space-between; align-items:center; }
+.section { background:var(--bg2); border-radius:12px; box-shadow:var(--e1); margin-bottom:16px; overflow:hidden; }
+.section-header { padding:16px 18px; border-bottom:1px solid var(--sep); display:flex; justify-content:space-between; align-items:center; }
 .section-header h3 { font-size:15px; font-weight:600; letter-spacing:-.01em; }
-.section-header .action-btn { background:var(--grad-gold); color:#040406; border:none; padding:8px 16px; border-radius:10px; font-size:13px; cursor:pointer; font-weight:600; box-shadow:var(--e1); transition:filter .15s ease,transform .1s ease; }
-.section-header .action-btn:hover { filter:brightness(1.1); }
+.section-header .action-btn { background:var(--grad-gold); color:#000; border:none; padding:6px 14px; border-radius:10px; font-size:12px; cursor:pointer; font-weight:600; transition:opacity .15s ease,transform .1s ease; }
+.section-header .action-btn:hover { opacity:.85; }
 .section-header .action-btn:active { transform:scale(.97); }
 /* Table */
 table { width:100%; border-collapse:collapse; }
-th { background:transparent; padding:14px 16px; text-align:left; font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+th { padding:10px 14px; text-align:left; font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.06em; font-weight:600; border-bottom:1px solid var(--sep); }
+td { padding:10px 14px; border-bottom:1px solid var(--sep); font-size:13px; }
 tbody tr { transition:background .15s ease; }
 tbody tr:hover { background:rgba(255,255,255,.02); }
-td { padding:14px 16px; border-top:1px solid rgba(255,255,255,.04); font-size:13px; }
-.status-badge { display:inline-block; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-.s-nuevo { background:var(--grad-gold); color:#040406; }
-.s-asignado { background:rgba(100,160,220,.12); color:#9CC4E8; }
-.s-contactado { background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; }
+.status-badge { display:inline-block; padding:3px 8px; border-radius:10px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.s-nuevo { background:var(--gold); color:#000; }
+.s-asignado { background:rgba(83,189,235,.12); color:#53BDEB; }
+.s-contactado { background:rgba(78,123,70,.15); color:#9FD694; }
 .s-cerrado { background:var(--bg4); color:var(--txt2); }
 /* Vendedor card */
-.vendedores-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; padding:20px 24px; }
-.v-card { background:var(--bg3); border-radius:12px; padding:16px; box-shadow:var(--e1); transition:transform .15s ease,box-shadow .15s ease; }
-.v-card:hover { transform:translateY(-2px); box-shadow:var(--e2); }
-.v-card .name { font-weight:600; font-size:15px; color:var(--txt); }
-.v-card .phone { font-size:13px; color:var(--txt2); margin-top:4px; }
-.v-card .status { margin-top:10px; font-size:11px; padding:4px 10px; border-radius:20px; display:inline-block; background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-.v-card .leads-count { font-size:12px; color:var(--txt2); margin-top:8px; }
+.vendedores-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; padding:16px 18px; }
+.v-card { background:var(--bg3); border-radius:12px; padding:14px; box-shadow:var(--e1); }
+.v-card .name { font-weight:600; font-size:14px; color:var(--txt); }
+.v-card .phone { font-size:12px; color:var(--txt2); margin-top:4px; }
+.v-card .status { margin-top:8px; font-size:10px; padding:3px 8px; border-radius:10px; display:inline-block; background:rgba(78,123,70,.15); color:#9FD694; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.v-card .leads-count { font-size:11px; color:var(--txt2); margin-top:6px; }
 /* Form */
-.form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.5); z-index:100; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+.form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.5); z-index:100; align-items:center; justify-content:center; -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
 .form-overlay.show { display:flex; }
-.form-modal { background:var(--bg2); border-radius:14px; padding:28px; width:420px; max-width:90%; box-shadow:var(--e3); }
-.form-modal h3 { margin-bottom:20px; font-size:18px; font-weight:600; }
-.form-modal input, .form-modal select { width:100%; padding:12px 14px; background:var(--bg3); border:none; border-radius:10px; font-size:14px; color:var(--txt); font-family:inherit; margin-bottom:14px; box-shadow:inset 0 2px 4px rgba(0,0,0,.3); transition:box-shadow .15s ease; }
-.form-modal input:focus, .form-modal select:focus { outline:none; box-shadow:inset 0 2px 4px rgba(0,0,0,.3),0 0 0 1.5px rgba(212,175,55,.3); }
-.form-modal .btn-row { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
-.form-modal .btn { padding:10px 20px; border-radius:10px; border:none; font-size:13px; cursor:pointer; font-weight:600; transition:filter .15s ease,transform .1s ease; }
-.form-modal .btn-primary { background:var(--grad-gold); color:#040406; box-shadow:var(--e1); }
-.form-modal .btn-primary:hover { filter:brightness(1.1); }
+.form-modal { background:var(--bg2); border-radius:14px; padding:24px; width:400px; max-width:90%; box-shadow:var(--e3); }
+.form-modal h3 { margin-bottom:18px; font-size:17px; font-weight:600; }
+.form-modal input, .form-modal select { width:100%; padding:10px 14px; background:var(--bg3); border:none; border-radius:10px; font-size:14px; color:var(--txt); font-family:inherit; margin-bottom:12px; transition:box-shadow .15s ease; }
+.form-modal input:focus, .form-modal select:focus { outline:none; box-shadow:0 0 0 1.5px rgba(212,175,55,.3); }
+.form-modal .btn-row { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+.form-modal .btn { padding:8px 18px; border-radius:10px; border:none; font-size:13px; cursor:pointer; font-weight:600; transition:opacity .15s ease,transform .1s ease; }
+.form-modal .btn-primary { background:var(--grad-gold); color:#000; box-shadow:var(--e1); }
+.form-modal .btn-primary:hover { opacity:.85; }
 .form-modal .btn-primary:active { transform:scale(.97); }
-.form-modal .btn-secondary { background:var(--bg4); color:var(--txt2); box-shadow:var(--e1); }
+.form-modal .btn-secondary { background:var(--bg4); color:var(--txt2); }
 .form-modal .btn-secondary:hover { color:var(--txt); }
 /* Empty */
-.empty-state { text-align:center; padding:48px 28px; }
-.empty-state p { color:var(--txt3); margin-top:10px; font-size:14px; }
+.empty-state { text-align:center; padding:40px 24px; }
+.empty-state p { color:var(--txt3); margin-top:8px; font-size:13px; }
 /* Toast */
-.toast { position:fixed; bottom:32px; right:32px; background:var(--bg3); border:1px solid rgba(212,175,55,.25); color:var(--txt); padding:14px 24px; border-radius:10px; font-size:13px; z-index:200; display:none; animation:slideIn .3s var(--ease); box-shadow:var(--e2); }
-.toast.show { display:block; }
-@keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
-/* Responsive */
-@media(max-width:768px) { .sidebar { width:0; } .main { padding:20px; } .stats-grid { grid-template-columns:repeat(2,1fr); } }
+.toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--bg4); color:var(--txt); padding:12px 24px; border-radius:12px; font-size:13px; z-index:200; display:none; box-shadow:var(--e3); }
+.toast.show { display:block; animation:slideIn .3s var(--ease); }
+@keyframes slideIn { from { transform:translateX(-50%) translateY(20px); opacity:0; } to { transform:translateX(-50%) translateY(0); opacity:1; } }
 </style>
 </head>
 <body>
-<script>
-  window.addEventListener('DOMContentLoaded', function(){
-    var bar = document.createElement('div');
-    bar.style.cssText = 'position:fixed;top:20px;right:24px;z-index:9999;display:flex;gap:12px;font-family:Inter,sans-serif';
-    bar.innerHTML = '<a href="/equipo.html" style="background:linear-gradient(135deg,#D4AF37,#A8872B);color:#040406;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600;font-size:.82rem;box-shadow:0 2px 8px rgba(0,0,0,.4);transition:filter .15s ease;cursor:pointer" onmouseover="this.style.filter=\'brightness(1.1)\'" onmouseout="this.style.filter=\'brightness(1)\'">Gestión de Equipo</a>' +
-      '<a href="#" id="spLogout" style="background:#121218;color:rgba(245,240,232,.45);border:1px solid rgba(212,175,55,.2);padding:10px 18px;border-radius:10px;text-decoration:none;font-size:.82rem;box-shadow:0 2px 8px rgba(0,0,0,.4);transition:color .15s ease;cursor:pointer" onmouseover="this.style.color=\'#D4AF37\'" onmouseout="this.style.color=\'rgba(245,240,232,.45)\'">Salir</a>';
-    document.body.appendChild(bar);
-    document.getElementById('spLogout').addEventListener('click', function(e){
-      e.preventDefault();
-      fetch('/api/logout',{method:'POST'}).then(function(){ location.href='/login.html'; });
-    });
-  });
-</script>
-<div class="app">
-  <aside class="sidebar">
-    <div class="logo">
-      <img src="/icons/logo.png" alt="" style="width:36px;height:36px;border-radius:10px;object-fit:cover;box-shadow:0 2px 8px rgba(0,0,0,.4);display:block;margin-bottom:10px">
-      <h2>SP PANEL</h2>
-      <small>Inmobiliaria</small>
-    </div>
-    <nav>
-      <a class="active" onclick="showSection('dashboard')" style="--mi:0"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg><span>Dashboard</span></a>
-      <a onclick="showSection('leads')" style="--mi:1"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg><span>Bandeja Leads</span></a>
-      <a onclick="showSection('vendedores')" style="--mi:2"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Vendedores</span></a>
-      <a onclick="showSection('config')" style="--mi:4"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Configuración</span></a>
-    </nav>
-  </aside>
-  <div class="main">
-    <div class="header-bar">
-      <h1 id="pageTitle">Dashboard</h1>
-      <span class="badge" id="liveBadge">✓ EN LÍNEA</span>
-    </div>
 
-    <!-- DASHBOARD -->
-    <div id="section-dashboard">
-      <div class="stats-grid" id="statsGrid"></div>
-      <div class="section">
-        <div class="section-header"><h3>📨 Últimos leads</h3></div>
-        <div id="recentLeads"><div class="empty-state"><p>No hay leads aún</p><p style="font-size:12px;color:#bbb;">Cuando lleguen mensajes de WhatsApp aparecerán aquí</p></div></div>
+<!-- iOS Status Bar -->
+<div class="ios-statusbar"><span class="s-time" id="sTime">9:41</span><span class="s-icons"><svg width="16" height="12" viewBox="0 0 18 12" fill="none"><rect x="0" y="0.5" width="14" height="11" rx="2" stroke="white" stroke-width="1.2" fill="none"/><rect x="2" y="2.5" width="10" height="7" rx="1" fill="white" opacity="0.9"/></svg>
+<svg width="15" height="12" viewBox="0 0 17 14" fill="none"><path d="M8.5 5L11.5 10L5.5 10L8.5 5Z" fill="white" opacity="0.4"/><path d="M8.5 0L12.5 7L4.5 7L8.5 0Z" fill="white" opacity="0.4"/><path d="M8.5 10L10.5 14L6.5 14L8.5 10Z" fill="white" opacity="0.4"/><path d="M16 0L17 2L15 2L16 0Z" fill="white" opacity="0.4"/><path d="M1 0L2 2L0 2L1 0Z" fill="white" opacity="0.4"/></svg>
+</span></div>
+
+<!-- iOS Nav -->
+<div class="ios-nav"><span class="nav-title">SP Inmobiliaria</span><div class="nav-right"><button class="nav-btn" id="logoutBtn">Salir</button></div></div>
+
+<div class="page-wrap">
+  <div class="app">
+    <div class="main">
+      <div class="header-bar"><h1 id="pageTitle">Dashboard</h1></div>
+
+      <!-- DASHBOARD -->
+      <div id="section-dashboard">
+        <div class="stats-grid" id="statsGrid"></div>
+        <div class="section">
+          <div class="section-header"><h3>Ultimos leads</h3></div>
+          <div id="recentLeads"><div class="empty-state"><p>No hay leads aun</p><p style="font-size:12px;color:var(--txt3);">Cuando lleguen mensajes apareceran aqui</p></div></div>
+        </div>
       </div>
-    </div>
 
-    <!-- LEADS -->
-    <div id="section-leads" style="display:none">
-      <div class="section">
-        <div class="section-header"><h3>Todos los leads</h3><span id="leadsCount">0</span></div>
-        <div id="leadsTable"></div>
+      <!-- LEADS -->
+      <div id="section-leads" style="display:none">
+        <div class="section">
+          <div class="section-header"><h3>Todos los leads</h3><span id="leadsCount">0</span></div>
+          <div id="leadsTable"></div>
+        </div>
       </div>
-    </div>
 
-    <!-- VENDEDORES -->
-    <div id="section-vendedores" style="display:none">
-      <div class="section">
-        <div class="section-header"><h3>Equipo comercial</h3><button class="action-btn" onclick="openAddVendedor()">+ Agregar vendedor</button></div>
-        <div class="vendedores-grid" id="vendedoresGrid"></div>
+      <!-- VENDEDORES -->
+      <div id="section-vendedores" style="display:none">
+        <div class="section">
+          <div class="section-header"><h3>Equipo comercial</h3><button class="action-btn" onclick="openAddVendedor()">+ Agregar vendedor</button></div>
+          <div class="vendedores-grid" id="vendedoresGrid"></div>
+        </div>
       </div>
-    </div>
 
-    <!-- REPORTES -->
-    <div id="section-reportes" style="display:none">
-      <div class="section">
-        <div class="section-header"><h3>📈 Estadísticas de conversión</h3></div>
-        <div id="reportesContent"><div class="empty-state"><p>Los reportes se generarán automáticamente con los leads reales</p></div></div>
+      <!-- REPORTES -->
+      <div id="section-reportes" style="display:none">
+        <div class="section">
+          <div class="section-header"><h3>Estadisticas de conversion</h3></div>
+          <div id="reportesContent"><div class="empty-state"><p>Los reportes se generaran automaticamente con los leads reales</p></div></div>
+        </div>
       </div>
-    </div>
 
-    <!-- CONFIG -->
-    <div id="section-config" style="display:none">
-      <div class="section">
-        <div class="section-header"><h3>⚙️ Configuración del sistema</h3></div>
-        <div style="padding:16px 20px;">
-          <div style="margin-bottom:12px;"><strong>Estado del webhook:</strong> <span style="color:#2e7d32;">✅ Conectado</span></div>
-          <div style="margin-bottom:12px;"><strong>URL del webhook:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;" id="webhookUrl">https://sullivan-precisely-consistently-comment.trycloudflare.com/webhook</code></div>
-          <div style="margin-bottom:12px;"><strong>Verify Token:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;">spInmobiliaria2026SecureVerifyToken</code></div>
-          <div style="margin-bottom:12px;"><strong>Phone Number ID:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;" id="configPhoneId">—</code></div>
-          <div style="margin-bottom:12px;"><strong>Número oficial:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;" id="configPhone">—</code></div>
-          <div style="margin-bottom:12px;"><strong>Token WhatsApp:</strong> <code style="background:#f0f2f5;padding:4px 8px;border-radius:4px;font-size:12px;">EAA... (oculto)</code></div>
+      <!-- CONFIG -->
+      <div id="section-config" style="display:none">
+        <div class="section">
+          <div class="section-header"><h3>Configuracion del sistema</h3></div>
+          <div style="padding:16px 20px;">
+            <div style="margin-bottom:12px;"><strong>Estado del webhook:</strong> <span style="color:#53BDEB;">Conectado</span></div>
+            <div style="margin-bottom:12px;"><strong>URL del webhook:</strong> <code style="background:var(--bg3);padding:4px 8px;border-radius:6px;font-size:11px;color:var(--txt2)" id="webhookUrl">https://sullivan-precisely-consistently-comment.trycloudflare.com/webhook</code></div>
+            <div style="margin-bottom:12px;"><strong>Verify Token:</strong> <code style="background:var(--bg3);padding:4px 8px;border-radius:6px;font-size:11px;color:var(--txt2)">spInmobiliaria2026SecureVerifyToken</code></div>
+            <div style="margin-bottom:12px;"><strong>Phone Number ID:</strong> <code style="background:var(--bg3);padding:4px 8px;border-radius:6px;font-size:11px;color:var(--txt2)" id="configPhoneId">--</code></div>
+            <div style="margin-bottom:12px;"><strong>Numero oficial:</strong> <code style="background:var(--bg3);padding:4px 8px;border-radius:6px;font-size:11px;color:var(--txt2)" id="configPhone">--</code></div>
+            <div style="margin-bottom:12px;"><strong>Token WhatsApp:</strong> <code style="background:var(--bg3);padding:4px 8px;border-radius:6px;font-size:11px;color:var(--txt2)">EAA... (oculto)</code></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGS -->
+      <div id="section-logs" style="display:none">
+        <div class="section">
+          <div class="section-header"><h3>Registro de actividad</h3></div>
+          <div id="logsContent"><div class="empty-state"><p>El registro de actividad aparecera aqui</p></div></div>
         </div>
       </div>
     </div>
-
-    <!-- LOGS -->
-    <div id="section-logs" style="display:none">
-      <div class="section">
-        <div class="section-header"><h3>📋 Registro de actividad</h3></div>
-        <div id="logsContent"><div class="empty-state"><p>El registro de actividad aparecerá aquí</p></div></div>
-      </div>
-    </div>
   </div>
+</div>
+
+<!-- iOS Tab Bar -->
+<div class="ios-tabbar">
+  <button class="tab active" onclick="showSection('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></button>
+  <button class="tab" onclick="showSection('leads')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg><span>Leads</span></button>
+  <button class="tab" onclick="showSection('vendedores')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Equipo</span></button>
+  <button class="tab" onclick="showSection('config')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Ajustes</span></button>
 </div>
 
 <!-- Modal -->
@@ -196,7 +188,7 @@ td { padding:14px 16px; border-top:1px solid rgba(255,255,255,.04); font-size:13
   <div class="form-modal">
     <h3 id="formTitle">Agregar vendedor</h3>
     <input id="vNombre" placeholder="Nombre completo" />
-    <input id="vTelefono" placeholder="Teléfono (ej: +521234567890)" />
+    <input id="vTelefono" placeholder="Telefono (ej: +521234567890)" />
     <select id="vRol"><option value="vendedor">Vendedor</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeForm()">Cancelar</button>
@@ -208,6 +200,9 @@ td { padding:14px 16px; border-top:1px solid rgba(255,255,255,.04); font-size:13
 <div class="toast" id="toast"></div>
 
 <script>
+/* ── Status Bar Clock ── */
+(function(){function u(){var d=new Date(),h=d.getHours(),m=d.getMinutes();document.getElementById('sTime').textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m}u();setInterval(u,3e4)})();
+
 const API = '';
 let statsCache = { vendedores: [], leads: [] };
 
@@ -220,10 +215,11 @@ function showSection(section) {
   document.querySelectorAll('.main > div[id^="section-"]').forEach(d => d.style.display = 'none');
   const el = document.getElementById('section-' + section);
   if (el) el.style.display = 'block';
-  document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
-  const map = { dashboard:0, leads:1, vendedores:2, reportes:3, config:4, logs:5 };
-  document.querySelectorAll('.sidebar nav a')[map[section]]?.classList.add('active');
-  const titles = { dashboard:'Dashboard', leads:'Bandeja de Leads', vendedores:'Vendedores', reportes:'Reportes', config:'Configuración', logs:'Registro' };
+  document.querySelectorAll('.ios-tabbar .tab').forEach(a => a.classList.remove('active'));
+  const map = { dashboard:0, leads:1, vendedores:2, config:3 };
+  const tabs = document.querySelectorAll('.ios-tabbar .tab');
+  if (tabs[map[section]]) tabs[map[section]].classList.add('active');
+  const titles = { dashboard:'Dashboard', leads:'Bandeja de Leads', vendedores:'Vendedores', reportes:'Reportes', config:'Configuracion', logs:'Registro' };
   document.getElementById('pageTitle').textContent = titles[section] || section;
   if (section === 'leads') renderLeads();
   if (section === 'vendedores') renderVendedores();
@@ -234,6 +230,12 @@ function toast(msg) {
   t.textContent = msg; t.style.display = 'block';
   setTimeout(() => t.style.display = 'none', 3000);
 }
+
+/* Logout */
+document.getElementById('logoutBtn').addEventListener('click', function(e){
+  e.preventDefault();
+  fetch('/api/logout',{method:'POST'}).then(function(){ localStorage.removeItem('sp_user'); window.location.href='/login.html'; });
+});
 
 // Stats
 async function loadStats() {
@@ -259,16 +261,16 @@ function renderStats(stats, leads) {
 
   const recent = leads.slice(0, 8);
   if (recent.length === 0) {
-    document.getElementById('recentLeads').innerHTML = '<div class="empty-state"><p>📨 No hay leads aún</p><p style="font-size:12px;color:#bbb;margin-top:4px;">Cuando un cliente escriba al WhatsApp aparecerá aquí automáticamente</p></div>';
+    document.getElementById('recentLeads').innerHTML = '<div class="empty-state"><p>No hay leads aun</p><p style="font-size:12px;color:var(--txt3);margin-top:4px;">Cuando un cliente escriba al WhatsApp aparecera aqui automaticamente</p></div>';
     return;
   }
-  document.getElementById('recentLeads').innerHTML = `<table><thead><tr><th>Cliente</th><th>Teléfono</th><th>Asignado</th><th>Estado</th><th>Mensajes</th><th>Hace</th></tr></thead><tbody>${recent.map(l => {
+  document.getElementById('recentLeads').innerHTML = `<table><thead><tr><th>Cliente</th><th>Telefono</th><th>Asignado</th><th>Estado</th><th>Msgs</th><th>Hace</th></tr></thead><tbody>${recent.map(l => {
     const f = new Date(l.created_at + 'Z');
     const d = Math.floor((Date.now() - f.getTime()) / 60000);
-    const t = d < 60 ? `${d} min` : `${Math.floor(d/60)}h`;
-    return `<tr><td><strong>${l.customer_name||'Cliente'}</strong></td><td><code style="font-size:11px;">${l.customer_phone}</code></td><td><code style="font-size:11px;">${l.assigned_to_phone||'—'}</code></td><td><span class="status-badge s-${l.status}">${l.status}</span></td><td>${l.messages_count}</td><td style="color:#999;font-size:12px;">${t}</td></tr>`;
+    const t = d < 60 ? d + ' min' : Math.floor(d/60) + 'h';
+    return '<tr><td><strong>'+(l.customer_name||'Cliente')+'</strong></td><td><code style="font-size:11px;">'+l.customer_phone+'</code></td><td><code style="font-size:11px;">'+(l.assigned_to_phone||'--')+'</code></td><td><span class="status-badge s-'+l.status+'">'+l.status+'</span></td><td>'+l.messages_count+'</td><td style="color:#999;font-size:12px;">'+t+'</td></tr>';
   }).join('')}</tbody></table>`;
-  document.getElementById('leadsCount').textContent = `${leads.length} leads`;
+  document.getElementById('leadsCount').textContent = leads.length + ' leads';
 }
 
 // Leads table
@@ -278,38 +280,38 @@ function renderLeads() {
     document.getElementById('leadsTable').innerHTML = '<div class="empty-state"><p>No hay leads registrados</p></div>';
     return;
   }
-  document.getElementById('leadsTable').innerHTML = `<table><thead><tr><th>ID</th><th>Cliente</th><th>Teléfono</th><th>Asignado</th><th>Estado</th><th>Mensajes</th><th>Escalación</th><th>Recibido</th></tr></thead><tbody>${leads.map(l => {
+  document.getElementById('leadsTable').innerHTML = '<table><thead><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Asignado</th><th>Estado</th><th>Msgs</th><th>Escalacion</th><th>Recibido</th></tr></thead><tbody>'+leads.map(l => {
     const f = new Date(l.created_at + 'Z');
     const d = Math.floor((Date.now() - f.getTime()) / 60000);
-    const t = d < 60 ? `${d} min` : `${Math.floor(d/60)}h`;
-    return `<tr><td>#${l.id}</td><td><strong>${l.customer_name||'Cliente'}</strong></td><td><code style="font-size:11px;">${l.customer_phone}</code></td><td><code style="font-size:11px;">${l.assigned_to_phone||'—'}</code></td><td><span class="status-badge s-${l.status}">${l.status}</span></td><td>${l.messages_count}</td><td>${'⚠️'.repeat(l.escalation_level||0) || '—'}</td><td style="color:#999;font-size:12px;">${t}</td></tr>`;
-  }).join('')}</tbody></table>`;
+    const t = d < 60 ? d + ' min' : Math.floor(d/60) + 'h';
+    return '<tr><td>#'+l.id+'</td><td><strong>'+(l.customer_name||'Cliente')+'</strong></td><td><code style="font-size:11px;">'+l.customer_phone+'</code></td><td><code style="font-size:11px;">'+(l.assigned_to_phone||'--')+'</code></td><td><span class="status-badge s-'+l.status+'">'+l.status+'</span></td><td>'+l.messages_count+'</td><td>'+(l.escalation_level ? '\u26A0\uFE0F'.repeat(l.escalation_level) : '--')+'</td><td style="color:#999;font-size:12px;">'+t+'</td></tr>';
+  }).join('')+'</tbody></table>';
 }
 
 // Vendedores
 async function renderVendedores() {
   const v = await api('/api/vendedores');
   if (v.length === 0) {
-    document.getElementById('vendedoresGrid').innerHTML = '<div style="padding:20px;color:#999;text-align:center;">No hay vendedores registrados. Agrega el primero.</div>';
+    document.getElementById('vendedoresGrid').innerHTML = '<div style="padding:20px;color:var(--txt2);text-align:center;">No hay vendedores registrados. Agrega el primero.</div>';
     return;
   }
-  document.getElementById('vendedoresGrid').innerHTML = v.map(vd => `
+  document.getElementById('vendedoresGrid').innerHTML = v.map(vd => '
     <div class="v-card">
-      <div class="name">${vd.nombre}</div>
-      <div class="phone">${vd.telefono}</div>
-      <div><span class="status-badge s-${vd.estado === 'activo' ? 'nuevo' : 'cerrado'}" style="margin-top:6px;display:inline-block;">${vd.estado}</span></div>
-      <div class="leads-count">📨 ${vd.total_leads || 0} leads asignados</div>
+      <div class="name">'+vd.nombre+'</div>
+      <div class="phone">'+vd.telefono+'</div>
+      <div><span class="status-badge s-'+(vd.estado === 'activo' ? 'nuevo' : 'cerrado')+'" style="margin-top:6px;display:inline-block;">'+vd.estado+'</span></div>
+      <div class="leads-count">'+(vd.total_leads || 0)+' leads asignados</div>
       <div style="margin-top:8px;display:flex;gap:6px">
-        <button class="action-btn" style="font-size:11px;padding:6px 12px;background:linear-gradient(135deg,#4E7B46,#3D6B37);flex:1" onclick="setEstado(${vd.id},'activo')">Activar</button>
-        <button class="action-btn" style="font-size:11px;padding:6px 12px;background:var(--bg4);color:var(--txt2);flex:1" onclick="setEstado(${vd.id},'inactivo')">Inactivo</button>
+        <button class="action-btn" style="font-size:11px;padding:6px 12px;background:linear-gradient(135deg,#4E7B46,#3D6B37);flex:1" onclick="setEstado('+vd.id+',\'activo\')">Activar</button>
+        <button class="action-btn" style="font-size:11px;padding:6px 12px;background:var(--bg4);color:var(--txt2);flex:1" onclick="setEstado('+vd.id+',\'inactivo\')">Inactivo</button>
       </div>
     </div>
-  `).join('');
+  ').join('');
 }
 
 async function setEstado(id, estado) {
-  await api(`/api/vendedores/${id}/estado`, { method:'POST', body:JSON.stringify({ estado }) });
-  toast(`Estado actualizado`);
+  await api('/api/vendedores/'+id+'/estado', { method:'POST', body:JSON.stringify({ estado }) });
+  toast('Estado actualizado');
   renderVendedores();
 }
 

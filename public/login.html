@@ -12,110 +12,153 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* ── Apple Design System · SP Inmobiliaria ── */
+  /* ── iOS 18 · Login Sheet · SP Inmobiliaria ── */
   :root{
-    --bg:#040406; --bg2:#0A0A0E; --bg3:#121218;
-    --txt:#F5F0E8; --txt2:rgba(245,240,232,.45); --txt3:rgba(245,240,232,.22);
-    --oro:#D4AF37; --oro2:#A8872B; --rojo:#FF453A;
-    --e2:0 8px 30px rgba(0,0,0,.5); --e3:0 20px 60px rgba(0,0,0,.6);
-    --ease:cubic-bezier(.22,1,.36,1);
-    --negro:#040406; --marfil:#F5F0E8; --gris:rgba(245,240,232,.45); --verde:#4E7B46;
+    --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33;
+    --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
+    --gold:#D4AF37; --gold2:#A8872B; --red:#FF453A;
+    --ease:cubic-bezier(.32,.72,0,1);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
     font-family:'Inter',sans-serif;color:var(--txt);
-    background:radial-gradient(ellipse 130% 90% at 50% -20%,#0A0A0E 0%,var(--bg) 60%);
-    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
-    -webkit-user-select:none;-moz-user-select:none;user-select:none;
+    background:var(--black);
+    min-height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
+    -webkit-user-select:none;user-select:none;
     -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+    overflow:hidden;
   }
   input{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+  /* iOS Status Bar */
+  .ios-statusbar{height:44px;background:var(--black);display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:13px;font-weight:600;flex-shrink:0;position:fixed;top:0;left:0;right:0;z-index:10}
+  .ios-statusbar .s-time{font-weight:700;letter-spacing:.5px;color:var(--txt)}
+  .ios-statusbar .s-icons{display:flex;align-items:center;gap:5px}
+  .ios-statusbar .s-icons svg{display:block}
+
+  /* Background: subtle gradient */
+  .bg-gradient{position:fixed;inset:0;background:radial-gradient(ellipse 120% 80% at 50% -10%,#1F2C33 0%,#000 60%);z-index:0}
+
+  /* Logo centered above sheet */
+  .logo-area{position:relative;z-index:1;text-align:center;padding:0 20px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .logo-area img{width:80px;height:80px;border-radius:20px;object-fit:cover;box-shadow:0 8px 30px rgba(0,0,0,.6);margin-bottom:16px}
+  .logo-area .sp{font-family:'Cinzel',serif;font-weight:600;letter-spacing:.12em;font-size:1.2rem;
+    background:linear-gradient(135deg,#E8C84A,var(--gold),var(--gold2));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .logo-area .sub{font-size:.65rem;color:var(--txt2);letter-spacing:.24em;text-transform:uppercase;margin-top:6px}
+  .logo-area .linea{height:2px;width:40px;background:linear-gradient(90deg,var(--gold),var(--gold2));margin:14px auto 0;border-radius:1px;opacity:.5}
+
+  /* Bottom Sheet Card */
   .card{
-    width:100%;max-width:380px;background:var(--bg2);border-radius:12px;
-    padding:40px 32px;box-shadow:var(--e3);
-    animation:cardIn .35s var(--ease);
+    position:relative;z-index:2;width:100%;background:var(--bg2);
+    border-radius:22px 22px 0 0;padding:20px 28px 36px;
+    padding-bottom:calc(36px + env(safe-area-inset-bottom));
+    animation:sheetUp .5s var(--ease);
+    box-shadow:0 -10px 40px rgba(0,0,0,.5);
   }
-  @keyframes cardIn{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @media (prefers-reduced-motion: reduce){.card{animation:none}}
   :focus-visible{outline:2px solid rgba(212,175,55,.4);outline-offset:2px}
-  .brand{text-align:center;margin-bottom:28px}
-  .brand .sp{
-    font-family:'Cinzel',serif;font-weight:600;letter-spacing:.12em;
-    background:linear-gradient(135deg,#E8C84A,var(--oro),var(--oro2));
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
-  }
-  .brand .sub{
-    font-size:.68rem;color:var(--txt2);
-    letter-spacing:.24em;text-transform:uppercase;margin-top:6px;
-  }
-  .linea{height:2px;width:48px;background:linear-gradient(90deg,var(--oro),var(--oro2));margin:18px auto 0;border-radius:1px;opacity:.6}
-  label{display:block;font-size:.72rem;color:var(--txt2);margin:20px 0 8px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
-  input{
+
+  /* Drag Handle */
+  .dw-handle{width:36px;height:5px;border-radius:3px;background:var(--txt3);margin:6px auto 16px}
+
+  .input-group{margin-bottom:14px}
+  .input-group label{display:block;font-size:.65rem;color:var(--txt2);margin-bottom:6px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
+  .input-group input{
     width:100%;height:44px;padding:0 16px;background:var(--bg3);
     border:none;border-radius:10px;color:var(--txt);font-size:16px;font-family:inherit;
-    box-shadow:inset 0 2px 4px rgba(0,0,0,.3);transition:box-shadow .15s ease;
+    transition:box-shadow .15s ease;
   }
-  input::placeholder{color:rgba(255,255,255,.2)}
-  input:focus{outline:none;box-shadow:inset 0 2px 4px rgba(0,0,0,.3),0 0 0 1.5px rgba(212,175,55,.3)}
-  /* PIN: 4 cuadros grandes */
-  .pin-wrap{display:flex;gap:10px;justify-content:center;margin-top:4px}
+  .input-group input::placeholder{color:var(--txt3);font-weight:400}
+  .input-group input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(212,175,55,.3)}
+  .input-group input[type=password]{letter-spacing:2px;font-size:1.2rem}
+
+  .pin-wrap{display:flex;gap:8px;justify-content:center;margin-top:4px}
   .pin-wrap input{
-    width:58px;height:62px;text-align:center;font-size:1.6rem;
+    width:56px;height:56px;text-align:center;font-size:1.5rem;
     font-weight:600;letter-spacing:0;padding:0;font-feature-settings:'tnum';
+    background:var(--bg3);border:none;border-radius:10px;color:var(--txt);
+    transition:box-shadow .15s ease;
   }
-  button{
-    width:100%;margin-top:28px;height:44px;
-    background:linear-gradient(135deg,var(--oro),var(--oro2));
-    color:#0A0A0E;border:none;border-radius:10px;font-weight:600;
-    font-size:.92rem;cursor:pointer;letter-spacing:.03em;font-family:inherit;
-    box-shadow:0 2px 8px rgba(0,0,0,.4);
-    transition:filter .15s ease,transform .1s ease;
+  .pin-wrap input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(212,175,55,.3)}
+
+  .btn{
+    width:100%;margin-top:18px;height:48px;
+    background:linear-gradient(135deg,var(--gold),var(--gold2));
+    color:#000;border:none;border-radius:12px;font-weight:600;
+    font-size:.95rem;cursor:pointer;letter-spacing:.03em;font-family:inherit;
+    box-shadow:0 4px 12px rgba(0,0,0,.4);
+    transition:opacity .15s ease,transform .1s ease;
   }
-  button:hover{filter:brightness(1.1)}
-  button:active{transform:scale(.97)}
-  button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .btn:hover{opacity:.9}
+  .btn:active{transform:scale(.97)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
   .error{
-    margin-top:16px;padding:12px 14px;background:rgba(255,69,58,.08);
-    border-radius:10px;color:var(--rojo);font-size:.84rem;display:none;text-align:center;
+    margin-top:14px;padding:10px 14px;background:rgba(255,69,58,.08);
+    border-radius:10px;color:#FF9F94;font-size:.82rem;display:none;text-align:center;
   }
-  .toggle{text-align:center;margin-top:24px;font-size:.76rem;color:var(--txt2)}
-  .toggle a{color:rgba(212,175,55,.7);cursor:pointer;text-decoration:none;transition:color .15s ease}
-  .toggle a:hover{color:var(--oro)}
-  .foot{text-align:center;margin-top:16px;font-size:.7rem;color:var(--txt3)}
+  .toggle{text-align:center;margin-top:18px;font-size:.76rem;color:var(--txt2)}
+  .toggle a{color:var(--gold);cursor:pointer;text-decoration:none;transition:opacity .15s ease;opacity:.8}
+  .toggle a:hover{opacity:1}
+  .foot{text-align:center;margin-top:12px;font-size:.66rem;color:var(--txt3)}
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="brand">
-      <img src="/icons/icon-192.png" alt="SP" style="width:76px;height:76px;border-radius:18px;object-fit:cover;margin-bottom:10px" onerror="this.style.display='none'">
-      <div class="sp" style="font-size:1.15rem">SP LEONS GROUP</div>
-      <div class="sub">Inmobiliaria</div>
-      <div class="linea"></div>
-    </div>
+  <div class="bg-gradient"></div>
 
-    <!-- Formulario vendedor: teléfono + PIN -->
+  <!-- iOS Status Bar -->
+  <div class="ios-statusbar">
+    <span class="s-time" id="sTime">9:41</span>
+    <div class="s-icons">
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="2" width="3" height="8" rx=".5" fill="currentColor"/><rect x="4.5" y="1" width="3" height="9" rx=".5" fill="currentColor"/><rect x="9" y="0" width="3" height="10" rx=".5" fill="currentColor"/><rect x="13.5" y="2" width="2.5" height="8" rx=".5" fill="currentColor" opacity=".3"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x=".5" y="2.5" width="11" height="7" rx="1.5" stroke="currentColor" stroke-width=".8"/><rect x="2" y="4" width="8" height="4" rx=".5" fill="currentColor"/></svg>
+    </div>
+  </div>
+
+  <!-- Logo Area -->
+  <div class="logo-area">
+    <img src="/icons/icon-192.png" alt="SP" onerror="this.style.display='none'">
+    <div class="sp">SP INMOBILIARIA</div>
+    <div class="sub">Inversiones &amp; Finca Raíz</div>
+    <div class="linea"></div>
+  </div>
+
+  <!-- Bottom Sheet Card -->
+  <div class="card">
+    <div class="dw-handle"></div>
+
+    <!-- Form vendedor: WhatsApp + PIN -->
     <form id="formVendedor">
-      <label for="telefono">Tu número WhatsApp</label>
-      <input id="telefono" type="tel" inputmode="tel" autocomplete="tel"
-             placeholder="+573001112233" required>
-      <label>PIN de 4 dígitos</label>
-      <div class="pin-wrap">
-        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
-        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
-        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
-        <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+      <div class="input-group">
+        <label for="telefono">WhatsApp</label>
+        <input id="telefono" type="tel" inputmode="tel" autocomplete="tel" placeholder="+573001112233" required>
       </div>
-      <button id="btnV" type="submit">Ingresar</button>
+      <div class="input-group">
+        <label>PIN</label>
+        <div class="pin-wrap">
+          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required autofocus>
+          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
+        </div>
+      </div>
+      <button class="btn" id="btnV" type="submit">Ingresar</button>
       <div class="error" id="errorV"></div>
     </form>
 
-    <!-- Formulario admin: oculto por defecto -->
+    <!-- Form admin (hidden by default) -->
     <form id="formAdmin" style="display:none">
-      <label for="email">Correo admin</label>
-      <input id="email" type="email" autocomplete="username" required placeholder="admin@spinmobiliaria.com">
-      <label for="password">Contraseña</label>
-      <input id="password" type="password" autocomplete="current-password" required placeholder="••••••••">
-      <button id="btnA" type="submit">Ingresar como admin</button>
+      <div class="input-group">
+        <label for="email">Correo</label>
+        <input id="email" type="email" autocomplete="username" required placeholder="admin@spinmobiliaria.com">
+      </div>
+      <div class="input-group">
+        <label for="password">Contraseña</label>
+        <input id="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+      </div>
+      <button class="btn" id="btnA" type="submit">Ingresar</button>
       <div class="error" id="errorA"></div>
     </form>
 
@@ -126,6 +169,10 @@
   </div>
 
 <script>
+  // iOS status bar clock
+  function updateStatusBarClock(){const t=new Date();const h=t.getHours();const m=t.getMinutes().toString().padStart(2,'0');const el=document.getElementById('sTime');if(el)el.textContent=h+':'+m;}
+  updateStatusBarClock();setInterval(updateStatusBarClock,30000);
+
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
   }
