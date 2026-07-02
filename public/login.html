@@ -179,7 +179,7 @@
 
   // Si ya hay sesión, redirigir según rol
   fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
-    if(u) location.href = u.rol==='admin' ? '/index.html' : '/vendedor.html';
+    if(u) location.href = u.rol==='admin' ? '/os/dashboard.html' : '/vendedor.html';
   });
 
   // Toggle entre modos
@@ -256,7 +256,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error==='credenciales_invalidas' ? 'Correo o contraseña incorrectos' : 'Error al ingresar');
-      location.href = data.usuario.rol==='admin' ? '/index.html' : '/vendedor.html';
+      location.href = data.usuario.rol==='admin' ? '/os/dashboard.html' : '/vendedor.html';
     } catch(err) {
       errBox.textContent = err.message;
       errBox.style.display = 'block';

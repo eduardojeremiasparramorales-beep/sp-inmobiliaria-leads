@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Equipo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, fmt, avatarColor, initials, toast } = SPOS;
+
+  const ctx = await SPOS.mount({
+    active: 'team', title: 'Equipo', crumb: 'Asesores y rendimiento', padded: true, adminOnly: true,
+    action: `<button class="btn btn--gold btn--sm" id="add">${ICONS.plus}Agregar asesor</button>`
+  });
+
+  let m = await api('/api/metricas');
+  let stats = await api('/api/stats');
+  const demo = !m;
+  if (demo) {
+    m = { porVendedor:[
+      { id:1, nombre:'Carlos García', estado:'activo', total:98, activos:71, vendidos:16, conversion:16 },
+      { id:2, nombre:'Andrea López', estado:'activo', total:84, activos:60, vendidos:14, conversion:17 },
+      { id:3, nombre:'Miguel Torres', estado:'activo', total:76, activos:52, vendidos:11, conversion:14 },
+      { id:4, nombre:'Laura Ruiz', estado:'ausente', total:44, activos:30, vendidos:6, conversion:7 },
+    ]};
+    stats = { totalVendedores:4, vendedoresActivos:3 };
+  }
+  const team = m.porVendedor || [];
+  const totalLeads = team.reduce((s,v)=>s+v.total,0);
+  const totalVend = team.reduce((s,v)=>s+v.vendidos,0);
+  const avgConv = team.length ? Math.round(team.reduce((s,v)=>s+v.conversion,0)/team.length) : 0;
+  const topId = team.slice().sort((a,b)=>b.vendidos-a.vendidos)[0]?.id;
+
+  ctx.content.innerHTML = `
+   <div class="os-content__max">
+    <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
+      ${metric('team','Asesores', fmt.n(stats.totalVendedores))}
+      ${metric('activity','Activos ahora', fmt.n(stats.vendedoresActivos))}
+      ${metric('money','Cierres del equipo', fmt.n(totalVend))}
+      ${metric('target','Conversión media', avgConv+'%')}
+    </div>
+
+    <div class="grid grid--3 rise rise-2" style="margin-bottom:var(--s3)">
+      ${team.map((v,i)=>{
+        const share = totalLeads ? Math.round((v.total/totalLeads)*100) : 0;
+        return `<div class="card card--pad card--float">
+          <div class="u-between" style="margin-bottom:var(--s2)">
+            <div class="u-row u-gap2">
+              <div class="avatar avatar--md" style="background:${avatarColor(v.nombre)}">${initials(v.nombre)}</div>
+              <div><div style="font-weight:600">${v.nombre}</div>
+              <div class="u-row u-gap1" style="font-size:11.5px"><span class="dot dot--${v.estado==='activo'?'green':'mute'}"></span><span class="t-dim3">${v.estado}</span></div></div>
+            </div>
+            ${v.id===topId?`<span class="badge badge--gold">${ICONS.flame.replace('<svg ','<svg style="width:12px;height:12px" ')}Top</span>`:''}
+          </div>
+          <div class="grid grid--3" style="gap:8px;margin-bottom:var(--s2)">
+            ${miniStat('Leads', fmt.n(v.total))}
+            ${miniStat('Activos', fmt.n(v.activos))}
+            ${miniStat('Cierres', fmt.n(v.vendidos))}
+          </div>
+          <div class="u-between" style="margin-bottom:6px"><span class="t-dim3" style="font-size:11.5px">Conversión</span><span style="font-size:12px;font-weight:600" class="${v.conversion>=15?'t-green':'t-gold'}">${v.conversion}%</span></div>
+          <div style="height:8px;background:var(--bg-4);border-radius:999px;overflow:hidden"><div style="height:100%;width:${Math.min(100,v.conversion*4)}%;background:${v.conversion>=15?'var(--green)':'var(--gold)'};border-radius:999px"></div></div>
+          <div class="t-dim3" style="font-size:11px;margin-top:10px">${share}% de la carga total del equipo</div>
+        </div>`;
+      }).join('') || `<div class="empty" style="grid-column:1/-1">${ICONS.team}<div>Aún no hay asesores</div></div>`}
+    </div>
+
+    <div class="card rise rise-3" style="overflow:hidden">
+      <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Ranking de rendimiento</div></div>
+      <table class="table">
+        <thead><tr><th>#</th><th>Asesor</th><th>Estado</th><th>Leads</th><th>Activos</th><th>Cierres</th><th>Conversión</th></tr></thead>
+        <tbody>${team.slice().sort((a,b)=>b.vendidos-a.vendidos).map((v,i)=>`<tr>
+          <td class="t-num t-dim3">${i+1}</td>
+          <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)}">${initials(v.nombre)}</div><span style="font-weight:500">${v.nombre}</span></div></td>
+          <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
+          <td class="t-num">${fmt.n(v.total)}</td>
+          <td class="t-num t-dim">${fmt.n(v.activos)}</td>
+          <td class="t-num">${fmt.n(v.vendidos)}</td>
+          <td><span class="badge badge--${v.conversion>=15?'green':v.conversion>=8?'gold':'mute'}">${v.conversion}%</span></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+   </div>`;
+
+  document.getElementById('add').addEventListener('click', ()=> location.href='/equipo.html');
+
+  function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
+  function miniStat(k,v){ return `<div style="background:var(--bg-1);border:1px solid var(--border-soft);border-radius:10px;padding:9px;text-align:center"><div class="t-num" style="font-size:16px;font-weight:600">${v}</div><div class="t-dim3" style="font-size:10.5px">${k}</div></div>`; }
+})();
+</script>
+</body>
+</html>

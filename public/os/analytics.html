@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, fmt } = SPOS;
+
+  const ctx = await SPOS.mount({
+    active: 'analytics', title: 'Analytics', crumb: 'Inteligencia de negocio', padded: true,
+    action: `<a class="btn btn--ghost btn--sm" href="/api/reports/export.csv">${ICONS.down.replace('<svg ','<svg style="transform:rotate(180deg)" ')}Exportar CSV</a>`
+  });
+
+  let pipe = await api('/api/reports/pipeline-conversion');
+  let chan = await api('/api/reports/channel-distribution');
+  let resp = await api('/api/reports/response-times');
+  let hourly = await api('/api/reports/hourly-distribution');
+  let team = await api('/api/reports/team-performance');
+
+  const demo = !pipe;
+  if (demo) {
+    pipe = { etapas:[{etapa:'nuevo',count:120,conversion_pct:100},{etapa:'asignado',count:98,conversion_pct:82},{etapa:'contactado',count:74,conversion_pct:76},{etapa:'cerrado',count:31,conversion_pct:42}], total:120, tasa_conversion_general:26 };
+    chan = { whatsapp:214, instagram:86, messenger:42 };
+    resp = { promedio:8.4, mediana:5, p90:22, p99:48, muestras:180 };
+    hourly = Array.from({length:24},(_,h)=>({hora:h, count: Math.round(20*Math.exp(-Math.pow(h-13,2)/26)) }));
+    team = [
+      { nombre:'Carlos García', total_asignadas:98, contactadas:81, cerradas:22, vendidas:16, tiempo_promedio_respuesta:6.2 },
+      { nombre:'Andrea López', total_asignadas:84, contactadas:70, cerradas:18, vendidas:14, tiempo_promedio_respuesta:7.8 },
+      { nombre:'Miguel Torres', total_asignadas:76, contactadas:58, cerradas:14, vendidas:11, tiempo_promedio_respuesta:9.1 },
+      { nombre:'Laura Ruiz', total_asignadas:44, contactadas:30, cerradas:6, vendidas:6, tiempo_promedio_respuesta:14.5 },
+    ];
+  }
+
+  const ETAPA_LABEL = { nuevo:'Nuevos', asignado:'Asignados', contactado:'Contactados', cerrado:'Cerrados' };
+  const CH = { whatsapp:{t:'WhatsApp',c:'#57C168'}, instagram:{t:'Instagram',c:'#C8A45A'}, messenger:{t:'Messenger',c:'#5B8DEF'} };
+  const chanTotal = Object.values(chan).reduce((a,b)=>a+b,0) || 1;
+  const hourMax = Math.max(1, ...hourly.map(h=>h.count));
+  const mins = (v) => v==null ? '—' : (Math.round(v*10)/10) + ' min';
+
+  ctx.content.innerHTML = `
+   <div class="os-content__max">
+    <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
+      ${metric('leads','Leads en periodo', fmt.n(pipe.total))}
+      ${metric('target','Conversión general', pipe.tasa_conversion_general+'%')}
+      ${metric('clock','Resp. promedio', mins(resp.promedio))}
+      ${metric('msg','Muestras medidas', fmt.n(resp.muestras))}
+    </div>
+
+    <div class="grid grid--main">
+      <div class="u-col u-gap3">
+        <!-- Funnel -->
+        <div class="card card--pad rise rise-2">
+          <div class="t-h3" style="margin-bottom:2px">Embudo de conversión</div>
+          <div class="t-dim3" style="font-size:12px;margin-bottom:var(--s3)">Cuántos leads avanzan en cada etapa</div>
+          ${pipe.etapas.map((e,i)=>{
+            const w = pipe.total ? Math.round((e.count/pipe.total)*100) : 0;
+            return `<div style="margin-bottom:14px">
+              <div class="u-between" style="margin-bottom:6px">
+                <span style="font-size:13px;font-weight:500">${ETAPA_LABEL[e.etapa]||e.etapa}</span>
+                <span style="font-size:12.5px"><span class="t-num">${fmt.n(e.count)}</span> <span class="t-dim3">· ${e.conversion_pct}%</span></span>
+              </div>
+              <div style="height:12px;background:var(--bg-4);border-radius:999px;overflow:hidden">
+                <div style="height:100%;width:${w}%;background:linear-gradient(90deg,var(--gold),var(--green));border-radius:999px;transition:width .8s var(--ease-out)"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <!-- Hourly -->
+        <div class="card card--pad rise rise-3">
+          <div class="t-h3" style="margin-bottom:2px">Actividad por hora</div>
+          <div class="t-dim3" style="font-size:12px;margin-bottom:var(--s3)">Cuándo llegan tus leads (UTC)</div>
+          <div style="display:flex;align-items:flex-end;gap:3px;height:140px">
+            ${hourly.map(h=>{
+              const ht = Math.round((h.count/hourMax)*100);
+              const peak = h.count===hourMax;
+              return `<div class="u-grow" title="${h.hora}:00 · ${h.count}" style="height:100%;display:flex;align-items:flex-end">
+                <div style="width:100%;height:${Math.max(3,ht)}%;background:${peak?'var(--gold)':'var(--bg-4)'};border-radius:4px 4px 0 0;transition:height .8s var(--ease-out)"></div>
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="u-between t-dim3" style="font-size:10.5px;margin-top:8px"><span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>23h</span></div>
+        </div>
+
+        <!-- Team -->
+        <div class="card rise rise-4" style="overflow:hidden">
+          <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Desempeño del equipo</div></div>
+          <table class="table">
+            <thead><tr><th>Asesor</th><th>Asignadas</th><th>Contactadas</th><th>Cerradas</th><th>Vendidas</th><th>Resp.</th></tr></thead>
+            <tbody>${team.map(v=>`<tr>
+              <td style="font-weight:500">${v.nombre}</td>
+              <td class="t-num">${fmt.n(v.total_asignadas)}</td>
+              <td class="t-num t-dim">${fmt.n(v.contactadas)}</td>
+              <td class="t-num">${fmt.n(v.cerradas)}</td>
+              <td><span class="badge badge--green">${fmt.n(v.vendidas)}</span></td>
+              <td class="t-num t-dim">${mins(v.tiempo_promedio_respuesta)}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <div class="u-col u-gap3">
+        <div class="card card--pad rise rise-2">
+          <div class="t-h3" style="margin-bottom:var(--s3)">Distribución por canal</div>
+          <div class="u-col" style="align-items:center;margin-bottom:var(--s3)">${donut(chan, chanTotal)}</div>
+          <div class="u-col u-gap2">
+            ${Object.entries(chan).map(([k,v])=>{
+              const info = CH[k]||{t:k,c:'var(--text-3)'}; const pct = Math.round((v/chanTotal)*100);
+              return `<div class="u-between"><div class="u-row u-gap2"><span class="dot" style="background:${info.c}"></span><span style="font-size:13px">${info.t}</span></div>
+                <span style="font-size:13px"><span class="t-num">${fmt.n(v)}</span> <span class="t-dim3">${pct}%</span></span></div>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="card card--pad rise rise-3">
+          <div class="t-label" style="margin-bottom:var(--s2)">Tiempos de respuesta</div>
+          ${statRow('Mediana', mins(resp.mediana))}
+          ${statRow('Percentil 90', mins(resp.p90))}
+          ${statRow('Percentil 99', mins(resp.p99))}
+        </div>
+      </div>
+    </div>
+   </div>`;
+
+  function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
+  function statRow(k,v){ return `<div class="u-between" style="padding:9px 0;border-bottom:1px solid var(--border-soft)"><span class="t-dim" style="font-size:13px">${k}</span><span class="t-num" style="font-size:14px;font-weight:600">${v}</span></div>`; }
+  function donut(data, total){
+    const R=52, C=2*Math.PI*R; let acc=0;
+    const segs = Object.entries(data).filter(([,v])=>v>0).map(([k,v])=>{
+      const info = CH[k]||{c:'var(--text-3)'}; const frac=v/total; const len=frac*C;
+      const seg=`<circle cx="70" cy="70" r="${R}" fill="none" stroke="${info.c}" stroke-width="16" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-acc}" transform="rotate(-90 70 70)" stroke-linecap="butt"/>`;
+      acc+=len; return seg;
+    }).join('');
+    return `<svg width="140" height="140" viewBox="0 0 140 140">
+      <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--bg-4)" stroke-width="16"/>${segs}
+      <text x="70" y="66" text-anchor="middle" fill="var(--text)" font-size="26" font-weight="700" font-family="var(--f-num)">${fmt.n(total)}</text>
+      <text x="70" y="86" text-anchor="middle" fill="var(--text-3)" font-size="11">mensajes</text>
+    </svg>`;
+  }
+})();
+</script>
+</body>
+</html>

@@ -51,7 +51,7 @@
       { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', href: '/os/dashboard.html' },
       { id: 'inbox', label: 'Inbox', icon: 'inbox', href: '/os/inbox.html', badge: 'live' },
       { id: 'crm', label: 'CRM · Leads', icon: 'leads', href: '/os/crm.html' },
-      { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', href: M('pipeline') },
+      { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', href: '/os/pipeline.html' },
       { id: 'clients', label: 'Clientes', icon: 'clients', href: M('clients') },
     ]},
     { title: 'Negocio', items: [
@@ -59,10 +59,10 @@
       { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: M('campaigns') },
       { id: 'automations', label: 'Automatizaciones', icon: 'automations', href: M('automations') },
       { id: 'calendar', label: 'Calendario', icon: 'calendar', href: M('calendar') },
-      { id: 'analytics', label: 'Analytics', icon: 'analytics', href: M('analytics') },
+      { id: 'analytics', label: 'Analytics', icon: 'analytics', href: '/os/analytics.html' },
     ]},
     { title: 'Organización', items: [
-      { id: 'team', label: 'Equipo', icon: 'team', href: M('team'), admin: true },
+      { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
       { id: 'billing', label: 'Facturación', icon: 'billing', href: M('billing'), admin: true },
       { id: 'marketplace', label: 'Marketplace', icon: 'marketplace', href: M('marketplace') },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: M('settings') },
