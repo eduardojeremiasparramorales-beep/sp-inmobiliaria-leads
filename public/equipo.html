@@ -133,6 +133,99 @@
       <div class="msg" id="msgWAT" style="margin-top:8px"></div>
       <div id="listaWAT" style="margin-top:14px"></div>
     </div>
+
+    <!-- SECCIÓN 1: Canales -->
+    <div class="card full">
+      <h2>Canales conectados</h2>
+      <div id="listaCanales" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"></div>
+    </div>
+
+    <!-- SECCIÓN 2: Workflows -->
+    <div class="card full">
+      <h2>Automatizaciones (Workflows)</h2>
+      <button type="button" id="btnNuevaRegla">+ Nueva regla</button>
+      <div id="listaWorkflows" style="margin-top:14px"></div>
+    </div>
+
+    <!-- Modal Nueva Regla -->
+    <div id="modalRegla" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:center;justify-content:center">
+      <div class="card" style="width:90%;max-width:520px;max-height:85vh;overflow-y:auto">
+        <h2>Nueva regla de automatización</h2>
+        <label>Nombre</label>
+        <input id="wf_nombre" placeholder="Responder saludo automático">
+        <label>Trigger</label>
+        <select id="wf_trigger" style="width:100%;padding:10px 12px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:7px;color:var(--marfil);font-family:inherit;font-size:.9rem">
+          <option value="message:incoming">message:incoming</option>
+          <option value="conversation:created">conversation:created</option>
+          <option value="tag:changed">tag:changed</option>
+          <option value="message:outgoing">message:outgoing</option>
+          <option value="conversation:closed">conversation:closed</option>
+        </select>
+        <label>Condiciones</label>
+        <div id="wf_condiciones"></div>
+        <button type="button" id="btnAddCondicion" style="background:transparent;border:1px solid var(--oro);color:var(--oro);padding:6px 12px;font-size:.8rem">+ Condición</button>
+        <label>Acciones</label>
+        <div id="wf_acciones"></div>
+        <button type="button" id="btnAddAccion" style="background:transparent;border:1px solid var(--oro);color:var(--oro);padding:6px 12px;font-size:.8rem">+ Acción</button>
+        <div style="display:flex;gap:10px;margin-top:18px">
+          <button type="button" id="btnGuardarRegla">Guardar regla</button>
+          <button type="button" id="btnCancelarRegla" style="background:transparent;border:1px solid rgba(255,255,255,.2);color:var(--marfil)">Cancelar</button>
+        </div>
+        <div class="msg" id="msgWorkflow"></div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 3: IA -->
+    <div class="card full">
+      <h2>Inteligencia Artificial (OpenAI)</h2>
+      <label>OpenAI API Key</label>
+      <input id="ia_key" type="password" placeholder="sk-...">
+      <label>Modelo</label>
+      <select id="ia_modelo" style="width:100%;padding:10px 12px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:7px;color:var(--marfil);font-family:inherit;font-size:.9rem">
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
+        <option value="gpt-4o">gpt-4o</option>
+      </select>
+      <label>Temperatura: <span id="ia_temp_val">0.7</span></label>
+      <input id="ia_temp" type="range" min="0" max="1" step="0.1" value="0.7">
+      <button type="button" id="btnProbarIA">Probar IA</button>
+      <div class="msg" id="msgIA"></div>
+      <pre id="resultadoIA" style="display:none;background:var(--negro);padding:12px;border-radius:7px;margin-top:10px;font-size:.78rem;color:#bbb;white-space:pre-wrap"></pre>
+    </div>
+
+    <!-- SECCIÓN 4: Integraciones -->
+    <div class="card full">
+      <h2>Integraciones</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px">
+        <div>
+          <h2 style="font-size:.85rem">Twilio (Llamadas)</h2>
+          <label>Account SID</label>
+          <input id="tw_sid" placeholder="ACxxxxxxxx">
+          <label>Auth Token</label>
+          <input id="tw_token" type="password" placeholder="········">
+          <label>Número Twilio</label>
+          <input id="tw_numero" placeholder="+1XXXXXXXXXX">
+        </div>
+        <div>
+          <h2 style="font-size:.85rem">Slack</h2>
+          <label>Webhook URL</label>
+          <input id="slack_webhook" placeholder="https://hooks.slack.com/...">
+        </div>
+        <div>
+          <h2 style="font-size:.85rem">Google Calendar</h2>
+          <label>OAuth Client ID</label>
+          <input id="gcal_client" placeholder="xxxxx.apps.googleusercontent.com">
+        </div>
+        <div>
+          <h2 style="font-size:.85rem">Mercado Pago</h2>
+          <label>Public Key</label>
+          <input id="mp_public" placeholder="APP_USR-...">
+          <label>Access Token</label>
+          <input id="mp_token" type="password" placeholder="········">
+        </div>
+      </div>
+      <button type="button" id="btnGuardarIntegraciones">Guardar integraciones</button>
+      <div class="msg" id="msgIntegraciones"></div>
+    </div>
   </div>
 
 <script>
@@ -245,6 +338,165 @@
   });
 
   cargarUsuarios(); cargarTemplates(); cargarBienvenida(); cargarWATemplates();
+
+  // ===================== SECCIÓN 1: Canales =====================
+  const CANAL_LABEL = { whatsapp: 'WhatsApp', messenger: 'Messenger', instagram: 'Instagram' };
+  async function cargarCanales(){
+    const r = await fetch('/api/channels/status'); if(!r.ok) return;
+    const estado = await r.json();
+    document.getElementById('listaCanales').innerHTML = Object.keys(CANAL_LABEL).map(canal=>`
+      <div class="tpl-row" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="t">${CANAL_LABEL[canal]}</div>
+          <span class="pill" style="${estado[canal] ? 'background:rgba(78,123,70,.25);color:#9fd694' : 'background:rgba(180,40,40,.2);color:#e88'}">
+            ${estado[canal] ? 'Configurado' : 'Desconfigurado'}
+          </span>
+        </div>
+        <button type="button" class="btn-test" data-canal="${canal}" style="margin-top:10px;padding:7px 12px;font-size:.8rem">Probar conexión</button>
+        <div class="msg" id="msgCanal_${canal}" style="margin-top:6px"></div>
+      </div>`).join('');
+    document.querySelectorAll('.btn-test').forEach(b=>b.addEventListener('click', async ()=>{
+      const canal = b.dataset.canal;
+      const r2 = await fetch('/api/channels/'+canal+'/test');
+      const d2 = await r2.json();
+      showMsg('msgCanal_'+canal, d2.ok ? 'Conexión OK.' : ('Error: '+(d2.error||'desconocido')), d2.ok);
+    }));
+  }
+
+  // ===================== SECCIÓN 2: Workflows =====================
+  const OPERADORES = ['contains','equals','not_equals','in','regex'];
+  const CAMPOS = ['body','channel','customer_name','etiqueta','status','priority'];
+  const TIPOS_ACCION = ['tag','assign','send_template','send_message','notify_admin','webhook'];
+
+  async function cargarWorkflows(){
+    const r = await fetch('/api/workflows'); if(!r.ok) return;
+    const ws = await r.json();
+    document.getElementById('listaWorkflows').innerHTML = ws.length ? ws.map(w=>`
+      <div class="tpl-row">
+        <div>
+          <div class="t">${esc(w.nombre)} <span class="pill">${esc(w.trigger_event)}</span></div>
+          <div class="b">Estado: ${w.activo ? 'Activa' : 'Inactiva'}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="del" data-toggle="${w.id}" data-activo="${w.activo}" style="border-color:rgba(200,164,90,.4);color:var(--oro)">${w.activo?'Desactivar':'Activar'}</button>
+          <button class="del" data-logs="${w.id}" style="border-color:rgba(200,164,90,.4);color:var(--oro)">Logs</button>
+          <button class="del" data-del="${w.id}">Eliminar</button>
+        </div>
+      </div>`).join('') : '<div style="color:#777;font-size:.85rem;margin-top:8px">Aún no hay reglas configuradas.</div>';
+
+    document.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click', async ()=>{
+      const activo = b.dataset.activo === '1' || b.dataset.activo === 'true';
+      await fetch('/api/workflows/'+b.dataset.toggle, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({activo:!activo})});
+      cargarWorkflows();
+    }));
+    document.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
+      if(!confirm('¿Eliminar esta regla?')) return;
+      await fetch('/api/workflows/'+b.dataset.del, {method:'DELETE'});
+      cargarWorkflows();
+    }));
+    document.querySelectorAll('[data-logs]').forEach(b=>b.addEventListener('click', async ()=>{
+      const r2 = await fetch('/api/workflows/'+b.dataset.logs+'/logs');
+      const logs = await r2.json();
+      alert(logs.length ? logs.map(l=>`${l.created_at}: ${l.trigger_event}`).join('\n') : 'Sin logs todavía.');
+    }));
+  }
+
+  function filaCondicion(){
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-top:6px';
+    div.innerHTML = `
+      <select class="cond-field" style="flex:1;padding:8px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--marfil)">
+        ${CAMPOS.map(c=>`<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <select class="cond-op" style="flex:1;padding:8px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--marfil)">
+        ${OPERADORES.map(o=>`<option value="${o}">${o}</option>`).join('')}
+      </select>
+      <input class="cond-val" placeholder="valor" style="flex:1;padding:8px">
+      <button type="button" class="del" style="margin:0" onclick="this.parentElement.remove()">✕</button>`;
+    return div;
+  }
+
+  function filaAccion(){
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-top:6px';
+    div.innerHTML = `
+      <select class="accion-tipo" style="flex:1;padding:8px;background:var(--negro);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--marfil)">
+        ${TIPOS_ACCION.map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+      <input class="accion-param" placeholder="parámetro (valor/nombre/texto/url)" style="flex:2;padding:8px">
+      <button type="button" class="del" style="margin:0" onclick="this.parentElement.remove()">✕</button>`;
+    return div;
+  }
+
+  document.getElementById('btnNuevaRegla').addEventListener('click', ()=>{
+    document.getElementById('wf_nombre').value='';
+    document.getElementById('wf_condiciones').innerHTML='';
+    document.getElementById('wf_acciones').innerHTML='';
+    document.getElementById('wf_condiciones').appendChild(filaCondicion());
+    document.getElementById('wf_acciones').appendChild(filaAccion());
+    document.getElementById('modalRegla').style.display='flex';
+  });
+  document.getElementById('btnAddCondicion').addEventListener('click', ()=> document.getElementById('wf_condiciones').appendChild(filaCondicion()));
+  document.getElementById('btnAddAccion').addEventListener('click', ()=> document.getElementById('wf_acciones').appendChild(filaAccion()));
+  document.getElementById('btnCancelarRegla').addEventListener('click', ()=> document.getElementById('modalRegla').style.display='none');
+
+  document.getElementById('btnGuardarRegla').addEventListener('click', async ()=>{
+    const nombre = document.getElementById('wf_nombre').value.trim();
+    const trigger_event = document.getElementById('wf_trigger').value;
+    if(!nombre){ showMsg('msgWorkflow','El nombre es requerido.',false); return; }
+
+    const conditions = Array.from(document.querySelectorAll('#wf_condiciones > div')).map(row=>({
+      field: row.querySelector('.cond-field').value,
+      operator: row.querySelector('.cond-op').value,
+      value: row.querySelector('.cond-val').value,
+    }));
+    const actions = Array.from(document.querySelectorAll('#wf_acciones > div')).map(row=>{
+      const tipo = row.querySelector('.accion-tipo').value;
+      const param = row.querySelector('.accion-param').value;
+      const params = {};
+      if(tipo==='tag') params.value = param;
+      else if(tipo==='send_template') params.name = param;
+      else if(tipo==='send_message') params.text = param;
+      else if(tipo==='notify_admin') params.message = param;
+      else if(tipo==='webhook') params.url = param;
+      return { type: tipo, params };
+    });
+
+    const r = await fetch('/api/workflows', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre, trigger_event, conditions, actions, activo:true})});
+    if(r.ok){ showMsg('msgWorkflow','Regla creada.',true); document.getElementById('modalRegla').style.display='none'; cargarWorkflows(); }
+    else showMsg('msgWorkflow','Error al guardar la regla.',false);
+  });
+
+  // ===================== SECCIÓN 3: IA =====================
+  document.getElementById('ia_temp').addEventListener('input', e=>{
+    document.getElementById('ia_temp_val').textContent = e.target.value;
+  });
+  document.getElementById('btnProbarIA').addEventListener('click', async ()=>{
+    const r = await fetch('/api/nlp/test', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:'Hola, me interesan los lotes'})});
+    const d = await r.json();
+    const pre = document.getElementById('resultadoIA');
+    pre.style.display='block';
+    pre.textContent = JSON.stringify(d, null, 2);
+    showMsg('msgIA', d.ok ? 'Prueba exitosa.' : ('Error: '+d.error), !!d.ok);
+  });
+
+  // ===================== SECCIÓN 4: Integraciones =====================
+  document.getElementById('btnGuardarIntegraciones').addEventListener('click', async ()=>{
+    const body = {
+      twilio_account_sid: document.getElementById('tw_sid').value,
+      twilio_auth_token: document.getElementById('tw_token').value,
+      twilio_numero: document.getElementById('tw_numero').value,
+      slack_webhook: document.getElementById('slack_webhook').value,
+      gcal_client_id: document.getElementById('gcal_client').value,
+      mp_public_key: document.getElementById('mp_public').value,
+      mp_access_token: document.getElementById('mp_token').value,
+    };
+    const r = await fetch('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok) showMsg('msgIntegraciones','Integraciones guardadas.',true);
+    else showMsg('msgIntegraciones','Error al guardar.',false);
+  });
+
+  cargarCanales(); cargarWorkflows();
 </script>
 </body>
 </html>

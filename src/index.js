@@ -23,6 +23,8 @@ app.use(express.json({
   limit: '30mb',
   verify: (req, res, buf) => { if (req.originalUrl.startsWith('/webhook')) req.rawBody = buf; },
 }));
+// Twilio envía sus webhooks como application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: true }));
 
 // Headers de seguridad en todas las respuestas
 app.use((req, res, next) => {
@@ -91,6 +93,58 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'SP Inmobiliaria CRM', version: '1.0' }));
 app.get('/webhook', handleVerification);
 app.post('/webhook', webhookLimiter, verifyWebhookSignature, handleMessage);
+
+// ===================== ESTADO DE CANALES =====================
+
+app.get('/api/channels/status', auth.requireAdmin, (req, res) => {
+  res.json({
+    whatsapp: !!process.env.WHATSAPP_TOKEN,
+    messenger: !!process.env.FACEBOOK_PAGE_TOKEN,
+    instagram: !!process.env.INSTAGRAM_TOKEN,
+  });
+});
+
+app.get('/api/channels/:name/test', auth.requireAdmin, async (req, res) => {
+  const { name } = req.params;
+  try {
+    const { getAdapter } = require('./channels');
+    const adapter = getAdapter(name);
+    if (!adapter) return res.status(404).json({ ok: false, error: 'canal_no_existe' });
+    // Verificamos que la config mínima esté presente (levanta error si falta)
+    if (name === 'whatsapp') adapter.getApiConfig();
+    else adapter.getConfig();
+    res.json({ ok: true, canal: name, configurado: true });
+  } catch (e) {
+    res.json({ ok: false, canal: name, configurado: false, error: e.message });
+  }
+});
+
+// ===================== PRUEBA DE IA (NLP) =====================
+
+app.post('/api/nlp/test', auth.requireAdmin, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    const texto = (req.body && req.body.texto) || 'Hola, me interesan los lotes';
+    const [sentiment, intent] = await Promise.all([
+      nlp.analyzeSentiment(texto),
+      nlp.classifyIntent(texto),
+    ]);
+    res.json({ ok: true, texto, sentiment, intent });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
+// ===================== API PÚBLICA v2 =====================
+app.use('/api/v2', require('./api/v2'));
+
+// ===================== WEBHOOKS MULTICANAL =====================
+const channels = require('./channels');
+channels.bootstrapChannels();
+
+app.get('/webhook/messenger', require('./channels/messenger').handleMessengerVerification);
+app.get('/webhook/instagram', require('./channels/instagram').handleInstagramVerification);
+app.post('/webhook/:channel', webhookLimiter, channels.webhookReceiver);
 
 // API stats
 app.get('/api/stats', auth.requireAuth, (req, res) => {
@@ -278,6 +332,78 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   }
   res.json({ lead, mensajes: store.getMessagesByLead(lead.id) });
 });
+
+// ===================== INBOX MULTICANAL (Nuevo Schema) =====================
+
+app.get('/api/inbox/conversations', auth.requireAuth, (req, res) => {
+  if (req.session.rol === 'admin') return res.json(store.getConversations({ limite: 200 }));
+  if (!req.session.vendedorId) return res.json([]);
+  res.json(store.getConversationsByVendedorId(req.session.vendedorId));
+});
+
+app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) => {
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
+    return res.status(403).json({ error: 'sin_permiso' });
+  res.json({ conversation: conv, messages: store.getTimelineByConversation(conv.id) });
+});
+
+app.post('/api/inbox/conversations/:id/send', auth.requireAuth, async (req, res) => {
+  const { mensaje } = req.body || {};
+  if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_vacio' });
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
+    return res.status(403).json({ error: 'sin_permiso' });
+  try {
+    const MessageRouter = require('./services/router');
+    await MessageRouter.routeOutgoing(conv.id, req.session.vendedorId, String(mensaje).trim());
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error enviando por inbox:', e.message);
+    res.status(502).json({ error: 'error_envio', detalle: e.message });
+  }
+});
+
+app.get('/api/inbox/conversations/:id/leido', auth.requireAuth, async (req, res) => {
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  const adapter = require('./db/adapter'); adapter.run('UPDATE conversations SET unread_count = 0 WHERE id = ?', [conv.id]);
+  res.json({ ok: true });
+});
+
+app.post('/api/inbox/conversations/:id/etiqueta', auth.requireAuth, (req, res) => {
+  const { etiqueta } = req.body || {};
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (etiqueta) store.updateConversationTag(conv.id, etiqueta);
+  res.json({ ok: true });
+});
+
+app.post('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
+  const { nota } = req.body || {};
+  if (!nota || !nota.trim()) return res.status(400).json({ error: 'nota_vacia' });
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  store.addTimelineEvent(conv.id, 'note', {
+    body: nota.trim(),
+    direction: 'internal',
+    channel: conv.channel,
+  });
+  res.json({ ok: true });
+});
+
+app.get('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  const notas = store.getTimelineByConversation(conv.id)
+    .filter(m => m.event_type === 'note')
+    .map(m => ({ id: m.id, nota: m.body, created_at: m.created_at }));
+  res.json(notas);
+});
+
+// ===================== RESPONDER (OLD) =====================
 
 // Responder a un cliente DESDE EL PANEL → se envía por el número oficial
 app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
@@ -522,15 +648,23 @@ app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
 
 // ===================== CONFIGURACIÓN (admin) =====================
 
+const CONFIG_KEYS = [
+  'welcome_message',
+  'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
+  'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
+];
+
 app.get('/api/config', auth.requireAdmin, (req, res) => {
-  res.json({
-    welcome_message: store.getConfig('welcome_message') || '',
-  });
+  const cfg = {};
+  CONFIG_KEYS.forEach(key => { cfg[key] = store.getConfig(key) || ''; });
+  res.json(cfg);
 });
 
 app.post('/api/config', auth.requireAdmin, (req, res) => {
-  const { welcome_message } = req.body || {};
-  if (welcome_message !== undefined) store.setConfig('welcome_message', String(welcome_message));
+  const body = req.body || {};
+  CONFIG_KEYS.forEach(key => {
+    if (body[key] !== undefined) store.setConfig(key, String(body[key]));
+  });
   res.json({ ok: true });
 });
 
@@ -567,6 +701,118 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
   } catch (e) {
     res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
   }
+});
+
+// ===================== REPORTES Y ANALYTICS =====================
+
+app.get('/api/reports/team-performance', auth.requireAdmin, (req, res) => {
+  const { from, to } = req.query;
+  res.json(require('./services/reports').getTeamPerformance(from, to));
+});
+
+app.get('/api/reports/pipeline-conversion', auth.requireAdmin, (req, res) => {
+  const { from, to } = req.query;
+  res.json(require('./services/reports').getPipelineConversion(from, to));
+});
+
+app.get('/api/reports/channel-distribution', auth.requireAdmin, (req, res) => {
+  const { from, to } = req.query;
+  res.json(require('./services/reports').getChannelDistribution(from, to));
+});
+
+app.get('/api/reports/response-times', auth.requireAuth, (req, res) => {
+  const { from, to, vendedorId } = req.query;
+  res.json(require('./services/reports').getResponseTimes(from, to, vendedorId));
+});
+
+app.get('/api/reports/csat', auth.requireAuth, (req, res) => {
+  const { from, to, vendedorId } = req.query;
+  res.json(require('./services/reports').getCSAT(from, to, vendedorId));
+});
+
+app.get('/api/reports/lead-sources', auth.requireAdmin, (req, res) => {
+  const { from, to } = req.query;
+  res.json(require('./services/reports').getLeadSources(from, to));
+});
+
+app.get('/api/reports/hourly-distribution', auth.requireAdmin, (req, res) => {
+  const { from, to } = req.query;
+  res.json(require('./services/reports').getHourlyDistribution(from, to));
+});
+
+app.get('/api/reports/export.csv', auth.requireAdmin, (req, res) => {
+  const { from, to, channel, vendedorId } = req.query;
+  const csv = require('./services/reports').getExportCSV(from, to, { channel, vendedorId });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="reporte-sp.csv"');
+  res.send(csv);
+});
+
+// ===================== LLAMADAS (Twilio Voice, click-to-call) =====================
+
+app.post('/api/calls/initiate', auth.requireAuth, async (req, res) => {
+  const { conversationId, vendedorPhone, customerPhone } = req.body || {};
+  if (!conversationId || !vendedorPhone || !customerPhone) {
+    return res.status(400).json({ error: 'conversationId, vendedorPhone y customerPhone requeridos' });
+  }
+  try {
+    const voice = require('./services/voice');
+    const call = await voice.initiateCall(conversationId, vendedorPhone, customerPhone);
+    res.json({ ok: true, callSid: call.sid });
+  } catch (e) {
+    console.error('Error iniciando llamada:', e.message);
+    res.status(502).json({ error: 'error_llamada', detalle: e.message });
+  }
+});
+
+// Webhook de Twilio (sin auth, validado por firma de Twilio en el propio Twilio)
+app.post('/webhook/twilio/status', async (req, res) => {
+  try {
+    const voice = require('./services/voice');
+    await voice.handleStatusWebhook(req);
+  } catch (e) {
+    console.error('Error en webhook Twilio status:', e.message);
+  }
+  res.sendStatus(200);
+});
+
+app.get('/api/calls/:conversationId/logs', auth.requireAuth, async (req, res) => {
+  try {
+    const voice = require('./services/voice');
+    const logs = await voice.getCallLogs(req.params.conversationId);
+    res.json(logs);
+  } catch (e) {
+    res.status(500).json({ error: 'error_logs' });
+  }
+});
+
+// ===================== WORKFLOWS (automatización IF/THEN) =====================
+
+app.get('/api/workflows', auth.requireAdmin, (req, res) => res.json(store.getAllWorkflows()));
+
+app.post('/api/workflows', auth.requireAdmin, (req, res) => {
+  const { nombre, activo, trigger_event, conditions, actions } = req.body || {};
+  if (!nombre || !trigger_event) return res.status(400).json({ error: 'nombre y trigger_event requeridos' });
+  const workflow = store.createWorkflow({ nombre, activo, trigger_event, conditions, actions });
+  require('./services/workflow').loadRules();
+  res.json(workflow);
+});
+
+app.put('/api/workflows/:id', auth.requireAdmin, (req, res) => {
+  const workflow = store.updateWorkflow(req.params.id, req.body || {});
+  if (!workflow) return res.status(404).json({ error: 'workflow_no_existe' });
+  require('./services/workflow').loadRules();
+  res.json(workflow);
+});
+
+app.delete('/api/workflows/:id', auth.requireAdmin, (req, res) => {
+  store.deleteWorkflow(req.params.id);
+  require('./services/workflow').loadRules();
+  res.json({ ok: true });
+});
+
+app.get('/api/workflows/:id/logs', auth.requireAdmin, (req, res) => {
+  res.json(store.getWorkflowLogs(req.params.id));
 });
 
 // ===================== TEMPLATES (respuestas rápidas) =====================
@@ -770,6 +1016,20 @@ async function checkEscalation() {
       if (lead.escalation_level < 2) {
         incrementEscalation(lead.id);
         console.log(`Escalation 60min lead ${lead.id} — reasignar`);
+        // Reasignar al vendedor con menos leads activos
+        const siguientes = store.getVendedoresActivos();
+        if (siguientes.length > 0) {
+          const siguiente = siguientes[0];
+          const vendedorActual = getVendedores().find(v => Number(v.id) === Number(lead.assigned_to_id));
+          store.reassignLead(lead.id, siguiente);
+          // Notificar al vendedor original
+          if (vendedorActual && vendedorActual.telefono) {
+            await sendMessage(vendedorActual.telefono,
+              `Notificación SP Inmobiliaria\nEl lead ${lead.customer_name} (${lead.customer_phone}) ha sido reasignado por falta de respuesta.`
+            ).catch(() => {});
+          }
+          events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_escalation', ts: Date.now() });
+        }
       }
     }
   } catch (e) {
@@ -791,13 +1051,28 @@ function ensureAdminUser() {
   console.log('===========================================');
 }
 
-initDB().then(() => {
+(async () => {
+  await initDB();
   ensureAdminUser();
   push.init();
-  app.listen(PORT, () => {
+  try {
+    const MessageRouter = require('./services/router');
+    require('./services/workflow').init(MessageRouter);
+  } catch (e) {
+    console.error('No se pudo iniciar WorkflowEngine:', e.message);
+  }
+  const http = require('http');
+  const httpServer = http.createServer(app);
+  try {
+    const { createWsServer } = require('./ws');
+    createWsServer(httpServer);
+  } catch (e) {
+    console.error('No se pudo iniciar Socket.IO:', e.message);
+  }
+  httpServer.listen(PORT, () => {
     console.log(`SP Inmobiliaria CRM corriendo en puerto ${PORT}`);
   });
   setInterval(checkEscalation, 60000);
   // Limpiar sesiones expiradas (>30 días) cada 24 horas
   setInterval(() => store.cleanExpiredSessions(1000 * 60 * 60 * 24 * 30), 1000 * 60 * 60 * 24);
-});
+})();

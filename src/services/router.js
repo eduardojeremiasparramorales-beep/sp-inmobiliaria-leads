@@ -1,0 +1,197 @@
+// MessageRouter — Reemplaza a assigner.js. Router genérico multicanal (WhatsApp, Messenger, Instagram).
+
+const store = require('../db/store');
+const { getAdapter } = require('../channels');
+const events = require('./events');
+
+// Emite por SSE (events.js) y, si el módulo ws/Socket.IO está inicializado, también por ahí.
+function emit(channelType, target, evento, data) {
+  try {
+    if (channelType === 'vendedor') events.emitToVendedor(target, evento, data);
+    else if (channelType === 'admins') events.emitToAdmins(evento, data);
+  } catch (e) { /* noop */ }
+
+  try {
+    const ws = require('../ws');
+    if (ws && typeof ws.emitToVendedor === 'function' && channelType === 'vendedor') {
+      ws.emitToVendedor(target, evento, data);
+    }
+    if (ws && typeof ws.emitToRoom === 'function' && channelType === 'room') {
+      ws.emitToRoom(target, evento, data);
+    }
+    if (ws && typeof ws.emitToAdmins === 'function' && channelType === 'admins') {
+      ws.emitToAdmins(evento, data);
+    }
+  } catch (e) { /* ws no inicializado todavía */ }
+}
+
+function evaluateWorkflow(triggerEvent, ctx) {
+  try {
+    const WorkflowEngine = require('./workflow');
+    if (WorkflowEngine && typeof WorkflowEngine.evaluate === 'function') {
+      WorkflowEngine.evaluate(triggerEvent, ctx).catch(e => console.error('WorkflowEngine.evaluate error:', e.message));
+    }
+  } catch (e) { /* workflow engine no disponible todavía */ }
+}
+
+class MessageRouter {
+  static async routeIncoming(channel, fromUserId, messageBody, options = {}) {
+    const meta = options.metadata || {};
+
+    // 1. Buscar customer por canal
+    let customer = store.findCustomerByChannel(channel, fromUserId);
+
+    // 2. Si no existe, crear customer nuevo y vincular canal
+    if (!customer) {
+      customer = store.createCustomer(meta.name || 'Cliente', channel === 'whatsapp' ? fromUserId : '');
+      store.linkChannelToCustomer(customer.id, channel, fromUserId, meta.username || '');
+    }
+
+    // 3. Buscar conversación activa
+    let conversation = store.getConversationByChannelUser(channel, fromUserId);
+
+    // 4. Si no existe, crear conversación
+    if (!conversation) {
+      conversation = store.createConversation(channel, fromUserId, customer.id);
+    }
+
+    // 5. Asignar vendedor si no tiene
+    if (!conversation.assigned_to_id) {
+      const activos = store.getVendedoresActivos();
+      if (activos.length > 0) {
+        const siguiente = activos[0];
+        require('../db/adapter').run(
+          'UPDATE conversations SET assigned_to_id = ?, status = ? WHERE id = ?',
+          [siguiente.id, 'asignado', conversation.id]
+        );
+        conversation = store.getConversationById(conversation.id);
+      }
+    }
+
+    // 6. Guardar en timeline
+    const media = options.media || null;
+    const message = store.addTimelineEvent(conversation.id, 'message', {
+      channel,
+      body: messageBody || '',
+      direction: 'incoming',
+      from_number: fromUserId,
+      to_number: '',
+      media_type: media ? (options.type || media.type || null) : null,
+      media_id: media ? media.id : null,
+      media_mime: media ? media.mime : null,
+      media_filename: media ? media.filename : null,
+      metadata: meta,
+    });
+
+    // Actualizar last_message / unread_count de la conversación
+    require('../db/adapter').run(
+      'UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\') WHERE id = ?',
+      [messageBody || '[media]', conversation.id]
+    );
+    conversation = store.getConversationById(conversation.id);
+
+    // 7-8. Emitir Socket.IO / SSE al vendedor asignado
+    const payload = {
+      conversationId: conversation.id,
+      channel,
+      body: messageBody,
+      customerName: customer.name,
+      ts: Date.now(),
+    };
+    if (conversation.assigned_to_id) {
+      emit('vendedor', conversation.assigned_to_id, 'message:new', payload);
+    }
+    emit('admins', null, 'message:new', payload);
+    emit('room', `conv:${conversation.id}`, 'message:new', payload);
+
+    // 9. Workflow
+    evaluateWorkflow('message:incoming', { conversation, message, customer });
+
+    // 10. Retornar
+    return { conversation, message };
+  }
+
+  static async routeOutgoing(conversationId, vendedorId, text) {
+    // 1. Buscar conversation
+    const conversation = store.getConversationById(conversationId);
+    if (!conversation) throw new Error(`Conversation ${conversationId} no existe`);
+
+    const customer = store.getCustomerById(conversation.customer_id);
+    const channels = store.getCustomerChannels(conversation.customer_id)
+      .filter(c => c.channel === conversation.channel);
+    const channelUserId = channels.length > 0 ? channels[0].channel_user_id : (customer ? customer.phone : null);
+    if (!channelUserId) throw new Error('No se encontró channel_user_id para la conversación');
+
+    // 2. Obtener adapter del canal
+    const adapter = getAdapter(conversation.channel);
+    if (!adapter) throw new Error(`Adapter no registrado para canal ${conversation.channel}`);
+
+    // 3. Enviar mensaje
+    await adapter.sendMessage(channelUserId, text);
+
+    // 4. Guardar en timeline
+    const message = store.addTimelineEvent(conversation.id, 'message', {
+      channel: conversation.channel,
+      body: text,
+      direction: 'outgoing',
+      from_number: '',
+      to_number: channelUserId,
+    });
+
+    require('../db/adapter').run(
+      'UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE id = ?',
+      [text, conversation.id]
+    );
+
+    // 5. Actualizar status
+    if (conversation.status === 'nuevo' || conversation.status === 'asignado') {
+      store.updateConversationStatus(conversation.id, 'contactado');
+    }
+
+    // 6. Emitir Socket.IO a room conv:{id}
+    const payload = { conversationId: conversation.id, channel: conversation.channel, body: text, ts: Date.now() };
+    emit('room', `conv:${conversation.id}`, 'message:new', payload);
+    emit('admins', null, 'message:new', payload);
+
+    // 7. Workflow
+    evaluateWorkflow('message:outgoing', { conversation, message });
+
+    return message;
+  }
+
+  static async assignVendedor(conversationId) {
+    const conversation = store.getConversationById(conversationId);
+    if (!conversation) throw new Error(`Conversation ${conversationId} no existe`);
+
+    const activos = store.getVendedoresActivos();
+    if (activos.length === 0) return conversation;
+
+    const siguiente = activos[0];
+    require('../db/adapter').run(
+      'UPDATE conversations SET assigned_to_id = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?',
+      [siguiente.id, 'asignado', conversation.id]
+    );
+
+    const updated = store.getConversationById(conversationId);
+    emit('vendedor', siguiente.id, 'conversation:assigned', { conversationId, ts: Date.now() });
+    emit('admins', null, 'conversation:assigned', { conversationId, vendedorId: siguiente.id, ts: Date.now() });
+
+    return updated;
+  }
+
+  static async closeConversation(conversationId) {
+    store.updateConversationStatus(conversationId, 'cerrado');
+    const conversation = store.getConversationById(conversationId);
+
+    emit('admins', null, 'conversation:closed', { conversationId, ts: Date.now() });
+    if (conversation && conversation.assigned_to_id) {
+      emit('vendedor', conversation.assigned_to_id, 'conversation:closed', { conversationId, ts: Date.now() });
+    }
+
+    evaluateWorkflow('conversation:closed', { conversation });
+
+    return conversation;
+  }
+}
+
+module.exports = MessageRouter;
