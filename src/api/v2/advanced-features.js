@@ -1,6 +1,6 @@
 /**
- * 🚀 API de Características Avanzadas - Fase 1
- * Endpoints para: scoring, escalada, timeline, notas, automatización
+ * 🚀 API de Características Avanzadas - Fase 1 + Fase 2
+ * Endpoints para: scoring, escalada, timeline, notas, automatización, integraciones
  */
 
 const express = require('express');
@@ -12,6 +12,18 @@ const timeline = require('../../services/timeline');
 const notes = require('../../services/collaborative-notes');
 const automation = require('../../services/automation');
 const store = require('../../db/store');
+
+// Fase 2 - Integraciones
+const googleCalendar = require('../../services/integrations/google-calendar');
+const stripePayments = require('../../services/integrations/stripe-payments');
+const googleMaps = require('../../services/integrations/google-maps');
+const emailTracking = require('../../services/integrations/email-tracking');
+const smsReminders = require('../../services/integrations/sms-reminders');
+const notionSync = require('../../services/integrations/notion-sync');
+const pdfReports = require('../../services/integrations/pdf-reports');
+const referrals = require('../../services/integrations/referrals');
+const twilioVoip = require('../../services/integrations/twilio-voip');
+const mixpanelAnalytics = require('../../services/integrations/mixpanel-analytics');
 
 // ===================== SCORING =====================
 
@@ -247,6 +259,250 @@ router.get('/leads/critical', auth.requireAdmin, (req, res) => {
 router.post('/escalation/process', auth.requireAdmin, async (req, res) => {
   try {
     const result = await escalation.processEscalations();
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===================== FASE 2: INTEGRACIONES =====================
+
+// ---- Google Calendar ----
+router.post('/calendar/events', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await googleCalendar.createCalendarEvent(req.body);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/calendar/availability/:email', auth.requireAuth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const result = await googleCalendar.getVendorAvailability(
+      req.params.email,
+      startDate,
+      endDate
+    );
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Stripe Payments ----
+router.post('/payments/intent', auth.requireAuth, async (req, res) => {
+  try {
+    const { leadId, amount, description } = req.body;
+    const result = await stripePayments.createPaymentIntent(leadId, amount, description);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/payments/:paymentIntentId/status', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await stripePayments.confirmPayment(req.params.paymentIntentId);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Google Maps ----
+router.post('/maps/geocode', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await googleMaps.geocodeAddress(req.body.address);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/maps/distance', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await googleMaps.getDistance(req.query.origin, req.query.destination);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Email Tracking ----
+router.post('/email/send-tracked', auth.requireAuth, async (req, res) => {
+  try {
+    const { leadId, leadEmail, subject, htmlContent } = req.body;
+    const db = store.getDB();
+    const leadResult = db.exec('SELECT customer_name FROM leads WHERE id = ?', [leadId]);
+    const leadName = leadResult[0]?.values[0]?.[0] || 'Cliente';
+
+    const result = await emailTracking.sendTrackedEmail(
+      leadId,
+      leadEmail,
+      leadName,
+      subject,
+      htmlContent
+    );
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/email/tracking/:token', auth.requireAuth, (req, res) => {
+  try {
+    const result = emailTracking.getEmailStats(req.params.token);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pixel de tracking (público, sin auth)
+router.get('/tracking/pixel/:token', (req, res) => {
+  emailTracking.trackEmailOpen(req.params.token);
+  res.type('image/gif').send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+});
+
+// ---- SMS Reminders ----
+router.post('/sms/send', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await smsReminders.sendSMS(req.body.phoneNumber, req.body.message);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/sms/schedule-reminder', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await smsReminders.scheduleReminder(
+      req.body.leadId,
+      req.body.phoneNumber,
+      req.body.message,
+      req.body.delayMinutes
+    );
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Notion/Airtable ----
+router.post('/sync/notion', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await notionSync.syncLeadToNotion(req.body.lead);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/sync/airtable', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await notionSync.syncLeadToAirtable(req.body.lead);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- PDF Reports ----
+router.post('/reports/proposal-pdf', auth.requireAuth, async (req, res) => {
+  try {
+    const { leadId, leadName, phoneNumber, lotDetails } = req.body;
+    const lead = { id: leadId, customer_name: leadName, customer_phone: phoneNumber };
+    const result = await pdfReports.generateLeadProposal(lead, lotDetails);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/reports/vendor-report', auth.requireAdmin, async (req, res) => {
+  try {
+    const { vendorId, startDate, endDate } = req.body;
+    const result = await pdfReports.generateVendorReport(vendorId, startDate, endDate);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Referral System ----
+router.post('/referrals/create-code', auth.requireAuth, (req, res) => {
+  try {
+    const result = referrals.createReferralCode(req.body.phoneNumber, req.body.name);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/referrals/register', auth.requireAuth, (req, res) => {
+  try {
+    const result = referrals.registerReferredLead(req.body.leadId, req.body.referralCode);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/referrals/stats/:phone', auth.requireAuth, (req, res) => {
+  try {
+    const result = referrals.getReferralStats(req.params.phone);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/referrals/commissions/:phone', auth.requireAuth, (req, res) => {
+  try {
+    const result = referrals.getReferralCommissions(req.params.phone);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Twilio VoIP ----
+router.post('/calls/make', auth.requireAuth, async (req, res) => {
+  try {
+    const result = await twilioVoip.makeCall(req.body.toNumber, req.body.fromNumber, req.body.recordCall);
+    if (result.success) {
+      twilioVoip.logCallToCRM(req.body.leadId, result.callSid, result);
+    }
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/calls/history/:leadId', auth.requireAuth, (req, res) => {
+  try {
+    const result = twilioVoip.getCallHistory(req.params.leadId);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Mixpanel Analytics ----
+router.post('/analytics/track', auth.requireAuth, (req, res) => {
+  try {
+    const result = mixpanelAnalytics.trackEvent(req.user?.id, req.body.event, req.body.properties);
+    return res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/analytics/vendor/:vendorId', auth.requireAdmin, async (req, res) => {
+  try {
+    const result = await mixpanelAnalytics.getVendorMetrics(req.params.vendorId, 30);
     return res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
