@@ -408,18 +408,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span>Chats</span>
         </button>
-        <button class="tab" onclick="location.href='/index.html'">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-          <span>Dashboard</span>
-        </button>
-        <button class="tab" onclick="location.href='/equipo.html'">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span>Equipo</span>
-        </button>
-        <button class="tab" onclick="location.href='/dashboard.html'">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-          <span>Analytics</span>
-        </button>
       </div>
     </div>
   </div>
@@ -1124,18 +1112,41 @@
     const mensaje = input ? input.value.trim() : '';
     if(!mensaje || !currentLead) return;
     if(btn) btn.disabled = true;
+
+    const payload = JSON.stringify({ mensaje });
+
     try{
-      const r = await api('/api/leads/'+currentLead.id+'/responder', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ mensaje }),
-      });
+      const opts = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'include',
+        body: payload
+      };
+
+      console.log('📤 Enviando mensaje:', { leadId: currentLead.id, msgLen: mensaje.length });
+
+      const r = await api('/api/leads/'+currentLead.id+'/responder', opts);
       const data = await r.json();
-      if(!r.ok) throw new Error(data.detalle || 'No se pudo enviar');
-      input.value=''; input.style.height='auto';
+
+      if(!r.ok) {
+        console.error('❌ Error respuesta:', { status: r.status, error: data });
+        throw new Error(data.detalle || data.error || 'No se pudo enviar');
+      }
+
+      console.log('✅ Mensaje enviado correctamente');
+      input.value='';
+      input.style.height='auto';
       await abrirLead(currentLead.id);
       await cargarLeads();
+      toast('Mensaje enviado ✓');
     }catch(e){
-      toast('Error: ' + e.message);
+      console.error('❌ Error al enviar:', e);
+      const errMsg = e.message.includes('no_auth') ? 'Sesión expirada' : (e.message || 'Error desconocido');
+      toast('Error: ' + errMsg);
     }finally{
       const b = document.getElementById('mainBtn');
       if(b) b.disabled = false;
