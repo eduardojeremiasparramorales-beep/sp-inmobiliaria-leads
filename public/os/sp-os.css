@@ -1,0 +1,441 @@
+/* ============================================================================
+   SP OS — Luxury Business Operating System · Design System
+   Núcleo visual único para todos los módulos.
+   Filosofía: lujo silencioso · claridad · espacio · un solo producto.
+   ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   1. TOKENS
+   ---------------------------------------------------------------------------- */
+:root {
+  /* Superficies (negros por capas) */
+  --bg-0: #0A0A0A;   /* fondo raíz */
+  --bg-1: #121212;   /* paneles */
+  --bg-2: #171717;   /* cards */
+  --bg-3: #1C1C1C;   /* cards elevadas / hover */
+  --bg-4: #232323;   /* inputs, chips */
+  --border: #252525;
+  --border-soft: #1E1E1E;
+  --border-strong: #313131;
+
+  /* Marca */
+  --gold: #C8A45A;
+  --gold-soft: rgba(200, 164, 90, .12);
+  --gold-line: rgba(200, 164, 90, .28);
+  --green: #4E7B46;
+  --green-soft: rgba(78, 123, 70, .14);
+
+  /* Texto */
+  --text: #F8F8F8;
+  --text-2: rgba(248, 248, 248, .62);
+  --text-3: rgba(248, 248, 248, .38);
+  --text-4: rgba(248, 248, 248, .20);
+
+  /* Semántica */
+  --red: #E5484D;
+  --red-soft: rgba(229, 72, 77, .14);
+  --amber: #E0A44A;
+  --amber-soft: rgba(224, 164, 74, .14);
+  --blue: #5B8DEF;
+  --blue-soft: rgba(91, 141, 239, .14);
+
+  /* Espaciado (múltiplos de 8) */
+  --s1: 8px;  --s2: 16px; --s3: 24px; --s4: 32px; --s5: 48px; --s6: 64px;
+
+  /* Radios */
+  --r-sm: 12px; --r: 16px; --r-lg: 20px; --r-xl: 24px; --r-full: 999px;
+
+  /* Sombras (muy suaves) */
+  --sh-1: 0 1px 2px rgba(0,0,0,.30);
+  --sh-2: 0 4px 16px rgba(0,0,0,.28);
+  --sh-3: 0 12px 40px rgba(0,0,0,.40);
+  --sh-pop: 0 8px 30px rgba(0,0,0,.45), 0 0 0 1px var(--border);
+
+  /* Tipografía */
+  --f-title: 'Cinzel', Georgia, serif;
+  --f-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --f-num: 'SF Pro Display', 'Inter', sans-serif;
+
+  /* Movimiento */
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --dur: 180ms;
+
+  /* Layout */
+  --nav-w: 248px;
+  --nav-w-collapsed: 72px;
+  --panel-w: 340px;
+  --topbar-h: 60px;
+}
+
+/* ----------------------------------------------------------------------------
+   2. RESET / BASE
+   ---------------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--f-ui);
+  background: var(--bg-0);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+::selection { background: var(--gold-soft); color: var(--text); }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea, select { font-family: inherit; }
+svg { display: block; flex-shrink: 0; }
+
+/* Scrollbar minimal */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #3d3d3d; background-clip: content-box; }
+
+/* ----------------------------------------------------------------------------
+   3. TIPOGRAFÍA / UTILIDADES
+   ---------------------------------------------------------------------------- */
+.t-brand { font-family: var(--f-title); font-weight: 600; letter-spacing: .06em; }
+.t-num   { font-family: var(--f-num); font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.t-h1 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.t-h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.t-h3 { font-size: 16px; font-weight: 600; }
+.t-label { font-size: 11px; font-weight: 600; letter-spacing: .10em; text-transform: uppercase; color: var(--text-3); }
+.t-dim { color: var(--text-2); }
+.t-dim3 { color: var(--text-3); }
+.t-gold { color: var(--gold); }
+.t-green { color: var(--green); }
+
+.u-row { display: flex; align-items: center; }
+.u-col { display: flex; flex-direction: column; }
+.u-between { display: flex; align-items: center; justify-content: space-between; }
+.u-gap1 { gap: var(--s1); } .u-gap2 { gap: var(--s2); } .u-gap3 { gap: var(--s3); }
+.u-grow { flex: 1; } .u-wrap { flex-wrap: wrap; }
+.u-hide { display: none !important; }
+
+/* ----------------------------------------------------------------------------
+   4. APP SHELL — Workspace de 3 zonas
+   ---------------------------------------------------------------------------- */
+.os-app {
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr;
+  height: 100vh; height: 100dvh;
+  background: var(--bg-0);
+}
+.os-app.has-panel { grid-template-columns: var(--nav-w) 1fr var(--panel-w); }
+
+/* --- Sidebar --- */
+.os-nav {
+  grid-column: 1;
+  background: var(--bg-0);
+  border-right: 1px solid var(--border-soft);
+  display: flex; flex-direction: column;
+  min-height: 0;
+  padding: var(--s2) 0;
+}
+.os-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px var(--s2) var(--s3);
+}
+.os-brand__mark {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(140deg, #E8C86A, var(--gold) 55%, #9E7E3C);
+  display: grid; place-items: center;
+  color: #000; font-family: var(--f-title); font-weight: 700; font-size: 15px;
+  box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.os-brand__name { font-family: var(--f-title); font-weight: 600; font-size: 15px; letter-spacing: .10em; }
+.os-brand__sub { font-size: 10px; color: var(--text-3); letter-spacing: .18em; text-transform: uppercase; margin-top: 1px; }
+
+.os-workspace {
+  margin: 0 var(--s2) var(--s2);
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; transition: background var(--dur) var(--ease);
+}
+.os-workspace:hover { background: var(--bg-3); }
+.os-workspace__logo { width: 26px; height: 26px; border-radius: 7px; background: var(--bg-4); display: grid; place-items: center; font-size: 13px; }
+.os-workspace__name { font-size: 13px; font-weight: 600; }
+.os-workspace__plan { font-size: 10px; color: var(--gold); letter-spacing: .04em; }
+
+.os-nav__scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 0 12px; }
+.os-nav__group { margin-bottom: var(--s2); }
+.os-nav__title { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--text-4); padding: 8px 12px 4px; }
+
+.os-nav__item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 12px; border-radius: 10px;
+  color: var(--text-2); font-size: 13.5px; font-weight: 500;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  position: relative; cursor: pointer; user-select: none;
+}
+.os-nav__item svg { width: 18px; height: 18px; opacity: .85; }
+.os-nav__item:hover { background: var(--bg-2); color: var(--text); }
+.os-nav__item.active { background: var(--bg-3); color: var(--text); }
+.os-nav__item.active::before {
+  content: ''; position: absolute; left: -12px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--gold);
+}
+.os-nav__badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--gold); background: var(--gold-soft); padding: 1px 7px; border-radius: 999px; }
+.os-nav__foot { padding: 12px 12px 0; border-top: 1px solid var(--border-soft); margin: 0 12px; }
+
+/* --- Main --- */
+.os-main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.os-topbar {
+  height: var(--topbar-h); flex-shrink: 0;
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 0 var(--s3);
+  border-bottom: 1px solid var(--border-soft);
+  background: rgba(10,10,10,.72); backdrop-filter: blur(18px);
+}
+.os-topbar__title { font-size: 15px; font-weight: 600; }
+.os-topbar__crumb { font-size: 12px; color: var(--text-3); }
+.os-content { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); }
+.os-content--pad { padding: var(--s4) var(--s5); }
+.os-content__max { max-width: 1180px; margin: 0 auto; }
+
+/* --- Right contextual panel --- */
+.os-panel {
+  grid-column: 3;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border-soft);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.os-panel__head { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: space-between; }
+.os-panel__body { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); }
+
+/* Search (topbar) */
+.os-search {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--bg-2); border: 1px solid var(--border-soft);
+  border-radius: var(--r-full); padding: 7px 14px; min-width: 220px;
+  color: var(--text-3); transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.os-search:focus-within { border-color: var(--gold-line); background: var(--bg-3); }
+.os-search input { background: none; border: none; outline: none; color: var(--text); font-size: 13px; width: 100%; }
+.os-search kbd { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-family: var(--f-num); }
+
+/* ----------------------------------------------------------------------------
+   5. PRIMITIVAS — Botones
+   ---------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 38px; padding: 0 16px; border-radius: var(--r-sm);
+  font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease), border-color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+  border: 1px solid transparent;
+}
+.btn svg { width: 16px; height: 16px; }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .45; pointer-events: none; }
+.btn--gold { background: linear-gradient(140deg, #E8C86A, var(--gold) 60%, #B08D42); color: #0A0A0A; box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,.25); }
+.btn--gold:hover { filter: brightness(1.05); }
+.btn--ghost { background: var(--bg-2); border-color: var(--border); color: var(--text); }
+.btn--ghost:hover { background: var(--bg-3); border-color: var(--border-strong); }
+.btn--quiet { background: transparent; color: var(--text-2); }
+.btn--quiet:hover { background: var(--bg-2); color: var(--text); }
+.btn--danger { background: var(--red-soft); color: #FF8A8E; border-color: rgba(229,72,77,.25); }
+.btn--danger:hover { background: rgba(229,72,77,.2); }
+.btn--sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+.btn--icon { width: 38px; padding: 0; }
+.btn--icon.btn--sm { width: 32px; }
+.btn--block { width: 100%; }
+
+/* ----------------------------------------------------------------------------
+   6. PRIMITIVAS — Cards / Surfaces
+   ---------------------------------------------------------------------------- */
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.card--pad { padding: var(--s3); }
+.card--hover:hover { border-color: var(--border-strong); background: var(--bg-3); }
+.card--float:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--sh-2); }
+.surface { background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); }
+
+/* Metric card */
+.metric {
+  background: var(--bg-2); border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg); padding: var(--s3);
+  display: flex; flex-direction: column; gap: 14px;
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.metric:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+.metric__top { display: flex; align-items: center; justify-content: space-between; }
+.metric__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
+.metric__icon svg { width: 18px; height: 18px; }
+.metric__label { font-size: 12px; color: var(--text-3); font-weight: 500; }
+.metric__value { font-family: var(--f-num); font-size: 30px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+.metric__delta { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.metric__delta.up { color: var(--green); } .metric__delta.down { color: #FF8A8E; } .metric__delta.flat { color: var(--text-3); }
+
+/* ----------------------------------------------------------------------------
+   7. PRIMITIVAS — Chips / Badges / Pills
+   ---------------------------------------------------------------------------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 11px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 600;
+  background: var(--bg-4); color: var(--text-2); border: 1px solid transparent;
+  transition: all var(--dur) var(--ease); cursor: pointer; white-space: nowrap;
+}
+.chip:hover { color: var(--text); }
+.chip.active { background: var(--gold-soft); color: var(--gold); border-color: var(--gold-line); }
+.badge { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 7px; font-size: 11.5px; font-weight: 600; }
+.badge--gold { background: var(--gold-soft); color: var(--gold); }
+.badge--green { background: var(--green-soft); color: #83B778; }
+.badge--red { background: var(--red-soft); color: #FF8A8E; }
+.badge--amber { background: var(--amber-soft); color: var(--amber); }
+.badge--blue { background: var(--blue-soft); color: var(--blue); }
+.badge--mute { background: var(--bg-4); color: var(--text-3); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot--green { background: #57C168; box-shadow: 0 0 8px rgba(87,193,104,.6); }
+.dot--gold { background: var(--gold); }
+.dot--red { background: var(--red); }
+.dot--mute { background: var(--text-4); }
+
+/* ----------------------------------------------------------------------------
+   8. PRIMITIVAS — Inputs
+   ---------------------------------------------------------------------------- */
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field__label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.input {
+  height: 40px; padding: 0 14px; border-radius: var(--r-sm);
+  background: var(--bg-2); border: 1px solid var(--border);
+  color: var(--text); font-size: 14px; outline: none;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+  width: 100%;
+}
+.input:focus { border-color: var(--gold-line); background: var(--bg-3); box-shadow: 0 0 0 3px var(--gold-soft); }
+.input::placeholder { color: var(--text-4); }
+textarea.input { height: auto; padding: 11px 14px; resize: vertical; min-height: 88px; line-height: 1.5; }
+select.input { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
+
+/* ----------------------------------------------------------------------------
+   9. TABLES
+   ---------------------------------------------------------------------------- */
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.table thead th {
+  text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-3); padding: 12px var(--s2); border-bottom: 1px solid var(--border-soft); white-space: nowrap;
+}
+.table tbody td { padding: 13px var(--s2); border-bottom: 1px solid var(--border-soft); color: var(--text); vertical-align: middle; }
+.table tbody tr { transition: background var(--dur) var(--ease); }
+.table tbody tr:hover { background: var(--bg-2); }
+.table tbody tr:last-child td { border-bottom: none; }
+
+/* ----------------------------------------------------------------------------
+   10. KANBAN / PIPELINE
+   ---------------------------------------------------------------------------- */
+.kanban { display: flex; gap: var(--s2); height: 100%; overflow-x: auto; padding-bottom: var(--s2); }
+.kan-col { flex: 0 0 300px; display: flex; flex-direction: column; background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); min-height: 0; }
+.kan-col__head { padding: 13px var(--s2); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-soft); }
+.kan-col__title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.kan-col__count { font-size: 11px; color: var(--text-3); background: var(--bg-3); padding: 1px 8px; border-radius: 999px; }
+.kan-col__body { flex: 1; overflow-y: auto; min-height: 0; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.kan-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 13px; cursor: grab; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.kan-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+
+/* ----------------------------------------------------------------------------
+   11. TIMELINE
+   ---------------------------------------------------------------------------- */
+.tl { display: flex; flex-direction: column; }
+.tl-item { display: flex; gap: 13px; padding-bottom: var(--s3); position: relative; }
+.tl-item::before { content: ''; position: absolute; left: 12px; top: 26px; bottom: 0; width: 1px; background: var(--border); }
+.tl-item:last-child::before { display: none; }
+.tl-item__dot { width: 25px; height: 25px; border-radius: 50%; background: var(--bg-3); border: 1px solid var(--border-strong); display: grid; place-items: center; flex-shrink: 0; z-index: 1; color: var(--text-3); }
+.tl-item__dot svg { width: 13px; height: 13px; }
+.tl-item__body { flex: 1; padding-top: 2px; }
+.tl-item__title { font-size: 13.5px; font-weight: 500; }
+.tl-item__time { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+
+/* ----------------------------------------------------------------------------
+   12. AVATAR
+   ---------------------------------------------------------------------------- */
+.avatar { border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; flex-shrink: 0; letter-spacing: .01em; }
+.avatar--sm { width: 30px; height: 30px; font-size: 12px; }
+.avatar--md { width: 40px; height: 40px; font-size: 15px; }
+.avatar--lg { width: 52px; height: 52px; font-size: 19px; }
+
+/* ----------------------------------------------------------------------------
+   13. AI COPILOT (dock flotante)
+   ---------------------------------------------------------------------------- */
+.ai-dock {
+  position: fixed; right: var(--s3); bottom: var(--s3); z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  height: 46px; padding: 0 8px 0 16px; border-radius: var(--r-full);
+  background: rgba(23,23,23,.86); backdrop-filter: blur(20px);
+  border: 1px solid var(--gold-line); box-shadow: var(--sh-3);
+  cursor: pointer; transition: transform var(--dur) var(--ease-out), border-color var(--dur) var(--ease);
+}
+.ai-dock:hover { transform: translateY(-2px); border-color: var(--gold); }
+.ai-dock__spark { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(140deg, #E8C86A, var(--gold) 60%, #9E7E3C); display: grid; place-items: center; color: #000; }
+.ai-dock__label { font-size: 13px; font-weight: 600; }
+.ai-dock__hint { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-family: var(--f-num); }
+
+/* ----------------------------------------------------------------------------
+   14. TOAST
+   ---------------------------------------------------------------------------- */
+.os-toasts { position: fixed; bottom: var(--s3); left: 50%; transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.os-toast {
+  display: flex; align-items: center; gap: 10px; padding: 11px 18px;
+  background: rgba(28,28,28,.94); backdrop-filter: blur(20px);
+  border: 1px solid var(--border-strong); border-radius: var(--r-full);
+  font-size: 13px; font-weight: 500; box-shadow: var(--sh-3);
+  animation: toastIn .32s var(--ease-out);
+}
+.os-toast--ok { border-color: rgba(78,123,70,.4); }
+.os-toast--err { border-color: rgba(229,72,77,.4); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* ----------------------------------------------------------------------------
+   15. EMPTY / SKELETON
+   ---------------------------------------------------------------------------- */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: var(--s6) var(--s3); text-align: center; color: var(--text-3); }
+.empty svg { width: 42px; height: 42px; opacity: .4; }
+.skel { background: linear-gradient(100deg, var(--bg-2) 30%, var(--bg-3) 50%, var(--bg-2) 70%); background-size: 200% 100%; animation: skel 1.4s infinite linear; border-radius: 8px; }
+@keyframes skel { to { background-position: -200% 0; } }
+
+/* ----------------------------------------------------------------------------
+   16. GRIDS
+   ---------------------------------------------------------------------------- */
+.grid { display: grid; gap: var(--s2); }
+.grid--4 { grid-template-columns: repeat(4, 1fr); }
+.grid--3 { grid-template-columns: repeat(3, 1fr); }
+.grid--2 { grid-template-columns: repeat(2, 1fr); }
+.grid--main { grid-template-columns: 2fr 1fr; gap: var(--s3); align-items: start; }
+
+/* ----------------------------------------------------------------------------
+   17. ANIMACIÓN DE ENTRADA
+   ---------------------------------------------------------------------------- */
+.rise { animation: rise .5s var(--ease-out) both; }
+.rise-1 { animation-delay: .04s; } .rise-2 { animation-delay: .08s; }
+.rise-3 { animation-delay: .12s; } .rise-4 { animation-delay: .16s; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+/* ----------------------------------------------------------------------------
+   18. RESPONSIVE
+   ---------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .os-app.has-panel { grid-template-columns: var(--nav-w) 1fr; }
+  .os-panel { display: none; }
+  .grid--4 { grid-template-columns: repeat(2, 1fr); }
+  .grid--main { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .os-app, .os-app.has-panel { grid-template-columns: 1fr; }
+  .os-nav { position: fixed; left: 0; top: 0; bottom: 0; width: var(--nav-w); z-index: 80; transform: translateX(-100%); transition: transform .28s var(--ease-out); box-shadow: var(--sh-3); }
+  .os-nav.open { transform: none; }
+  .os-content--pad { padding: var(--s3) var(--s2); }
+  .grid--4, .grid--3, .grid--2 { grid-template-columns: 1fr; }
+  .os-search { min-width: 0; }
+}

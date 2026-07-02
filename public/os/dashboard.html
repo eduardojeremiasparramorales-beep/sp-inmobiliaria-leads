@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, fmt, avatarColor, initials } = SPOS;
+
+  const ctx = await SPOS.mount({
+    active: 'dashboard', title: 'Centro de Control', crumb: 'SP Inmobiliaria · Vista general',
+    padded: true,
+    action: `<button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
+  });
+
+  // --- Datos reales (con fallback demo) ---
+  let m = await api('/api/metricas');
+  let stats = await api('/api/stats');
+
+  const DEMO = {
+    total: 342, vendidos: 47, conversionGlobal: 14, tiempoRespuestaPromedio: 8,
+    respondidos: 289, sinResponder: 12, totalMensajes: 4820, mensajesEntrantes: 2610,
+    porEtiqueta: { sin_clasificar: 61, interesado: 120, negociacion: 58, cita: 34, vendido: 47, no_interesado: 22 },
+    porEstado: { nuevo: 40, contactado: 150, cerrado: 60 },
+    porVendedor: [
+      { id:1, nombre:'Carlos García', estado:'activo', total:98, activos:71, vendidos:16, conversion:16 },
+      { id:2, nombre:'Andrea López', estado:'activo', total:84, activos:60, vendidos:14, conversion:17 },
+      { id:3, nombre:'Miguel Torres', estado:'activo', total:76, activos:52, vendidos:11, conversion:14 },
+      { id:4, nombre:'Laura Ruiz', estado:'ausente', total:84, activos:44, vendidos:6, conversion:7 },
+    ],
+  };
+  if (!m) m = DEMO;
+  if (!stats) stats = { totalVendedores: 4, vendedoresActivos: 3 };
+
+  const etq = m.porEtiqueta || {};
+  const pipeline = [
+    { k: 'sin_clasificar', label: 'Nuevos', color: 'var(--text-3)' },
+    { k: 'interesado', label: 'Interesados', color: 'var(--blue)' },
+    { k: 'negociacion', label: 'Negociación', color: 'var(--gold)' },
+    { k: 'cita', label: 'Cita agendada', color: 'var(--amber)' },
+    { k: 'vendido', label: 'Vendidos', color: 'var(--green)' },
+  ];
+  const pipeMax = Math.max(1, ...pipeline.map(p => etq[p.k] || 0));
+
+  const metric = (icon, label, value, delta, deltaKind) => `
+    <div class="metric card--float">
+      <div class="metric__top">
+        <div class="metric__icon">${ICONS[icon]}</div>
+        ${delta != null ? `<span class="metric__delta ${deltaKind}">${deltaKind==='up'?ICONS.up:deltaKind==='down'?ICONS.down:''}${delta}</span>` : ''}
+      </div>
+      <div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div>
+    </div>`;
+
+  const respRate = m.total ? Math.round((m.respondidos / m.total) * 100) : 0;
+
+  ctx.content.innerHTML = `
+   <div class="os-content__max">
+    <!-- Métricas núcleo -->
+    <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
+      ${metric('leads', 'Leads totales', fmt.n(m.total), '+12%', 'up')}
+      ${metric('money', 'Cierres del mes', fmt.n(m.vendidos), '+' + (m.vendidos>40?'8':'3') + '%', 'up')}
+      ${metric('target', 'Conversión global', fmt.pct(m.conversionGlobal), respRate>60?'estable':'', 'flat')}
+      ${metric('clock', 'Resp. promedio', (m.tiempoRespuestaPromedio!=null?m.tiempoRespuestaPromedio+' min':'—'), m.tiempoRespuestaPromedio<15?'ágil':'', 'up')}
+    </div>
+
+    <div class="grid grid--main">
+      <!-- Columna izquierda -->
+      <div class="u-col u-gap3">
+        <!-- Pipeline comercial -->
+        <div class="card card--pad rise rise-2">
+          <div class="u-between" style="margin-bottom:var(--s3)">
+            <div><div class="t-h3">Embudo comercial</div><div class="t-dim3" style="font-size:12px">Distribución de ${fmt.n(m.total)} leads por etapa</div></div>
+            <a class="btn btn--ghost btn--sm" href="/os/pipeline.html">Abrir pipeline</a>
+          </div>
+          <div class="u-col u-gap2">
+            ${pipeline.map(p => {
+              const val = etq[p.k] || 0; const w = Math.round((val / pipeMax) * 100);
+              return `<div>
+                <div class="u-between" style="margin-bottom:6px">
+                  <span style="font-size:13px;font-weight:500">${p.label}</span>
+                  <span class="t-num t-dim" style="font-size:13px">${fmt.n(val)}</span>
+                </div>
+                <div style="height:10px;background:var(--bg-4);border-radius:999px;overflow:hidden">
+                  <div style="height:100%;width:${w}%;background:${p.color};border-radius:999px;transition:width .8s var(--ease-out)"></div>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- Rendimiento del equipo -->
+        <div class="card rise rise-3" style="overflow:hidden">
+          <div class="u-between card--pad" style="padding-bottom:var(--s2)">
+            <div class="t-h3">Rendimiento del equipo</div>
+            <a class="btn btn--quiet btn--sm" href="/os/equipo.html">Ver equipo</a>
+          </div>
+          <table class="table">
+            <thead><tr><th>Asesor</th><th>Leads</th><th>Activos</th><th>Cierres</th><th>Conversión</th></tr></thead>
+            <tbody>
+              ${(m.porVendedor || []).slice(0, 6).map(v => `
+                <tr>
+                  <td><div class="u-row u-gap2">
+                    <div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)}">${initials(v.nombre)}</div>
+                    <div><div style="font-weight:500">${v.nombre}</div>
+                    <div class="u-row u-gap1" style="font-size:11px"><span class="dot dot--${v.estado==='activo'?'green':'mute'}"></span><span class="t-dim3">${v.estado}</span></div></div>
+                  </div></td>
+                  <td class="t-num">${fmt.n(v.total)}</td>
+                  <td class="t-num t-dim">${fmt.n(v.activos)}</td>
+                  <td class="t-num">${fmt.n(v.vendidos)}</td>
+                  <td><span class="badge badge--${v.conversion>=15?'green':v.conversion>=8?'gold':'mute'}">${v.conversion}%</span></td>
+                </tr>`).join('') || `<tr><td colspan="5" class="t-dim3" style="text-align:center;padding:var(--s4)">Sin asesores aún</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Columna derecha -->
+      <div class="u-col u-gap3">
+        <!-- Estado del negocio -->
+        <div class="card card--pad rise rise-2">
+          <div class="t-label" style="margin-bottom:var(--s2)">Estado del negocio</div>
+          <div class="u-col u-gap2">
+            ${statRow('dot--green', 'Sistema operativo', 'Todos los canales activos')}
+            ${statRow(m.sinResponder>0?'dot--gold':'dot--green', fmt.n(m.sinResponder) + ' sin responder', m.sinResponder>0?'Requieren atención':'Bandeja al día')}
+            ${statRow('dot--green', fmt.n(stats.vendedoresActivos) + ' de ' + fmt.n(stats.totalVendedores) + ' asesores', 'Conectados ahora')}
+            ${statRow('dot--gold', fmt.n(m.mensajesEntrantes) + ' mensajes', 'Recibidos en total')}
+          </div>
+        </div>
+
+        <!-- Acciones rápidas -->
+        <div class="card card--pad rise rise-3">
+          <div class="t-label" style="margin-bottom:var(--s2)">Acciones rápidas</div>
+          <div class="u-col u-gap1">
+            ${quick('inbox', 'Abrir Inbox', '/os/inbox.html')}
+            ${quick('campaigns', 'Nueva campaña Meta', '/os/campanas.html')}
+            ${quick('automations', 'Crear automatización', '/os/automatizaciones.html')}
+            ${quick('analytics', 'Ver reportes', '/os/analytics.html')}
+          </div>
+        </div>
+
+        <!-- Copiloto IA sugerencia -->
+        <div class="card card--pad rise rise-4" style="border-color:var(--gold-line);background:linear-gradient(160deg,var(--bg-2),rgba(200,164,90,.05))">
+          <div class="u-row u-gap2" style="margin-bottom:10px">
+            <div class="metric__icon">${ICONS.ai}</div>
+            <div class="t-h3">Copiloto SP</div>
+          </div>
+          <p class="t-dim" style="font-size:13px;line-height:1.55">Tienes <b class="t-gold">${fmt.n(etq.negociacion||0)}</b> leads en negociación sin actividad reciente. ¿Quieres que prepare un mensaje de seguimiento para reactivarlos?</p>
+          <button class="btn btn--ghost btn--sm btn--block" style="margin-top:var(--s2)" onclick="SPOS.toast('El Copiloto SP se activará en la Fase IA','ok')">Generar seguimiento</button>
+        </div>
+      </div>
+    </div>
+   </div>`;
+
+  document.getElementById('newLead').addEventListener('click', () => location.href = '/os/crm.html');
+
+  function statRow(dot, title, sub) {
+    return `<div class="u-row u-gap2">
+      <span class="dot ${dot}" style="margin-top:6px"></span>
+      <div><div style="font-size:13px;font-weight:500">${title}</div><div class="t-dim3" style="font-size:11.5px">${sub}</div></div>
+    </div>`;
+  }
+  function quick(icon, label, href) {
+    return `<a class="os-nav__item" href="${href}" style="margin:0;padding:9px 10px">${ICONS[icon]}<span>${label}</span>
+      <span style="margin-left:auto;opacity:.3">${ICONS.up.replace('<svg ','<svg style="width:14px;height:14px" ')}</span></a>`;
+  }
+})();
+</script>
+</body>
+</html>
