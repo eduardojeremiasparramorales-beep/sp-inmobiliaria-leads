@@ -49,7 +49,7 @@
   const NAV = [
     { title: 'Operación', items: [
       { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', href: '/os/dashboard.html' },
-      { id: 'inbox', label: 'Inbox', icon: 'inbox', href: '/vendedor.html', badge: 'live' },
+      { id: 'inbox', label: 'Inbox', icon: 'inbox', href: '/os/inbox.html', badge: 'live' },
       { id: 'crm', label: 'CRM · Leads', icon: 'leads', href: '/os/crm.html' },
       { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', href: M('pipeline') },
       { id: 'clients', label: 'Clientes', icon: 'clients', href: M('clients') },
