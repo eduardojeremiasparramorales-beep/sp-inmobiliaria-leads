@@ -16,8 +16,8 @@
           window.addEventListener('DOMContentLoaded', function(){
             var bar = document.createElement('div');
             bar.style.cssText = 'position:fixed;top:12px;right:16px;z-index:9999;display:flex;gap:10px';
-            bar.innerHTML = '<a href="/equipo.html" style="background:#C8A45A;color:#000;padding:8px 14px;border-radius:7px;text-decoration:none;font-weight:600;font-size:.82rem;font-family:Inter,sans-serif">Gestión de Equipo</a>' +
-              '<a href="#" id="spLogout" style="background:transparent;color:#C8A45A;border:1px solid #C8A45A;padding:8px 14px;border-radius:7px;text-decoration:none;font-size:.82rem;font-family:Inter,sans-serif">Salir</a>';
+            bar.innerHTML = '<a href="/equipo.html" style="background:linear-gradient(135deg,#D4AF37,#A8872B);color:#0A0A0E;padding:10px 16px;border-radius:10px;text-decoration:none;font-weight:600;font-size:.82rem;font-family:Inter,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.4)">Gestión de Equipo</a>' +
+              '<a href="#" id="spLogout" style="background:#121218;color:rgba(245,240,232,.45);padding:10px 16px;border-radius:10px;text-decoration:none;font-size:.82rem;font-family:Inter,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.4)">Salir</a>';
             document.body.appendChild(bar);
             document.getElementById('spLogout').addEventListener('click', function(e){
               e.preventDefault();
@@ -30,104 +30,121 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        /* ── Apple Design System · SP Inmobiliaria ── */
         :root{
-            --negro:#0A0A0A; --oro:#C8A45A; --verde:#4E7B46;
-            --marfil:#F5F2EB; --gris:#6D6D6D; --panel:#121212; --panel2:#1a1a1a;
-            --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.12);
+            --bg:#040406; --bg2:#0A0A0E; --bg3:#121218; --bg4:#16161E;
+            --sep:rgba(255,255,255,.04);
+            --txt:#F5F0E8; --txt2:rgba(245,240,232,.45); --txt3:rgba(245,240,232,.22);
+            --oro:#D4AF37; --oro2:#A8872B; --verde:#4E7B46; --rojo:#FF453A;
+            --grad-gold:linear-gradient(135deg,#D4AF37,#A8872B);
+            --e1:0 2px 8px rgba(0,0,0,.4); --e2:0 8px 30px rgba(0,0,0,.5); --e3:0 20px 60px rgba(0,0,0,.6);
+            --ease:cubic-bezier(.22,1,.36,1);
+            --negro:#040406; --marfil:#F5F0E8; --gris:rgba(245,240,232,.45); --panel:#0A0A0E; --panel2:#121218;
         }
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Inter',sans-serif;background:var(--negro);color:var(--marfil);min-height:100vh;padding:20px;
+        body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;padding:20px;
           -webkit-user-select:none;-moz-user-select:none;user-select:none;
           -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
         input,textarea,td,th{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
         .container{max-width:1400px;margin:0 auto}
-        header{background:var(--panel);padding:20px 24px;border-radius:12px;margin-bottom:24px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+        header{background:var(--bg2);padding:20px 24px;border-radius:12px;margin-bottom:24px;box-shadow:var(--e1);display:flex;justify-content:space-between;align-items:center}
         .header-left{display:flex;align-items:center;gap:16px}
-        .logo{font-family:'Cinzel',serif;font-size:26px;color:var(--oro);letter-spacing:.1em}
-        .logo-text{font-size:11px;color:var(--gris);margin-top:2px}
-        .status{display:flex;align-items:center;gap:8px;background:var(--panel2);padding:8px 16px;border-radius:20px;font-size:11px;font-weight:600;color:var(--oro);border:1px solid rgba(200,164,90,.25)}
+        .logo{font-family:'Cinzel',serif;font-size:22px;font-weight:600;letter-spacing:.1em;
+          background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+        .logo-text{font-size:11px;color:var(--txt2);margin-top:2px;letter-spacing:.08em}
+        .status{display:flex;align-items:center;gap:8px;background:var(--bg3);padding:8px 16px;border-radius:20px;font-size:11px;font-weight:600;color:var(--oro);box-shadow:var(--e1)}
         .status-dot{width:8px;height:8px;background:var(--verde);border-radius:50%;animation:pulse 2s infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
         .main{display:grid;grid-template-columns:220px 1fr;gap:24px}
-        sidebar{background:var(--panel);border-radius:12px;padding:18px;border:1px solid var(--border);height:fit-content;position:sticky;top:20px}
-        .menu-title{font-size:10px;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 10px;padding:0 8px}
+        sidebar{background:var(--bg2);border-radius:12px;padding:16px 12px;box-shadow:var(--e1);height:fit-content;position:sticky;top:20px;display:block}
+        .menu-title{font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.1em;margin:20px 0 8px;padding:0 12px}
         .menu-title:first-child{margin-top:0}
-        .menu-item{padding:10px 12px;margin:3px 0;border-radius:8px;cursor:pointer;transition:all .2s;font-size:13px;color:var(--marfil);display:flex;align-items:center;gap:8px}
+        .menu-item{padding:12px;margin:2px 0;border-radius:10px;cursor:pointer;transition:background .15s ease,color .15s ease;font-size:13px;color:var(--txt2);display:flex;align-items:center;gap:10px;font-weight:500;border-left:3px solid transparent}
         .mi{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
         button{cursor:pointer}
         button .mi{vertical-align:-3px}
-        .menu-item:hover{background:var(--panel2);color:var(--oro)}
-        .menu-item.active{background:var(--oro);color:#000;font-weight:600}
-        .content{background:var(--panel);border-radius:12px;padding:24px;border:1px solid var(--border)}
-        .content-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:16px}
-        .content-header h2{font-size:20px;color:var(--marfil);font-weight:600}
-        .btn{padding:9px 18px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;font-family:inherit}
-        .btn-primary{background:var(--oro);color:#000}
-        .btn-primary:hover{opacity:.85}
-        .btn-secondary{background:var(--panel2);color:var(--oro);border:1px solid rgba(200,164,90,.3)}
-        .btn-secondary:hover{background:var(--oro);color:#000}
+        .menu-item:hover{background:rgba(255,255,255,.03);color:var(--txt)}
+        .menu-item.active{background:rgba(212,175,55,.06);color:var(--oro);font-weight:600;border-left:3px solid var(--oro)}
+        .content{background:var(--bg2);border-radius:12px;padding:24px;box-shadow:var(--e1)}
+        .content-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px}
+        .content-header h2{font-size:20px;color:var(--txt);font-weight:600;letter-spacing:-.01em}
+        .btn{padding:0 20px;height:40px;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;transition:filter .15s ease,transform .1s ease;font-family:inherit}
+        .btn:active{transform:scale(.97)}
+        .btn-primary{background:var(--grad-gold);color:#0A0A0E;box-shadow:var(--e1)}
+        .btn-primary:hover{filter:brightness(1.1)}
+        .btn-secondary{background:var(--bg3);color:var(--txt2);box-shadow:var(--e1)}
+        .btn-secondary:hover{color:var(--txt)}
         .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
-        .stat-card{background:linear-gradient(160deg,#1d1a15,#191919 55%);border:1px solid var(--border);padding:22px;border-radius:12px;border-top:2px solid var(--oro);transition:transform .2s,box-shadow .2s}
-        .stat-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+        .stat-card{background:var(--bg3);padding:20px;border-radius:12px;box-shadow:var(--e1);transition:transform .15s ease,box-shadow .15s ease}
+        .stat-card:hover{transform:translateY(-2px);box-shadow:var(--e2)}
         /* Funnel del pipeline */
         .funnel{display:flex;flex-direction:column;gap:8px;margin-bottom:28px}
         .funnel-row{display:flex;align-items:center;gap:12px}
-        .funnel-row .fl{width:130px;font-size:12px;color:var(--gris);text-align:right;flex-shrink:0}
-        .funnel-row .fbar{height:26px;border-radius:6px;background:linear-gradient(90deg,rgba(200,164,90,.85),rgba(200,164,90,.55));min-width:4px;transition:width .6s ease;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:11px;font-weight:700;color:#000}
-        .funnel-row.f-vendido .fbar{background:linear-gradient(90deg,#4E7B46,#6a9c61)}
-        .funnel-row.f-no_interesado .fbar{background:linear-gradient(90deg,#5a2b2b,#7a4040);color:#fff}
+        .funnel-row .fl{width:130px;font-size:12px;color:var(--txt2);text-align:right;flex-shrink:0}
+        .funnel-row .fbar{height:26px;border-radius:8px;background:var(--grad-gold);min-width:4px;transition:width .6s var(--ease);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:11px;font-weight:700;color:#0A0A0E;box-shadow:var(--e1)}
+        .funnel-row.f-vendido .fbar{background:linear-gradient(90deg,#4E7B46,#3D6B37);color:#fff}
+        .funnel-row.f-no_interesado .fbar{background:var(--bg4);color:var(--txt2)}
         @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
-        :focus-visible{outline:2px solid var(--oro);outline-offset:2px}
-        .stat-label{font-size:11px;color:var(--gris);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
-        .stat-value{font-size:30px;font-weight:700;color:var(--marfil)}
-        .stat-change{font-size:11px;margin-top:6px;color:var(--gris)}
+        :focus-visible{outline:2px solid rgba(212,175,55,.4);outline-offset:2px}
+        .stat-label{font-size:11px;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;font-weight:500}
+        .stat-value{font-size:30px;font-weight:700;color:var(--txt);font-feature-settings:'tnum'}
+        .stat-change{font-size:11px;margin-top:6px;color:var(--txt3)}
         .table-container{overflow-x:auto}
         table{width:100%;border-collapse:collapse}
-        th{background:var(--panel2);padding:12px 14px;text-align:left;font-weight:600;color:var(--gris);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border)}
-        td{padding:12px 14px;border-bottom:1px solid var(--border);color:var(--marfil);font-size:13px}
-        tr:hover{background:var(--panel2)}
-        .badge{display:inline-block;padding:4px 10px;border-radius:12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-        .badge-success{background:rgba(78,123,70,.2);color:#b8dbb4;border:1px solid rgba(78,123,70,.4)}
-        .badge-warning{background:rgba(200,164,90,.2);color:var(--oro);border:1px solid rgba(200,164,90,.3)}
-        .badge-danger{background:rgba(180,40,40,.2);color:#e88;border:1px solid rgba(180,40,40,.4)}
+        th{padding:12px 14px;text-align:left;font-weight:600;color:var(--txt3);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+        td{padding:12px 14px;color:var(--txt);font-size:13px;font-feature-settings:'tnum'}
+        tbody tr{transition:background .15s ease}
+        tbody tr:hover{background:rgba(255,255,255,.03)}
+        .badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+        .badge-success{background:linear-gradient(135deg,#4E7B46,#3D6B37);color:#fff}
+        .badge-warning{background:rgba(212,175,55,.1);color:var(--oro)}
+        .badge-danger{background:rgba(255,69,58,.1);color:var(--rojo)}
         .leads-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-        .lead-card{border:1px solid var(--border2);border-radius:12px;padding:18px;transition:all .2s;background:var(--panel2)}
-        .lead-card:hover{border-color:var(--oro)}
+        .lead-card{border-radius:12px;padding:16px;transition:transform .15s ease,box-shadow .15s ease;background:var(--bg3);box-shadow:var(--e1)}
+        .lead-card:hover{transform:translateY(-2px);box-shadow:var(--e2)}
         .lead-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}
-        .lead-name{font-size:15px;font-weight:600;color:var(--marfil)}
+        .lead-name{font-size:15px;font-weight:600;color:var(--txt)}
         .lead-phone{font-size:12px;color:var(--oro);margin-top:4px}
-        .lead-info{display:flex;justify-content:space-between;margin:12px 0;padding:12px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:12px}
+        .lead-info{display:flex;justify-content:space-between;margin:12px 0;padding:12px 0;font-size:12px}
         .lead-info div{flex:1}
-        .lead-info label{color:var(--gris);display:block;margin-bottom:4px;font-size:10px;text-transform:uppercase}
+        .lead-info label{color:var(--txt3);display:block;margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
         .lead-actions{display:flex;gap:8px;margin-top:12px}
-        .lead-actions button{flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s;font-family:inherit}
-        .lead-actions .btn-contact{background:var(--oro);color:#000}
-        .lead-actions .btn-contact:hover{opacity:.85}
-        .lead-actions .btn-status{background:var(--panel2);color:var(--oro);border:1px solid rgba(200,164,90,.3)}
-        .vendor-card{border:1px solid var(--border2);border-radius:12px;padding:18px;margin-bottom:16px;transition:all .2s;background:var(--panel2)}
-        .vendor-card.active{border-color:var(--oro)}
+        .lead-actions button{flex:1;padding:10px 8px;border:none;border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;transition:filter .15s ease,transform .1s ease;font-family:inherit}
+        .lead-actions button:active{transform:scale(.97)}
+        .lead-actions .btn-contact{background:var(--grad-gold);color:#0A0A0E;box-shadow:var(--e1)}
+        .lead-actions .btn-contact:hover{filter:brightness(1.1)}
+        .lead-actions .btn-status{background:var(--bg4);color:var(--txt2)}
+        .vendor-card{border-radius:12px;padding:16px;margin-bottom:16px;transition:transform .15s ease,box-shadow .15s ease;background:var(--bg3);box-shadow:var(--e1)}
+        .vendor-card.active{box-shadow:var(--e2)}
+        .vendor-card:hover{transform:translateY(-2px);box-shadow:var(--e2)}
         .vendor-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}
-        .vendor-name{font-size:15px;font-weight:600;color:var(--marfil)}
+        .vendor-name{font-size:15px;font-weight:600;color:var(--txt)}
         .vendor-phone{font-size:12px;color:var(--oro);margin-top:4px}
-        .vendor-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0;padding:12px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+        .vendor-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0;padding:12px 0}
         .vendor-stats div{text-align:center}
-        .vendor-stats label{font-size:10px;color:var(--gris);text-transform:uppercase;display:block;margin-bottom:4px}
-        .vendor-stats value{font-size:16px;font-weight:700;color:var(--marfil)}
+        .vendor-stats label{font-size:10px;color:var(--txt3);text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:.05em}
+        .vendor-stats value{font-size:16px;font-weight:700;color:var(--txt);font-feature-settings:'tnum'}
         .vendor-actions{display:flex;gap:8px}
-        .vendor-actions button{flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s;font-family:inherit}
-        .vendor-actions .btn-active{background:rgba(78,123,70,.2);color:#b8dbb4;border:1px solid rgba(78,123,70,.4)}
-        .vendor-actions .btn-active:hover{background:var(--verde);color:#fff}
-        .vendor-actions .btn-inactive{background:rgba(180,40,40,.2);color:#e88;border:1px solid rgba(180,40,40,.4)}
-        .vendor-actions .btn-inactive:hover{background:rgba(180,40,40,.5);color:#fff}
+        .vendor-actions button{flex:1;padding:10px 8px;border:none;border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;transition:filter .15s ease,transform .1s ease;font-family:inherit}
+        .vendor-actions button:active{transform:scale(.97)}
+        .vendor-actions .btn-active{background:linear-gradient(135deg,#4E7B46,#3D6B37);color:#fff;box-shadow:var(--e1)}
+        .vendor-actions .btn-active:hover{filter:brightness(1.1)}
+        .vendor-actions .btn-inactive{background:var(--bg4);color:var(--txt2)}
+        .vendor-actions .btn-inactive:hover{color:var(--rojo)}
         .section{display:none}
-        .section.active{display:block}
-        .no-data{text-align:center;padding:40px;color:var(--gris);font-size:.9rem}
-        footer{text-align:center;margin-top:40px;color:var(--gris);font-size:11px}
-        .config-card{background:var(--panel2);padding:18px;border-radius:10px;margin-bottom:16px;border:1px solid var(--border)}
-        .config-card h3{color:var(--oro);margin-bottom:12px;font-size:14px}
-        .config-card label{display:block;margin-bottom:4px;font-weight:500;color:var(--marfil);font-size:13px}
-        .config-card input{width:100%;padding:9px 12px;background:var(--negro);border:1px solid var(--border2);border-radius:6px;color:var(--marfil);font-family:inherit;font-size:13px;margin-bottom:12px}
-        .config-card input:focus{outline:none;border-color:var(--oro)}
+        .section.active{display:block;animation:sectionIn .35s var(--ease)}
+        @keyframes sectionIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        .no-data{text-align:center;padding:40px;color:var(--txt3);font-size:.9rem}
+        footer{text-align:center;margin-top:40px;color:var(--txt3);font-size:11px}
+        .config-card{background:var(--bg3);padding:16px;border-radius:12px;margin-bottom:16px;box-shadow:var(--e1)}
+        .config-card h3{color:var(--oro);margin-bottom:12px;font-size:14px;font-weight:600}
+        .config-card label{display:block;margin-bottom:4px;font-weight:500;color:var(--txt2);font-size:13px}
+        .config-card input{width:100%;height:44px;padding:0 16px;background:var(--bg2);border:none;border-radius:10px;color:var(--txt);font-family:inherit;font-size:13px;margin-bottom:12px;box-shadow:inset 0 2px 4px rgba(0,0,0,.3);transition:box-shadow .15s ease}
+        .config-card input:focus{outline:none;box-shadow:inset 0 2px 4px rgba(0,0,0,.3),0 0 0 1.5px rgba(212,175,55,.3)}
+        ::-webkit-scrollbar{width:3px;height:3px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:rgba(212,175,55,.15);border-radius:2px}
+        ::-webkit-scrollbar-thumb:hover{background:rgba(212,175,55,.3)}
         @media(max-width:768px){
             .main{grid-template-columns:1fr}
             sidebar{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));position:static}
@@ -140,10 +157,10 @@
     <div class="container">
         <header>
             <div class="header-left">
-                <img src="/icons/logo.png" alt="SP Leons Group" style="width:52px;height:52px;border-radius:12px;object-fit:cover" onerror="this.style.display='none'">
+                <img src="/icons/logo.png" alt="SP Leons Group" style="width:44px;height:44px;border-radius:10px;object-fit:cover;box-shadow:0 2px 8px rgba(0,0,0,.4)" onerror="this.style.display='none'">
                 <div>
-                    <div class="logo">SP LEONS GROUP</div>
-                    <div class="logo-text">Inmobiliaria · CRM</div>
+                    <div class="logo">SP PANEL</div>
+                    <div class="logo-text">Inmobiliaria</div>
                 </div>
             </div>
             <div class="status">
@@ -155,16 +172,15 @@
         <div class="main">
             <sidebar>
                 <div class="menu-title">Principal</div>
-                <div class="menu-item active" onclick="showSection('dashboard')"><svg class="mi" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> Dashboard</div>
-                <div class="menu-item" onclick="location.href='/vendedor.html'" style="background:rgba(78,123,70,.15);border:1px solid rgba(78,123,70,.4);color:#b8dbb4;font-weight:600"><svg class="mi" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg> Bandeja de Chats</div>
-                <div class="menu-item" onclick="showSection('leads')"><svg class="mi" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg> Bandeja de Leads</div>
-                <div class="menu-item" onclick="showSection('vendors')"><svg class="mi" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Vendedores</div>
+                <div class="menu-item active" onclick="showSection('dashboard')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> Dashboard</div>
+                <div class="menu-item" onclick="location.href='/vendedor.html'" style="background:rgba(78,123,70,.08);color:#8FBF85;font-weight:600"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg> Bandeja de Chats</div>
+                <div class="menu-item" onclick="showSection('leads')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20v-5a2 2 0 0 0-2-2H4m0 0a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H4z"/></svg> Bandeja de Leads</div>
+                <div class="menu-item" onclick="showSection('vendors')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Vendedores</div>
 
                 <div class="menu-title">Gestión</div>
-                <div class="menu-item" onclick="location.href='/equipo.html'" style="background:rgba(200,164,90,.12);border:1px solid rgba(200,164,90,.3);color:var(--oro);font-weight:600"><svg class="mi" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Agregar Vendedor</div>
-                <div class="menu-item" onclick="showSection('reports')"><svg class="mi" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg> Reportes</div>
-                <div class="menu-item" onclick="showSection('config')"><svg class="mi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg> Configuración</div>
-                <div class="menu-item" onclick="showSection('logs')"><svg class="mi" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg> Logs</div>
+                <div class="menu-item" onclick="location.href='/equipo.html'" style="background:rgba(212,175,55,.06);color:var(--oro);font-weight:600"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Gestión de Equipo</div>
+                <div class="menu-item" onclick="showSection('reports')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg> Reportes</div>
+                <div class="menu-item" onclick="showSection('config')"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m5.08 5.08l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m5.08-5.08l4.24-4.24"/></svg> Configuración</div>
             </sidebar>
 
             <div class="content">
@@ -321,7 +337,7 @@
                         <button class="btn btn-secondary" onclick="clearLogs()">Limpiar Logs</button>
                     </div>
 
-                    <div style="background: #1e1e1e; color: #00ff00; padding: 20px; border-radius: 8px; font-family: 'Courier New'; font-size: 12px; max-height: 500px; overflow-y: auto;" id="logsContainer">
+                    <div style="background:#121218; color:rgba(245,240,232,.6); padding:20px; border-radius:12px; font-family:'SF Mono','JetBrains Mono',monospace; font-size:13px; line-height:1.7; max-height:500px; overflow-y:auto; box-shadow:inset 0 2px 4px rgba(0,0,0,.3)" id="logsContainer">
                         <div>[20:45:32] Sistema iniciado</div>
                         <div>[20:45:33] Conexión a base de datos establecida</div>
                         <div>[20:45:34] WhatsApp API verificada</div>

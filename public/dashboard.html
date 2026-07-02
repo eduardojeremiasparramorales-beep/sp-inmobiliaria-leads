@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SP Inmobiliaria — CRM</title>
+<meta name="theme-color" content="#040406">
+<title>SP Inmobiliaria — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script>
   (function(){
     fetch('/api/me').then(function(r){
@@ -15,77 +18,94 @@
   })();
 </script>
 <style>
-:root { --negro:#0A0A0A; --oro:#C8A45A; --verde:#4E7B46; --marfil:#F5F2EB; --gris:#6D6D6D; --panel:#121212; --panel2:#1a1a1a; --bg:var(--negro); --card:var(--panel); --text:var(--marfil); --muted:var(--gris); --border:rgba(255,255,255,.08); --sidebar-bg:linear-gradient(180deg,#0A0A0A,#1A1A1A); --gold:var(--oro); }
+:root {
+  --bg:#040406; --bg2:#0A0A0E; --bg3:#121218; --bg4:#16161E;
+  --txt:#F5F0E8; --txt2:rgba(245,240,232,.45); --txt3:rgba(245,240,232,.22);
+  --oro:#D4AF37; --oro2:#A8872B; --verde:#4E7B46; --rojo:#FF453A;
+  --grad-gold:linear-gradient(135deg,#D4AF37,#A8872B);
+  --e1:0 2px 8px rgba(0,0,0,.4); --e2:0 8px 30px rgba(0,0,0,.5); --e3:0 20px 60px rgba(0,0,0,.6);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--txt); min-height:100vh; -webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent; }
 /* Layout */
 .app { display:flex; min-height:100vh; }
-.sidebar { width:240px; background:var(--sidebar-bg); border-right:2px solid var(--oro); color:#fff; padding:20px 0; flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto; }
-.sidebar .logo { padding:0 20px 20px; border-bottom:1px solid rgba(255,255,255,.1); margin-bottom:16px; }
-.sidebar .logo h2 { font-size:16px; font-weight:700; }
-.sidebar .logo small { font-size:11px; opacity:.7; display:block; margin-top:2px; }
-.sidebar nav a { display:flex; align-items:center; gap:10px; padding:10px 20px; color:rgba(255,255,255,.7); text-decoration:none; font-size:13px; transition:.2s; cursor:pointer; }
-.sidebar nav a:hover { background:rgba(255,255,255,.1); color:#fff; }
-.sidebar nav a.active { background:rgba(255,255,255,.15); color:#fff; border-right:3px solid var(--gold); }
-.main { flex:1; padding:24px; }
-.header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
-.header-bar h1 { font-size:22px; }
-.header-bar .badge { background:var(--gold); color:#fff; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600; }
+.sidebar { width:260px; background:var(--bg2); border-right:1px solid rgba(212,175,55,.1); color:var(--txt); padding:24px 0; flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto; box-shadow:1px 0 0 rgba(255,255,255,.04); }
+.sidebar .logo { padding:0 24px 20px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:20px; }
+.sidebar .logo h2 { font-size:18px; font-weight:600; font-family:'Cinzel',serif; background:linear-gradient(135deg,#E8C84A,var(--oro),var(--oro2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:.04em; }
+.sidebar .logo small { font-size:11px; color:var(--txt3); display:block; margin-top:6px; letter-spacing:.08em; text-transform:uppercase; }
+.sidebar nav a { display:flex; align-items:center; gap:12px; padding:12px 20px; color:var(--txt2); text-decoration:none; font-size:13px; transition:all .15s ease; cursor:pointer; border-left:3px solid transparent; margin:2px 8px 2px 0; border-radius:0 10px 10px 0; }
+.sidebar nav a:hover { background:rgba(255,255,255,.03); color:var(--txt); }
+.sidebar nav a.active { background:rgba(212,175,55,.08); color:var(--oro); border-left:3px solid var(--oro); font-weight:600; }
+.main { flex:1; padding:32px; }
+.header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; }
+.header-bar h1 { font-size:26px; font-weight:600; letter-spacing:-.01em; }
+.header-bar .badge { background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; box-shadow:var(--e1); }
 /* Stats */
-.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px; }
-.stat-card { background:var(--card); border-radius:10px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-.stat-card .num { font-size:28px; font-weight:700; }
-.stat-card .lbl { font-size:12px; color:var(--muted); margin-top:2px; }
-.stat-card .sub { font-size:11px; color:#999; margin-top:2px; }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:28px; }
+.stat-card { background:var(--bg2); border-radius:12px; padding:22px; box-shadow:var(--e1); transition:transform .15s ease,box-shadow .15s ease; }
+.stat-card:hover { transform:translateY(-2px); box-shadow:var(--e2); }
+.stat-card .num { font-size:32px; font-weight:700; color:var(--txt); font-feature-settings:'tnum'; }
+.stat-card .lbl { font-size:12px; color:var(--txt3); margin-top:8px; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+.stat-card .sub { font-size:11px; color:var(--txt3); margin-top:4px; }
 /* Sections */
-.section { background:var(--card); border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.06); margin-bottom:20px; overflow:hidden; }
-.section-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
-.section-header h3 { font-size:15px; font-weight:600; }
-.section-header .action-btn { background:var(--accent); color:#fff; border:none; padding:6px 14px; border-radius:6px; font-size:12px; cursor:pointer; }
-.section-header .action-btn:hover { opacity:.9; }
+.section { background:var(--bg2); border-radius:12px; box-shadow:var(--e1); margin-bottom:24px; overflow:hidden; }
+.section-header { padding:22px 24px; border-bottom:1px solid rgba(255,255,255,.04); display:flex; justify-content:space-between; align-items:center; }
+.section-header h3 { font-size:15px; font-weight:600; letter-spacing:-.01em; }
+.section-header .action-btn { background:var(--grad-gold); color:#040406; border:none; padding:8px 16px; border-radius:10px; font-size:13px; cursor:pointer; font-weight:600; box-shadow:var(--e1); transition:filter .15s ease,transform .1s ease; }
+.section-header .action-btn:hover { filter:brightness(1.1); }
+.section-header .action-btn:active { transform:scale(.97); }
 /* Table */
 table { width:100%; border-collapse:collapse; }
-th { background:#f8f9fa; padding:10px 14px; text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; }
-td { padding:10px 14px; border-top:1px solid var(--border); font-size:13px; }
-.status-badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600; }
-.s-nuevo { background:#e3f2fd; color:#1565c0; }
-.s-asignado { background:#fff3e0; color:#e65100; }
-.s-contactado { background:#e8f5e9; color:#2e7d32; }
-.s-cerrado { background:#fce4ec; color:#c62828; }
+th { background:transparent; padding:14px 16px; text-align:left; font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+tbody tr { transition:background .15s ease; }
+tbody tr:hover { background:rgba(255,255,255,.02); }
+td { padding:14px 16px; border-top:1px solid rgba(255,255,255,.04); font-size:13px; }
+.status-badge { display:inline-block; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.s-nuevo { background:var(--grad-gold); color:#040406; }
+.s-asignado { background:rgba(100,160,220,.12); color:#9CC4E8; }
+.s-contactado { background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; }
+.s-cerrado { background:var(--bg4); color:var(--txt2); }
 /* Vendedor card */
-.vendedores-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; padding:16px 20px; }
-.v-card { background:#f8f9fa; border-radius:8px; padding:14px; border:1px solid var(--border); }
-.v-card .name { font-weight:600; font-size:14px; }
-.v-card .phone { font-size:12px; color:var(--muted); margin-top:2px; }
-.v-card .status { margin-top:6px; font-size:11px; padding:2px 8px; border-radius:10px; display:inline-block; }
-.v-card .leads-count { font-size:11px; color:var(--muted); margin-top:4px; }
+.vendedores-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; padding:20px 24px; }
+.v-card { background:var(--bg3); border-radius:12px; padding:16px; box-shadow:var(--e1); transition:transform .15s ease,box-shadow .15s ease; }
+.v-card:hover { transform:translateY(-2px); box-shadow:var(--e2); }
+.v-card .name { font-weight:600; font-size:15px; color:var(--txt); }
+.v-card .phone { font-size:13px; color:var(--txt2); margin-top:4px; }
+.v-card .status { margin-top:10px; font-size:11px; padding:4px 10px; border-radius:20px; display:inline-block; background:linear-gradient(135deg,var(--verde),#3D6B37); color:#fff; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.v-card .leads-count { font-size:12px; color:var(--txt2); margin-top:8px; }
 /* Form */
-.form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.4); z-index:100; align-items:center; justify-content:center; }
+.form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.5); z-index:100; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
 .form-overlay.show { display:flex; }
-.form-modal { background:#fff; border-radius:12px; padding:24px; width:400px; max-width:90%; }
-.form-modal h3 { margin-bottom:16px; }
-.form-modal input, .form-modal select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:6px; font-size:13px; margin-bottom:12px; }
-.form-modal .btn-row { display:flex; gap:8px; justify-content:flex-end; }
-.form-modal .btn { padding:8px 16px; border-radius:6px; border:none; font-size:13px; cursor:pointer; }
-.form-modal .btn-primary { background:var(--accent); color:#fff; }
-.form-modal .btn-secondary { background:#e2e8f0; color:var(--text); }
+.form-modal { background:var(--bg2); border-radius:14px; padding:28px; width:420px; max-width:90%; box-shadow:var(--e3); }
+.form-modal h3 { margin-bottom:20px; font-size:18px; font-weight:600; }
+.form-modal input, .form-modal select { width:100%; padding:12px 14px; background:var(--bg3); border:none; border-radius:10px; font-size:14px; color:var(--txt); font-family:inherit; margin-bottom:14px; box-shadow:inset 0 2px 4px rgba(0,0,0,.3); transition:box-shadow .15s ease; }
+.form-modal input:focus, .form-modal select:focus { outline:none; box-shadow:inset 0 2px 4px rgba(0,0,0,.3),0 0 0 1.5px rgba(212,175,55,.3); }
+.form-modal .btn-row { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+.form-modal .btn { padding:10px 20px; border-radius:10px; border:none; font-size:13px; cursor:pointer; font-weight:600; transition:filter .15s ease,transform .1s ease; }
+.form-modal .btn-primary { background:var(--grad-gold); color:#040406; box-shadow:var(--e1); }
+.form-modal .btn-primary:hover { filter:brightness(1.1); }
+.form-modal .btn-primary:active { transform:scale(.97); }
+.form-modal .btn-secondary { background:var(--bg4); color:var(--txt2); box-shadow:var(--e1); }
+.form-modal .btn-secondary:hover { color:var(--txt); }
 /* Empty */
-.empty-state { text-align:center; padding:40px 20px; color:#999; }
-.empty-state p { margin-top:8px; }
+.empty-state { text-align:center; padding:48px 28px; }
+.empty-state p { color:var(--txt3); margin-top:10px; font-size:14px; }
 /* Toast */
-.toast { position:fixed; bottom:20px; right:20px; background:var(--negro); border:1px solid var(--oro); color:var(--marfil); padding:12px 20px; border-radius:8px; font-size:13px; z-index:200; display:none; animation:slideIn .3s; }
+.toast { position:fixed; bottom:32px; right:32px; background:var(--bg3); border:1px solid rgba(212,175,55,.25); color:var(--txt); padding:14px 24px; border-radius:10px; font-size:13px; z-index:200; display:none; animation:slideIn .3s var(--ease); box-shadow:var(--e2); }
+.toast.show { display:block; }
 @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
 /* Responsive */
-@media(max-width:768px) { .sidebar { width:60px; } .sidebar .logo h2, .sidebar .logo small, .sidebar nav a span { display:none; } .sidebar nav a { justify-content:center; padding:12px; } }
+@media(max-width:768px) { .sidebar { width:0; } .main { padding:20px; } .stats-grid { grid-template-columns:repeat(2,1fr); } }
 </style>
 </head>
 <body>
 <script>
   window.addEventListener('DOMContentLoaded', function(){
     var bar = document.createElement('div');
-    bar.style.cssText = 'position:fixed;top:12px;right:16px;z-index:9999;display:flex;gap:10px;font-family:Inter,sans-serif';
-    bar.innerHTML = '<a href="/equipo.html" style="background:#C8A45A;color:#000;padding:8px 14px;border-radius:7px;text-decoration:none;font-weight:600;font-size:.82rem">Gestión de Equipo</a>' +
-      '<a href="#" id="spLogout" style="background:#1a1a1a;color:#C8A45A;border:1px solid #C8A45A;padding:8px 14px;border-radius:7px;text-decoration:none;font-size:.82rem">Salir</a>';
+    bar.style.cssText = 'position:fixed;top:20px;right:24px;z-index:9999;display:flex;gap:12px;font-family:Inter,sans-serif';
+    bar.innerHTML = '<a href="/equipo.html" style="background:linear-gradient(135deg,#D4AF37,#A8872B);color:#040406;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600;font-size:.82rem;box-shadow:0 2px 8px rgba(0,0,0,.4);transition:filter .15s ease;cursor:pointer" onmouseover="this.style.filter=\'brightness(1.1)\'" onmouseout="this.style.filter=\'brightness(1)\'">Gestión de Equipo</a>' +
+      '<a href="#" id="spLogout" style="background:#121218;color:rgba(245,240,232,.45);border:1px solid rgba(212,175,55,.2);padding:10px 18px;border-radius:10px;text-decoration:none;font-size:.82rem;box-shadow:0 2px 8px rgba(0,0,0,.4);transition:color .15s ease;cursor:pointer" onmouseover="this.style.color=\'#D4AF37\'" onmouseout="this.style.color=\'rgba(245,240,232,.45)\'">Salir</a>';
     document.body.appendChild(bar);
     document.getElementById('spLogout').addEventListener('click', function(e){
       e.preventDefault();
@@ -95,20 +115,22 @@ td { padding:10px 14px; border-top:1px solid var(--border); font-size:13px; }
 </script>
 <div class="app">
   <aside class="sidebar">
-    <div class="logo"><h2>SP</h2><small>CRM Inmobiliario</small></div>
+    <div class="logo">
+      <img src="/icons/logo.png" alt="" style="width:36px;height:36px;border-radius:10px;object-fit:cover;box-shadow:0 2px 8px rgba(0,0,0,.4);display:block;margin-bottom:10px">
+      <h2>SP PANEL</h2>
+      <small>Inmobiliaria</small>
+    </div>
     <nav>
-      <a class="active" onclick="showSection('dashboard')">📊 <span>Dashboard</span></a>
-      <a onclick="showSection('leads')">📨 <span>Bandeja Leads</span></a>
-      <a onclick="showSection('vendedores')">👥 <span>Vendedores</span></a>
-      <a onclick="showSection('reportes')">📈 <span>Reportes</span></a>
-      <a onclick="showSection('config')">⚙️ <span>Configuración</span></a>
-      <a onclick="showSection('logs')">📋 <span>Logs</span></a>
+      <a class="active" onclick="showSection('dashboard')" style="--mi:0"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg><span>Dashboard</span></a>
+      <a onclick="showSection('leads')" style="--mi:1"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg><span>Bandeja Leads</span></a>
+      <a onclick="showSection('vendedores')" style="--mi:2"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Vendedores</span></a>
+      <a onclick="showSection('config')" style="--mi:4"><svg class="mi" style="width:16px;height:16px;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Configuración</span></a>
     </nav>
   </aside>
   <div class="main">
     <div class="header-bar">
       <h1 id="pageTitle">Dashboard</h1>
-      <span class="badge" id="liveBadge">🔴 LIVE</span>
+      <span class="badge" id="liveBadge">✓ EN LÍNEA</span>
     </div>
 
     <!-- DASHBOARD -->
@@ -131,7 +153,7 @@ td { padding:10px 14px; border-top:1px solid var(--border); font-size:13px; }
     <!-- VENDEDORES -->
     <div id="section-vendedores" style="display:none">
       <div class="section">
-        <div class="section-header"><h3>👥 Equipo comercial</h3><button class="action-btn" onclick="openAddVendedor()">+ Agregar</button></div>
+        <div class="section-header"><h3>Equipo comercial</h3><button class="action-btn" onclick="openAddVendedor()">+ Agregar vendedor</button></div>
         <div class="vendedores-grid" id="vendedoresGrid"></div>
       </div>
     </div>
@@ -277,9 +299,9 @@ async function renderVendedores() {
       <div class="phone">${vd.telefono}</div>
       <div><span class="status-badge s-${vd.estado === 'activo' ? 'nuevo' : 'cerrado'}" style="margin-top:6px;display:inline-block;">${vd.estado}</span></div>
       <div class="leads-count">📨 ${vd.total_leads || 0} leads asignados</div>
-      <div style="margin-top:6px;display:flex;gap:4px;">
-        <button class="action-btn" style="font-size:10px;padding:3px 8px;background:#2e7d32;" onclick="setEstado(${vd.id},'activo')">Activar</button>
-        <button class="action-btn" style="font-size:10px;padding:3px 8px;background:#e65100;" onclick="setEstado(${vd.id},'inactivo')">Desactivar</button>
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="action-btn" style="font-size:11px;padding:6px 12px;background:linear-gradient(135deg,#4E7B46,#3D6B37);flex:1" onclick="setEstado(${vd.id},'activo')">Activar</button>
+        <button class="action-btn" style="font-size:11px;padding:6px 12px;background:var(--bg4);color:var(--txt2);flex:1" onclick="setEstado(${vd.id},'inactivo')">Inactivo</button>
       </div>
     </div>
   `).join('');
