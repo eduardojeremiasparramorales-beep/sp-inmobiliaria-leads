@@ -17,8 +17,9 @@
     --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33; --bg4:#2A3942;
     --nav:#1F2C33; --sep:rgba(255,255,255,.06);
     --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
-    --gold:#D4AF37; --gold2:#A8872B; --verde:#4E7B46; --red:#FF453A;
-    --grad-gold:linear-gradient(135deg,#D4AF37,#A8872B);
+    --gold:#C8A45A; --gold2:#A8872B; --verde:#4E7B46; --red:#FF453A;
+    --oro:#C8A45A; --gris:#8A9297;
+    --grad-gold:linear-gradient(135deg,#C8A45A,#A8872B);
     --e1:0 1px 3px rgba(0,0,0,.4); --e2:0 4px 12px rgba(0,0,0,.5); --e3:0 12px 40px rgba(0,0,0,.6);
     --ease:cubic-bezier(.32,.72,0,1);
   }
@@ -54,7 +55,7 @@
   input,select{height:44px;padding:0 16px}
   textarea{padding:14px 16px;resize:vertical;min-height:80px}
   input::placeholder,textarea::placeholder{color:var(--txt3)}
-  input:focus,select:focus,textarea:focus{outline:none;box-shadow:0 0 0 1.5px rgba(212,175,55,.3)}
+  input:focus,select:focus,textarea:focus{outline:none;box-shadow:0 0 0 1.5px rgba(200,164,90,.3)}
   button{height:40px;padding:0 20px;background:var(--grad-gold);color:#000;border:none;border-radius:10px;font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;
     box-shadow:var(--e1);transition:opacity .15s ease,transform .1s ease}
   button:hover{opacity:.85}
@@ -66,7 +67,7 @@
   th{color:var(--txt3);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
   tbody tr{transition:background .15s ease}
   tbody tr:hover{background:rgba(255,255,255,.02)}
-  .pill{font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(212,175,55,.1);color:var(--oro);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .pill{font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(200,164,90,.1);color:var(--oro);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
   .msg{margin-top:12px;font-size:13px;padding:12px 14px;border-radius:10px;display:none;transition:all .15s ease}
   .msg.ok{background:rgba(78,123,70,.12);color:#9FD694;display:block}
   .msg.err{background:rgba(255,69,58,.08);color:#FF9F94;display:block}
@@ -76,23 +77,15 @@
   .tpl-row .b{font-size:12px;color:var(--txt2);margin-top:6px}
   ::-webkit-scrollbar{width:3px;height:3px}
   ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:rgba(212,175,55,.15);border-radius:2px}
-  ::-webkit-scrollbar-thumb:hover{background:rgba(212,175,55,.3)}
-  :focus-visible{outline:2px solid rgba(212,175,55,.4);outline-offset:2px}
+  ::-webkit-scrollbar-thumb{background:rgba(200,164,90,.15);border-radius:2px}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(200,164,90,.3)}
+  :focus-visible{outline:2px solid rgba(200,164,90,.4);outline-offset:2px}
   @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
   @media(max-width:768px){.wrap{grid-template-columns:1fr}.card.full{grid-column:1}}
 </style>
 </head>
 <body>
-  <!-- iOS Status Bar -->
-  <div class="ios-statusbar">
-    <span class="s-time" id="sTime" style="font-weight:700;letter-spacing:.5px;color:var(--txt)">9:41</span>
-    <div class="s-icons">
-      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="2" width="3" height="8" rx=".5" fill="currentColor"/><rect x="4.5" y="1" width="3" height="9" rx=".5" fill="currentColor"/><rect x="9" y="0" width="3" height="10" rx=".5" fill="currentColor"/><rect x="13.5" y="2" width="2.5" height="8" rx=".5" fill="currentColor" opacity=".3"/></svg>
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x=".5" y="2.5" width="11" height="7" rx="1.5" stroke="currentColor" stroke-width=".8"/><rect x="2" y="4" width="8" height="4" rx=".5" fill="currentColor"/></svg>
-    </div>
-  </div>
-
+  <!-- Barra de navegación -->
   <!-- iOS Nav -->
   <div class="ios-nav">
     <div class="nav-title">GESTIÓN DE EQUIPO</div>
@@ -208,10 +201,10 @@
         </select>
         <label>Condiciones</label>
         <div id="wf_condiciones"></div>
-        <button type="button" id="btnAddCondicion" style="background:rgba(212,175,55,.1);color:var(--oro);height:32px;padding:0 14px;font-size:.78rem;box-shadow:none">+ Condición</button>
+        <button type="button" id="btnAddCondicion" style="background:rgba(200,164,90,.1);color:var(--oro);height:32px;padding:0 14px;font-size:.78rem;box-shadow:none">+ Condición</button>
         <label>Acciones</label>
         <div id="wf_acciones"></div>
-        <button type="button" id="btnAddAccion" style="background:rgba(212,175,55,.1);color:var(--oro);height:32px;padding:0 14px;font-size:.78rem;box-shadow:none">+ Acción</button>
+        <button type="button" id="btnAddAccion" style="background:rgba(200,164,90,.1);color:var(--oro);height:32px;padding:0 14px;font-size:.78rem;box-shadow:none">+ Acción</button>
         <div style="display:flex;gap:10px;margin-top:18px">
           <button type="button" id="btnGuardarRegla">Guardar regla</button>
           <button type="button" id="btnCancelarRegla" style="background:var(--bg4);color:var(--txt2)">Cancelar</button>
@@ -564,9 +557,5 @@
     </button>
 </div>
 
-<script>
-function uSB(){const t=new Date();const h=t.getHours();const m=t.getMinutes().toString().padStart(2,'0');const el=document.getElementById('sTime');if(el)el.textContent=h+':'+m;}
-uSB();setInterval(uSB,30000);
-</script>
 </body>
 </html>

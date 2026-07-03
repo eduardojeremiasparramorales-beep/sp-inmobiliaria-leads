@@ -16,7 +16,7 @@
   :root{
     --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33;
     --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
-    --gold:#D4AF37; --gold2:#A8872B; --red:#FF453A;
+    --gold:#C8A45A; --gold2:#A8872B; --red:#FF453A;
     --ease:cubic-bezier(.32,.72,0,1);
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -58,7 +58,7 @@
   }
   @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @media (prefers-reduced-motion: reduce){.card{animation:none}}
-  :focus-visible{outline:2px solid rgba(212,175,55,.4);outline-offset:2px}
+  :focus-visible{outline:2px solid rgba(200,164,90,.4);outline-offset:2px}
 
   /* Drag Handle */
   .dw-handle{width:36px;height:5px;border-radius:3px;background:var(--txt3);margin:6px auto 16px}
@@ -71,7 +71,7 @@
     transition:box-shadow .15s ease;
   }
   .input-group input::placeholder{color:var(--txt3);font-weight:400}
-  .input-group input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(212,175,55,.3)}
+  .input-group input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(200,164,90,.3)}
   .input-group input[type=password]{letter-spacing:2px;font-size:1.2rem}
 
   .pin-wrap{display:flex;gap:8px;justify-content:center;margin-top:4px}
@@ -81,7 +81,7 @@
     background:var(--bg3);border:none;border-radius:10px;color:var(--txt);
     transition:box-shadow .15s ease;
   }
-  .pin-wrap input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(212,175,55,.3)}
+  .pin-wrap input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(200,164,90,.3)}
 
   .btn{
     width:100%;margin-top:18px;height:48px;
