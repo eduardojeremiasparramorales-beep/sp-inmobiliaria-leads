@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Facturación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, fmt, toast } = SPOS;
+  const ctx = await SPOS.mount({ active:'billing', title:'Facturación & Suscripción', crumb:'Plataforma · SaaS', padded:true, adminOnly:true });
+
+  const usados = 980, limite = 1000, pct = Math.round((usados/limite)*100);
+  const facturas = [
+    { n:'#1004', fecha:'01 Jul 2026', monto:99, estado:'Pagada' },
+    { n:'#1003', fecha:'01 Jun 2026', monto:99, estado:'Pagada' },
+    { n:'#1002', fecha:'01 May 2026', monto:99, estado:'Pagada' },
+    { n:'#1001', fecha:'01 Abr 2026', monto:99, estado:'Pagada' },
+  ];
+
+  ctx.content.innerHTML = `<div class="os-content__max">
+    <div class="grid grid--main">
+      <div class="u-col u-gap3">
+        <!-- Plan actual -->
+        <div class="card card--pad rise rise-1" style="border-color:var(--gold-line);background:linear-gradient(160deg,var(--bg-2),rgba(200,164,90,.05))">
+          <div class="u-between" style="margin-bottom:var(--s3)">
+            <div><div class="t-label">Plan actual</div><div class="t-h1" style="margin-top:4px">Enterprise</div></div>
+            <div style="text-align:right"><div class="t-num" style="font-size:34px;font-weight:600">$99</div><div class="t-dim3" style="font-size:12px">USD / mes</div></div>
+          </div>
+          <div class="u-row u-gap2 u-wrap" style="margin-bottom:var(--s3)">
+            ${['Usuarios ilimitados','WhatsApp oficial','Automatizaciones','IA Copiloto','Soporte prioritario'].map(f=>`<span class="badge badge--gold">${ICONS.check.replace('<svg ','<svg style="width:12px;height:12px" ')}${f}</span>`).join('')}
+          </div>
+          <div class="u-between" style="margin-bottom:8px"><span class="t-dim" style="font-size:13px">Conversaciones este mes</span><span class="t-num">${fmt.n(usados)} / ${fmt.n(limite)}</span></div>
+          <div style="height:10px;background:var(--bg-4);border-radius:999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--gold),${pct>90?'var(--red)':'var(--green)'});border-radius:999px"></div></div>
+          <div class="t-dim3" style="font-size:12px;margin-top:8px">Renueva el 1 de agosto de 2026</div>
+          <div class="u-row u-gap2" style="margin-top:var(--s3)">
+            <button class="btn btn--gold btn--sm" id="upgrade">Cambiar de plan</button>
+            <button class="btn btn--quiet btn--sm" id="cancel">Cancelar suscripción</button>
+          </div>
+        </div>
+
+        <!-- Historial de facturas -->
+        <div class="card rise rise-2" style="overflow:hidden">
+          <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Historial de facturas</div></div>
+          <table class="table">
+            <thead><tr><th>Factura</th><th>Fecha</th><th>Monto</th><th>Estado</th><th></th></tr></thead>
+            <tbody>${facturas.map(f=>`<tr>
+              <td class="t-num" style="font-weight:600">${f.n}</td>
+              <td class="t-dim">${f.fecha}</td>
+              <td class="t-num">$${f.monto}</td>
+              <td><span class="badge badge--green">${f.estado}</span></td>
+              <td style="text-align:right"><button class="btn btn--quiet btn--sm" onclick="SPOS.toast('Descargando ${f.n}…','ok')">Descargar</button></td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Método de pago + consumo -->
+      <div class="u-col u-gap3">
+        <div class="card card--pad rise rise-1">
+          <div class="t-label" style="margin-bottom:var(--s2)">Método de pago</div>
+          <div class="surface" style="padding:16px;display:flex;align-items:center;gap:14px">
+            <div style="width:44px;height:30px;border-radius:6px;background:linear-gradient(135deg,#1a1f71,#3b4fb5);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700">VISA</div>
+            <div class="u-grow"><div style="font-weight:600;font-size:13px" class="t-num">•••• •••• •••• 4242</div><div class="t-dim3" style="font-size:11.5px">Expira 12/28</div></div>
+          </div>
+          <button class="btn btn--ghost btn--sm btn--block" style="margin-top:12px" onclick="SPOS.toast('Editar método de pago','ok')">Actualizar tarjeta</button>
+        </div>
+
+        <div class="card card--pad rise rise-2">
+          <div class="t-label" style="margin-bottom:var(--s2)">Consumo</div>
+          ${consumo('Tokens IA', '18.4k', 62, 'var(--gold)')}
+          ${consumo('Almacenamiento', '2.1 GB', 21, 'var(--green)')}
+          ${consumo('Usuarios', '12', 40, 'var(--blue)')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('upgrade').addEventListener('click', ()=> location.href='/os/marketplace.html');
+  document.getElementById('cancel').addEventListener('click', ()=> toast('Contacta a soporte para gestionar tu plan','ok'));
+
+  function consumo(label,val,pct,color){
+    return `<div style="margin-bottom:14px">
+      <div class="u-between" style="margin-bottom:6px"><span style="font-size:13px">${label}</span><span class="t-num t-dim">${val}</span></div>
+      <div style="height:8px;background:var(--bg-4);border-radius:999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${color};border-radius:999px"></div></div>
+    </div>`;
+  }
+})();
+</script>
+</body>
+</html>

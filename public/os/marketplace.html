@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Marketplace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, toast } = SPOS;
+  const ctx = await SPOS.mount({ active:'marketplace', title:'Marketplace', crumb:'Verticales y aplicaciones', padded:true });
+
+  const CATS = [['todos','Todas'],['verticales','Verticales'],['apps','Aplicaciones'],['plantillas','Plantillas']];
+  const ITEMS = [
+    { c:'verticales', e:'🏡', n:'SP Inmobiliaria', d:'Venta de lotes y finca raíz', rate:'5.0', on:true, bg:'rgba(200,164,90,.14)' },
+    { c:'verticales', e:'💈', n:'SP Barber', d:'Reservas y clientes para barberías', rate:'4.8', bg:'rgba(91,141,239,.14)' },
+    { c:'verticales', e:'🛍️', n:'SP Commerce', d:'Ventas y pedidos por WhatsApp', rate:'4.7', bg:'rgba(78,123,70,.14)' },
+    { c:'verticales', e:'🏥', n:'SP Health', d:'Citas y pacientes para clínicas', rate:'4.9', bg:'rgba(229,72,77,.12)' },
+    { c:'apps', e:'🤖', n:'Bot de Reservas', d:'Agenda automática 24/7', rate:'4.6', bg:'rgba(200,164,90,.14)' },
+    { c:'apps', e:'📊', n:'Reportes Pro', d:'Dashboards y exportación avanzada', rate:'4.5', bg:'rgba(91,141,239,.14)' },
+    { c:'plantillas', e:'📝', n:'Plantilla Inmobiliaria', d:'Flujos y respuestas listas', rate:'4.8', bg:'rgba(78,123,70,.14)' },
+    { c:'apps', e:'✨', n:'IA · Asistente de Ventas', d:'Copiloto que responde y sugiere', rate:'4.9', bg:'rgba(200,164,90,.14)' },
+  ];
+
+  let cat='todos';
+  ctx.content.innerHTML = `<div class="os-content__max">
+    <div class="u-row u-gap1 u-wrap rise rise-1" id="cats" style="margin-bottom:var(--s3)">${CATS.map(([k,l],i)=>`<button class="chip${i===0?' active':''}" data-c="${k}">${l}</button>`).join('')}</div>
+    <div class="grid grid--4 rise rise-2" id="grid"></div>
+  </div>`;
+  const grid = ctx.content.querySelector('#grid');
+
+  function render(){
+    const items = ITEMS.filter(i=>cat==='todos'||i.c===cat);
+    grid.innerHTML = items.map(i=>`<div class="card card--pad card--float u-col" style="gap:12px">
+      <div class="u-between">
+        <div style="width:46px;height:46px;border-radius:13px;background:${i.bg};display:grid;place-items:center;font-size:22px">${i.e}</div>
+        <span class="badge badge--mute" style="gap:4px">★ ${i.rate}</span>
+      </div>
+      <div><div class="t-h3">${i.n}</div><div class="t-dim3" style="font-size:12px;margin-top:2px">${i.d}</div></div>
+      ${i.on ? `<button class="btn btn--ghost btn--sm btn--block" disabled>${ICONS.check}Instalada</button>`
+             : `<button class="btn btn--gold btn--sm btn--block" data-n="${i.n}">Instalar</button>`}
+    </div>`).join('');
+    grid.querySelectorAll('[data-n]').forEach(b=>b.addEventListener('click',()=>toast('Instalando '+b.dataset.n+'…','ok')));
+  }
+  ctx.content.querySelectorAll('#cats .chip').forEach(c=>c.addEventListener('click',()=>{
+    ctx.content.querySelectorAll('#cats .chip').forEach(x=>x.classList.remove('active'));
+    c.classList.add('active'); cat=c.dataset.c; render();
+  }));
+  render();
+})();
+</script>
+</body>
+</html>

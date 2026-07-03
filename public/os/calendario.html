@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Calendario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+  .cal-day { background:var(--bg-1); border:1px solid var(--border-soft); border-radius:12px; min-height:150px; padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .cal-day.today { border-color:var(--gold-line); }
+  .cal-day__n { font-size:12px; color:var(--text-3); font-weight:600; display:flex; justify-content:space-between; }
+  .cal-ev { border-radius:8px; padding:5px 8px; font-size:11px; font-weight:500; cursor:pointer; transition:transform var(--dur) var(--ease); }
+  .cal-ev:hover { transform:translateY(-1px); }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, toast } = SPOS;
+  const ctx = await SPOS.mount({ active:'calendar', title:'Calendario', crumb:'Agenda de citas y visitas', padded:true,
+    action:`<button class="btn btn--gold btn--sm" id="new">${ICONS.plus}Nueva cita</button>` });
+
+  const dias = ['Lun 20','Mar 21','Mié 22','Jue 23','Vie 24','Sáb 25','Dom 26'];
+  const hoyIdx = 2;
+  const EV = {
+    0:[['Reunión equipo','09:00','var(--blue-soft)','var(--blue)']],
+    1:[['Visita lote · Juan P.','11:00','var(--gold-soft)','var(--gold)']],
+    2:[['Llamada · María G.','10:30','var(--green-soft)','#83B778'],['Cierre · Andrés','16:00','var(--gold-soft)','var(--gold)']],
+    3:[['Visita proyecto','14:00','var(--amber-soft)','var(--amber)']],
+    4:[['Seguimiento leads','08:30','var(--gold-soft)','var(--gold)']],
+  };
+
+  ctx.content.innerHTML = `<div class="os-content__max">
+    <div class="u-between rise rise-1" style="margin-bottom:var(--s3)">
+      <div class="u-row u-gap2"><button class="btn btn--ghost btn--icon btn--sm">‹</button><div class="t-h3">Mayo 2026 · Semana</div><button class="btn btn--ghost btn--icon btn--sm">›</button></div>
+      <div class="u-row u-gap1"><button class="chip active">Semana</button><button class="chip">Mes</button><button class="chip">Lista</button></div>
+    </div>
+    <div class="cal rise rise-2">
+      ${dias.map((d,i)=>`<div class="cal-day${i===hoyIdx?' today':''}">
+        <div class="cal-day__n"><span>${d}</span>${i===hoyIdx?'<span class="t-gold">Hoy</span>':''}</div>
+        ${(EV[i]||[]).map(([t,h,bg,col])=>`<div class="cal-ev" style="background:${bg};color:${col}" onclick="SPOS.toast('${t} · ${h}','ok')"><div style="font-weight:600">${h}</div>${t}</div>`).join('')}
+      </div>`).join('')}
+    </div>
+    <div class="grid grid--3 rise rise-3" style="margin-top:var(--s3)">
+      ${metric('calendar','Citas esta semana', 6)}
+      ${metric('clients','Visitas agendadas', 3)}
+      ${metric('check','Confirmadas', 4)}
+    </div>
+  </div>`;
+
+  document.getElementById('new').addEventListener('click', ()=> toast('Se conectará con Google Calendar','ok'));
+  function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
+})();
+</script>
+</body>
+</html>

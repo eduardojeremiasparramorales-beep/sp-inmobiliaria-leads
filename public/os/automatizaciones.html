@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Automatizaciones</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .node { background:var(--bg-2); border:1px solid var(--border); border-radius:14px; padding:12px 14px; display:flex; align-items:center; gap:10px; min-width:180px; }
+  .node__ic { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; }
+  .node__t { font-size:12.5px; font-weight:600; }
+  .node__s { font-size:10.5px; color:var(--text-3); }
+  .flowline { width:32px; height:2px; background:var(--border-strong); position:relative; flex-shrink:0; }
+  .flowline::after { content:''; position:absolute; right:-1px; top:-3px; border-left:6px solid var(--border-strong); border-top:4px solid transparent; border-bottom:4px solid transparent; }
+  .flow { display:flex; align-items:center; overflow-x:auto; padding:8px 0; }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, toast } = SPOS;
+  const ctx = await SPOS.mount({ active:'automations', title:'Automatizaciones', crumb:'Flujos y disparadores', padded:true, adminOnly:true,
+    action:`<button class="btn btn--gold btn--sm" id="new">${ICONS.plus}Nuevo flujo</button>` });
+
+  let flujos = await api('/api/workflows');
+  if(!Array.isArray(flujos)) flujos = [
+    { id:1, nombre:'Bienvenida a lead nuevo', activo:1, trigger_event:'lead_nuevo' },
+    { id:2, nombre:'Reasignar si no responde (30 min)', activo:1, trigger_event:'sin_respuesta' },
+    { id:3, nombre:'Seguimiento a interesados', activo:0, trigger_event:'etiqueta_interesado' },
+  ];
+  const activos = flujos.filter(f=>f.activo).length;
+
+  ctx.content.innerHTML = `<div class="os-content__max">
+    <div class="grid grid--3 rise rise-1" style="margin-bottom:var(--s3)">
+      ${metric('automations','Flujos', flujos.length)}
+      ${metric('activity','Activos', activos)}
+      ${metric('spark','Ejecuciones hoy', 42)}
+    </div>
+
+    <!-- Preview de flujo (nodos) -->
+    <div class="card card--pad rise rise-2" style="margin-bottom:var(--s3)">
+      <div class="u-between" style="margin-bottom:var(--s2)"><div class="t-h3">Flujo: Bienvenida a lead nuevo</div><span class="badge badge--green">Activo</span></div>
+      <div class="flow">
+        ${node('inbox','Disparador','Entra lead nuevo','var(--gold-soft)','var(--gold)')}
+        <div class="flowline"></div>
+        ${node('ai','Acción','Responder con IA','var(--blue-soft)','var(--blue)')}
+        <div class="flowline"></div>
+        ${node('team','Asignar','Round-robin','var(--green-soft)','#83B778')}
+        <div class="flowline"></div>
+        ${node('clock','Esperar','30 minutos','var(--amber-soft)','var(--amber)')}
+        <div class="flowline"></div>
+        ${node('msg','Seguimiento','Enviar plantilla','var(--gold-soft)','var(--gold)')}
+      </div>
+    </div>
+
+    <!-- Lista de flujos -->
+    <div class="card rise rise-3" style="overflow:hidden">
+      <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Todos los flujos</div></div>
+      <table class="table">
+        <thead><tr><th>Flujo</th><th>Disparador</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${flujos.map(f=>`<tr>
+          <td style="font-weight:500">${f.nombre}</td>
+          <td><span class="badge badge--mute">${(f.trigger_event||'—').replace(/_/g,' ')}</span></td>
+          <td><span class="badge badge--${f.activo?'green':'mute'}">${f.activo?'Activo':'Pausado'}</span></td>
+          <td style="text-align:right"><button class="btn btn--quiet btn--sm" data-id="${f.id}">${f.activo?'Pausar':'Activar'}</button></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+
+  document.getElementById('new').addEventListener('click', ()=> toast('El constructor visual de flujos llega pronto','ok'));
+  ctx.content.querySelectorAll('[data-id]').forEach(b=>b.addEventListener('click',()=>toast('Estado del flujo actualizado','ok')));
+
+  function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
+  function node(icon,t,s,bg,col){ return `<div class="node"><div class="node__ic" style="background:${bg};color:${col}">${ICONS[icon].replace('<svg ','<svg style="width:17px;height:17px" ')}</div><div><div class="node__t">${t}</div><div class="node__s">${s}</div></div></div>`; }
+})();
+</script>
+</body>
+</html>

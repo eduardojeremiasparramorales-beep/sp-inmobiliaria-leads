@@ -1,7 +1,7 @@
 {
   "name": "sp-inmobiliaria-leads",
-  "version": "1.0.0",
-  "description": "CRM Propietario SP Inmobiliaria - Distribución automática de leads WhatsApp",
+  "version": "1.1.0",
+  "description": "SP OS — Sistema Operativo de Ventas sobre WhatsApp. CRM + Inbox omnicanal + automatizaciones.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
