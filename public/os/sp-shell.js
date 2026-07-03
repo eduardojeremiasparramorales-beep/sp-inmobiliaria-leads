@@ -66,6 +66,7 @@
       { id: 'billing', label: 'Facturación', icon: 'billing', href: M('billing'), admin: true },
       { id: 'marketplace', label: 'Marketplace', icon: 'marketplace', href: M('marketplace') },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: M('settings') },
+      { id: 'design', label: 'Design System', icon: 'spark', href: '/os/design-system.html' },
     ]},
   ];
 
