@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Inbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .ibx { display: flex; height: 100%; min-height: 0; }
+  .ibx-list { width: 336px; flex-shrink: 0; border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; background: var(--bg-0); }
+  .ibx-list__top { padding: var(--s2) var(--s2) 10px; border-bottom: 1px solid var(--border-soft); }
+  .ibx-chan { display: flex; gap: 6px; padding: 10px var(--s2) 4px; overflow-x: auto; scrollbar-width: none; }
+  .ibx-chan::-webkit-scrollbar { display: none; }
+  .ibx-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .ibx-conv { display: flex; gap: 11px; padding: 12px var(--s2); cursor: pointer; border-bottom: 1px solid var(--border-soft); transition: background var(--dur) var(--ease); position: relative; }
+  .ibx-conv:hover { background: var(--bg-1); }
+  .ibx-conv.active { background: var(--bg-2); }
+  .ibx-conv.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--gold); }
+  .ibx-conv__ch { position: absolute; left: 34px; bottom: 10px; width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--bg-0); display: grid; place-items: center; font-size: 8px; }
+  .ibx-thread { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-0); position: relative; }
+  .ibx-thead { height: 62px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 var(--s3); border-bottom: 1px solid var(--border-soft); background: rgba(10,10,10,.7); backdrop-filter: blur(14px); }
+  .ibx-msgs { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); display: flex; flex-direction: column; gap: 8px; }
+  .bubble { max-width: 68%; padding: 9px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.45; position: relative; word-wrap: break-word; }
+  .bubble--in { align-self: flex-start; background: var(--bg-3); border-bottom-left-radius: 5px; }
+  .bubble--out { align-self: flex-end; background: linear-gradient(160deg, #2A5C4E, #1E4A3E); color: #F0F5F2; border-bottom-right-radius: 5px; }
+  .bubble--note { align-self: center; background: var(--amber-soft); border: 1px solid rgba(224,164,74,.3); color: var(--amber); font-size: 12.5px; max-width: 80%; }
+  .bubble__time { font-size: 10px; opacity: .5; margin-top: 3px; text-align: right; }
+  .ibx-daysep { align-self: center; font-size: 11px; color: var(--text-3); background: var(--bg-2); padding: 3px 12px; border-radius: 999px; margin: 6px 0; }
+  .ibx-composer { flex-shrink: 0; padding: 12px var(--s3); border-top: 1px solid var(--border-soft); display: flex; gap: 10px; align-items: flex-end; }
+  .ibx-composer textarea { flex: 1; background: var(--bg-2); border: 1px solid var(--border); border-radius: 20px; padding: 10px 16px; color: var(--text); resize: none; max-height: 120px; outline: none; font-size: 14px; line-height: 1.4; }
+  .ibx-composer textarea:focus { border-color: var(--gold-line); }
+  @media (max-width: 900px) { .ibx-list { width: 100%; } .ibx-list.hide-mobile { display: none; } .ibx-thread.hide-mobile { display: none; } }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, avatarColor, initials, toast } = SPOS;
+
+  const CH = {
+    whatsapp:  { t:'WhatsApp', e:'🟢', b:'green' },
+    messenger: { t:'Messenger', e:'🔵', b:'blue' },
+    instagram: { t:'Instagram', e:'🟣', b:'gold' },
+    webchat:   { t:'Web', e:'⚪', b:'mute' },
+  };
+  const chan = (c) => CH[c] || { t: c||'Canal', e:'💬', b:'mute' };
+
+  const ctx = await SPOS.mount({ active: 'inbox', title: 'Inbox omnicanal', crumb: 'Conversaciones unificadas', padded: false, panel: true });
+  ctx.content.style.cssText = 'flex:1;min-height:0;overflow:hidden;padding:0;display:flex';
+
+  let convs = await api('/api/inbox/conversations');
+  const DEMO_CONVS = [
+    { id:1, channel:'whatsapp', customer_name:'Juan Pérez', customer_phone:'+573224312518', etiqueta:'negociacion', assigned_to_nombre:'Carlos García', unread_count:2, updated_at:'2026-07-02 14:10:00', last:'Perfecto, ¿el lote todavía está disponible?' },
+    { id:2, channel:'instagram', customer_name:'María González', customer_phone:'+573001234567', etiqueta:'interesado', assigned_to_nombre:'Andrea López', unread_count:0, updated_at:'2026-07-02 12:30:00', last:'Vi el anuncio en Instagram 😍' },
+    { id:3, channel:'messenger', customer_name:'Roberto Martínez', customer_phone:'+573019876543', etiqueta:'cita', assigned_to_nombre:'Miguel Torres', unread_count:1, updated_at:'2026-07-02 09:05:00', last:'¿A qué hora nos vemos el sábado?' },
+    { id:4, channel:'whatsapp', customer_name:'Andrés Gómez', customer_phone:'+573205559090', etiqueta:'sin_clasificar', assigned_to_nombre:null, unread_count:3, updated_at:'2026-07-02 15:20:00', last:'Hola, quiero información de los lotes' },
+  ];
+  const demo = !Array.isArray(convs);
+  if (demo) convs = DEMO_CONVS;
+
+  const DEMO_MSGS = {
+    1: [ ['in','Buenas, vi su publicidad de lotes en Tocaima','2026-07-02 13:40:00'],
+         ['out','¡Hola Juan! Claro que sí, tenemos lotes desde 150m². ¿Buscas para vivienda o inversión?','2026-07-02 13:45:00'],
+         ['in','Para inversión','2026-07-02 14:00:00'],
+         ['in','Perfecto, ¿el lote todavía está disponible?','2026-07-02 14:10:00'] ],
+    2: [ ['in','Vi el anuncio en Instagram 😍','2026-07-02 12:30:00'] ],
+    3: [ ['out','Le confirmo la cita para visitar el proyecto','2026-07-02 08:50:00'],
+         ['in','¿A qué hora nos vemos el sábado?','2026-07-02 09:05:00'] ],
+    4: [ ['in','Hola, quiero información de los lotes','2026-07-02 15:20:00'] ],
+  };
+
+  const listEl = document.createElement('div'); listEl.className = 'ibx-list';
+  const threadEl = document.createElement('div'); threadEl.className = 'ibx-thread';
+  ctx.content.appendChild(listEl); ctx.content.appendChild(threadEl);
+
+  let channelFilter = 'todos', query = '', current = null;
+
+  const CHIPS = [['todos','Todos'],['whatsapp','WhatsApp'],['instagram','Instagram'],['messenger','Messenger']];
+  listEl.innerHTML = `
+    <div class="ibx-list__top"><label class="os-search" style="min-width:0;width:100%">${ICONS.search}<input id="q" placeholder="Buscar conversación…"></label></div>
+    <div class="ibx-chan" id="chips">${CHIPS.map(([k,l],i)=>`<button class="chip${i===0?' active':''}" data-c="${k}">${l}</button>`).join('')}</div>
+    <div class="ibx-scroll" id="convs"></div>`;
+  threadEl.innerHTML = `<div class="empty" style="margin:auto">${ICONS.inbox}<div><div class="t-h3">Selecciona una conversación</div><div class="t-dim3" style="font-size:12px;margin-top:4px">Todos tus canales en un solo lugar</div></div></div>`;
+  ctx.panel.innerHTML = panelEmpty();
+
+  function timeago(ts){ if(!ts)return''; const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d))return''; const m=Math.floor((Date.now()-d)/60000); if(m<1)return'ahora'; if(m<60)return m+'m'; const h=Math.floor(m/60); if(h<24)return h+'h'; return Math.floor(h/24)+'d'; }
+  function hhmm(ts){ const d=new Date(String(ts).replace(' ','T')+'Z'); return isNaN(d)?'':d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
+
+  function renderList(){
+    const items = convs.filter(c=>{
+      const okC = channelFilter==='todos' || c.channel===channelFilter;
+      const okQ = !query || (c.customer_name||'').toLowerCase().includes(query) || (c.customer_phone||'').includes(query);
+      return okC && okQ;
+    });
+    const box = listEl.querySelector('#convs');
+    if(!items.length){ box.innerHTML = `<div class="empty">${ICONS.inbox}<div style="font-size:13px">Sin conversaciones</div></div>`; return; }
+    box.innerHTML = items.map(c=>{
+      const ch = chan(c.channel);
+      return `<div class="ibx-conv${current===c.id?' active':''}" data-id="${c.id}">
+        <div style="position:relative">
+          <div class="avatar avatar--md" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+          <div class="ibx-conv__ch" style="background:var(--bg-2)">${ch.e}</div>
+        </div>
+        <div class="u-grow" style="min-width:0">
+          <div class="u-between"><span style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.customer_name||'Sin nombre'}</span><span class="t-dim3" style="font-size:11px;flex-shrink:0">${timeago(c.updated_at)}</span></div>
+          <div class="u-between" style="margin-top:3px">
+            <span class="t-dim3" style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${c.last||'—'}</span>
+            ${c.unread_count>0?`<span class="os-nav__badge">${c.unread_count}</span>`:''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('[data-id]').forEach(el=>el.addEventListener('click',()=>openConv(Number(el.dataset.id))));
+  }
+
+  async function openConv(id){
+    current = id; renderList();
+    const c = convs.find(x=>x.id===id); if(!c) return;
+    const ch = chan(c.channel);
+    if(window.innerWidth<=900){ listEl.classList.add('hide-mobile'); threadEl.classList.remove('hide-mobile'); }
+
+    threadEl.innerHTML = `
+      <div class="ibx-thead">
+        <button class="btn btn--icon btn--quiet u-hide" id="back">${ICONS.up.replace('<svg ','<svg style="transform:rotate(-135deg)" ')}</button>
+        <div class="avatar avatar--sm" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+        <div class="u-grow"><div style="font-weight:600;font-size:14px">${c.customer_name||'Sin nombre'}</div>
+          <div class="u-row u-gap1" style="font-size:11.5px"><span class="t-dim3">${ch.e} ${ch.t}</span><span class="t-dim3">·</span><span class="t-dim3 t-num">${c.customer_phone||''}</span></div></div>
+        <span class="badge badge--${ch.b}">${ch.t}</span>
+      </div>
+      <div class="ibx-msgs" id="msgs"><div class="skel" style="height:40px;width:60%;align-self:flex-start"></div></div>
+      <form class="ibx-composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Escribe un mensaje…"></textarea>
+        <button class="btn btn--gold btn--icon" type="submit" title="Enviar">${ICONS.up.replace('<svg ','<svg style="transform:rotate(45deg)" ')}</button>
+      </form>`;
+    if(window.innerWidth<=900){ const b=threadEl.querySelector('#back'); b.classList.remove('u-hide'); b.addEventListener('click',()=>{ listEl.classList.remove('hide-mobile'); threadEl.classList.add('hide-mobile'); current=null; renderList(); }); }
+    ctx.panel.innerHTML = panelFor(c);
+
+    let msgs;
+    if(demo){ msgs = (DEMO_MSGS[id]||[]).map(([dir,body,ts])=>({direction:dir==='out'?'outgoing':'incoming',body,created_at:ts,event_type:'message'})); }
+    else {
+      const data = await api('/api/inbox/conversations/'+id+'/timeline');
+      msgs = (data && data.messages) ? data.messages : [];
+      api('/api/inbox/conversations/'+id+'/leido').catch(()=>{});
+      c.unread_count = 0; renderList();
+    }
+    renderMsgs(msgs);
+
+    threadEl.querySelector('#composer').addEventListener('submit', (e)=>{ e.preventDefault(); send(id); });
+    const input = threadEl.querySelector('#input');
+    input.addEventListener('input', ()=>{ input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; });
+    input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(id); } });
+  }
+
+  function renderMsgs(msgs){
+    const box = threadEl.querySelector('#msgs'); if(!box) return;
+    let lastDay='';
+    box.innerHTML = msgs.map(m=>{
+      const d = new Date(String(m.created_at).replace(' ','T')+'Z');
+      const day = isNaN(d)?'':d.toLocaleDateString('es-CO',{day:'2-digit',month:'short'});
+      let sep=''; if(day&&day!==lastDay){ lastDay=day; sep=`<div class="ibx-daysep">${day}</div>`; }
+      if(m.event_type==='note') return sep+`<div class="bubble bubble--note">📝 ${esc(m.body)}</div>`;
+      const out = m.direction==='outgoing';
+      return sep+`<div class="bubble bubble--${out?'out':'in'}">${esc(m.body||'')}<div class="bubble__time">${hhmm(m.created_at)}</div></div>`;
+    }).join('') || `<div class="empty" style="margin:auto">${ICONS.msg}<div style="font-size:13px">Aún no hay mensajes</div></div>`;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function send(id){
+    const input = threadEl.querySelector('#input'); const txt=(input.value||'').trim(); if(!txt) return;
+    input.value=''; input.style.height='auto';
+    const box = threadEl.querySelector('#msgs');
+    box.insertAdjacentHTML('beforeend', `<div class="bubble bubble--out">${esc(txt)}<div class="bubble__time">${hhmm(new Date().toISOString())}</div></div>`);
+    box.scrollTop = box.scrollHeight;
+    const c = convs.find(x=>x.id===id); if(c){ c.last=txt; c.updated_at=new Date().toISOString(); renderList(); }
+    if(demo){ toast('Mensaje enviado (demo)','ok'); return; }
+    const r = await api('/api/inbox/conversations/'+id+'/send',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mensaje:txt}) });
+    if(!r){ toast('No se pudo enviar','err'); }
+  }
+
+  function panelEmpty(){ return `<div class="os-panel__body"><div class="empty">${ICONS.clients}<div><div class="t-h3">Contexto del cliente</div><div class="t-dim3" style="font-size:12px;margin-top:4px">Selecciona una conversación</div></div></div></div>`; }
+  function panelFor(c){
+    const ch = chan(c.channel);
+    return `<div class="os-panel__head"><div class="t-label">Contexto</div><a class="btn btn--quiet btn--sm" href="/os/crm.html">Ver en CRM</a></div>
+      <div class="os-panel__body">
+        <div class="u-col" style="align-items:center;text-align:center;gap:8px;margin-bottom:var(--s3)">
+          <div class="avatar avatar--lg" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+          <div><div class="t-h2">${c.customer_name||'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:13px">${c.customer_phone||''}</div></div>
+          <span class="badge badge--${ch.b}">${ch.e} ${ch.t}</span>
+        </div>
+        <div class="surface" style="padding:14px;margin-bottom:var(--s3)">
+          ${row('Asesor', c.assigned_to_nombre||'Sin asignar')}
+          ${row('Etiqueta', (c.etiqueta||'sin clasificar').replace('_',' '))}
+          ${row('Última actividad', timeago(c.updated_at)+' atrás')}
+        </div>
+        <div class="t-label" style="margin-bottom:10px">Nota interna</div>
+        <textarea class="input" id="noteInput" placeholder="Solo la ve el equipo…"></textarea>
+        <button class="btn btn--ghost btn--block btn--sm" style="margin-top:10px" id="noteSave">${ICONS.check}Guardar nota</button>
+        <button class="btn btn--ghost btn--block btn--sm" style="margin-top:8px" onclick="SPOS.toast('El Copiloto SP se activará en la Fase IA','ok')">${ICONS.ai}Sugerir respuesta</button>
+      </div>`;
+  }
+  const row = (k,v)=>`<div class="u-between" style="padding:7px 0"><span class="t-dim3" style="font-size:12.5px">${k}</span><span style="font-size:13px;font-weight:500;text-transform:capitalize">${v}</span></div>`;
+  function esc(s){ return String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+
+  listEl.querySelector('#q').addEventListener('input', e=>{ query=e.target.value.toLowerCase().trim(); renderList(); });
+  listEl.querySelectorAll('#chips .chip').forEach(ch=>ch.addEventListener('click',()=>{ listEl.querySelectorAll('#chips .chip').forEach(x=>x.classList.remove('active')); ch.classList.add('active'); channelFilter=ch.dataset.c; renderList(); }));
+  ctx.panel.addEventListener('click', e=>{ if(e.target.closest('#noteSave')){ const v=ctx.panel.querySelector('#noteInput'); if(v&&v.value.trim()){ toast('Nota guardada','ok'); v.value=''; } } });
+
+  renderList();
+  // Badge de no leídos en el nav
+  const totalUnread = convs.reduce((s,c)=>s+(c.unread_count||0),0);
+  const nb = document.getElementById('navBadgeInbox'); if(nb) nb.textContent = totalUnread||'•';
+})();
+</script>
+</body>
+</html>

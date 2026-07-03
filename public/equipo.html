@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SP Inmobiliaria — Gestión de Equipo</title>
+<script>
+  // Solo admin
+  fetch('/api/me').then(r=>r.ok?r.json():Promise.reject()).then(u=>{
+    if(u.rol!=='admin') location.href='/vendedor.html';
+  }).catch(()=>location.href='/login.html');
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ── iOS 18 · Equipo · SP Inmobiliaria ── */
+  :root{
+    --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33; --bg4:#2A3942;
+    --nav:#1F2C33; --sep:rgba(255,255,255,.06);
+    --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
+    --gold:#C8A45A; --gold2:#A8872B; --verde:#4E7B46; --red:#FF453A;
+    --oro:#C8A45A; --gris:#8A9297;
+    --grad-gold:linear-gradient(135deg,#C8A45A,#A8872B);
+    --e1:0 1px 3px rgba(0,0,0,.4); --e2:0 4px 12px rgba(0,0,0,.5); --e3:0 12px 40px rgba(0,0,0,.6);
+    --ease:cubic-bezier(.32,.72,0,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:var(--black);color:var(--txt);min-height:100vh;
+    -webkit-user-select:none;user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  input,textarea,td,th{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+  /* iOS Status */
+  .ios-statusbar{height:44px;background:var(--black);display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:13px;font-weight:600;flex-shrink:0}
+  .ios-statusbar .s-icons{display:flex;align-items:center;gap:5px}
+
+  /* iOS Nav */
+  .ios-nav{height:52px;background:var(--nav);display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0;border-bottom:1px solid var(--sep)}
+  .ios-nav .nav-title{font-family:'Cinzel',serif;font-size:17px;font-weight:600;letter-spacing:.5px;background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ios-nav .nav-right{display:flex;gap:8px}
+  .ios-nav .nav-btn{background:none;border:none;color:var(--gold);padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500;transition:opacity .15s ease;cursor:pointer;font-family:inherit}
+  .ios-nav .nav-btn:hover{opacity:.7}
+
+  /* iOS Tab Bar */
+  .ios-tabbar{position:fixed;bottom:0;left:0;right:0;height:50px;padding-bottom:env(safe-area-inset-bottom);background:var(--nav);display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--sep);z-index:20}
+  .ios-tabbar .tab{background:none;border:none;color:var(--txt3);display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 16px;font-size:9px;font-weight:500;letter-spacing:.3px;transition:color .15s ease;position:relative;cursor:pointer}
+  .ios-tabbar .tab.active{color:var(--gold)}
+  .ios-tabbar .tab svg{width:24px;height:24px}
+  .page-wrap{padding-bottom:70px}
+
+  .wrap{max-width:1200px;margin:0 auto;padding:28px 20px}
+  .card{background:var(--bg2);border-radius:12px;padding:20px;box-shadow:var(--e1);margin-bottom:20px}
+  h2{font-size:16px;color:var(--txt);margin-bottom:16px;font-weight:600;letter-spacing:-.01em}
+  label{display:block;font-size:11px;color:var(--txt2);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-weight:500}
+  input,select,textarea{width:100%;background:var(--bg3);border:none;border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;transition:box-shadow .15s ease}
+  input,select{height:44px;padding:0 16px}
+  textarea{padding:14px 16px;resize:vertical;min-height:80px}
+  input::placeholder,textarea::placeholder{color:var(--txt3)}
+  input:focus,select:focus,textarea:focus{outline:none;box-shadow:0 0 0 1.5px rgba(200,164,90,.3)}
+  button{height:40px;padding:0 20px;background:var(--grad-gold);color:#000;border:none;border-radius:10px;font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;
+    box-shadow:var(--e1);transition:opacity .15s ease,transform .1s ease}
+  button:hover{opacity:.85}
+  button:active{transform:scale(.97)}
+  button.del{background:var(--bg4);color:var(--txt2);height:auto;padding:6px 12px;margin:0;font-size:12px;transition:color .15s ease}
+  button.del:hover{color:var(--red)}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+  th,td{text-align:left;padding:12px;border-bottom:1px solid var(--sep)}
+  th{color:var(--txt3);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  tbody tr{transition:background .15s ease}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  .pill{font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(200,164,90,.1);color:var(--oro);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .msg{margin-top:12px;font-size:13px;padding:12px 14px;border-radius:10px;display:none;transition:all .15s ease}
+  .msg.ok{background:rgba(78,123,70,.12);color:#9FD694;display:block}
+  .msg.err{background:rgba(255,69,58,.08);color:#FF9F94;display:block}
+  .tpl-row{background:var(--bg3);border-radius:12px;padding:16px 18px;margin-top:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;box-shadow:var(--e1);transition:all .15s ease}
+  .tpl-row:hover{transform:translateY(-2px);box-shadow:var(--e2)}
+  .tpl-row .t{font-weight:600;font-size:14px;color:var(--oro)}
+  .tpl-row .b{font-size:12px;color:var(--txt2);margin-top:6px}
+  ::-webkit-scrollbar{width:3px;height:3px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(200,164,90,.15);border-radius:2px}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(200,164,90,.3)}
+  :focus-visible{outline:2px solid rgba(200,164,90,.4);outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
+  @media(max-width:768px){.wrap{grid-template-columns:1fr}.card.full{grid-column:1}}
+</style>
+</head>
+<body>
+  <!-- Barra de navegación -->
+  <!-- iOS Nav -->
+  <div class="ios-nav">
+    <div class="nav-title">GESTIÓN DE EQUIPO</div>
+    <div class="nav-right">
+      <button class="nav-btn" onclick="location.href='/os/dashboard.html'">Dashboard</button>
+      <button class="nav-btn" id="logoutBtn">Salir</button>
+    </div>
+  </div>
+
+  <div class="wrap page-wrap">
+    <!-- Alta de vendedor con login -->
+    <div class="card">
+      <h2>Nuevo vendedor</h2>
+      <form id="formVendedor">
+        <label>Nombre completo</label>
+        <input id="v_nombre" required placeholder="Carlos Méndez">
+        <label>Teléfono WhatsApp (con +57)</label>
+        <input id="v_telefono" required placeholder="+573001112233">
+        <label>PIN de acceso (4 dígitos)</label>
+        <input id="v_pin" type="text" inputmode="numeric" required maxlength="4" pattern="\d{4}" placeholder="Ej: 1234" style="letter-spacing:.3em;font-size:1.3rem">
+        <button type="submit">Crear vendedor</button>
+        <div class="msg" id="msgVendedor"></div>
+      </form>
+    </div>
+
+    <!-- Nueva respuesta rápida -->
+    <div class="card">
+      <h2>Nueva respuesta rápida</h2>
+      <form id="formTpl">
+        <label>Título corto</label>
+        <input id="t_titulo" required placeholder="Saludo inicial">
+        <label>Mensaje</label>
+        <textarea id="t_cuerpo" required placeholder="Hola, gracias por contactar a SP Inmobiliaria…"></textarea>
+        <button type="submit">Guardar plantilla</button>
+        <div class="msg" id="msgTpl"></div>
+      </form>
+    </div>
+
+    <!-- Tabla de vendedores -->
+    <div class="card full">
+      <h2>Equipo con acceso</h2>
+      <table>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Estado</th><th>PIN</th></tr></thead>
+        <tbody id="tablaUsuarios"></tbody>
+      </table>
+    </div>
+
+    <!-- Lista de templates -->
+    <div class="card full">
+      <h2>Respuestas rápidas guardadas</h2>
+      <div id="listaTpl"></div>
+    </div>
+
+    <!-- Mensaje de bienvenida automático -->
+    <div class="card full">
+      <h2>Mensaje de bienvenida automático</h2>
+      <p style="font-size:.82rem;color:#999;margin-bottom:12px">Se envía automáticamente cuando un lead escribe por primera vez al número oficial.</p>
+      <form id="formBienvenida">
+        <textarea id="welcomeMsg" style="min-height:80px" placeholder="Hola 👋 Gracias por contactar a SP Inmobiliaria…"></textarea>
+        <button type="submit">Guardar mensaje</button>
+        <div class="msg" id="msgBienvenida"></div>
+      </form>
+    </div>
+
+    <!-- Plantillas WhatsApp aprobadas por Meta -->
+    <div class="card full">
+      <h2>Plantillas WhatsApp (aprobadas por Meta)</h2>
+      <p style="font-size:.82rem;color:#999;margin-bottom:12px">
+        Regístralas aquí con el nombre exacto que aprobó Meta. Los vendedores las usan para reactivar leads que no respondieron en +24h.
+        <br><a href="https://business.facebook.com/wa/manage/message-templates/" target="_blank" style="color:var(--oro)">→ Crear plantillas en Meta Business Manager</a>
+      </p>
+      <form id="formWATemplate" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:200px">
+          <label style="font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Nombre exacto en Meta</label>
+          <input id="wt_nombre" required placeholder="saludo_sp_inmobiliaria">
+        </div>
+        <div style="width:100px">
+          <label style="font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Idioma</label>
+          <input id="wt_idioma" value="es" placeholder="es">
+        </div>
+        <button type="submit" style="margin-top:0;height:40px;padding:0 18px">Agregar</button>
+      </form>
+      <div class="msg" id="msgWAT" style="margin-top:8px"></div>
+      <div id="listaWAT" style="margin-top:14px"></div>
+    </div>
+
+    <!-- SECCIÓN 1: Canales -->
+    <div class="card full">
+      <h2>Canales conectados</h2>
+      <div id="listaCanales" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"></div>
+    </div>
+
+    <!-- SECCIÓN 2: Workflows -->
+    <div class="card full">
+      <h2>Automatizaciones (Workflows)</h2>
+      <button type="button" id="btnNuevaRegla">+ Nueva regla</button>
+      <div id="listaWorkflows" style="margin-top:14px"></div>
+    </div>
+
+    <!-- Modal Nueva Regla -->
+    <div id="modalRegla" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;align-items:center;justify-content:center">
+      <div class="card" style="width:90%;max-width:520px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+        <h2>Nueva regla de automatización</h2>
+        <label>Nombre</label>
+        <input id="wf_nombre" placeholder="Responder saludo automático">
+        <label>Trigger</label>
+        <select id="wf_trigger">
+          <option value="message:incoming">message:incoming</option>
+          <option value="conversation:created">conversation:created</option>
+          <option value="tag:changed">tag:changed</option>
+          <option value="message:outgoing">message:outgoing</option>
+          <option value="conversation:closed">conversation:closed</option>
+        </select>
+        <label>Condiciones</label>
+        <div id="wf_condiciones"></div>
+        <button type="button" id="btnAddCondicion" style="background:rgba(200,164,90,.1);color:var(--oro);height:32px;padding:0 14px;font-size:.78rem;box-shadow:none">+ Condición</button>
+        <label>Acciones</label>
+        <div id="wf_acciones"></div>
+        <button type="button" id="btnAddAccion" style="background:rgba(200,164,90,.1);color:var(--oro);height:32px;padding:0 14px;font-size:.78rem;box-shadow:none">+ Acción</button>
+        <div style="display:flex;gap:10px;margin-top:18px">
+          <button type="button" id="btnGuardarRegla">Guardar regla</button>
+          <button type="button" id="btnCancelarRegla" style="background:var(--bg4);color:var(--txt2)">Cancelar</button>
+        </div>
+        <div class="msg" id="msgWorkflow"></div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 3: IA -->
+    <div class="card full">
+      <h2>Inteligencia Artificial (OpenAI)</h2>
+      <label>OpenAI API Key</label>
+      <input id="ia_key" type="password" placeholder="sk-...">
+      <label>Modelo</label>
+      <select id="ia_modelo">
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
+        <option value="gpt-4o">gpt-4o</option>
+      </select>
+      <label>Temperatura: <span id="ia_temp_val">0.7</span></label>
+      <input id="ia_temp" type="range" min="0" max="1" step="0.1" value="0.7">
+      <button type="button" id="btnProbarIA">Probar IA</button>
+      <div class="msg" id="msgIA"></div>
+      <pre id="resultadoIA" style="display:none;background:var(--bg3);padding:14px;border-radius:10px;margin-top:10px;font-size:.78rem;color:var(--txt2);white-space:pre-wrap;box-shadow:inset 0 2px 4px rgba(0,0,0,.3)"></pre>
+    </div>
+
+    <!-- SECCIÓN 4: Integraciones -->
+    <div class="card full">
+      <h2>Integraciones</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px">
+        <div>
+          <h2 style="font-size:.85rem">Twilio (Llamadas)</h2>
+          <label>Account SID</label>
+          <input id="tw_sid" placeholder="ACxxxxxxxx">
+          <label>Auth Token</label>
+          <input id="tw_token" type="password" placeholder="········">
+          <label>Número Twilio</label>
+          <input id="tw_numero" placeholder="+1XXXXXXXXXX">
+        </div>
+        <div>
+          <h2 style="font-size:.85rem">Slack</h2>
+          <label>Webhook URL</label>
+          <input id="slack_webhook" placeholder="https://hooks.slack.com/...">
+        </div>
+        <div>
+          <h2 style="font-size:.85rem">Google Calendar</h2>
+          <label>OAuth Client ID</label>
+          <input id="gcal_client" placeholder="xxxxx.apps.googleusercontent.com">
+        </div>
+        <div>
+          <h2 style="font-size:.85rem">Mercado Pago</h2>
+          <label>Public Key</label>
+          <input id="mp_public" placeholder="APP_USR-...">
+          <label>Access Token</label>
+          <input id="mp_token" type="password" placeholder="········">
+        </div>
+      </div>
+      <button type="button" id="btnGuardarIntegraciones">Guardar integraciones</button>
+      <div class="msg" id="msgIntegraciones"></div>
+    </div>
+  </div>
+
+<script>
+  function showMsg(id, texto, ok){
+    const el=document.getElementById(id);
+    el.textContent=texto; el.className='msg '+(ok?'ok':'err');
+    setTimeout(()=>{el.className='msg';},4000);
+  }
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+  async function cargarUsuarios(){
+    const r=await fetch('/api/vendedores'); if(!r.ok)return;
+    const vs=await r.json();
+    document.getElementById('tablaUsuarios').innerHTML = vs.length ? vs.map(v=>`
+      <tr>
+        <td>${esc(v.nombre)}</td>
+        <td>${esc(v.telefono)}</td>
+        <td><span class="pill">${v.estado||'activo'}</span></td>
+        <td>
+          <button class="del" style="border-color:rgba(200,164,90,.4);color:var(--oro)"
+            onclick="resetPin(${v.id},'${esc(v.nombre)}')">Cambiar PIN</button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" style="color:#777;font-size:.85rem;padding:12px 8px">Aún no hay vendedores.</td></tr>';
+  }
+
+  async function resetPin(id, nombre){
+    const pin = prompt(`Nuevo PIN (4 dígitos) para ${nombre}:`);
+    if (!pin) return;
+    if (!/^\d{4}$/.test(pin)) { alert('El PIN debe ser exactamente 4 dígitos numéricos.'); return; }
+    const r = await fetch('/api/vendedores/'+id+'/pin', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pin})
+    });
+    if(r.ok) alert('PIN actualizado correctamente.');
+    else alert('Error al actualizar PIN.');
+  }
+  async function cargarTemplates(){
+    const r=await fetch('/api/templates'); if(!r.ok)return;
+    const ts=await r.json();
+    document.getElementById('listaTpl').innerHTML = ts.length? ts.map(t=>`
+      <div class="tpl-row">
+        <div><div class="t">${esc(t.titulo)}</div><div class="b">${esc(t.cuerpo)}</div></div>
+        <button class="del" data-id="${t.id}">Eliminar</button>
+      </div>`).join('') : '<div style="color:#777;font-size:.85rem;margin-top:8px">Aún no hay plantillas.</div>';
+    document.querySelectorAll('.del').forEach(b=>b.addEventListener('click',async()=>{
+      await fetch('/api/templates/'+b.dataset.id,{method:'DELETE'});
+      cargarTemplates();
+    }));
+  }
+
+  document.getElementById('formVendedor').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const pin = document.getElementById('v_pin').value.trim();
+    if(!/^\d{4}$/.test(pin)){ showMsg('msgVendedor','El PIN debe ser exactamente 4 dígitos.',false); return; }
+    const body={ nombre:v_nombre.value.trim(), telefono:v_telefono.value.trim(), pin };
+    const r=await fetch('/api/vendedores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(r.ok){ showMsg('msgVendedor',`Vendedor creado. Ingresa con ${body.telefono} y PIN ${pin}.`,true); e.target.reset(); cargarUsuarios(); }
+    else showMsg('msgVendedor','Error: '+d.error, false);
+  });
+
+  document.getElementById('formTpl').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const r=await fetch('/api/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo:t_titulo.value,cuerpo:t_cuerpo.value})});
+    if(r.ok){ showMsg('msgTpl','Plantilla guardada.',true); e.target.reset(); cargarTemplates(); }
+    else showMsg('msgTpl','Error al guardar',false);
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click',async e=>{
+    e.preventDefault(); await fetch('/api/logout',{method:'POST'}); location.href='/login.html';
+  });
+
+  // --- Mensaje de bienvenida ---
+  async function cargarBienvenida(){
+    const r = await fetch('/api/config'); if(!r.ok) return;
+    const d = await r.json();
+    document.getElementById('welcomeMsg').value = d.welcome_message || '';
+  }
+  document.getElementById('formBienvenida').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({welcome_message:document.getElementById('welcomeMsg').value})});
+    if(r.ok) showMsg('msgBienvenida','Mensaje guardado.',true);
+    else showMsg('msgBienvenida','Error al guardar.',false);
+  });
+
+  // --- Plantillas WhatsApp ---
+  async function cargarWATemplates(){
+    const r = await fetch('/api/wa-templates'); if(!r.ok) return;
+    const ts = await r.json();
+    document.getElementById('listaWAT').innerHTML = ts.length ? ts.map(t=>`
+      <div class="tpl-row">
+        <div>
+          <div class="t">${esc(t.nombre)}</div>
+          <div class="b">Idioma: ${esc(t.idioma)} · Nombre en Meta: <code style="color:var(--oro)">${esc(t.nombre)}</code></div>
+        </div>
+        <button class="del" data-id="${t.id}">Eliminar</button>
+      </div>`).join('')
+    : '<div style="color:#777;font-size:.85rem;margin-top:8px">Aún no hay plantillas registradas.</div>';
+    document.querySelectorAll('#listaWAT .del').forEach(b=>b.addEventListener('click',async()=>{
+      await fetch('/api/wa-templates/'+b.dataset.id,{method:'DELETE'});
+      cargarWATemplates();
+    }));
+  }
+  document.getElementById('formWATemplate').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const body={nombre:wt_nombre.value.trim(), idioma:wt_idioma.value.trim()||'es'};
+    const r=await fetch('/api/wa-templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok){ showMsg('msgWAT','Plantilla registrada.',true); e.target.reset(); document.getElementById('wt_idioma').value='es'; cargarWATemplates(); }
+    else showMsg('msgWAT','Error al guardar.',false);
+  });
+
+  cargarUsuarios(); cargarTemplates(); cargarBienvenida(); cargarWATemplates();
+
+  // ===================== SECCIÓN 1: Canales =====================
+  const CANAL_LABEL = { whatsapp: 'WhatsApp', messenger: 'Messenger', instagram: 'Instagram' };
+  async function cargarCanales(){
+    const r = await fetch('/api/channels/status'); if(!r.ok) return;
+    const estado = await r.json();
+    document.getElementById('listaCanales').innerHTML = Object.keys(CANAL_LABEL).map(canal=>`
+      <div class="tpl-row" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="t">${CANAL_LABEL[canal]}</div>
+          <span class="pill" style="${estado[canal] ? 'background:rgba(78,123,70,.25);color:#9fd694' : 'background:rgba(180,40,40,.2);color:#e88'}">
+            ${estado[canal] ? 'Configurado' : 'Desconfigurado'}
+          </span>
+        </div>
+        <button type="button" class="btn-test" data-canal="${canal}" style="margin-top:10px;padding:7px 12px;font-size:.8rem">Probar conexión</button>
+        <div class="msg" id="msgCanal_${canal}" style="margin-top:6px"></div>
+      </div>`).join('');
+    document.querySelectorAll('.btn-test').forEach(b=>b.addEventListener('click', async ()=>{
+      const canal = b.dataset.canal;
+      const r2 = await fetch('/api/channels/'+canal+'/test');
+      const d2 = await r2.json();
+      showMsg('msgCanal_'+canal, d2.ok ? 'Conexión OK.' : ('Error: '+(d2.error||'desconocido')), d2.ok);
+    }));
+  }
+
+  // ===================== SECCIÓN 2: Workflows =====================
+  const OPERADORES = ['contains','equals','not_equals','in','regex'];
+  const CAMPOS = ['body','channel','customer_name','etiqueta','status','priority'];
+  const TIPOS_ACCION = ['tag','assign','send_template','send_message','notify_admin','webhook'];
+
+  async function cargarWorkflows(){
+    const r = await fetch('/api/workflows'); if(!r.ok) return;
+    const ws = await r.json();
+    document.getElementById('listaWorkflows').innerHTML = ws.length ? ws.map(w=>`
+      <div class="tpl-row">
+        <div>
+          <div class="t">${esc(w.nombre)} <span class="pill">${esc(w.trigger_event)}</span></div>
+          <div class="b">Estado: ${w.activo ? 'Activa' : 'Inactiva'}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="del" data-toggle="${w.id}" data-activo="${w.activo}" style="border-color:rgba(200,164,90,.4);color:var(--oro)">${w.activo?'Desactivar':'Activar'}</button>
+          <button class="del" data-logs="${w.id}" style="border-color:rgba(200,164,90,.4);color:var(--oro)">Logs</button>
+          <button class="del" data-del="${w.id}">Eliminar</button>
+        </div>
+      </div>`).join('') : '<div style="color:#777;font-size:.85rem;margin-top:8px">Aún no hay reglas configuradas.</div>';
+
+    document.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click', async ()=>{
+      const activo = b.dataset.activo === '1' || b.dataset.activo === 'true';
+      await fetch('/api/workflows/'+b.dataset.toggle, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({activo:!activo})});
+      cargarWorkflows();
+    }));
+    document.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
+      if(!confirm('¿Eliminar esta regla?')) return;
+      await fetch('/api/workflows/'+b.dataset.del, {method:'DELETE'});
+      cargarWorkflows();
+    }));
+    document.querySelectorAll('[data-logs]').forEach(b=>b.addEventListener('click', async ()=>{
+      const r2 = await fetch('/api/workflows/'+b.dataset.logs+'/logs');
+      const logs = await r2.json();
+      alert(logs.length ? logs.map(l=>`${l.created_at}: ${l.trigger_event}`).join('\n') : 'Sin logs todavía.');
+    }));
+  }
+
+  function filaCondicion(){
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-top:6px';
+    div.innerHTML = `
+      <select class="cond-field" style="flex:1;width:auto;height:38px">
+        ${CAMPOS.map(c=>`<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <select class="cond-op" style="flex:1;width:auto;height:38px">
+        ${OPERADORES.map(o=>`<option value="${o}">${o}</option>`).join('')}
+      </select>
+      <input class="cond-val" placeholder="valor" style="flex:1;width:auto;height:38px">
+      <button type="button" class="del" style="margin:0" onclick="this.parentElement.remove()">✕</button>`;
+    return div;
+  }
+
+  function filaAccion(){
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-top:6px';
+    div.innerHTML = `
+      <select class="accion-tipo" style="flex:1;width:auto;height:38px">
+        ${TIPOS_ACCION.map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+      <input class="accion-param" placeholder="parámetro (valor/nombre/texto/url)" style="flex:2;width:auto;height:38px">
+      <button type="button" class="del" style="margin:0" onclick="this.parentElement.remove()">✕</button>`;
+    return div;
+  }
+
+  document.getElementById('btnNuevaRegla').addEventListener('click', ()=>{
+    document.getElementById('wf_nombre').value='';
+    document.getElementById('wf_condiciones').innerHTML='';
+    document.getElementById('wf_acciones').innerHTML='';
+    document.getElementById('wf_condiciones').appendChild(filaCondicion());
+    document.getElementById('wf_acciones').appendChild(filaAccion());
+    document.getElementById('modalRegla').style.display='flex';
+  });
+  document.getElementById('btnAddCondicion').addEventListener('click', ()=> document.getElementById('wf_condiciones').appendChild(filaCondicion()));
+  document.getElementById('btnAddAccion').addEventListener('click', ()=> document.getElementById('wf_acciones').appendChild(filaAccion()));
+  document.getElementById('btnCancelarRegla').addEventListener('click', ()=> document.getElementById('modalRegla').style.display='none');
+
+  document.getElementById('btnGuardarRegla').addEventListener('click', async ()=>{
+    const nombre = document.getElementById('wf_nombre').value.trim();
+    const trigger_event = document.getElementById('wf_trigger').value;
+    if(!nombre){ showMsg('msgWorkflow','El nombre es requerido.',false); return; }
+
+    const conditions = Array.from(document.querySelectorAll('#wf_condiciones > div')).map(row=>({
+      field: row.querySelector('.cond-field').value,
+      operator: row.querySelector('.cond-op').value,
+      value: row.querySelector('.cond-val').value,
+    }));
+    const actions = Array.from(document.querySelectorAll('#wf_acciones > div')).map(row=>{
+      const tipo = row.querySelector('.accion-tipo').value;
+      const param = row.querySelector('.accion-param').value;
+      const params = {};
+      if(tipo==='tag') params.value = param;
+      else if(tipo==='send_template') params.name = param;
+      else if(tipo==='send_message') params.text = param;
+      else if(tipo==='notify_admin') params.message = param;
+      else if(tipo==='webhook') params.url = param;
+      return { type: tipo, params };
+    });
+
+    const r = await fetch('/api/workflows', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre, trigger_event, conditions, actions, activo:true})});
+    if(r.ok){ showMsg('msgWorkflow','Regla creada.',true); document.getElementById('modalRegla').style.display='none'; cargarWorkflows(); }
+    else showMsg('msgWorkflow','Error al guardar la regla.',false);
+  });
+
+  // ===================== SECCIÓN 3: IA =====================
+  document.getElementById('ia_temp').addEventListener('input', e=>{
+    document.getElementById('ia_temp_val').textContent = e.target.value;
+  });
+  document.getElementById('btnProbarIA').addEventListener('click', async ()=>{
+    const r = await fetch('/api/nlp/test', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:'Hola, me interesan los lotes'})});
+    const d = await r.json();
+    const pre = document.getElementById('resultadoIA');
+    pre.style.display='block';
+    pre.textContent = JSON.stringify(d, null, 2);
+    showMsg('msgIA', d.ok ? 'Prueba exitosa.' : ('Error: '+d.error), !!d.ok);
+  });
+
+  // ===================== SECCIÓN 4: Integraciones =====================
+  document.getElementById('btnGuardarIntegraciones').addEventListener('click', async ()=>{
+    const body = {
+      twilio_account_sid: document.getElementById('tw_sid').value,
+      twilio_auth_token: document.getElementById('tw_token').value,
+      twilio_numero: document.getElementById('tw_numero').value,
+      slack_webhook: document.getElementById('slack_webhook').value,
+      gcal_client_id: document.getElementById('gcal_client').value,
+      mp_public_key: document.getElementById('mp_public').value,
+      mp_access_token: document.getElementById('mp_token').value,
+    };
+    const r = await fetch('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok) showMsg('msgIntegraciones','Integraciones guardadas.',true);
+    else showMsg('msgIntegraciones','Error al guardar.',false);
+  });
+
+  cargarCanales(); cargarWorkflows();
+</script>
+
+<!-- iOS Tab Bar -->
+<div class="ios-tabbar">
+    <button class="tab" onclick="location.href='/os/inbox.html'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Inbox</span>
+    </button>
+    <button class="tab" onclick="location.href='/os/dashboard.html'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Dashboard</span>
+    </button>
+    <button class="tab active" onclick="location.href='/equipo.html'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Equipo</span>
+    </button>
+    <button class="tab" onclick="location.href='/os/analytics.html'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        <span>Analytics</span>
+    </button>
+</div>
+
+</body>
+</html>

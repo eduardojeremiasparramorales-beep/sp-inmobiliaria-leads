@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .kan-col.drop { border-color: var(--gold-line); background: rgba(200,164,90,.04); }
+  .kan-card.drag { opacity: .4; }
+  .kan-card__phone { font-family: var(--f-num); font-size: 12px; color: var(--text-3); }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, avatarColor, initials, toast, fmt } = SPOS;
+
+  const COLS = [
+    { k:'sin_clasificar', t:'Nuevos', c:'var(--text-3)' },
+    { k:'interesado', t:'Interesados', c:'var(--blue)' },
+    { k:'negociacion', t:'Negociación', c:'var(--gold)' },
+    { k:'cita', t:'Cita agendada', c:'var(--amber)' },
+    { k:'vendido', t:'Vendidos', c:'var(--green)' },
+  ];
+
+  const ctx = await SPOS.mount({ active: 'pipeline', title: 'Pipeline comercial', crumb: 'Arrastra para mover de etapa', padded: false });
+  ctx.content.style.cssText = 'flex:1;min-height:0;overflow:hidden;padding:var(--s3);display:flex';
+
+  let leads = await api('/api/leads');
+  const demo = !Array.isArray(leads);
+  if (demo) leads = [
+    { id:1, customer_name:'Juan Pérez', customer_phone:'+573224312518', etiqueta:'negociacion', assigned_to_nombre:'Carlos García' },
+    { id:2, customer_name:'María González', customer_phone:'+573001234567', etiqueta:'interesado', assigned_to_nombre:'Andrea López' },
+    { id:3, customer_name:'Roberto Martínez', customer_phone:'+573019876543', etiqueta:'cita', assigned_to_nombre:'Miguel Torres' },
+    { id:4, customer_name:'Lucía Fernández', customer_phone:'+573145550101', etiqueta:'vendido', assigned_to_nombre:'Carlos García' },
+    { id:5, customer_name:'Andrés Gómez', customer_phone:'+573205559090', etiqueta:'sin_clasificar', assigned_to_nombre:null },
+    { id:6, customer_name:'Paola Ramírez', customer_phone:'+573112223344', etiqueta:'interesado', assigned_to_nombre:'Andrea López' },
+    { id:7, customer_name:'Diego Salazar', customer_phone:'+573007778899', etiqueta:'negociacion', assigned_to_nombre:'Miguel Torres' },
+    { id:8, customer_name:'Carmen Ortiz', customer_phone:'+573156664433', etiqueta:'sin_clasificar', assigned_to_nombre:null },
+  ];
+
+  const board = document.createElement('div'); board.className = 'kanban'; board.style.flex = '1';
+  ctx.content.appendChild(board);
+  let dragId = null;
+
+  function cardHTML(l) {
+    return `<div class="kan-card" draggable="true" data-id="${l.id}">
+      <div class="u-between" style="margin-bottom:9px">
+        <div class="u-row u-gap2" style="min-width:0">
+          <div class="avatar avatar--sm" style="background:${avatarColor(l.customer_name)}">${initials(l.customer_name)}</div>
+          <div style="min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.customer_name||'Sin nombre'}</div>
+          <div class="kan-card__phone">${l.customer_phone||''}</div></div>
+        </div>
+      </div>
+      <div class="u-row u-gap1 t-dim3" style="font-size:11.5px">${ICONS.team.replace('<svg ','<svg style="width:13px;height:13px" ')}<span>${l.assigned_to_nombre||'Sin asignar'}</span></div>
+    </div>`;
+  }
+
+  function render() {
+    board.innerHTML = COLS.map(col => {
+      const items = leads.filter(l => (l.etiqueta||'sin_clasificar') === col.k);
+      return `<div class="kan-col" data-col="${col.k}">
+        <div class="kan-col__head">
+          <div class="kan-col__title"><span class="dot" style="background:${col.c}"></span>${col.t}</div>
+          <span class="kan-col__count">${items.length}</span>
+        </div>
+        <div class="kan-col__body" data-body="${col.k}">${items.map(cardHTML).join('')}</div>
+      </div>`;
+    }).join('');
+    wire();
+  }
+
+  function wire() {
+    board.querySelectorAll('.kan-card').forEach(card => {
+      card.addEventListener('dragstart', () => { dragId = Number(card.dataset.id); card.classList.add('drag'); });
+      card.addEventListener('dragend', () => { dragId = null; card.classList.remove('drag'); board.querySelectorAll('.kan-col').forEach(c=>c.classList.remove('drop')); });
+    });
+    board.querySelectorAll('.kan-col').forEach(col => {
+      col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drop'); });
+      col.addEventListener('dragleave', () => col.classList.remove('drop'));
+      col.addEventListener('drop', (e) => { e.preventDefault(); col.classList.remove('drop'); moveTo(dragId, col.dataset.col); });
+    });
+  }
+
+  async function moveTo(id, etiqueta) {
+    const l = leads.find(x => x.id === id); if (!l || l.etiqueta === etiqueta) return;
+    const prev = l.etiqueta; l.etiqueta = etiqueta; render();
+    const label = COLS.find(c=>c.k===etiqueta)?.t || etiqueta;
+    if (demo) { toast('Movido a ' + label + ' (demo)', 'ok'); return; }
+    const r = await api('/api/leads/'+id+'/etiqueta', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ etiqueta }) });
+    if (!r) { l.etiqueta = prev; render(); toast('No se pudo mover', 'err'); }
+    else toast('Movido a ' + label, 'ok');
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
