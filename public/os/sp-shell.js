@@ -64,6 +64,7 @@
     { title: 'Organización', items: [
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
       { id: 'billing', label: 'Facturación', icon: 'billing', href: M('billing'), admin: true },
+      { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
       { id: 'marketplace', label: 'Marketplace', icon: 'marketplace', href: M('marketplace') },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: M('settings') },
       { id: 'design', label: 'Design System', icon: 'spark', href: '/os/design-system.html' },
