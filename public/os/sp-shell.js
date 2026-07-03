@@ -100,6 +100,14 @@
   const AV = ['#C8A45A', '#4E7B46', '#5B8DEF', '#B0763C', '#8C6BB0', '#3F8E8E'];
   const avatarColor = (s) => AV[(String(s || '?').charCodeAt(0) + String(s || '?').length) % AV.length];
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+  // Formatea teléfono: +573001112233 → 300 111 2233
+  const fmtPhone = (p) => {
+    if (!p) return '';
+    const s = String(p).replace(/\D/g, '');
+    if (s.startsWith('57') && s.length === 12) return s.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
+    if (s.length === 10) return s.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
+    return p;
+  };
 
   /* --- Montaje del shell --- */
   async function mount(opts) {
@@ -109,8 +117,8 @@
     const demo = !me;
     if (!me) me = { nombre: 'Sergio Parra', email: 'sergio@sp.os', rol: 'admin' };
 
-    // Vendedor no-admin fuera de /os → mándalo a su panel clásico (no rompemos su flujo)
-    if (!demo && me.rol !== 'admin' && opts.adminOnly) { location.href = '/vendedor.html'; return null; }
+    // Vendedor no-admin fuera de /os → mándalo a su panel OS (no rompemos su flujo)
+    if (!demo && me.rol !== 'admin' && opts.adminOnly) { location.href = '/os/inbox.html'; return null; }
 
     const navHTML = NAV.map(group => {
       const items = group.items.filter(it => !(it.admin && !demo && me.rol !== 'admin')).map(it => `
@@ -184,7 +192,7 @@
     document.body.appendChild(b);
   }
 
-  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, _demo: false,
+  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, _demo: false,
     fmt: {
       n: (v) => (v == null ? '—' : Number(v).toLocaleString('es-CO')),
       money: (v) => (v == null ? '—' : '$' + Number(v).toLocaleString('es-CO')),

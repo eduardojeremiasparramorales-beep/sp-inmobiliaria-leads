@@ -40,7 +40,7 @@
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
-  const { ICONS, api, avatarColor, initials, toast } = SPOS;
+  const { ICONS, api, avatarColor, initials, toast, fmtPhone } = SPOS;
 
   const CH = {
     whatsapp:  { t:'WhatsApp', e:'🟢', b:'green' },
@@ -55,7 +55,7 @@
 
   let convs = await api('/api/inbox/conversations');
   const DEMO_CONVS = [
-    { id:1, channel:'whatsapp', customer_name:'Juan Pérez', customer_phone:'+573224312518', etiqueta:'negociacion', assigned_to_nombre:'Carlos García', unread_count:2, updated_at:'2026-07-02 14:10:00', last:'Perfecto, ¿el lote todavía está disponible?' },
+    { id:1, channel:'whatsapp', customer_name:'Juan Pérez', customer_phone:'+573214625618', etiqueta:'negociacion', assigned_to_nombre:'Carlos García', unread_count:2, updated_at:'2026-07-02 14:10:00', last:'Perfecto, ¿el lote todavía está disponible?' },
     { id:2, channel:'instagram', customer_name:'María González', customer_phone:'+573001234567', etiqueta:'interesado', assigned_to_nombre:'Andrea López', unread_count:0, updated_at:'2026-07-02 12:30:00', last:'Vi el anuncio en Instagram 😍' },
     { id:3, channel:'messenger', customer_name:'Roberto Martínez', customer_phone:'+573019876543', etiqueta:'cita', assigned_to_nombre:'Miguel Torres', unread_count:1, updated_at:'2026-07-02 09:05:00', last:'¿A qué hora nos vemos el sábado?' },
     { id:4, channel:'whatsapp', customer_name:'Andrés Gómez', customer_phone:'+573205559090', etiqueta:'sin_clasificar', assigned_to_nombre:null, unread_count:3, updated_at:'2026-07-02 15:20:00', last:'Hola, quiero información de los lotes' },
@@ -129,7 +129,7 @@
         <button class="btn btn--icon btn--quiet u-hide" id="back">${ICONS.up.replace('<svg ','<svg style="transform:rotate(-135deg)" ')}</button>
         <div class="avatar avatar--sm" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
         <div class="u-grow"><div style="font-weight:600;font-size:14px">${c.customer_name||'Sin nombre'}</div>
-          <div class="u-row u-gap1" style="font-size:11.5px"><span class="t-dim3">${ch.e} ${ch.t}</span><span class="t-dim3">·</span><span class="t-dim3 t-num">${c.customer_phone||''}</span></div></div>
+          <div class="u-row u-gap1" style="font-size:11.5px"><span class="t-dim3">${ch.e} ${ch.t}</span><span class="t-dim3">·</span><span class="t-dim3 t-num">${fmtPhone(c.customer_phone)}</span></div></div>
         <span class="badge badge--${ch.b}">${ch.t}</span>
       </div>
       <div class="ibx-msgs" id="msgs"><div class="skel" style="height:40px;width:60%;align-self:flex-start"></div></div>
@@ -189,7 +189,7 @@
       <div class="os-panel__body">
         <div class="u-col" style="align-items:center;text-align:center;gap:8px;margin-bottom:var(--s3)">
           <div class="avatar avatar--lg" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
-          <div><div class="t-h2">${c.customer_name||'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:13px">${c.customer_phone||''}</div></div>
+          <div><div class="t-h2">${c.customer_name||'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:13px">${fmtPhone(c.customer_phone)}</div></div>
           <span class="badge badge--${ch.b}">${ch.e} ${ch.t}</span>
         </div>
         <div class="surface" style="padding:14px;margin-bottom:var(--s3)">

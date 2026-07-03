@@ -19,7 +19,7 @@
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
-  const { ICONS, api, avatarColor, initials, toast, fmt } = SPOS;
+  const { ICONS, api, avatarColor, initials, toast, fmt, fmtPhone } = SPOS;
 
   const COLS = [
     { k:'sin_clasificar', t:'Nuevos', c:'var(--text-3)' },
@@ -35,7 +35,7 @@
   let leads = await api('/api/leads');
   const demo = !Array.isArray(leads);
   if (demo) leads = [
-    { id:1, customer_name:'Juan Pérez', customer_phone:'+573224312518', etiqueta:'negociacion', assigned_to_nombre:'Carlos García' },
+    { id:1, customer_name:'Juan Pérez', customer_phone:'+573214625618', etiqueta:'negociacion', assigned_to_nombre:'Carlos García' },
     { id:2, customer_name:'María González', customer_phone:'+573001234567', etiqueta:'interesado', assigned_to_nombre:'Andrea López' },
     { id:3, customer_name:'Roberto Martínez', customer_phone:'+573019876543', etiqueta:'cita', assigned_to_nombre:'Miguel Torres' },
     { id:4, customer_name:'Lucía Fernández', customer_phone:'+573145550101', etiqueta:'vendido', assigned_to_nombre:'Carlos García' },
@@ -55,7 +55,7 @@
         <div class="u-row u-gap2" style="min-width:0">
           <div class="avatar avatar--sm" style="background:${avatarColor(l.customer_name)}">${initials(l.customer_name)}</div>
           <div style="min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.customer_name||'Sin nombre'}</div>
-          <div class="kan-card__phone">${l.customer_phone||''}</div></div>
+          <div class="kan-card__phone">${fmtPhone(l.customer_phone)}</div></div>
         </div>
       </div>
       <div class="u-row u-gap1 t-dim3" style="font-size:11.5px">${ICONS.team.replace('<svg ','<svg style="width:13px;height:13px" ')}<span>${l.assigned_to_nombre||'Sin asignar'}</span></div>

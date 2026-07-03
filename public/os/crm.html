@@ -14,7 +14,7 @@
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
-  const { ICONS, api, fmt, avatarColor, initials, toast } = SPOS;
+  const { ICONS, api, fmt, avatarColor, initials, toast, fmtPhone } = SPOS;
 
   const ETQ = {
     sin_clasificar: { t:'Nuevo', b:'mute' },
@@ -33,7 +33,7 @@
 
   let leads = await api('/api/leads');
   const DEMO = [
-    { id:1, customer_name:'Juan Pérez', customer_phone:'+573224312518', etiqueta:'negociacion', status:'contactado', assigned_to_nombre:'Carlos García', updated_at:'2026-07-02 14:10:00', unread_count:2 },
+    { id:1, customer_name:'Juan Pérez', customer_phone:'+573214625618', etiqueta:'negociacion', status:'contactado', assigned_to_nombre:'Carlos García', updated_at:'2026-07-02 14:10:00', unread_count:2 },
     { id:2, customer_name:'María González', customer_phone:'+573001234567', etiqueta:'interesado', status:'contactado', assigned_to_nombre:'Andrea López', updated_at:'2026-07-02 12:30:00', unread_count:0 },
     { id:3, customer_name:'Roberto Martínez', customer_phone:'+573019876543', etiqueta:'cita', status:'contactado', assigned_to_nombre:'Miguel Torres', updated_at:'2026-07-02 09:05:00', unread_count:1 },
     { id:4, customer_name:'Lucía Fernández', customer_phone:'+573145550101', etiqueta:'vendido', status:'cerrado', assigned_to_nombre:'Carlos García', updated_at:'2026-07-01 17:40:00', unread_count:0 },
@@ -69,7 +69,7 @@
   function render() {
     const items = leads.filter(l => {
       const okF = filter === 'todos' || (l.etiqueta || 'sin_clasificar') === filter;
-      const okQ = !query || (l.customer_name || '').toLowerCase().includes(query) || (l.customer_phone || '').includes(query);
+      const okQ = !query || (l.customer_name || '').toLowerCase().includes(query) || (l.customer_phone || '').toLowerCase().includes(query.replace(/\s/g, ''));
       return okF && okQ;
     });
     if (!items.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1">${ICONS.leads}<div>Sin leads en esta vista</div></div>`; return; }
@@ -79,7 +79,7 @@
         <div class="u-between" style="margin-bottom:14px">
           <div class="u-row u-gap2">
             <div class="avatar avatar--md" style="background:${avatarColor(l.customer_name)}">${initials(l.customer_name)}</div>
-            <div><div style="font-weight:600">${l.customer_name || 'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:12px">${l.customer_phone || ''}</div></div>
+            <div><div style="font-weight:600">${l.customer_name || 'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:12px">${fmtPhone(l.customer_phone)}</div></div>
           </div>
           ${l.unread_count > 0 ? `<span class="os-nav__badge">${l.unread_count}</span>` : ''}
         </div>
@@ -103,12 +103,12 @@
     ctx.panel.innerHTML = `
       <div class="os-panel__head">
         <div class="t-label">Ficha del lead</div>
-        <a class="btn btn--gold btn--sm" href="/vendedor.html">${ICONS.msg}Abrir chat</a>
+        <a class="btn btn--gold btn--sm" href="/os/inbox.html">${ICONS.msg}Abrir chat</a>
       </div>
       <div class="os-panel__body">
         <div class="u-col" style="align-items:center;text-align:center;gap:10px;margin-bottom:var(--s3)">
           <div class="avatar avatar--lg" style="background:${avatarColor(l.customer_name)}">${initials(l.customer_name)}</div>
-          <div><div class="t-h2">${l.customer_name || 'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:13px">${l.customer_phone || ''}</div></div>
+          <div><div class="t-h2">${l.customer_name || 'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:13px">${fmtPhone(l.customer_phone)}</div></div>
           <span class="badge badge--${e.b}">${e.t}</span>
         </div>
         <div class="surface" style="padding:14px;margin-bottom:var(--s3)">
