@@ -71,17 +71,16 @@
     ]},
   ];
 
-  /* --- API helper: usa el backend real; si no responde, cae a demo --- */
+  /* --- API helper: usa el backend real, retorna null en error --- */
   async function api(path, opts) {
     try {
       const res = await fetch(path, Object.assign({
         headers: { 'Accept': 'application/json' }, credentials: 'include'
       }, opts || {}));
-      if (res.status === 401) { SPOS._demo = true; return null; }
+      if (res.status === 401) return null;
       if (!res.ok) throw new Error('http_' + res.status);
       return await res.json();
     } catch (e) {
-      SPOS._demo = true;
       return null;
     }
   }
@@ -109,19 +108,34 @@
     return p;
   };
 
+  /* --- Nav mínima para vendedores --- */
+  const NAV_VENDEDOR = [{
+    title: 'Mi Trabajo',
+    items: [{ id: 'inbox', label: 'Mi Panel', icon: 'inbox', href: '/os/vendedor.html', badge: 'live' }],
+  }];
+
   /* --- Montaje del shell --- */
   async function mount(opts) {
     opts = opts || {};
     const active = opts.active || 'dashboard';
-    let me = await api('/api/me');
-    const demo = !me;
-    if (!me) me = { nombre: 'Sergio Parra', email: 'sergio@sp.os', rol: 'admin' };
+    const me = await api('/api/me');
 
-    // Vendedor no-admin fuera de /os → mándalo a su panel OS (no rompemos su flujo)
-    if (!demo && me.rol !== 'admin' && opts.adminOnly) { location.href = '/os/inbox.html'; return null; }
+    // Sin sesión activa → login (siempre, sin modo demo)
+    if (!me) { location.replace('/login.html'); return null; }
 
-    const navHTML = NAV.map(group => {
-      const items = group.items.filter(it => !(it.admin && !demo && me.rol !== 'admin')).map(it => `
+    const isAdmin = me.rol === 'admin';
+
+    // Vendedor intentando entrar a página de admin → su panel
+    if (!isAdmin && opts.adminOnly) { location.replace('/os/vendedor.html'); return null; }
+
+    // Vendedor en cualquier página que no sea su panel → redirigir
+    if (!isAdmin && location.pathname !== '/os/vendedor.html') {
+      location.replace('/os/vendedor.html'); return null;
+    }
+
+    const navGroups = isAdmin ? NAV : NAV_VENDEDOR;
+    const navHTML = navGroups.map(group => {
+      const items = group.items.filter(it => !(it.admin && !isAdmin)).map(it => `
         <a class="os-nav__item${it.id === active ? ' active' : ''}" href="${it.href}">
           ${ICONS[it.icon] || ''}<span>${it.label}</span>
           ${it.badge === 'live' ? '<span class="os-nav__badge" id="navBadgeInbox">•</span>' : ''}
@@ -181,18 +195,10 @@
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
     window.addEventListener('keydown', (e) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('osSearch').focus(); } });
 
-    if (demo) badgeDemo();
-    return { me, demo, content: document.getElementById('osContent'), panel: document.getElementById('osPanel') };
+    return { me, content: document.getElementById('osContent'), panel: document.getElementById('osPanel') };
   }
 
-  function badgeDemo() {
-    const b = document.createElement('div');
-    b.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:95;background:var(--gold-soft);color:var(--gold);border:1px solid var(--gold-line);padding:5px 14px;border-radius:999px;font-size:11.5px;font-weight:600;letter-spacing:.03em';
-    b.textContent = 'MODO DEMO · sin sesión activa';
-    document.body.appendChild(b);
-  }
-
-  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, _demo: false,
+  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone,
     fmt: {
       n: (v) => (v == null ? '—' : Number(v).toLocaleString('es-CO')),
       money: (v) => (v == null ? '—' : '$' + Number(v).toLocaleString('es-CO')),
