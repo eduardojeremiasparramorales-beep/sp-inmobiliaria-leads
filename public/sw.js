@@ -3,10 +3,10 @@
    - NUNCA cachea /api/* (datos siempre frescos desde la red).
    - Maneja notificaciones push (Fase 4).
 */
-const CACHE = 'sp-panel-__SW_VERSION__';
+const CACHE = 'sp-os-v2';
 const SHELL = [
-  '/vendedor.html',
   '/login.html',
+  '/index.html',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -43,7 +43,7 @@ self.addEventListener('fetch', (event) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         return res;
-      }).catch(() => caches.match(req).then((r) => r || caches.match('/vendedor.html')))
+      }).catch(() => caches.match(req).then((r) => r || caches.match('/index.html')))
     );
     return;
   }
@@ -70,7 +70,7 @@ self.addEventListener('push', (event) => {
     vibrate: [120, 60, 120],
     tag: data.tag || 'sp-lead',
     renotify: true,
-    data: { leadId: data.leadId || null, url: '/vendedor.html' },
+    data: { leadId: data.leadId || null, url: '/os/vendedor.html' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -78,11 +78,11 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const leadId = event.notification.data && event.notification.data.leadId;
-  const targetUrl = leadId ? `/vendedor.html?lead=${leadId}` : '/vendedor.html';
+  const targetUrl = leadId ? `/os/vendedor.html?lead=${leadId}` : '/os/vendedor.html';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url.includes('/vendedor.html') && 'focus' in client) {
+        if (client.url.includes('/os/vendedor.html') && 'focus' in client) {
           client.focus();
           client.postMessage({ type: 'open_lead', leadId });
           return;

@@ -148,6 +148,10 @@ async function initDB() {
 
   createNewTables(adapter.getDB());
 
+  // Puente legacy → multicanal: cada conversación puede apuntar a su lead
+  ensureColumn('conversations', 'lead_id', 'INTEGER');
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id)`);
+
   return adapter.getDB();
 }
 
@@ -638,6 +642,65 @@ function getConversationCount() {
   return r ? r.c : 0;
 }
 
+// --- Puente legacy → multicanal ---
+// Sincroniza un lead (tabla legacy) hacia customers/conversations/timeline
+// para que el inbox multicanal del admin refleje TODO el movimiento de WhatsApp.
+// data: { direction: 'incoming'|'outgoing', body, media, fromNumber, toNumber, messageId }
+function syncLeadToConversation(lead, data = {}) {
+  try {
+    if (!lead || !lead.id) return null;
+    const phone = lead.customer_phone || '';
+
+    // 1. Conversación existente ligada a este lead
+    let conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
+
+    if (!conv) {
+      // 2. Customer por canal whatsapp/teléfono (o crearlo)
+      let customer = findCustomerByChannel('whatsapp', phone);
+      if (!customer) {
+        customer = createCustomer(lead.customer_name || 'Cliente', phone);
+        linkChannelToCustomer(customer.id, 'whatsapp', phone, lead.customer_name || '');
+      }
+      run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null, lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'), lead.etiqueta || 'sin_clasificar']);
+      conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
+    }
+    if (!conv) return null;
+
+    // 3. Mantener asignación/etiqueta/estado en espejo con el lead
+    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [
+      lead.assigned_to_id || null,
+      lead.etiqueta || conv.etiqueta || 'sin_clasificar',
+      lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
+      conv.id,
+    ]);
+
+    // 4. Evento en el timeline (si hay mensaje)
+    if (data.body || data.media) {
+      const m = data.media || {};
+      addTimelineEvent(conv.id, 'message', {
+        channel: 'whatsapp',
+        body: data.body || '',
+        direction: data.direction || 'incoming',
+        from_number: data.fromNumber || '',
+        to_number: data.toNumber || '',
+        media_type: m.media_type || null,
+        media_id: m.media_id || null,
+        media_mime: m.media_mime || null,
+        media_filename: m.media_filename || null,
+        metadata: data.messageId ? { legacy_message_id: data.messageId } : undefined,
+      });
+      const inc = data.direction === 'incoming' ? 1 : 0;
+      run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), unread_count = CASE WHEN ? = 1 THEN COALESCE(unread_count,0) + 1 ELSE unread_count END, updated_at = datetime(\'now\') WHERE id = ?',
+        [String(data.body || `[${(data.media || {}).media_type || 'media'}]`).slice(0, 200), inc, conv.id]);
+    }
+    return conv;
+  } catch (e) {
+    console.error('syncLeadToConversation:', e.message);
+    return null;
+  }
+}
+
 // --- Timeline ---
 function addTimelineEvent(conversationId, eventType, data = {}) {
   const d = data || {};
@@ -734,6 +797,7 @@ module.exports = {
   getConversationByChannelUser, updateConversationStatus, updateConversationTag,
   updateConversationPriority, getConversations, getConversationCount,
   addTimelineEvent, getTimelineByConversation, getLastMessageByConversation,
+  syncLeadToConversation,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
 };

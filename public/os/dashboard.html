@@ -22,24 +22,12 @@
     action: `<button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
   });
 
-  // --- Datos reales (con fallback demo) ---
+  // --- Datos reales ---
   let m = await api('/api/metricas');
   let stats = await api('/api/stats');
 
-  const DEMO = {
-    total: 342, vendidos: 47, conversionGlobal: 14, tiempoRespuestaPromedio: 8,
-    respondidos: 289, sinResponder: 12, totalMensajes: 4820, mensajesEntrantes: 2610,
-    porEtiqueta: { sin_clasificar: 61, interesado: 120, negociacion: 58, cita: 34, vendido: 47, no_interesado: 22 },
-    porEstado: { nuevo: 40, contactado: 150, cerrado: 60 },
-    porVendedor: [
-      { id:1, nombre:'Carlos García', estado:'activo', total:98, activos:71, vendidos:16, conversion:16 },
-      { id:2, nombre:'Andrea López', estado:'activo', total:84, activos:60, vendidos:14, conversion:17 },
-      { id:3, nombre:'Miguel Torres', estado:'activo', total:76, activos:52, vendidos:11, conversion:14 },
-      { id:4, nombre:'Laura Ruiz', estado:'ausente', total:84, activos:44, vendidos:6, conversion:7 },
-    ],
-  };
-  if (!m) m = DEMO;
-  if (!stats) stats = { totalVendedores: 4, vendedoresActivos: 3 };
+  if (!m) m = { total: 0, vendidos: 0, conversionGlobal: 0, tiempoRespuestaPromedio: null, respondidos: 0, sinResponder: 0, totalMensajes: 0, mensajesEntrantes: 0, porEtiqueta: {}, porEstado: {}, porVendedor: [] };
+  if (!stats) stats = { totalVendedores: 0, vendedoresActivos: 0 };
 
   const etq = m.porEtiqueta || {};
   const pipeline = [

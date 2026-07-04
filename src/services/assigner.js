@@ -7,6 +7,15 @@ function getWelcomeMsg() {
   return getConfig('welcome_message') || WELCOME_DEFAULT;
 }
 
+// Espeja el movimiento del lead legacy en el inbox multicanal (conversations/timeline)
+function syncMulticanal(leadId, data) {
+  try {
+    const store = require('../db/store');
+    const lead = store.getLeadById(leadId);
+    if (lead) store.syncLeadToConversation(lead, data);
+  } catch (e) { console.error('syncMulticanal:', e.message); }
+}
+
 // Notifica al panel del vendedor (y a admins) que hubo movimiento en un lead
 function notificarPanel(vendedorId, leadId, tipo) {
   const data = { leadId, tipo, ts: Date.now() };
@@ -61,6 +70,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
       saveMessage(activeLead.id, fromPhone, activeLead.customer_phone, messageBody, 'outgoing');
       setFirstResponse(activeLead.id);
       updateLeadStatus(activeLead.id, 'contactado');
+      syncMulticanal(activeLead.id, { direction: 'outgoing', body: messageBody, fromNumber: fromPhone, toNumber: activeLead.customer_phone });
       notificarPanel(vendedor.id, activeLead.id, 'respuesta_vendedor');
 
       const { sendMessage } = require('./whatsapp');
@@ -86,6 +96,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
     if (!v) v = activos[0];
 
     saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming');
+    syncMulticanal(lead.id, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: v.telefono });
     notificarPanel(v.id, lead.id, 'mensaje_cliente');
 
     const { sendMessage } = require('./whatsapp');
@@ -118,11 +129,13 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
       console.error('Error asignando lead:', e.message);
     }
     saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming');
+    syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
     sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nCliente: ${customerName || 'Cliente'}\nTel: ${fromPhone}\n\n${messageBody}`)
       .then(() => callback(null, { forwarded: true, to: vendedorAsignado.telefono }))
       .catch(callback);
   } else {
+    syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone });
     callback(null, { message: 'no_hay_vendedores' });
   }
 }
@@ -154,6 +167,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, callback) {
   }
 
   store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', body, 'incoming', mediaData);
+  syncMulticanal(lead.id, { direction: 'incoming', body, media: mediaData, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '' });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
 
   if (vendedor) {

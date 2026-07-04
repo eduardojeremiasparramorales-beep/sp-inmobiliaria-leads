@@ -96,9 +96,9 @@
   /* Compositor */
   .ibx-compose { flex-shrink: 0; padding: 10px var(--s3); padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--bg-1); display: flex; flex-direction: column; gap: 6px; }
   .compose-row { display: flex; gap: 8px; align-items: flex-end; }
-  .compose-pill { flex: 1; display: flex; align-items: flex-end; background: var(--bg-3); border: 1px solid var(--border); border-radius: 22px; padding: 2px 4px; min-height: 44px; transition: border-color .15s; }
+  .compose-pill { flex: 1; min-width: 0; display: flex; align-items: flex-end; background: var(--bg-3); border: 1px solid var(--border); border-radius: 22px; padding: 2px 4px; min-height: 44px; transition: border-color .15s; }
   .compose-pill:focus-within { border-color: var(--gold-line); }
-  .compose-pill textarea { flex: 1; resize: none; background: transparent; border: none; color: var(--text); padding: 10px 8px; font-family: var(--f-ui); font-size: 14px; line-height: 1.35; max-height: 100px; outline: none; }
+  .compose-pill textarea { flex: 1; min-width: 0; width: 100%; resize: none; background: transparent; border: none; color: var(--text); padding: 10px 8px; font-family: var(--f-ui); font-size: 14px; line-height: 1.35; max-height: 100px; outline: none; }
   .compose-pill textarea::placeholder { color: var(--text-3); }
   .icon-btn { background: none; border: none; color: var(--text-3); padding: 9px 8px; cursor: pointer; display: flex; align-items: center; transition: color .12s; flex-shrink: 0; }
   .icon-btn:hover { color: var(--text-2); }
@@ -466,6 +466,11 @@
     }
 
     async function startRec() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const esHttps = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        toast(esHttps ? 'Tu navegador no soporta grabación de audio' : 'El micrófono solo funciona con HTTPS — usa la dirección https:// del CRM', 'err');
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mime = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
@@ -483,7 +488,11 @@
         pill.style.display = 'none'; emojiPanel.classList.remove('show'); recStrip.classList.add('show');
         let secs = 0; document.getElementById('recTimer').textContent = '0:00';
         recInterval = setInterval(() => { secs++; document.getElementById('recTimer').textContent = fmtSecs(secs); if (secs >= 120) { stopRec(); toast('Máximo 2 min'); } }, 1000);
-      } catch (e) { toast('No se pudo acceder al micrófono', 'err'); }
+      } catch (e) {
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') toast('Permiso de micrófono denegado — actívalo en la configuración del navegador', 'err');
+        else if (e.name === 'NotFoundError') toast('No se encontró micrófono en este dispositivo', 'err');
+        else toast('No se pudo acceder al micrófono: ' + e.message, 'err');
+      }
     }
 
     mainBtn.addEventListener('click', () => {
@@ -501,9 +510,8 @@
       try {
         const ext = recBlob.type.includes('ogg') ? 'ogg' : recBlob.type.includes('mp4') ? 'mp4' : 'webm';
         const dataBase64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(recBlob); });
-        const lead = conv.lead_id || id;
-        const r = await api('/api/leads/' + lead + '/responder-media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mime: recBlob.type, filename: 'audio.' + ext, dataBase64 }) });
-        if (!r) throw new Error('Error al enviar');
+        const r = await api('/api/inbox/conversations/' + id + '/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mime: recBlob.type, filename: 'audio.' + ext, dataBase64 }) });
+        if (!r) throw new Error('No se pudo enviar el audio — revisa la conexión con WhatsApp');
         audioPreview.classList.remove('show'); audioPlayback.src = ''; recBlob = null;
         await recargarMensajes(id);
       } catch (e) { toast('Error: ' + e.message, 'err'); }
@@ -544,19 +552,18 @@
     toast('Enviando archivo…');
     try {
       const dataBase64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
-      const conv = convs.find(x => x.id === id);
-      const lead = conv?.lead_id || id;
-      const r = await api('/api/leads/' + lead + '/responder-media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mime: file.type || 'application/octet-stream', filename: file.name, dataBase64 }) });
-      if (!r) throw new Error('Sin respuesta');
+      const r = await api('/api/inbox/conversations/' + id + '/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mime: file.type || 'application/octet-stream', filename: file.name, dataBase64 }) });
+      if (!r) throw new Error('No se pudo enviar el archivo');
       await recargarMensajes(id);
     } catch (e) { toast('Error: ' + e.message, 'err'); }
   }
 
   window.enviarWATemplate = async function (id, nombre, idioma) {
     const conv = convs.find(x => x.id === id);
-    if (!conv || !confirm(`¿Enviar plantilla "${nombre}"?`)) return;
-    const lead = conv.lead_id || id;
-    const r = await api('/api/leads/' + lead + '/enviar-template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, idioma }) });
+    if (!conv) return;
+    if (!conv.lead_id) { toast('Esta conversación aún no tiene lead vinculado', 'err'); return; }
+    if (!confirm(`¿Enviar plantilla "${nombre}"?`)) return;
+    const r = await api('/api/leads/' + conv.lead_id + '/enviar-template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, idioma }) });
     if (r !== null) { toast('Plantilla enviada', 'ok'); await recargarMensajes(id); }
     else toast('Error al enviar plantilla', 'err');
     const p = document.getElementById('reactivarPanel'); if (p) p.style.display = 'none';
@@ -585,7 +592,7 @@
 
   function renderMedia(m) {
     if (!m.media_type || !m.id) return null;
-    const src = '/api/media/' + m.id;
+    const src = '/api/inbox/media/' + m.id;
     const cap = (m.body && !/^\[(image|audio|video|document|sticker)\]$/.test(m.body)) ? `<div class="media-cap">${esc(m.body)}</div>` : '';
     if (m.media_type === 'image' || m.media_type === 'sticker') return `<a href="${src}" target="_blank"><img class="media-img" src="${src}" alt="imagen" loading="lazy"></a>${cap}`;
     if (m.media_type === 'audio') return `<audio class="media-audio" controls src="${src}"></audio>${cap}`;

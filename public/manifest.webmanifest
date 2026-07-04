@@ -2,7 +2,7 @@
   "name": "SP Leons Group — CRM Inmobiliaria",
   "short_name": "SP Leons",
   "description": "Atiende tus leads de WhatsApp en tiempo real.",
-  "start_url": "/vendedor.html",
+  "start_url": "/index.html",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -21,7 +21,7 @@
       "name": "Mis Leads",
       "short_name": "Leads",
       "description": "Ver mis leads asignados",
-      "url": "/vendedor.html",
+      "url": "/os/vendedor.html",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ],

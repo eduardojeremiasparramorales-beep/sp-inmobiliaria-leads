@@ -380,6 +380,8 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
 .ai-dock__spark { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(140deg, #E8C86A, var(--gold) 60%, #9E7E3C); display: grid; place-items: center; color: #000; }
 .ai-dock__label { font-size: 13px; font-weight: 600; }
 .ai-dock__hint { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-family: var(--f-num); }
+/* En móvil el dock tapa el botón de enviar del chat: se oculta */
+@media (max-width: 860px) { .ai-dock { display: none; } }
 
 /* ----------------------------------------------------------------------------
    14. TOAST

@@ -5,12 +5,19 @@ const store = require('../../db/store');
 
 router.use(auth.requireAuth);
 
+// Un vendedor solo puede tocar conversaciones asignadas a él; el admin, todas.
+function puedeVer(req, conversation) {
+  return req.session.rol === 'admin' || Number(conversation.assigned_to_id) === Number(req.session.vendedorId);
+}
+
 // GET / → lista filtrable
 router.get('/', (req, res) => {
-  const { channel, status, etiqueta, vendedorId, busqueda, limite, offset } = req.query;
+  const { channel, status, etiqueta, busqueda, limite, offset } = req.query;
   const lim = Number(limite) || 50;
   const off = Number(offset) || 0;
 
+  // Vendedor: forzar filtro a sus propias conversaciones
+  const vendedorId = req.session.rol === 'admin' ? req.query.vendedorId : req.session.vendedorId;
   const data = store.getConversations({ channel, status, etiqueta, busqueda, vendedorId, limite: lim, offset: off });
   const total = store.getConversationCount();
 
@@ -25,6 +32,7 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
+  if (!puedeVer(req, conversation)) return res.status(403).json({ data: null, error: 'sin_permiso' });
 
   const customer = store.getCustomerById(conversation.customer_id);
   const timeline = store.getTimelineByConversation(conversation.id).slice(-20);
@@ -36,6 +44,7 @@ router.get('/:id', (req, res) => {
 router.put('/:id', (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
+  if (!puedeVer(req, conversation)) return res.status(403).json({ data: null, error: 'sin_permiso' });
 
   const { status, etiqueta, priority } = req.body || {};
   if (status !== undefined) store.updateConversationStatus(conversation.id, status);
@@ -45,8 +54,8 @@ router.put('/:id', (req, res) => {
   res.json({ data: store.getConversationById(conversation.id), error: null });
 });
 
-// POST /:id/assign { vendedorId }
-router.post('/:id/assign', async (req, res) => {
+// POST /:id/assign { vendedorId } — solo admin
+router.post('/:id/assign', auth.requireAdmin, async (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
 
@@ -68,6 +77,7 @@ router.post('/:id/assign', async (req, res) => {
 router.post('/:id/close', async (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
+  if (!puedeVer(req, conversation)) return res.status(403).json({ data: null, error: 'sin_permiso' });
 
   const MessageRouter = require('../../services/router');
   const updated = await MessageRouter.closeConversation(conversation.id);
@@ -79,6 +89,7 @@ router.post('/:id/close', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
+  if (!puedeVer(req, conversation)) return res.status(403).json({ data: null, error: 'sin_permiso' });
 
   const MessageRouter = require('../../services/router');
   const updated = await MessageRouter.closeConversation(conversation.id);

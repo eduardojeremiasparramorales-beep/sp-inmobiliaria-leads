@@ -373,6 +373,18 @@ app.post('/api/inbox/conversations/:id/send', auth.requireAuth, async (req, res)
   try {
     const MessageRouter = require('./services/router');
     await MessageRouter.routeOutgoing(conv.id, req.session.vendedorId, String(mensaje).trim());
+    // Espejo hacia el lead legacy para que el vendedor lo vea en su panel
+    if (conv.lead_id) {
+      try {
+        const lead = store.getLeadById(conv.lead_id);
+        if (lead) {
+          store.saveMessage(lead.id, 'panel', lead.customer_phone, String(mensaje).trim(), 'outgoing');
+          store.setFirstResponse(lead.id);
+          if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
+          events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+        }
+      } catch (e) { console.error('send espejo lead:', e.message); }
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('Error enviando por inbox:', e.message);
@@ -391,7 +403,10 @@ app.post('/api/inbox/conversations/:id/etiqueta', auth.requireAuth, (req, res) =
   const { etiqueta } = req.body || {};
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
-  if (etiqueta) store.updateConversationTag(conv.id, etiqueta);
+  if (etiqueta) {
+    store.updateConversationTag(conv.id, etiqueta);
+    if (conv.lead_id) { try { store.setLeadEtiqueta(conv.lead_id, etiqueta); } catch (e) { } }
+  }
   res.json({ ok: true });
 });
 
@@ -402,7 +417,7 @@ app.post('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   store.addTimelineEvent(conv.id, 'note', {
     body: nota.trim(),
-    direction: 'internal',
+    direction: 'system',
     channel: conv.channel,
   });
   res.json({ ok: true });
@@ -415,6 +430,90 @@ app.get('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
     .filter(m => m.event_type === 'note')
     .map(m => ({ id: m.id, nota: m.body, created_at: m.created_at }));
   res.json(notas);
+});
+
+// Asignar/reasignar una conversación a un vendedor (solo admin)
+app.post('/api/inbox/conversations/:id/assign', auth.requireAuth, auth.requireAdmin, (req, res) => {
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  const { vendedorId } = req.body || {};
+  if (!vendedorId) return res.status(400).json({ error: 'vendedorId_requerido' });
+  const vendedor = store.getVendedores().find(v => Number(v.id) === Number(vendedorId));
+  if (!vendedor) return res.status(400).json({ error: 'vendedor_no_existe' });
+
+  const adapter = require('./db/adapter');
+  adapter.run('UPDATE conversations SET assigned_to_id = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, 'asignado', conv.id]);
+  // Espejo hacia el lead legacy si existe
+  if (conv.lead_id) {
+    try { store.reassignLead(conv.lead_id, vendedor); } catch (e) { console.error('assign espejo lead:', e.message); }
+  }
+  events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { conversationId: conv.id, leadId: conv.lead_id || null, tipo: 'asignacion', ts: Date.now() });
+  res.json({ ok: true, conversation: store.getConversationById(conv.id) });
+});
+
+// Enviar un archivo (imagen/audio/video/documento) desde el inbox multicanal
+app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, async (req, res) => {
+  const { mime, filename, dataBase64, caption } = req.body || {};
+  if (!mime || !dataBase64) return res.status(400).json({ error: 'mime y dataBase64 requeridos' });
+  const conv = store.getConversationById(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
+    return res.status(403).json({ error: 'sin_permiso' });
+  if (conv.channel !== 'whatsapp') return res.status(400).json({ error: 'canal_no_soporta_media' });
+
+  const customer = store.getCustomerById(conv.customer_id);
+  const telefono = (customer && customer.phone) || conv.channel_conversation_id;
+  if (!telefono) return res.status(400).json({ error: 'cliente_sin_telefono' });
+
+  let tipo = 'document';
+  if (mime.startsWith('image/')) tipo = 'image';
+  else if (mime.startsWith('audio/')) tipo = 'audio';
+  else if (mime.startsWith('video/')) tipo = 'video';
+
+  try {
+    const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
+    const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
+    const mediaId = await uploadMedia(buffer, mime, filename);
+    await sendMedia(telefono, mediaId, tipo, caption, filename);
+
+    store.addTimelineEvent(conv.id, 'message', {
+      channel: 'whatsapp', body: caption || `[${tipo}]`, direction: 'outgoing',
+      from_number: 'panel', to_number: telefono,
+      media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+    });
+    const adapter = require('./db/adapter');
+    adapter.run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE id = ?', [caption || `[${tipo}]`, conv.id]);
+    // Espejo hacia el lead legacy para que el vendedor lo vea en su panel
+    if (conv.lead_id) {
+      try {
+        store.saveMessage(conv.lead_id, 'panel', telefono, caption || `[${tipo}]`, 'outgoing', {
+          media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+        });
+      } catch (e) { console.error('media espejo lead:', e.message); }
+    }
+    events.emitToVendedor(conv.assigned_to_id, 'nuevo_mensaje', { conversationId: conv.id, leadId: conv.lead_id || null, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { conversationId: conv.id, leadId: conv.lead_id || null, tipo: 'respuesta_panel', ts: Date.now() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error enviando media desde inbox:', e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// Servir media de un evento del timeline multicanal (valida permiso por conversación)
+app.get('/api/inbox/media/:timelineId', auth.requireAuth, (req, res) => {
+  const adapter = require('./db/adapter');
+  const ev = adapter.one('SELECT * FROM timeline WHERE id = ? LIMIT 1', [req.params.timelineId]);
+  if (!ev || !ev.media_filename) return res.status(404).json({ error: 'media_no_existe' });
+  const conv = store.getConversationById(ev.conversation_id);
+  if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
+    return res.status(403).json({ error: 'sin_permiso' });
+  const filePath = mediaStore.getMediaPath(ev.media_filename);
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
+  if (ev.media_mime) res.setHeader('Content-Type', ev.media_mime);
+  res.sendFile(filePath);
 });
 
 // ===================== RESPONDER (OLD) =====================
@@ -439,6 +538,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
     if (lead.status === 'nuevo' || lead.status === 'asignado') {
       store.updateLeadStatus(lead.id, 'contactado');
     }
+    store.syncLeadToConversation(store.getLeadById(lead.id), { direction: 'outgoing', body: String(mensaje), fromNumber, toNumber: lead.customer_phone });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     res.json({ ok: true });
@@ -494,6 +594,10 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
     });
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
+    store.syncLeadToConversation(store.getLeadById(lead.id), {
+      direction: 'outgoing', body: caption || `[${tipo}]`, fromNumber, toNumber: lead.customer_phone,
+      media: { media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename },
+    });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     res.json({ ok: true });
@@ -867,6 +971,11 @@ app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
   if (rolFinal === 'vendedor') {
     if (!telefono) return res.status(400).json({ error: 'telefono requerido para vendedores' });
     vendedorId = store.addVendedor(nombre, telefono);
+    // PIN de acceso móvil: usa el campo `pin` si viene, o el password si es de 4 dígitos
+    const pinFinal = (req.body && req.body.pin) || (/^\d{4}$/.test(String(password)) ? String(password) : null);
+    if (pinFinal && /^\d{4}$/.test(String(pinFinal))) {
+      store.setVendedorPin(vendedorId, auth.hashPassword(String(pinFinal)));
+    }
   }
   store.createUsuario(emailNorm, auth.hashPassword(password), nombre, rolFinal, vendedorId);
   res.json({ ok: true, vendedorId });

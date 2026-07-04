@@ -109,9 +109,9 @@
   .vnd-compose { flex-shrink: 0; padding: 10px var(--s3); padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--bg-1); display: flex; flex-direction: column; gap: 6px; }
   .vnd-compose.disabled { opacity: .35; pointer-events: none; }
   .compose-row { display: flex; gap: 8px; align-items: flex-end; }
-  .compose-pill { flex: 1; display: flex; align-items: flex-end; background: var(--bg-3); border: 1px solid var(--border); border-radius: 22px; padding: 2px 4px; min-height: 44px; transition: border-color .15s; }
+  .compose-pill { flex: 1; min-width: 0; display: flex; align-items: flex-end; background: var(--bg-3); border: 1px solid var(--border); border-radius: 22px; padding: 2px 4px; min-height: 44px; transition: border-color .15s; }
   .compose-pill:focus-within { border-color: var(--gold-line); }
-  .compose-pill textarea { flex: 1; resize: none; background: transparent; border: none; color: var(--text); padding: 10px 8px; font-family: var(--f-ui); font-size: 14px; line-height: 1.35; max-height: 100px; outline: none; }
+  .compose-pill textarea { flex: 1; min-width: 0; width: 100%; resize: none; background: transparent; border: none; color: var(--text); padding: 10px 8px; font-family: var(--f-ui); font-size: 14px; line-height: 1.35; max-height: 100px; outline: none; }
   .compose-pill textarea::placeholder { color: var(--text-3); }
   .icon-btn { background: none; border: none; color: var(--text-3); padding: 9px 8px; cursor: pointer; display: flex; align-items: center; transition: color .12s; flex-shrink: 0; }
   .icon-btn:hover { color: var(--text-2); }
@@ -623,6 +623,11 @@
     }
 
     async function startRecording() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const esHttps = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        toast(esHttps ? 'Tu navegador no soporta grabación de audio' : 'El micrófono solo funciona con HTTPS — usa la dirección https:// del CRM', 'err');
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mime = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
@@ -650,7 +655,11 @@
           document.getElementById('recTimer').textContent = fmtSecs(secs);
           if (secs >= 120) { stopRecording(); toast('Máximo 2 minutos de audio'); }
         }, 1000);
-      } catch (e) { toast('No se pudo acceder al micrófono', 'err'); }
+      } catch (e) {
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') toast('Permiso de micrófono denegado — actívalo en la configuración del navegador', 'err');
+        else if (e.name === 'NotFoundError') toast('No se encontró micrófono en este dispositivo', 'err');
+        else toast('No se pudo acceder al micrófono: ' + e.message, 'err');
+      }
     }
 
     mainBtn.addEventListener('click', () => {

@@ -27,19 +27,12 @@
   let hourly = await api('/api/reports/hourly-distribution');
   let team = await api('/api/reports/team-performance');
 
-  const demo = !pipe;
-  if (demo) {
-    pipe = { etapas:[{etapa:'nuevo',count:120,conversion_pct:100},{etapa:'asignado',count:98,conversion_pct:82},{etapa:'contactado',count:74,conversion_pct:76},{etapa:'cerrado',count:31,conversion_pct:42}], total:120, tasa_conversion_general:26 };
-    chan = { whatsapp:214, instagram:86, messenger:42 };
-    resp = { promedio:8.4, mediana:5, p90:22, p99:48, muestras:180 };
-    hourly = Array.from({length:24},(_,h)=>({hora:h, count: Math.round(20*Math.exp(-Math.pow(h-13,2)/26)) }));
-    team = [
-      { nombre:'Carlos García', total_asignadas:98, contactadas:81, cerradas:22, vendidas:16, tiempo_promedio_respuesta:6.2 },
-      { nombre:'Andrea López', total_asignadas:84, contactadas:70, cerradas:18, vendidas:14, tiempo_promedio_respuesta:7.8 },
-      { nombre:'Miguel Torres', total_asignadas:76, contactadas:58, cerradas:14, vendidas:11, tiempo_promedio_respuesta:9.1 },
-      { nombre:'Laura Ruiz', total_asignadas:44, contactadas:30, cerradas:6, vendidas:6, tiempo_promedio_respuesta:14.5 },
-    ];
-  }
+  // Datos reales; si aún no hay actividad, estados vacíos
+  if (!pipe) pipe = { etapas: [], total: 0, tasa_conversion_general: 0 };
+  if (!chan) chan = {};
+  if (!resp) resp = { promedio: null, mediana: null, p90: null, p99: null, muestras: 0 };
+  if (!hourly) hourly = Array.from({ length: 24 }, (_, h) => ({ hora: h, count: 0 }));
+  if (!team) team = [];
 
   const ETAPA_LABEL = { nuevo:'Nuevos', asignado:'Asignados', contactado:'Contactados', cerrado:'Cerrados' };
   const CH = { whatsapp:{t:'WhatsApp',c:'#57C168'}, instagram:{t:'Instagram',c:'#C8A45A'}, messenger:{t:'Messenger',c:'#5B8DEF'} };
