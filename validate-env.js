@@ -120,14 +120,14 @@ function validateVariable(key, value) {
 }
 
 // Intentar conexión a Meta API
-async function testMetaConnection(token, phoneNumberId) {
+async function testMetaConnection(token, phoneNumberId, apiVersion) {
     return new Promise((resolve) => {
         log.info('Intentando conexión a Meta API...');
 
         const options = {
             hostname: 'graph.facebook.com',
             port: 443,
-            path: `/v18.0/${phoneNumberId}?fields=id,display_phone_number&access_token=${token}`,
+            path: `/${apiVersion}/${phoneNumberId}?fields=id,display_phone_number&access_token=${token}`,
             method: 'GET',
             timeout: 5000,
         };
@@ -202,7 +202,7 @@ async function main() {
 
     // Test de conexión a Meta
     log.section('Prueba de Conexión');
-    const metaOk = await testMetaConnection(env.WHATSAPP_TOKEN, env.PHONE_NUMBER_ID);
+    const metaOk = await testMetaConnection(env.WHATSAPP_TOKEN, env.PHONE_NUMBER_ID, env.WHATSAPP_API_VERSION || 'v22.0');
 
     // Resultado final
     log.section('RESULTADO');
