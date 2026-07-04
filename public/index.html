@@ -26,7 +26,7 @@
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (u) {
       if (!u) { location.replace('/login.html'); return; }
-      location.replace(u.rol === 'admin' ? '/os/dashboard.html' : '/vendedor.html');
+      location.replace(u.rol === 'admin' ? '/os/dashboard.html' : '/os/vendedor.html');
     })
     .catch(function () { location.replace('/login.html'); });
 </script>
