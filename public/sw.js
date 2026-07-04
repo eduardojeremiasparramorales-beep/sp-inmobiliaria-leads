@@ -3,10 +3,14 @@
    - NUNCA cachea /api/* (datos siempre frescos desde la red).
    - Maneja notificaciones push (Fase 4).
 */
-const CACHE = 'sp-os-v2';
+const CACHE = 'sp-os-v3';
 const SHELL = [
   '/login.html',
   '/index.html',
+  '/m/',
+  '/m/index.html',
+  '/os/sp-os.css',
+  '/sw-reg.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -78,11 +82,11 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const leadId = event.notification.data && event.notification.data.leadId;
-  const targetUrl = leadId ? `/os/vendedor.html?lead=${leadId}` : '/os/vendedor.html';
+  const targetUrl = leadId ? `/m/?lead=${leadId}` : '/m/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url.includes('/os/vendedor.html') && 'focus' in client) {
+        if ((client.url.includes('/m/') || client.url.includes('/os/vendedor.html')) && 'focus' in client) {
           client.focus();
           client.postMessage({ type: 'open_lead', leadId });
           return;

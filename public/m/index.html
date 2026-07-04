@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SP OS">
+<title>SP OS · Móvil</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  /* ══════════ SP OS · Mobile Experience ══════════ */
+  :root{
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --nav-h: 62px;
+    --glass: rgba(12,12,12,.72);
+    --glass-2: rgba(20,20,20,.66);
+    --spring: cubic-bezier(.22,1,.36,1);
+    --ease: cubic-bezier(.4,0,.2,1);
+  }
+  *{ -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  html,body{ height:100%; margin:0; background:var(--bg-0); color:var(--text); font-family:var(--f-ui); overscroll-behavior:none; }
+  body{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  input,textarea,button{ font-family:inherit; }
+  ::-webkit-scrollbar{ display:none; }
+  * { scrollbar-width:none; }
+
+  #app{ position:fixed; inset:0; overflow:hidden; }
+  .screen{ position:absolute; inset:0; display:flex; flex-direction:column; background:var(--bg-0); }
+
+  /* ── Transiciones de pantalla ── */
+  .screen--chat{ transform:translateX(100%); transition:transform .34s var(--spring); z-index:20; will-change:transform; }
+  .screen--chat.show{ transform:translateX(0); }
+
+  /* ── Header (glass) ── */
+  .m-head{ position:relative; z-index:5; padding:calc(var(--safe-t) + 10px) 18px 8px; background:var(--glass); backdrop-filter:saturate(1.4) blur(20px); -webkit-backdrop-filter:saturate(1.4) blur(20px); border-bottom:1px solid var(--border-soft); }
+  .m-head__top{ display:flex; align-items:center; gap:11px; margin-bottom:12px; }
+  .m-mark{ width:34px; height:34px; border-radius:11px; background:linear-gradient(140deg,#E8C86A,var(--gold) 55%,#9E7E3C); display:grid; place-items:center; color:#0A0A0A; font-weight:700; font-size:14px; font-family:var(--f-title); box-shadow:0 4px 16px rgba(200,164,90,.28); flex-shrink:0; }
+  .m-title{ font-family:var(--f-title); font-size:19px; font-weight:600; letter-spacing:.02em; }
+  .m-title small{ display:block; font-family:var(--f-ui); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3); font-weight:500; margin-top:1px; }
+  .m-headbtn{ margin-left:auto; width:38px; height:38px; border-radius:50%; background:var(--bg-2); border:1px solid var(--border-soft); color:var(--text-2); display:grid; place-items:center; }
+  .m-headbtn svg{ width:19px; height:19px; }
+
+  /* ── Buscador ── */
+  .m-search{ position:relative; display:flex; align-items:center; height:42px; background:var(--bg-2); border:1px solid var(--border-soft); border-radius:14px; padding:0 12px; transition:border-color .2s, background .2s; }
+  .m-search:focus-within{ border-color:var(--gold-line); background:var(--bg-3); }
+  .m-search svg{ width:17px; height:17px; color:var(--text-3); flex-shrink:0; }
+  .m-search input{ flex:1; border:none; background:none; outline:none; color:var(--text); font-size:15px; padding:0 10px; }
+  .m-search input::placeholder{ color:var(--text-3); }
+
+  /* ── Filtros ── */
+  .m-filters{ display:flex; gap:7px; padding:12px 18px 4px; overflow-x:auto; }
+  .m-chip{ flex-shrink:0; height:32px; padding:0 15px; border:1px solid var(--border); border-radius:999px; background:var(--bg-2); color:var(--text-3); font-size:12.5px; font-weight:500; display:flex; align-items:center; gap:6px; transition:all .2s var(--spring); }
+  .m-chip.active{ background:var(--gold-soft); color:var(--gold); border-color:var(--gold-line); transform:scale(1.02); }
+  .m-chip b{ font-weight:700; opacity:.7; }
+
+  /* ── Lista ── */
+  .m-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(var(--nav-h) + var(--safe-b) + 8px); }
+  .m-ptr{ height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; color:var(--text-3); transition:height .2s var(--ease); }
+  .m-ptr .spin{ width:20px; height:20px; border:2px solid var(--border-strong); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .m-row{ position:relative; overflow:hidden; }
+  .m-row__actions{ position:absolute; top:0; bottom:0; display:flex; align-items:center; }
+  .m-row__actions.left{ left:0; }
+  .m-row__actions.right{ right:0; }
+  .swipe-act{ width:64px; align-self:stretch; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:#fff; font-size:10px; font-weight:600; border:none; }
+  .swipe-act svg{ width:19px; height:19px; }
+  .sa-call{ background:#2E7D46; } .sa-wa{ background:#1D9E5A; } .sa-note{ background:#5B7B8C; }
+  .sa-tag{ background:var(--gold); color:#0A0A0A; } .sa-stage{ background:#7C6BB0; } .sa-arch{ background:#8C4A4A; }
+
+  .m-card{ position:relative; z-index:1; display:flex; gap:13px; padding:13px 18px; background:var(--bg-0); border-bottom:1px solid var(--border-soft); transition:transform .28s var(--spring), background .15s; will-change:transform; }
+  .m-card:active{ background:var(--bg-1); }
+  .m-card__prio{ position:absolute; left:0; top:9px; bottom:9px; width:3px; border-radius:0 3px 3px 0; }
+  .m-avatar{ position:relative; width:52px; height:52px; border-radius:16px; display:grid; place-items:center; color:#fff; font-weight:600; font-size:18px; flex-shrink:0; overflow:hidden; }
+  .m-avatar img{ width:100%; height:100%; object-fit:cover; }
+  .m-avatar__st{ position:absolute; right:-1px; bottom:-1px; width:14px; height:14px; border-radius:50%; border:2.5px solid var(--bg-0); }
+  .m-card__body{ flex:1; min-width:0; }
+  .m-card__l1{ display:flex; align-items:center; gap:8px; }
+  .m-card__name{ font-size:15px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .m-card__time{ font-size:11.5px; color:var(--text-3); flex-shrink:0; }
+  .m-card.unread .m-card__time{ color:var(--gold); font-weight:600; }
+  .m-card__l2{ display:flex; align-items:center; gap:8px; margin-top:3px; }
+  .m-card__msg{ flex:1; min-width:0; font-size:13.5px; color:var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .m-card.unread .m-card__msg{ color:var(--text-2); font-weight:500; }
+  .m-badge{ min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--gold); color:#0A0A0A; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0; }
+  .m-card__l3{ display:flex; align-items:center; gap:6px; margin-top:7px; flex-wrap:wrap; }
+  .m-tag{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px; letter-spacing:.03em; }
+  .m-meta{ font-size:10.5px; color:var(--text-3); display:inline-flex; align-items:center; gap:3px; }
+  .m-meta svg{ width:11px; height:11px; opacity:.7; }
+  .m-score{ margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; color:var(--gold); }
+  .m-score .bar{ width:34px; height:4px; border-radius:2px; background:var(--bg-4); overflow:hidden; }
+  .m-score .bar i{ display:block; height:100%; background:linear-gradient(90deg,var(--green),var(--gold)); }
+
+  .t-interesado{ background:var(--blue-soft); color:var(--blue); } .t-negociacion{ background:var(--gold-soft); color:var(--gold); }
+  .t-cita{ background:var(--amber-soft); color:var(--amber); } .t-vendido{ background:var(--green-soft); color:#83B778; }
+  .t-no_interesado{ background:var(--red-soft); color:#FF8A8E; } .t-sin_clasificar{ background:var(--bg-3); color:var(--text-3); }
+  .st-disponible{ background:#57C168; } .st-esperando{ background:var(--amber); } .st-inactivo{ background:var(--text-4); } .st-caliente{ background:var(--red); }
+
+  /* ── FAB ── */
+  .m-fab{ position:absolute; right:18px; bottom:calc(var(--nav-h) + var(--safe-b) + 14px); width:56px; height:56px; border-radius:19px; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; display:grid; place-items:center; box-shadow:0 10px 30px rgba(200,164,90,.35), inset 0 1px 0 rgba(255,255,255,.3); z-index:15; transition:transform .18s var(--spring); }
+  .m-fab:active{ transform:scale(.9); }
+  .m-fab svg{ width:26px; height:26px; }
+
+  /* ── Bottom Navigation (glass) ── */
+  .m-nav{ position:absolute; left:0; right:0; bottom:0; height:calc(var(--nav-h) + var(--safe-b)); padding-bottom:var(--safe-b); display:flex; background:var(--glass); backdrop-filter:saturate(1.4) blur(22px); -webkit-backdrop-filter:saturate(1.4) blur(22px); border-top:1px solid var(--border-soft); z-index:14; }
+  .m-nav__i{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:var(--text-3); background:none; border:none; font-size:10px; font-weight:500; transition:color .2s; position:relative; }
+  .m-nav__i svg{ width:23px; height:23px; transition:transform .25s var(--spring); }
+  .m-nav__i.active{ color:var(--gold); }
+  .m-nav__i.active svg{ transform:translateY(-2px); }
+  .m-nav__dot{ position:absolute; top:8px; right:calc(50% - 16px); min-width:8px; height:8px; border-radius:999px; background:var(--red); }
+
+  /* ── Chat ── */
+  .c-head{ display:flex; align-items:center; gap:11px; padding:calc(var(--safe-t) + 8px) 12px 8px; background:var(--glass); backdrop-filter:blur(20px) saturate(1.4); -webkit-backdrop-filter:blur(20px) saturate(1.4); border-bottom:1px solid var(--border-soft); }
+  .c-back{ width:38px; height:38px; border-radius:50%; background:none; border:none; color:var(--text); display:grid; place-items:center; flex-shrink:0; }
+  .c-back svg{ width:22px; height:22px; }
+  .c-id{ display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
+  .c-id .m-avatar{ width:38px; height:38px; border-radius:12px; font-size:14px; }
+  .c-name{ font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .c-sub{ font-size:11.5px; color:var(--text-3); display:flex; align-items:center; gap:5px; }
+  .c-acts{ display:flex; gap:2px; }
+  .c-act{ width:38px; height:38px; border-radius:50%; background:none; border:none; color:var(--text-2); display:grid; place-items:center; }
+  .c-act:active{ background:var(--bg-2); }
+  .c-act svg{ width:20px; height:20px; }
+
+  .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px 6px; display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
+  .c-date{ align-self:center; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:8px 0; }
+  .bub{ max-width:80%; padding:9px 13px; border-radius:18px; font-size:14.5px; line-height:1.42; word-wrap:break-word; position:relative; animation:bubIn .28s var(--spring); }
+  @keyframes bubIn{ from{ opacity:0; transform:translateY(6px) scale(.98); } }
+  .bub--in{ align-self:flex-start; background:var(--bg-3); border-bottom-left-radius:6px; }
+  .bub--out{ align-self:flex-end; background:linear-gradient(160deg,#1D4535,#153427); color:#EDF5F1; border-bottom-right-radius:6px; }
+  .bub__t{ font-size:10.5px; opacity:.5; margin-top:3px; text-align:right; }
+  .bub img,.bub video{ max-width:210px; border-radius:12px; display:block; }
+  .bub audio{ width:210px; }
+  .bub a.file{ color:inherit; text-decoration:underline; word-break:break-all; }
+
+  /* ── Input inteligente ── */
+  .c-input{ padding:8px 12px calc(8px + var(--safe-b)); border-top:1px solid var(--border-soft); background:var(--bg-1); }
+  .c-quick{ display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; }
+  .c-quick button{ flex-shrink:0; height:30px; padding:0 13px; border-radius:999px; background:var(--bg-3); border:1px solid var(--border); color:var(--text-2); font-size:12px; }
+  .c-input__row{ display:flex; align-items:flex-end; gap:8px; }
+  .c-plus{ width:44px; height:44px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border); color:var(--gold); display:grid; place-items:center; flex-shrink:0; transition:transform .25s var(--spring); }
+  .c-plus.open{ transform:rotate(45deg); }
+  .c-plus svg{ width:22px; height:22px; }
+  .c-pill{ flex:1; display:flex; align-items:flex-end; background:var(--bg-3); border:1px solid var(--border); border-radius:22px; padding:2px 6px; min-height:44px; transition:border-color .2s; }
+  .c-pill:focus-within{ border-color:var(--gold-line); }
+  .c-pill textarea{ flex:1; border:none; background:none; outline:none; color:var(--text); font-size:15px; line-height:1.35; padding:11px 6px; max-height:110px; resize:none; }
+  .c-pill textarea::placeholder{ color:var(--text-3); }
+  .c-send{ width:44px; height:44px; border-radius:50%; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; display:grid; place-items:center; flex-shrink:0; transition:transform .15s var(--spring); }
+  .c-send:active{ transform:scale(.88); }
+  .c-send svg{ width:21px; height:21px; }
+
+  /* ── Bottom Sheet (iOS) ── */
+  .sheet-bg{ position:absolute; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); opacity:0; transition:opacity .3s var(--ease); z-index:40; pointer-events:none; }
+  .sheet-bg.show{ opacity:1; pointer-events:auto; }
+  .sheet{ position:absolute; left:0; right:0; bottom:0; max-height:88%; background:var(--bg-1); border-radius:26px 26px 0 0; border-top:1px solid var(--border); box-shadow:0 -20px 50px rgba(0,0,0,.5); transform:translateY(100%); transition:transform .38s var(--spring); z-index:41; display:flex; flex-direction:column; padding-bottom:var(--safe-b); }
+  .sheet.show{ transform:translateY(0); }
+  .sheet__grab{ width:38px; height:5px; border-radius:3px; background:var(--border-strong); margin:10px auto 4px; flex-shrink:0; }
+  .sheet__head{ display:flex; align-items:center; gap:10px; padding:6px 20px 12px; border-bottom:1px solid var(--border-soft); }
+  .sheet__title{ font-family:var(--f-title); font-size:17px; font-weight:600; }
+  .sheet__x{ margin-left:auto; width:30px; height:30px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border); color:var(--text-2); display:grid; place-items:center; }
+  .sheet__x svg{ width:14px; height:14px; }
+  .sheet__body{ overflow-y:auto; padding:16px 20px 22px; }
+
+  /* Grid de adjuntos */
+  .att-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px 8px; }
+  .att-i{ display:flex; flex-direction:column; align-items:center; gap:7px; background:none; border:none; color:var(--text-2); font-size:11px; }
+  .att-i .ic{ width:56px; height:56px; border-radius:18px; background:var(--bg-3); border:1px solid var(--border-soft); display:grid; place-items:center; color:var(--gold); transition:transform .18s var(--spring); }
+  .att-i:active .ic{ transform:scale(.9); }
+  .att-i .ic svg{ width:24px; height:24px; }
+
+  /* Perfil del lead */
+  .lp-head{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:9px; padding-bottom:16px; }
+  .lp-head .m-avatar{ width:72px; height:72px; border-radius:22px; font-size:26px; }
+  .lp-name{ font-family:var(--f-title); font-size:20px; font-weight:600; background:linear-gradient(135deg,var(--gold),#9E7E3C); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .lp-actions{ display:flex; gap:10px; margin-top:4px; }
+  .lp-actions button{ width:46px; height:46px; border-radius:15px; background:var(--bg-3); border:1px solid var(--border-soft); color:var(--gold); display:grid; place-items:center; }
+  .lp-actions button svg{ width:21px; height:21px; }
+  .lp-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px; }
+  .lp-cell{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:14px; padding:11px 13px; }
+  .lp-cell span{ display:block; font-size:10.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:3px; }
+  .lp-cell strong{ font-size:14px; font-weight:600; }
+  .lp-cell.mock strong{ color:var(--text-3); font-weight:400; }
+  .lp-cell.wide{ grid-column:1/3; }
+  .prob-wrap{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:16px; padding:14px; margin-top:12px; }
+  .prob-top{ display:flex; align-items:baseline; justify-content:space-between; }
+  .prob-num{ font-size:26px; font-weight:700; font-family:var(--f-num); }
+  .prob-bar{ height:8px; border-radius:999px; background:var(--bg-4); overflow:hidden; margin-top:9px; }
+  .prob-bar i{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--green),var(--gold)); }
+
+  /* Timeline */
+  .tl{ position:relative; padding-left:6px; }
+  .tl-i{ display:flex; gap:13px; padding-bottom:16px; position:relative; }
+  .tl-i:not(:last-child)::before{ content:''; position:absolute; left:14px; top:30px; bottom:0; width:1.5px; background:var(--border); }
+  .tl-dot{ width:29px; height:29px; border-radius:10px; background:var(--bg-3); border:1px solid var(--border-strong); display:grid; place-items:center; color:var(--gold); flex-shrink:0; z-index:1; }
+  .tl-dot svg{ width:15px; height:15px; }
+  .tl-txt strong{ font-size:13.5px; font-weight:600; }
+  .tl-txt span{ display:block; font-size:11.5px; color:var(--text-3); margin-top:2px; }
+
+  /* Copiloto */
+  .cop-badge{ display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); background:var(--gold-soft); border:1px solid var(--gold-line); padding:3px 9px; border-radius:999px; }
+  .cop-card{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:16px; padding:13px; margin-bottom:11px; }
+  .cop-card h5{ font-size:10.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:.1em; margin:0 0 7px; display:flex; align-items:center; gap:6px; }
+  .cop-card h5 svg{ width:14px; height:14px; color:var(--gold); }
+  .cop-card p{ margin:0; font-size:13.5px; line-height:1.5; color:var(--text-2); }
+  .cop-sent{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#83B778; }
+  .cop-obj{ display:flex; gap:8px; font-size:13px; color:var(--text-2); margin-bottom:6px; }
+  .cop-obj::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--amber); margin-top:6px; flex-shrink:0; }
+  .cop-use{ margin-top:9px; width:100%; height:40px; border-radius:13px; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; font-weight:700; font-size:13px; }
+
+  /* Propiedades */
+  .prop-scroll{ display:flex; gap:12px; overflow-x:auto; padding:2px 2px 8px; margin:0 -4px; }
+  .prop-c{ flex-shrink:0; width:220px; background:var(--bg-2); border:1px solid var(--border-soft); border-radius:18px; overflow:hidden; }
+  .prop-c .ph{ height:120px; background:linear-gradient(135deg,#1a1a1a,#242424); display:grid; place-items:center; font-size:38px; }
+  .prop-c .in{ padding:12px; }
+  .prop-c .nm{ font-size:14px; font-weight:600; }
+  .prop-c .lo{ font-size:11.5px; color:var(--text-3); margin-top:2px; display:flex; align-items:center; gap:4px; }
+  .prop-c .pr{ font-size:15px; font-weight:700; color:var(--gold); margin-top:6px; }
+  .prop-c .ft{ display:flex; align-items:center; justify-content:space-between; margin-top:9px; }
+  .prop-c .mt{ font-size:10.5px; font-weight:700; color:#83B778; background:var(--green-soft); padding:3px 8px; border-radius:999px; }
+  .prop-c .snd{ height:30px; padding:0 13px; border-radius:10px; background:var(--gold-soft); border:1px solid var(--gold-line); color:var(--gold); font-size:11.5px; font-weight:600; }
+
+  /* Empty / placeholder tabs */
+  .m-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:40px; color:var(--text-3); }
+  .m-empty .ic{ width:64px; height:64px; border-radius:22px; background:var(--bg-2); border:1px solid var(--border-soft); display:grid; place-items:center; color:var(--gold); }
+  .m-empty .ic svg{ width:28px; height:28px; }
+  .m-empty h3{ font-family:var(--f-title); font-size:18px; color:var(--text); margin:0; }
+  .m-empty p{ margin:0; font-size:13.5px; max-width:260px; line-height:1.5; }
+  .m-empty .cop-badge{ margin-top:4px; }
+
+  /* Skeleton */
+  .sk{ background:linear-gradient(90deg,var(--bg-2) 25%,var(--bg-3) 50%,var(--bg-2) 75%); background-size:200% 100%; animation:shimmer 1.2s infinite; }
+  @keyframes shimmer{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+  .sk-row{ display:flex; gap:13px; padding:13px 18px; align-items:center; }
+
+  /* Toast */
+  .m-toast{ position:absolute; left:50%; bottom:calc(var(--nav-h) + var(--safe-b) + 20px); transform:translateX(-50%) translateY(20px); background:rgba(28,28,28,.95); backdrop-filter:blur(20px); border:1px solid var(--border-strong); color:var(--text); padding:11px 18px; border-radius:999px; font-size:13.5px; font-weight:500; box-shadow:var(--sh-3); opacity:0; transition:all .3s var(--spring); z-index:60; pointer-events:none; white-space:nowrap; }
+  .m-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .hidden{ display:none !important; }
+  @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ══ Home · Conversaciones ══ -->
+  <section class="screen" id="scHome">
+    <header class="m-head">
+      <div class="m-head__top">
+        <div class="m-mark">SP</div>
+        <div class="m-title" id="navTitle">Conversaciones<small id="navSub">SP OS Enterprise</small></div>
+        <button class="m-headbtn" id="btnNotif" aria-label="Notificaciones"></button>
+      </div>
+      <label class="m-search"><span id="icSearch"></span><input id="q" placeholder="Buscar cliente, chat, etiqueta…" autocomplete="off"></label>
+    </header>
+    <div class="m-filters" id="filters"></div>
+    <div class="m-scroll" id="list">
+      <div class="m-ptr" id="ptr"><span class="spin"></span></div>
+    </div>
+    <button class="m-fab" id="fab" aria-label="Nuevo"></button>
+  </section>
+
+  <!-- ══ Chat ══ -->
+  <section class="screen screen--chat" id="scChat"></section>
+
+  <!-- ══ Bottom Nav ══ -->
+  <nav class="m-nav" id="nav"></nav>
+
+  <!-- ══ Sheet ══ -->
+  <div class="sheet-bg" id="sheetBg"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet__grab"></div>
+    <div class="sheet__head"><div class="sheet__title" id="sheetTitle">—</div><button class="sheet__x" id="sheetX"></button></div>
+    <div class="sheet__body" id="sheetBody"></div>
+  </div>
+
+  <div class="m-toast" id="toast"></div>
+</div>
+
+<script src="/sw-reg.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ════════ Iconos (path-data → <path>) ════════ */
+function I(d,s){ s=s||24; const inner = (d && String(d).trim().charAt(0)==='<') ? d : `<path d="${d}"/>`; return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="${s}" height="${s}">${inner}</svg>`; }
+const SVG = {
+  search:'M11 17.25a6.25 6.25 0 1 0 0-12.5 6.25 6.25 0 0 0 0 12.5zM16 16l3.5 3.5',
+  bell:'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  plus:'M12 5v14M5 12h14', back:'m15 18-6-6 6-6',
+  chat:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  home:'m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+  check:'M20 6 9 17l-5-5', checkSquare:'m9 11 3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
+  sparkles:'m12 3 1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z',
+  user:'M20 21a8 8 0 1 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  phone:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z',
+  video:'m23 7-7 5 7 5V7zM14 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z',
+  mapPin:'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  image:'M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 21',
+  mic:'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
+  send:'m22 2-7 20-4-9-9-4ZM22 2 11 13', x:'M18 6 6 18M6 6l12 12', dots:'M12 12h.01M19 12h.01M5 12h.01',
+  clip:'m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48',
+  file:'M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3ZM15 3v6h6',
+  zap:'M13 2 3 14h9l-1 8 10-12h-9l1-8z', copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  contact:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87',
+  calendar:'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  clock:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2', tag:'M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01',
+  archive:'M21 8v13H3V8M1 3h22v5H1zM10 12h4', building:'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4',
+  target:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  megaphone:'m3 11 18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6', facebook:'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z',
+  filter:'M22 3H2l8 9.46V19l4 2v-8.54z', settings:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+};
+
+/* ════════ Estado / helpers ════════ */
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+const $ = s => document.querySelector(s);
+const app = document.getElementById('app');
+let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats';
+let current = null, currentMsgs = [];
+
+const ETQ = { sin_clasificar:{t:'Nuevo',cls:'sin_clasificar'}, interesado:{t:'Interesado',cls:'interesado'}, negociacion:{t:'Negociación',cls:'negociacion'}, cita:{t:'Cita',cls:'cita'}, vendido:{t:'Vendido',cls:'vendido'}, no_interesado:{t:'No int.',cls:'no_interesado'} };
+const etqLabel = v => (ETQ[v]||{t:v}).t;
+const AV = ['#4E7B46','#C8A45A','#5B8DEF','#E0A44A','#7C6BB0','#2E7D8C'];
+const avatarColor = n => AV[(String(n||'').length + String(n||'').charCodeAt(0)||0) % AV.length];
+const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+const money = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function haptic(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+
+function horaCorta(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return ''; const h=new Date(); const sd=d.toDateString()===h.toDateString(); return sd? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'}); }
+function soloHora(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); return isNaN(d)?'':d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
+function dateLabel(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return ''; const h=new Date(), a=new Date(); a.setDate(h.getDate()-1); const sd=(x,y)=>x.toDateString()===y.toDateString(); if(sd(d,h)) return 'Hoy'; if(sd(d,a)) return 'Ayer'; return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long'}); }
+
+function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const dias=ref?(Date.now()-new Date(String(ref).replace(' ','T')+'Z').getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
+function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=88; else if(e==='cita')s=80; else if(e==='interesado')s=66; else if(e==='vendido')s=100; s+=Math.min(20,(l.messages_count||0)); return Math.min(99,s); }
+const PROYECTOS = ['Lotes Tocaima','Parcelación Girardot','Vista Valle','Campestre Melgar'];
+const ORIGENES = ['Facebook Ads','Instagram','WhatsApp'];
+function proyectoDe(l){ return PROYECTOS[l.id % PROYECTOS.length]; }
+function origenDe(l){ return ORIGENES[l.id % ORIGENES.length]; }
+
+/* ════════ API ════════ */
+async function api(url, opts){
+  try{ const r = await fetch(url, Object.assign({credentials:'include', headers:{'Accept':'application/json'}}, opts||{})); if(!r.ok) return null; const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json() : r.text(); }
+  catch(e){ return null; }
+}
+
+/* ════════ Datos demo ════════ */
+function demoLeads(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
+  {id:1,customer_name:'Juan Díaz',customer_phone:'+573001234567',etiqueta:'negociacion',status:'activo',updated_at:now,created_at:now,unread_count:3,last_message:'¿Cuál es el precio del lote de 250m²?',messages_count:14,assigned_to_nombre:'Vendedor Test'},
+  {id:2,customer_name:'María Gómez',customer_phone:'+573019876543',etiqueta:'interesado',status:'activo',updated_at:now,created_at:now,unread_count:0,last_message:'Perfecto, quedo atenta 🙏',messages_count:6,assigned_to_nombre:'Vendedor Test'},
+  {id:3,customer_name:'Pedro Ruiz',customer_phone:'+573025551122',etiqueta:'cita',status:'activo',updated_at:'2026-07-02 10:00:00',created_at:'2026-06-19 09:00:00',unread_count:1,last_message:'Nos vemos el sábado en el proyecto',messages_count:22,assigned_to_nombre:'Vendedor Test'},
+  {id:4,customer_name:'Laura Ortiz',customer_phone:'+573036667788',etiqueta:'sin_clasificar',status:'nuevo',updated_at:now,created_at:now,unread_count:2,last_message:'Hola, vi el anuncio en Facebook',messages_count:2,assigned_to_nombre:'Vendedor Test'},
+  {id:5,customer_name:'Andrés Peña',customer_phone:'+573041239876',etiqueta:'vendido',status:'cerrado',updated_at:'2026-06-10 12:00:00',created_at:'2026-05-01 09:00:00',unread_count:0,last_message:'¡Muchas gracias por todo!',messages_count:40,assigned_to_nombre:'Vendedor Test'},
+]; }
+function demoMsgs(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
+  {id:101,body:'Hola, vi el anuncio de los lotes en Tocaima.',direction:'incoming',timestamp:now},
+  {id:102,body:'¡Hola Juan! Con gusto te ayudo. ¿Buscas para vivienda o inversión?',direction:'outgoing',timestamp:now},
+  {id:103,body:'Para inversión. ¿Qué precios manejan?',direction:'incoming',timestamp:now},
+  {id:104,body:null,direction:'outgoing',timestamp:now,media_type:'image',media_filename:'plano-lote.jpg'},
+  {id:105,body:'¿Cuál es el precio del lote de 250m²?',direction:'incoming',timestamp:now},
+]; }
+
+/* ════════ Init ════════ */
+async function init(){
+  document.getElementById('icSearch').innerHTML = I(SVG.search,17);
+  $('#btnNotif').innerHTML = I(SVG.bell,19);
+  $('#fab').innerHTML = I(SVG.plus,26);
+  $('#sheetX').innerHTML = I(SVG.x,14);
+  renderNav();
+  if(DEMO){ me={nombre:'Vendedor Test',rol:'vendedor'}; leads=demoLeads(); renderFilters(); renderList(); }
+  else {
+    me = await api('/api/me');
+    if(!me){ location.replace('/login.html'); return; }
+    renderFilters();
+    await cargar();
+    conectarStream();
+  }
+  wire();
+  const openLead = new URLSearchParams(location.search).get('lead');
+  if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
+}
+
+async function cargar(){ const d = await api('/api/mis-leads'); leads = d || []; renderList(); }
+
+/* ════════ Filtros ════════ */
+const FILTROS = [['todos','Todos'],['sin_clasificar','Nuevos'],['interesado','Interesados'],['negociacion','Negociación'],['cita','Citas'],['vendido','Vendidos']];
+function renderFilters(){ $('#filters').innerHTML = FILTROS.map(([k,l])=>{ const n = k==='todos'?leads.length:leads.filter(x=>(x.etiqueta||'sin_clasificar')===k).length; return `<button class="m-chip ${k===filtro?'active':''}" data-f="${k}">${l}${n?` <b>${n}</b>`:''}</button>`; }).join(''); }
+
+function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); } return a; }
+
+/* ════════ Lista ════════ */
+function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div class="m-ptr" id="ptr"><span class="spin"></span></div>'; const items=leadsFiltrados();
+  if(!items.length){ box.innerHTML = ptr + `<div class="m-empty"><div class="ic">${I(SVG.chat,28)}</div><h3>Sin conversaciones</h3><p>${leads.length?'No hay resultados para este filtro.':'Aquí aparecerán tus leads asignados.'}</p></div>`; return; }
+  box.innerHTML = ptr + items.map((l,idx)=>cardHTML(l,idx)).join('');
+  box.querySelectorAll('.m-row').forEach(row=>wireSwipe(row));
+}
+function cardHTML(l,idx){
+  const nombre=l.customer_name||'Cliente'; const unread=Number(l.unread_count||0); const st=estado(l); const e=ETQ[l.etiqueta||'sin_clasificar']||ETQ.sin_clasificar; const score=leadScore(l); const prio = score>=80?'var(--red)':score>=60?'var(--gold)':'transparent';
+  return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
+    <div class="m-row__actions left">
+      <button class="swipe-act sa-call" data-a="call">${I(SVG.phone,19)}Llamar</button>
+      <button class="swipe-act sa-wa" data-a="wa">${I(SVG.megaphone,19)}WhatsApp</button>
+      <button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button>
+    </div>
+    <div class="m-row__actions right">
+      <button class="swipe-act sa-tag" data-a="tag">${I(SVG.tag,19)}Etapa</button>
+      <button class="swipe-act sa-arch" data-a="arch">${I(SVG.archive,19)}Archivar</button>
+    </div>
+    <div class="m-card ${unread?'unread':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
+      <span class="m-card__prio" style="background:${prio}"></span>
+      <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}<span class="m-avatar__st ${st.cls}"></span></div>
+      <div class="m-card__body">
+        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
+        <div class="m-card__l2"><span class="m-card__msg">${esc(l.last_message||l.first_message||'—')}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
+        <div class="m-card__l3">
+          <span class="m-tag t-${e.cls}">${e.t}</span>
+          <span class="m-meta">${I(SVG.building,11)} ${proyectoDe(l)}</span>
+          <span class="m-meta">${I(SVG.facebook,11)} ${origenDe(l)}</span>
+          <span class="m-score">${score} ${'<span class="bar"><i style="width:'+score+'%"></i></span>'}</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ════════ Swipe horizontal ════════ */
+function wireSwipe(row){
+  const card=row.querySelector('.m-card'); let x0=0,y0=0,dx=0,drag=false,locked=null; const L=192,R=128;
+  card.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; y0=e.touches[0].clientY; dx=0; drag=true; locked=null; card.style.transition='none'; },{passive:true});
+  card.addEventListener('touchmove',e=>{ if(!drag) return; const cx=e.touches[0].clientX, cy=e.touches[0].clientY; if(locked===null){ locked = Math.abs(cx-x0)>Math.abs(cy-y0)+4 ? 'x':'y'; } if(locked!=='x') return; dx=cx-x0; dx=Math.max(-R,Math.min(L,dx)); card.style.transform=`translateX(${dx}px)`; },{passive:true});
+  card.addEventListener('touchend',()=>{ if(!drag) return; drag=false; card.style.transition='transform .3s var(--spring)'; let to=0; if(dx>60){ to=L; haptic(8); } else if(dx<-50){ to=-R; haptic(8); } card.style.transform=`translateX(${to}px)`; });
+  row.querySelectorAll('.swipe-act').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); card.style.transform='translateX(0)'; swipeAction(b.dataset.a, row); }));
+  card.addEventListener('click',()=>{ if(Math.abs(dx)>6){ card.style.transform='translateX(0)'; dx=0; return; } abrirChat(Number(card.dataset.open)); });
+}
+function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.dataset.phone||'').replace(/[^\d+]/g,''); const l=leads.find(x=>x.id===id); haptic(12);
+  if(a==='call'){ if(phone) location.href='tel:'+phone; else toast('Sin número'); }
+  else if(a==='wa'){ if(phone) window.open('https://wa.me/'+phone.replace('+',''),'_blank'); }
+  else if(a==='note'){ current=l; abrirNota(); }
+  else if(a==='tag'){ current=l; abrirEtapa(); }
+  else if(a==='arch'){ toast('Conversación archivada'); }
+}
+
+/* ════════ Chat ════════ */
+async function abrirChat(id){ haptic(10); const l = leads.find(x=>x.id===id); current=l;
+  let msgs;
+  if(DEMO){ msgs=demoMsgs(); } else { const d=await api(`/api/leads/${id}/mensajes`); if(d){ current=d.lead; msgs=d.mensajes; api(`/api/leads/${id}/leido`,{method:'POST'}); if(l) l.unread_count=0; } else msgs=[]; }
+  currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
+  if(l){ l.unread_count=0; renderList(); }
+}
+function cerrarChat(){ $('#scChat').classList.remove('show'); haptic(6); }
+function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=estado(l);
+  $('#scChat').innerHTML = `
+    <header class="c-head">
+      <button class="c-back" id="cBack">${I(SVG.back,22)}</button>
+      <div class="c-id" id="cId"><div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}</div><div style="min-width:0"><div class="c-name">${esc(nombre)}</div><div class="c-sub"><span class="m-avatar__st ${st.cls}" style="position:static;width:8px;height:8px;border:none"></span>${st.label}</div></div></div>
+      <div class="c-acts">
+        <button class="c-act" data-ca="call">${I(SVG.phone,20)}</button>
+        <button class="c-act" data-ca="video">${I(SVG.video,20)}</button>
+        <button class="c-act" data-ca="more">${I(SVG.dots,20)}</button>
+      </div>
+    </header>
+    <div class="c-msgs" id="cMsgs">${msgsHTML(msgs)}</div>
+    <div class="c-input">
+      <div class="c-quick" id="cQuick">${QUICK.map(q=>`<button data-q="${esc(q.body)}">${q.t}</button>`).join('')}</div>
+      <div class="c-input__row">
+        <button class="c-plus" id="cPlus">${I(SVG.plus,22)}</button>
+        <div class="c-pill"><textarea id="cInput" rows="1" placeholder="Mensaje…"></textarea></div>
+        <button class="c-send" id="cSend">${I(SVG.mic,21)}</button>
+      </div>
+    </div>`;
+  const box=$('#cMsgs'); box.scrollTop=box.scrollHeight;
+  $('#cBack').onclick=cerrarChat;
+  $('#cId').onclick=()=>abrirPerfil();
+  $('#scChat').querySelectorAll('.c-act').forEach(b=>b.onclick=()=>chatAccion(b.dataset.ca));
+  $('#cPlus').onclick=()=>{ $('#cPlus').classList.toggle('open'); abrirAdjuntos(); };
+  $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
+  const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); });
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviar(); } });
+  $('#cSend').onclick=enviar;
+  updateSend();
+}
+function updateSend(){ const b=$('#cSend'); if(!b) return; const hay=($('#cInput').value||'').trim().length>0; b.innerHTML=I(hay?SVG.send:SVG.mic,21); }
+function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
+  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; h+=`<div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${out?' ✓✓':''}</div></div>`; }
+  return h;
+}
+function msgInner(m){ if(m.media_type){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<audio src="${src}" controls></audio>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; } return esc(m.body); }
+
+async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current) return; haptic([10,20,10]);
+  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); return; }
+  inp.value=''; inp.style.height='auto'; updateSend();
+  const r=await api(`/api/leads/${current.id}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:msg})});
+  if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); } else toast('Error al enviar');
+}
+function chatAccion(a){ haptic(10); const p=(current.customer_phone||'').replace(/[^\d+]/g,'');
+  if(a==='call'){ if(p) location.href='tel:'+p; }
+  else if(a==='video'){ toast('Videollamada — Fase IA'); }
+  else if(a==='more'){ abrirPerfil(); }
+}
+
+/* ════════ Bottom Sheets ════════ */
+function openSheet(title,html){ $('#sheetTitle').textContent=title; $('#sheetBody').innerHTML=html; $('#sheetBg').classList.add('show'); $('#sheet').classList.add('show'); haptic(8); }
+function closeSheet(){ $('#sheetBg').classList.remove('show'); $('#sheet').classList.remove('show'); }
+
+const QUICK=[
+  {t:'Saludo',body:'¡Hola! Soy tu asesor de Sergio Parra Inversiones & Finca Raíz. ¿En qué proyecto estás interesado? 😊'},
+  {t:'Precio',body:'Con gusto te comparto precios y formas de pago. ¿Te muestro las opciones dentro de tu presupuesto?'},
+  {t:'Ubicación',body:'Te comparto la ubicación exacta del proyecto. ¿Deseas el punto en el mapa?'},
+  {t:'Agenda',body:'¿Te gustaría agendar una visita? Cuéntame qué día y hora te conviene. 📅'},
+  {t:'Financiación',body:'Manejamos financiación directa y con aliados. ¿Te calculo una cuota según tu inicial?'},
+  {t:'Catálogo',body:'Te envío el catálogo con lotes disponibles. ¿Para vivienda o inversión?'},
+  {t:'Despedida',body:'¡Gracias por tu tiempo! Quedo atento a cualquier duda. 🙌'},
+];
+
+function abrirAdjuntos(){
+  const items=[['image','Imagen',SVG.image],['video','Video',SVG.video],['file','Documento',SVG.file],['audio','Audio',SVG.mic],['mapPin','Ubicación',SVG.mapPin],['contact','Contacto',SVG.contact],['tpl','Plantilla',SVG.zap],['ia','Copiloto',SVG.sparkles]];
+  openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='mapPin'){ const i=$('#cInput'); i.value=QUICK[2].body; updateSend(); } else toast('Adjuntar '+b.textContent+' — próximamente'); });
+}
+
+function abrirPlantillas(){
+  const cats=[['Saludos',['Saludo']],['Precio',['Precio']],['Ubicación',['Ubicación']],['Agenda',['Agenda']],['Financiación',['Financiación']],['Catálogo',['Catálogo']],['Despedida',['Despedida']]];
+  openSheet('Respuestas rápidas', cats.map(([c,keys])=>{ const q=QUICK.find(x=>x.t===keys[0]); return `<div style="margin-bottom:12px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">${c}</div><button class="lp-cell wide" style="text-align:left;width:100%;color:var(--text-2)" data-tpl="${esc(q.body)}">${esc(q.body)}</button></div>`; }).join('') );
+  $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.tpl; updateSend(); closeSheet(); haptic(8); i.focus(); });
+}
+
+function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'; const st=estado(l); const score=leadScore(l); const valor = money(48000000 + (l.id%4)*12000000);
+  openSheet('Perfil del lead', `
+    <div class="lp-head">
+      <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}</div>
+      <div><div class="lp-name">${esc(nombre)}</div><div class="c-sub" style="justify-content:center">${esc(l.customer_phone||'')}</div></div>
+      <div class="lp-actions">
+        <button data-lp="call">${I(SVG.phone,21)}</button>
+        <button data-lp="wa">${I(SVG.megaphone,21)}</button>
+        <button data-lp="cal">${I(SVG.calendar,21)}</button>
+        <button data-lp="tl">${I(SVG.clock,21)}</button>
+      </div>
+    </div>
+    <div class="prob-wrap">
+      <div class="prob-top"><span style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em">Probabilidad de cierre</span></div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px"><span class="prob-num">${score}%</span><span style="font-size:12.5px;color:var(--text-3)">Valor esperado <b style="color:var(--gold)">${valor}</b></span></div>
+      <div class="prob-bar"><i style="width:${score}%"></i></div>
+    </div>
+    <div class="lp-grid">
+      <div class="lp-cell"><span>Estado</span><strong style="color:var(--gold)">${etqLabel(l.etiqueta||'sin_clasificar')}</strong></div>
+      <div class="lp-cell mock"><span>Ciudad</span><strong>—</strong></div>
+      <div class="lp-cell"><span>Proyecto</span><strong>${proyectoDe(l)}</strong></div>
+      <div class="lp-cell mock"><span>Presupuesto</span><strong>—</strong></div>
+      <div class="lp-cell"><span>Origen</span><strong>${origenDe(l)}</strong></div>
+      <div class="lp-cell"><span>Asesor</span><strong>${esc(l.assigned_to_nombre||me.nombre||'—')}</strong></div>
+      <div class="lp-cell"><span>Mensajes</span><strong>${l.messages_count||0}</strong></div>
+      <div class="lp-cell"><span>Creado</span><strong>${horaCorta(l.created_at)}</strong></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="cop-use" style="flex:1" data-lp="cop">${I(SVG.sparkles,16)} Copiloto SP</button>
+      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="tl2">${I(SVG.clock,16)} Timeline</button>
+    </div>`);
+  $('#sheetBody').querySelectorAll('[data-lp]').forEach(b=>b.onclick=()=>{ const k=b.dataset.lp; const p=(l.customer_phone||'').replace(/[^\d+]/g,''); haptic(10);
+    if(k==='call'&&p) location.href='tel:'+p; else if(k==='wa'&&p) window.open('https://wa.me/'+p.replace('+',''),'_blank'); else if(k==='cal') toast('Agendar — próximamente'); else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); });
+}
+
+function abrirTimeline(){ const l=current;
+  const ev=[['facebook','Llegó desde '+origenDe(l),'Hace 5 días'],['chat','Primer mensaje recibido','Hace 5 días'],['image','Se envió el catálogo','Hace 4 días'],['phone','Llamada realizada','Hace 3 días'],['calendar','Agendó visita al proyecto','Hace 2 días'],['tag','Cambio de etapa → '+etqLabel(l.etiqueta||'interesado'),'Hoy']];
+  openSheet('Timeline', `<div class="tl">${ev.map(([ic,t,s])=>`<div class="tl-i"><div class="tl-dot">${I(SVG[ic]||SVG.chat,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join('')}</div>`);
+}
+
+function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Cliente'; const score=leadScore(l); const sug=`Hola ${nombre}, con gusto te resuelvo lo de la financiación: manejamos cuota inicial baja y plazos flexibles. ¿Agendamos una visita esta semana para que conozcas el lote?`;
+  openSheet('Copiloto SP', `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><span class="cop-badge">${I(SVG.sparkles,11)} Fase IA</span></div>
+    <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(nombre)} llegó por ${origenDe(l)} e interesa en ${proyectoDe(l)}. ${l.messages_count||0} mensajes. Conviene reforzar confianza y proponer visita.</p></div>
+    <div class="cop-card"><h5>${I(SVG.target,14)} Sentimiento</h5><p class="cop-sent">${I(SVG.check,14)} Positivo · alta intención de compra</p></div>
+    <div class="cop-card"><h5>${I(SVG.zap,14)} Objeciones</h5><div class="cop-obj">Duda sobre formas de pago / financiación.</div><div class="cop-obj">Quiere confirmar ubicación y legalidad.</div></div>
+    <div class="cop-card"><h5>${I(SVG.checkSquare,14)} Probabilidad de cierre</h5><div style="display:flex;align-items:baseline;gap:10px"><span class="prob-num">${score}%</span><span style="font-size:12px;color:var(--text-3)">Mejor hora para responder: <b style="color:var(--gold)">6:00–8:00 PM</b></span></div><div class="prob-bar"><i style="width:${score}%"></i></div></div>
+    <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug">${esc(sug)}</p><button class="cop-use" id="copUse">${I(SVG.sparkles,16)} Usar esta respuesta</button></div>
+    <div class="cop-card"><h5>${I(SVG.building,14)} Propiedades recomendadas</h5>
+      <div class="prop-scroll">${PROPS.map((p,i)=>`<div class="prop-c"><div class="ph">${p.emoji}</div><div class="in"><div class="nm">${p.nombre}</div><div class="lo">${I(SVG.mapPin,11)} ${p.ciudad} · ${p.m2} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt">${p.match}% IA</span><button class="snd" data-prop="${i}">Enviar</button></div></div></div>`).join('')}</div>
+    </div>`);
+  $('#copUse').onclick=()=>{ if($('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=$('#copSug').textContent.trim(); updateSend(); } closeSheet(); haptic([10,20,10]); toast('Respuesta lista'); };
+  $('#sheetBody').querySelectorAll('[data-prop]').forEach(b=>b.onclick=()=>{ const p=PROPS[b.dataset.prop]; if($('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=`Te recomiendo: ${p.nombre} — ${p.m2} m² por ${money(p.precio)}. ¿Más info o agendamos visita?`; updateSend(); } closeSheet(); haptic(10); toast('Propiedad lista para enviar'); });
+}
+const PROPS=[{emoji:'🏡',nombre:'Lote Campestre Tocaima',ciudad:'Tocaima',precio:48000000,m2:250,match:96},{emoji:'🏘️',nombre:'Parcelación Girardot',ciudad:'Girardot',precio:72000000,m2:320,match:88},{emoji:'🌄',nombre:'Lote Vista Valle',ciudad:'Melgar',precio:35000000,m2:180,match:79}];
+
+function abrirNota(){ openSheet('Nota rápida', `<textarea id="ntx" class="c-pill" style="width:100%;min-height:120px;padding:14px;color:var(--text);background:var(--bg-3);border:1px solid var(--border);border-radius:14px;outline:none" placeholder="Ej: Llamar después de las 6 PM. Quiere financiación…"></textarea><button class="cop-use" id="ntok" style="margin-top:12px">Guardar nota</button>`);
+  $('#ntok').onclick=async()=>{ const v=$('#ntx').value.trim(); if(!v) return; if(!DEMO&&current) await api(`/api/leads/${current.id}/notas`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota:v})}); haptic([10,20,10]); closeSheet(); toast('Nota guardada'); };
+}
+function abrirEtapa(){ const l=current; openSheet('Cambiar etapa', Object.entries(ETQ).map(([v,e])=>`<button class="lp-cell wide" style="display:flex;align-items:center;gap:10px;text-align:left;width:100%;margin-bottom:8px;color:var(--text)" data-etq="${v}"><span class="m-tag t-${e.cls}">${e.t}</span>${(l.etiqueta||'sin_clasificar')===v?'<span style="margin-left:auto;color:var(--gold)">✓</span>':''}</button>`).join(''));
+  $('#sheetBody').querySelectorAll('[data-etq]').forEach(b=>b.onclick=async()=>{ const v=b.dataset.etq; if(!DEMO){ await api(`/api/leads/${l.id}/etiqueta`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({etiqueta:v})}); } l.etiqueta=v; haptic([10,20,10]); closeSheet(); renderList(); if(!DEMO) cargar(); toast('Etapa actualizada'); });
+}
+
+/* ════════ Bottom Nav / tabs ════════ */
+const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
+function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
+  $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
+function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
+  if(t==='chats'){ $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='SP OS Enterprise'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
+  else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = TABS.find(x=>x[0]===t); pantallaTab(t,label); }
+}
+function mostrarLista(v){ $('#list').style.display=v?'':'none'; $('#filters').style.display=v?'':'none'; let ph=$('#tabScreen'); if(ph) ph.remove(); }
+function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='SP OS Enterprise';
+  const map={ propiedades:[SVG.building,'Propiedades','Catálogo inteligente de lotes y proyectos con coincidencia por IA.'], tareas:[SVG.checkSquare,'Tareas','Tu día organizado: prioridades, recordatorios y seguimiento de cada lead.'], copiloto:[SVG.sparkles,'Copiloto SP','El centro inteligente: resúmenes, objeciones y próxima mejor acción.'], perfil:[SVG.user,'Perfil','Tu cuenta, métricas, biometría y preferencias.'] };
+  const [ic,ti,de]=map[t]; const box=document.createElement('div'); box.id='tabScreen'; box.className='m-scroll'; box.style.cssText='display:flex;';
+  box.innerHTML=`<div class="m-empty"><div class="ic">${I(ic,28)}</div><h3>${ti}</h3><p>${de}</p><span class="cop-badge">${I(SVG.sparkles,11)} Próximamente</span></div>`;
+  $('#scHome').insertBefore(box, $('#fab'));
+}
+
+/* ════════ Interacciones globales ════════ */
+function wire(){
+  $('#q').addEventListener('input',e=>{ term=e.target.value.trim(); renderList(); });
+  $('#filters').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filtro=b.dataset.f; haptic(8); renderList(); });
+  $('#fab').onclick=()=>{ haptic(10); toast('Nueva conversación — próximamente'); };
+  $('#btnNotif').onclick=()=>abrirNotificaciones();
+  $('#sheetX').onclick=closeSheet; $('#sheetBg').onclick=closeSheet;
+  // Pull to refresh
+  const sc=$('#list'); let sy=0,pull=0,at=false;
+  sc.addEventListener('touchstart',e=>{ at=sc.scrollTop<=0; sy=e.touches[0].clientY; pull=0; },{passive:true});
+  sc.addEventListener('touchmove',e=>{ if(!at) return; pull=Math.max(0,Math.min(70,e.touches[0].clientY-sy)); const p=$('#ptr'); if(p&&pull>0) p.style.height=pull+'px'; },{passive:true});
+  sc.addEventListener('touchend',async()=>{ if(pull>50){ haptic(12); await (DEMO?Promise.resolve():cargar()); } const p=$('#ptr'); if(p) p.style.height='0'; pull=0; });
+}
+
+function abrirNotificaciones(){ haptic(8);
+  const nots=[['bell','3 leads sin responder','Hace 15 min','var(--red)'],['chat','María Gómez respondió','Hace 32 min','var(--gold)'],['calendar','Visita agendada mañana 10:00','Hoy','var(--green)'],['sparkles','Copiloto sugiere contactar a Pedro','Hoy','var(--gold)']];
+  openSheet('Notificaciones', nots.map(([ic,t,s,c])=>`<div class="tl-i" style="padding-bottom:14px"><div class="tl-dot" style="color:${c}">${I(SVG[ic]||SVG.bell,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join(''));
+}
+
+/* ════════ Tiempo real ════════ */
+function conectarStream(){ try{ const es=new EventSource('/api/stream');
+  es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); } }catch(e){} });
+  es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
+  }catch(e){} }
+
+/* ════════ Arranque (tras declarar todas las const) ════════ */
+init();
+
+})();
+</script>
+</body>
+</html>
