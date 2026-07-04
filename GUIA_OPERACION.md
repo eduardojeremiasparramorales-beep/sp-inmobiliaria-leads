@@ -20,7 +20,7 @@ Verifica que arrancó bien:
 docker compose logs --tail=30
 ```
 
-Debes ver `SP OS` escuchando en el puerto. Luego abre `https://sp-crm.duckdns.org/api/health` en el navegador — debe responder `ok`.
+Debes ver `SP OS` escuchando en el puerto. Luego abre `https://spcrm.duckdns.org/api/health` en el navegador — debe responder `ok`.
 
 ---
 
@@ -44,7 +44,7 @@ Si cambias el `.env`, reinicia: `docker compose up -d --build`.
 
 1. Entra a [developers.facebook.com](https://developers.facebook.com) → tu app → **WhatsApp → Configuration**.
 2. En **Webhook**, clic en **Edit**:
-   - **Callback URL:** `https://sp-crm.duckdns.org/webhook`
+   - **Callback URL:** `https://spcrm.duckdns.org/webhook`
    - **Verify token:** el mismo `VERIFY_TOKEN` del `.env`
 3. Clic en **Verify and save** — debe quedar en verde.
 4. En **Webhook fields**, clic **Manage** y suscribe el campo **`messages`**.
@@ -53,12 +53,12 @@ Si cambias el `.env`, reinicia: `docker compose up -d --build`.
 
 ## Paso 4 — Crear tus vendedores reales
 
-Opción A — desde la web: entra como admin a `https://sp-crm.duckdns.org` → **Equipo** → **Agregar asesor**.
+Opción A — desde la web: entra como admin a `https://spcrm.duckdns.org` → **Equipo** → **Agregar asesor**.
 
 Opción B — por curl (crea vendedor + login en un paso):
 
 ```bash
-curl -X POST https://sp-crm.duckdns.org/api/usuarios \
+curl -X POST https://spcrm.duckdns.org/api/usuarios \
   -H "Content-Type: application/json" \
   -d '{"nombre":"Nombre Apellido","telefono":"+573XXXXXXXXX","email":"vendedor@email.com","password":"pin-o-clave","rol":"vendedor"}'
 ```
@@ -76,7 +76,7 @@ el PIN se configura en Equipo, o vía `POST /api/vendedores/:id/pin`.
    - El lead aparece en el **Inbox del admin** (`/os/inbox.html`).
    - El lead aparece en el **panel del vendedor asignado** (`/os/vendedor.html`).
    - El vendedor puede responder desde su panel y el cliente lo recibe **desde el número oficial**.
-3. Prueba enviar un **audio** desde el panel (requiere HTTPS — en `sp-crm.duckdns.org` ya lo tienes).
+3. Prueba enviar un **audio** desde el panel (requiere HTTPS — en `spcrm.duckdns.org` ya lo tienes).
 
 Si algo falla, mira los logs: `docker compose logs -f --tail=50`.
 
@@ -96,7 +96,7 @@ Si algo falla, mira los logs: `docker compose logs -f --tail=50`.
 
 En el celular de cada vendedor:
 
-1. Abrir `https://sp-crm.duckdns.org` en Chrome (Android) o Safari (iPhone).
+1. Abrir `https://spcrm.duckdns.org` en Chrome (Android) o Safari (iPhone).
 2. Iniciar sesión con su teléfono + PIN.
 3. Menú del navegador → **"Agregar a pantalla de inicio"** / **"Instalar app"**.
 4. Aceptar el permiso de **notificaciones** cuando lo pida (para recibir push de nuevos mensajes).
@@ -118,6 +118,6 @@ En el celular de cada vendedor:
 |---|---|---|
 | No llegan mensajes al CRM | Webhook no verificado o campo `messages` sin suscribir | Paso 3 |
 | "error_whatsapp" al responder | Token vencido (era temporal) | Genera token permanente (Paso 2) |
-| No puedo grabar audio | Estás entrando por HTTP o sin permiso de micrófono | Usa siempre `https://sp-crm.duckdns.org` |
+| No puedo grabar audio | Estás entrando por HTTP o sin permiso de micrófono | Usa siempre `https://spcrm.duckdns.org` |
 | Vendedor no ve leads | No tiene leads asignados o estado ≠ "activo" | Revisa su estado en Equipo |
 | Inbox admin vacío pero vendedor sí ve chats | Versión vieja desplegada | Paso 1 (redeploy) |

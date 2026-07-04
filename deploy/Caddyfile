@@ -2,7 +2,7 @@
 # Desplegar en: /etc/caddy/Caddyfile
 # Recargar: systemctl reload caddy
 
-sp-crm.duckdns.org {
+spcrm.duckdns.org {
     reverse_proxy localhost:3000
     encode gzip
     header {

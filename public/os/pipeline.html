@@ -10,95 +10,130 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/os/sp-os.css">
 <style>
-  .kan-col.drop { border-color: var(--gold-line); background: rgba(200,164,90,.04); }
-  .kan-card.drag { opacity: .4; }
-  .kan-card__phone { font-family: var(--f-num); font-size: 12px; color: var(--text-3); }
+  .kb { display: flex; gap: 12px; padding: var(--s3); overflow-x: auto; height: 100%; align-items: flex-start; }
+  .kb-col { min-width: 250px; width: 250px; flex-shrink: 0; background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); display: flex; flex-direction: column; max-height: 100%; }
+  .kb-col__head { padding: 12px 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border-soft); }
+  .kb-col__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .kb-col__title { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); flex: 1; }
+  .kb-col__count { font-size: 11px; color: var(--text-3); background: var(--bg-3); padding: 2px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+  .kb-col__body { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 60px; }
+  .kb-card { background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: var(--r-sm); padding: 11px 12px; transition: border-color .15s; }
+  .kb-card:hover { border-color: var(--border-strong); }
+  .kb-card__top { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .kb-card__name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .kb-card__meta { font-size: 11.5px; color: var(--text-3); display: flex; justify-content: space-between; gap: 6px; margin-bottom: 9px; }
+  .kb-card__actions { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .kb-move { background: var(--bg-3); border: 1px solid var(--border); color: var(--text-2); width: 28px; height: 26px; border-radius: var(--r-sm); cursor: pointer; font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: color .12s, border-color .12s; }
+  .kb-move:hover:not(:disabled) { color: var(--gold); border-color: var(--gold-line); }
+  .kb-move:disabled { opacity: .25; cursor: default; }
+  .kb-chat { font-size: 11px; color: var(--gold); text-decoration: none; padding: 4px 10px; border: 1px solid var(--gold-line); border-radius: 999px; }
+  .kb-empty { color: var(--text-3); font-size: 12px; text-align: center; padding: 14px 6px; }
+  @media (max-width: 720px) { .kb { padding: var(--s2); gap: 8px; } .kb-col { min-width: 230px; width: 230px; } }
 </style>
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
-  const { ICONS, api, avatarColor, initials, toast, fmt, fmtPhone } = SPOS;
+  'use strict';
+  const { api, toast, avatarColor, initials, fmtPhone } = SPOS;
 
-  const COLS = [
-    { k:'sin_clasificar', t:'Nuevos', c:'var(--text-3)' },
-    { k:'interesado', t:'Interesados', c:'var(--blue)' },
-    { k:'negociacion', t:'Negociación', c:'var(--gold)' },
-    { k:'cita', t:'Cita agendada', c:'var(--amber)' },
-    { k:'vendido', t:'Vendidos', c:'var(--green)' },
+  const ETAPAS = [
+    { k: 'sin_clasificar', t: 'Nuevos', c: 'var(--text-3)' },
+    { k: 'interesado', t: 'Interesados', c: 'var(--blue)' },
+    { k: 'negociacion', t: 'Negociación', c: 'var(--gold)' },
+    { k: 'cita', t: 'Cita', c: 'var(--amber)' },
+    { k: 'vendido', t: 'Vendidos', c: 'var(--green)' },
+    { k: 'no_interesado', t: 'No interesados', c: 'var(--red)' },
   ];
+  const ORDEN = ETAPAS.map(e => e.k);
 
-  const ctx = await SPOS.mount({ active: 'pipeline', title: 'Pipeline comercial', crumb: 'Arrastra para mover de etapa', padded: false });
-  ctx.content.style.cssText = 'flex:1;min-height:0;overflow:hidden;padding:var(--s3);display:flex';
+  const ctx = await SPOS.mount({ active: 'pipeline', title: 'Pipeline', crumb: 'Embudo de ventas por etapa', padded: false });
+  if (!ctx) return;
+  ctx.content.style.cssText = 'flex:1;min-height:0;overflow:hidden;padding:0';
 
-  let leads = await api('/api/leads');
-  const demo = !Array.isArray(leads);
-  if (demo) leads = [
-    { id:1, customer_name:'Juan Pérez', customer_phone:'+573214625618', etiqueta:'negociacion', assigned_to_nombre:'Carlos García' },
-    { id:2, customer_name:'María González', customer_phone:'+573001234567', etiqueta:'interesado', assigned_to_nombre:'Andrea López' },
-    { id:3, customer_name:'Roberto Martínez', customer_phone:'+573019876543', etiqueta:'cita', assigned_to_nombre:'Miguel Torres' },
-    { id:4, customer_name:'Lucía Fernández', customer_phone:'+573145550101', etiqueta:'vendido', assigned_to_nombre:'Carlos García' },
-    { id:5, customer_name:'Andrés Gómez', customer_phone:'+573205559090', etiqueta:'sin_clasificar', assigned_to_nombre:null },
-    { id:6, customer_name:'Paola Ramírez', customer_phone:'+573112223344', etiqueta:'interesado', assigned_to_nombre:'Andrea López' },
-    { id:7, customer_name:'Diego Salazar', customer_phone:'+573007778899', etiqueta:'negociacion', assigned_to_nombre:'Miguel Torres' },
-    { id:8, customer_name:'Carmen Ortiz', customer_phone:'+573156664433', etiqueta:'sin_clasificar', assigned_to_nombre:null },
-  ];
+  let leads = [];
 
-  const board = document.createElement('div'); board.className = 'kanban'; board.style.flex = '1';
-  ctx.content.appendChild(board);
-  let dragId = null;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function timeago(ts) {
+    if (!ts) return '';
+    const d = new Date(String(ts).replace(' ', 'T') + 'Z'); if (isNaN(d)) return '';
+    const m = Math.floor((Date.now() - d) / 60000);
+    if (m < 60) return m + ' min'; const h = Math.floor(m / 60);
+    if (h < 24) return h + ' h'; return Math.floor(h / 24) + ' d';
+  }
 
-  function cardHTML(l) {
-    return `<div class="kan-card" draggable="true" data-id="${l.id}">
-      <div class="u-between" style="margin-bottom:9px">
-        <div class="u-row u-gap2" style="min-width:0">
-          <div class="avatar avatar--sm" style="background:${avatarColor(l.customer_name)}">${initials(l.customer_name)}</div>
-          <div style="min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.customer_name||'Sin nombre'}</div>
-          <div class="kan-card__phone">${fmtPhone(l.customer_phone)}</div></div>
-        </div>
-      </div>
-      <div class="u-row u-gap1 t-dim3" style="font-size:11.5px">${ICONS.team.replace('<svg ','<svg style="width:13px;height:13px" ')}<span>${l.assigned_to_nombre||'Sin asignar'}</span></div>
-    </div>`;
+  async function cargar() {
+    const data = await api('/api/leads');
+    leads = Array.isArray(data) ? data : [];
+    render();
   }
 
   function render() {
-    board.innerHTML = COLS.map(col => {
-      const items = leads.filter(l => (l.etiqueta||'sin_clasificar') === col.k);
-      return `<div class="kan-col" data-col="${col.k}">
-        <div class="kan-col__head">
-          <div class="kan-col__title"><span class="dot" style="background:${col.c}"></span>${col.t}</div>
-          <span class="kan-col__count">${items.length}</span>
+    ctx.content.innerHTML = `<div class="kb">${ETAPAS.map(col).join('')}</div>`;
+    ctx.content.querySelectorAll('.kb-move').forEach(btn =>
+      btn.addEventListener('click', () => mover(Number(btn.dataset.id), btn.dataset.dir)));
+  }
+
+  function col(etapa) {
+    const items = leads.filter(l => (l.etiqueta || 'sin_clasificar') === etapa.k && l.status !== 'cerrado');
+    return `
+      <div class="kb-col">
+        <div class="kb-col__head">
+          <span class="kb-col__dot" style="background:${etapa.c}"></span>
+          <span class="kb-col__title">${etapa.t}</span>
+          <span class="kb-col__count">${items.length}</span>
         </div>
-        <div class="kan-col__body" data-body="${col.k}">${items.map(cardHTML).join('')}</div>
+        <div class="kb-col__body">
+          ${items.length ? items.map(card).join('') : '<div class="kb-empty">Sin leads aquí</div>'}
+        </div>
       </div>`;
-    }).join('');
-    wire();
   }
 
-  function wire() {
-    board.querySelectorAll('.kan-card').forEach(card => {
-      card.addEventListener('dragstart', () => { dragId = Number(card.dataset.id); card.classList.add('drag'); });
-      card.addEventListener('dragend', () => { dragId = null; card.classList.remove('drag'); board.querySelectorAll('.kan-col').forEach(c=>c.classList.remove('drop')); });
-    });
-    board.querySelectorAll('.kan-col').forEach(col => {
-      col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drop'); });
-      col.addEventListener('dragleave', () => col.classList.remove('drop'));
-      col.addEventListener('drop', (e) => { e.preventDefault(); col.classList.remove('drop'); moveTo(dragId, col.dataset.col); });
-    });
+  function card(l) {
+    const idx = ORDEN.indexOf(l.etiqueta || 'sin_clasificar');
+    return `
+      <div class="kb-card">
+        <div class="kb-card__top">
+          <div class="avatar avatar--sm" style="background:${avatarColor(l.customer_name)};width:30px;height:30px;font-size:11px">${initials(l.customer_name)}</div>
+          <span class="kb-card__name">${esc(l.customer_name || 'Sin nombre')}</span>
+        </div>
+        <div class="kb-card__meta">
+          <span>${esc(fmtPhone(l.customer_phone))}</span>
+          <span>${timeago(l.updated_at)}</span>
+        </div>
+        <div class="kb-card__meta">
+          <span>${esc(l.assigned_to_nombre || 'Sin asignar')}</span>
+        </div>
+        <div class="kb-card__actions">
+          <button class="kb-move" data-id="${l.id}" data-dir="prev" ${idx <= 0 ? 'disabled' : ''} title="Etapa anterior">‹</button>
+          <a class="kb-chat" href="/os/inbox.html">Chat</a>
+          <button class="kb-move" data-id="${l.id}" data-dir="next" ${idx >= ORDEN.length - 1 ? 'disabled' : ''} title="Siguiente etapa">›</button>
+        </div>
+      </div>`;
   }
 
-  async function moveTo(id, etiqueta) {
-    const l = leads.find(x => x.id === id); if (!l || l.etiqueta === etiqueta) return;
-    const prev = l.etiqueta; l.etiqueta = etiqueta; render();
-    const label = COLS.find(c=>c.k===etiqueta)?.t || etiqueta;
-    if (demo) { toast('Movido a ' + label + ' (demo)', 'ok'); return; }
-    const r = await api('/api/leads/'+id+'/etiqueta', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ etiqueta }) });
-    if (!r) { l.etiqueta = prev; render(); toast('No se pudo mover', 'err'); }
-    else toast('Movido a ' + label, 'ok');
+  async function mover(id, dir) {
+    const lead = leads.find(l => l.id === id); if (!lead) return;
+    const idx = ORDEN.indexOf(lead.etiqueta || 'sin_clasificar');
+    const nuevoIdx = dir === 'next' ? idx + 1 : idx - 1;
+    if (nuevoIdx < 0 || nuevoIdx >= ORDEN.length) return;
+    const nueva = ORDEN[nuevoIdx];
+    const r = await api('/api/leads/' + id + '/etiqueta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etiqueta: nueva }) });
+    if (r !== null) {
+      lead.etiqueta = nueva; render();
+      toast(`${lead.customer_name || 'Lead'} → ${ETAPAS[nuevoIdx].t}`, 'ok');
+    } else toast('Error al mover el lead', 'err');
   }
 
-  render();
+  await cargar();
+
+  // Refresco al llegar mensajes nuevos
+  try {
+    const es = new EventSource('/api/stream');
+    es.addEventListener('nuevo_mensaje', () => cargar());
+    es.onerror = () => es.close();
+  } catch (e) { }
 })();
 </script>
 </body>

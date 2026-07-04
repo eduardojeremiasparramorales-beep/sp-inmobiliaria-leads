@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Configuración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .cfg-sec { background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); padding: var(--s3); margin-bottom: var(--s3); }
+  .cfg-sec h3 { font-family: var(--f-title); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .cfg-sec p { font-size: 12.5px; color: var(--text-3); margin-bottom: var(--s2); }
+  .cfg-field { margin-bottom: 14px; }
+  .cfg-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
+  .cfg-field input, .cfg-field textarea { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 10px 12px; font-family: var(--f-ui); font-size: 13.5px; outline: none; resize: vertical; }
+  .cfg-field input:focus, .cfg-field textarea:focus { border-color: var(--gold-line); }
+  .cfg-save { height: 38px; padding: 0 22px; background: var(--gold); color: #000; border: none; border-radius: var(--r-sm); font-weight: 600; font-size: 13px; cursor: pointer; font-family: var(--f-ui); }
+  .cfg-save:disabled { opacity: .4; }
+  .cfg-hint { font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  'use strict';
+  const { api, toast } = SPOS;
+
+  const ctx = await SPOS.mount({ active: 'settings', title: 'Configuración', crumb: 'Ajustes del sistema', padded: true, adminOnly: true });
+  if (!ctx) return;
+
+  const cfg = await api('/api/config') || {};
+  const v = k => String(cfg[k] || '').replace(/"/g, '&quot;');
+
+  ctx.content.innerHTML = `
+   <div class="os-content__max" style="max-width:720px">
+
+    <form class="cfg-sec" id="fBienvenida">
+      <h3>Mensaje de bienvenida</h3>
+      <p>Respuesta automática que recibe cada cliente nuevo al escribir por primera vez al número oficial.</p>
+      <div class="cfg-field">
+        <textarea id="welcome" rows="4" maxlength="1000" placeholder="Hola 👋 Gracias por contactar a SP Inmobiliaria…">${String(cfg.welcome_message || '')}</textarea>
+        <div class="cfg-hint">Si se deja vacío, se usa el mensaje por defecto del sistema.</div>
+      </div>
+      <button type="submit" class="cfg-save">Guardar mensaje</button>
+    </form>
+
+    <form class="cfg-sec" id="fIntegraciones">
+      <h3>Integraciones opcionales</h3>
+      <p>Credenciales para llamadas (Twilio) y alertas (Slack). Solo se usan si están completas.</p>
+      <div class="cfg-field"><label>Twilio Account SID</label><input id="twilio_account_sid" type="password" autocomplete="off" value="${v('twilio_account_sid')}"></div>
+      <div class="cfg-field"><label>Twilio Auth Token</label><input id="twilio_auth_token" type="password" autocomplete="off" value="${v('twilio_auth_token')}"></div>
+      <div class="cfg-field"><label>Twilio Número</label><input id="twilio_numero" placeholder="+57…" value="${v('twilio_numero')}"></div>
+      <div class="cfg-field"><label>Slack Webhook URL</label><input id="slack_webhook" type="password" autocomplete="off" value="${v('slack_webhook')}"></div>
+      <button type="submit" class="cfg-save">Guardar integraciones</button>
+    </form>
+
+    <div class="cfg-sec">
+      <h3>Canales y equipo</h3>
+      <p>La conexión de WhatsApp/Messenger/Instagram se gestiona en <a href="/os/integraciones.html" style="color:var(--gold)">Integraciones</a>. Los vendedores, PIN y plantillas en <a href="/os/equipo.html" style="color:var(--gold)">Equipo</a>.</p>
+    </div>
+   </div>`;
+
+  document.getElementById('fBienvenida').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const btn = ev.target.querySelector('button');
+    btn.disabled = true;
+    const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ welcome_message: document.getElementById('welcome').value.trim() }) });
+    btn.disabled = false;
+    if (r) toast('Mensaje de bienvenida guardado', 'ok'); else toast('Error al guardar', 'err');
+  });
+
+  document.getElementById('fIntegraciones').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const btn = ev.target.querySelector('button');
+    btn.disabled = true;
+    const body = {};
+    ['twilio_account_sid', 'twilio_auth_token', 'twilio_numero', 'slack_webhook'].forEach(k => {
+      body[k] = document.getElementById(k).value.trim();
+    });
+    const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    btn.disabled = false;
+    if (r) toast('Integraciones guardadas', 'ok'); else toast('Error al guardar', 'err');
+  });
+})();
+</script>
+</body>
+</html>

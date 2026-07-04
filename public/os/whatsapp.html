@@ -15,50 +15,36 @@
 <script>
 (async function () {
   const { ICONS, api, toast } = SPOS;
-  const ctx = await SPOS.mount({ active:'integrations', title:'Configuración de WhatsApp', crumb:'Integraciones · WhatsApp', padded:true });
+  const ctx = await SPOS.mount({ active:'integrations', title:'Configuración de WhatsApp', crumb:'Integraciones · WhatsApp', padded:true, adminOnly:true });
+  if (!ctx) return;
 
-  const st = await api('/api/channels/status') || {};
-  const on = st.whatsapp === true;
-  const numero = '+57 300 123 4567';
-  const usadas = 980, limite = 1000, pct = Math.round((usadas/limite)*100);
+  const [st, cfg] = await Promise.all([
+    api('/api/channels/status'),
+    api('/api/config'),
+  ]);
+  const on = st && st.whatsapp === true;
+  const welcome = (cfg && cfg.welcome_message) || '';
 
   ctx.content.innerHTML = `<div class="os-content__max" style="max-width:760px">
     <div class="card card--pad rise rise-1" style="margin-bottom:var(--s3)">
       <div class="u-between" style="margin-bottom:var(--s3)">
         <div class="u-row u-gap2">
           <div class="metric__icon" style="background:rgba(87,193,104,.14);color:#83B778">${ICONS.msg}</div>
-          <div><div class="t-h3">Número conectado</div><div class="t-dim3 t-num" style="font-size:13px">${numero}</div></div>
+          <div><div class="t-h3">WhatsApp Business Cloud API</div><div class="t-dim3" style="font-size:13px">Número oficial de la empresa</div></div>
         </div>
         ${on ? `<span class="badge badge--green"><span class="dot dot--green"></span>Conectado</span>`
              : `<span class="badge badge--amber"><span class="dot dot--gold"></span>Sin token</span>`}
       </div>
-      <div class="grid grid--2" style="gap:12px">
-        <div class="surface" style="padding:14px">
-          <div class="t-label" style="margin-bottom:8px">Estado</div>
-          <div class="u-row u-gap1"><span class="dot dot--${on?'green':'mute'}"></span><span style="font-size:14px;font-weight:500">${on?'Operativo':'Pendiente de configurar'}</span></div>
-        </div>
-        <div class="surface" style="padding:14px">
-          <div class="t-label" style="margin-bottom:8px">Calidad</div>
-          <div class="u-row u-gap1"><span class="dot dot--gold"></span><span style="font-size:14px;font-weight:500">Alta</span></div>
-        </div>
+      <div class="surface" style="padding:14px">
+        <div class="t-label" style="margin-bottom:8px">Estado</div>
+        <div class="u-row u-gap1"><span class="dot dot--${on?'green':'mute'}"></span><span style="font-size:14px;font-weight:500">${on?'Operativo — token y número configurados':'Pendiente: configura WHATSAPP_TOKEN y PHONE_NUMBER_ID en el servidor (.env)'}</span></div>
       </div>
     </div>
 
-    <div class="card card--pad rise rise-2" style="margin-bottom:var(--s3)">
-      <div class="u-between" style="margin-bottom:12px">
-        <div class="t-h3">Límite de conversaciones</div>
-        <span class="t-num t-dim">${usadas.toLocaleString('es-CO')} / ${limite.toLocaleString('es-CO')}</span>
-      </div>
-      <div style="height:12px;background:var(--bg-4);border-radius:999px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--gold),${pct>90?'var(--red)':'var(--green)'});border-radius:999px;transition:width .8s var(--ease-out)"></div>
-      </div>
-      <div class="t-dim3" style="font-size:12px;margin-top:8px">${pct}% del cupo mensual usado · se renueva el 1 de cada mes</div>
-    </div>
-
-    <div class="card card--pad rise rise-3">
-      <div class="t-h3" style="margin-bottom:4px">Plantilla de bienvenida</div>
-      <div class="t-dim3" style="font-size:12px;margin-bottom:14px">Primer mensaje automático cuando entra un lead nuevo</div>
-      <textarea class="input" id="tpl" rows="3">¡Hola! Gracias por contactarnos. ¿En qué podemos ayudarte hoy?</textarea>
+    <div class="card card--pad rise rise-2">
+      <div class="t-h3" style="margin-bottom:4px">Mensaje de bienvenida</div>
+      <div class="t-dim3" style="font-size:12px;margin-bottom:14px">Respuesta automática al primer mensaje de cada cliente nuevo. Se guarda en el servidor.</div>
+      <textarea class="input" id="tpl" rows="4" maxlength="1000" placeholder="Hola 👋 Gracias por contactar a SP Inmobiliaria. Un asesor te atenderá en los próximos minutos.">${welcome.replace(/</g,'&lt;')}</textarea>
       <div class="u-row u-gap2" style="margin-top:14px;justify-content:flex-end">
         <a class="btn btn--ghost btn--sm" href="/os/integraciones.html">Volver</a>
         <button class="btn btn--gold btn--sm" id="save">${ICONS.check}Guardar cambios</button>
@@ -66,7 +52,11 @@
     </div>
   </div>`;
 
-  document.getElementById('save').addEventListener('click', ()=> toast('Plantilla de bienvenida guardada','ok'));
+  document.getElementById('save').addEventListener('click', async () => {
+    const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ welcome_message: document.getElementById('tpl').value.trim() }) });
+    if (r) toast('Mensaje de bienvenida guardado', 'ok');
+    else toast('Error al guardar', 'err');
+  });
 })();
 </script>
 </body>

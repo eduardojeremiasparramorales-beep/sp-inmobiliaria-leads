@@ -607,6 +607,57 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   }
 });
 
+// ===================== CITAS =====================
+
+// Listar citas: admin ve todas (o filtra por vendedor); vendedor solo las suyas
+app.get('/api/citas', auth.requireAuth, (req, res) => {
+  const { desde, hasta } = req.query;
+  const vendedorId = req.session.rol === 'admin' ? req.query.vendedorId : req.session.vendedorId;
+  res.json(store.getCitas({ vendedorId, desde, hasta }));
+});
+
+// Crear cita — vendedor solo puede agendarse a sí mismo
+app.post('/api/citas', auth.requireAuth, (req, res) => {
+  const { leadId, titulo, fecha, notas, vendedorId } = req.body || {};
+  if (!titulo || !String(titulo).trim()) return res.status(400).json({ error: 'titulo_requerido' });
+  if (!fecha) return res.status(400).json({ error: 'fecha_requerida' });
+  let vId = req.session.rol === 'admin' ? (vendedorId || null) : req.session.vendedorId;
+  if (leadId) {
+    const lead = store.getLeadById(leadId);
+    if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+    if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+      return res.status(403).json({ error: 'sin_permiso' });
+    }
+    if (!vId) vId = lead.assigned_to_id || null;
+  }
+  const cita = store.createCita({ leadId: leadId || null, vendedorId: vId, titulo: String(titulo).trim(), fecha, notas });
+  res.json({ ok: true, cita });
+});
+
+// Actualizar cita (estado, fecha, notas)
+app.put('/api/citas/:id', auth.requireAuth, (req, res) => {
+  const cita = store.getCitaById(req.params.id);
+  if (!cita) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const { titulo, fecha, notas, estado, vendedorId } = req.body || {};
+  if (estado && !['pendiente', 'hecha', 'cancelada'].includes(estado)) return res.status(400).json({ error: 'estado_invalido' });
+  const actualizada = store.updateCita(cita.id, { titulo, fecha, notas, estado, vendedorId: req.session.rol === 'admin' ? vendedorId : undefined });
+  res.json({ ok: true, cita: actualizada });
+});
+
+// Eliminar cita
+app.delete('/api/citas/:id', auth.requireAuth, (req, res) => {
+  const cita = store.getCitaById(req.params.id);
+  if (!cita) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.deleteCita(cita.id);
+  res.json({ ok: true });
+});
+
 // Cerrar un lead (mantenido por compatibilidad, pero la UI ya no lo usa)
 app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);

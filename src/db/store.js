@@ -152,6 +152,22 @@ async function initDB() {
   ensureColumn('conversations', 'lead_id', 'INTEGER');
   execSQL(`CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id)`);
 
+  // Citas (visitas, llamadas, seguimientos agendados)
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS citas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER,
+      vendedor_id INTEGER,
+      titulo TEXT NOT NULL,
+      fecha DATETIME NOT NULL,
+      notas TEXT DEFAULT '',
+      estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'hecha', 'cancelada')),
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_fecha ON citas(fecha)`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_vendedor ON citas(vendedor_id)`);
+
   return adapter.getDB();
 }
 
@@ -642,6 +658,53 @@ function getConversationCount() {
   return r ? r.c : 0;
 }
 
+// --- Citas ---
+function getCitas({ vendedorId, desde, hasta } = {}) {
+  const conditions = [];
+  const params = [];
+  if (vendedorId) { conditions.push('c.vendedor_id = ?'); params.push(Number(vendedorId)); }
+  if (desde) { conditions.push('c.fecha >= ?'); params.push(desde); }
+  if (hasta) { conditions.push('c.fecha <= ?'); params.push(hasta); }
+  const whereStr = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+  return all(`
+    SELECT c.*, l.customer_name, l.customer_phone, v.nombre AS vendedor_nombre
+    FROM citas c
+    LEFT JOIN leads l ON l.id = c.lead_id
+    LEFT JOIN vendedores v ON v.id = c.vendedor_id
+    ${whereStr}
+    ORDER BY c.fecha ASC
+  `, params);
+}
+
+function getCitaById(id) {
+  return one('SELECT * FROM citas WHERE id = ?', [id]);
+}
+
+function createCita({ leadId, vendedorId, titulo, fecha, notas }) {
+  run('INSERT INTO citas (lead_id, vendedor_id, titulo, fecha, notas) VALUES (?, ?, ?, ?, ?)', [
+    leadId || null, vendedorId || null, String(titulo), String(fecha), notas || '',
+  ]);
+  return one('SELECT * FROM citas WHERE id = (SELECT last_insert_rowid())');
+}
+
+function updateCita(id, data) {
+  const actual = getCitaById(id);
+  if (!actual) return null;
+  run('UPDATE citas SET titulo = ?, fecha = ?, notas = ?, estado = ?, vendedor_id = ? WHERE id = ?', [
+    data.titulo !== undefined ? String(data.titulo) : actual.titulo,
+    data.fecha !== undefined ? String(data.fecha) : actual.fecha,
+    data.notas !== undefined ? String(data.notas) : actual.notas,
+    data.estado !== undefined ? String(data.estado) : actual.estado,
+    data.vendedorId !== undefined ? (data.vendedorId || null) : actual.vendedor_id,
+    id,
+  ]);
+  return getCitaById(id);
+}
+
+function deleteCita(id) {
+  run('DELETE FROM citas WHERE id = ?', [id]);
+}
+
 // --- Puente legacy → multicanal ---
 // Sincroniza un lead (tabla legacy) hacia customers/conversations/timeline
 // para que el inbox multicanal del admin refleje TODO el movimiento de WhatsApp.
@@ -798,6 +861,7 @@ module.exports = {
   updateConversationPriority, getConversations, getConversationCount,
   addTimelineEvent, getTimelineByConversation, getLastMessageByConversation,
   syncLeadToConversation,
+  getCitas, getCitaById, createCita, updateCita, deleteCita,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
 };

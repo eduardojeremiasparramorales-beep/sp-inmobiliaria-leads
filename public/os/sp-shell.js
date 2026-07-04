@@ -52,7 +52,7 @@
       { id: 'inbox', label: 'Inbox', icon: 'inbox', href: '/os/inbox.html', badge: 'live' },
       { id: 'crm', label: 'CRM · Leads', icon: 'leads', href: '/os/crm.html' },
       { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', href: '/os/pipeline.html' },
-      { id: 'clients', label: 'Clientes', icon: 'clients', href: M('clients') },
+      { id: 'clients', label: 'Clientes', icon: 'clients', href: '/os/clientes.html' },
     ]},
     { title: 'Negocio', items: [
       { id: 'properties', label: 'Propiedades', icon: 'properties', href: M('properties') },
@@ -63,10 +63,8 @@
     ]},
     { title: 'Organización', items: [
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
-      { id: 'billing', label: 'Facturación', icon: 'billing', href: '/os/facturacion.html', admin: true },
       { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
-      { id: 'marketplace', label: 'Marketplace', icon: 'marketplace', href: '/os/marketplace.html' },
-      { id: 'settings', label: 'Configuración', icon: 'settings', href: M('settings') },
+      { id: 'settings', label: 'Configuración', icon: 'settings', href: '/os/configuracion.html', admin: true },
       { id: 'design', label: 'Design System', icon: 'spark', href: '/os/design-system.html' },
     ]},
   ];

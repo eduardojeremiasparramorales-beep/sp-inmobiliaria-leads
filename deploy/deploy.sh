@@ -6,7 +6,7 @@
 # ==============================================================
 set -euo pipefail
 
-DOMAIN="sp-crm.duckdns.org"
+DOMAIN="spcrm.duckdns.org"
 APP_DIR="/home/ubuntu/sp-crm/app"
 BACKUP_DIR="/home/ubuntu/backups"
 ENV_FILE="$APP_DIR/.env"

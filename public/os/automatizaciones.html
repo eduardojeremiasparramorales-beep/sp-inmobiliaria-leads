@@ -27,54 +27,55 @@
   const ctx = await SPOS.mount({ active:'automations', title:'Automatizaciones', crumb:'Flujos y disparadores', padded:true, adminOnly:true,
     action:`<button class="btn btn--gold btn--sm" id="new">${ICONS.plus}Nuevo flujo</button>` });
 
-  let flujos = await api('/api/workflows');
-  if(!Array.isArray(flujos)) flujos = [
-    { id:1, nombre:'Bienvenida a lead nuevo', activo:1, trigger_event:'lead_nuevo' },
-    { id:2, nombre:'Reasignar si no responde (30 min)', activo:1, trigger_event:'sin_respuesta' },
-    { id:3, nombre:'Seguimiento a interesados', activo:0, trigger_event:'etiqueta_interesado' },
-  ];
-  const activos = flujos.filter(f=>f.activo).length;
+  let flujos = [];
+  async function cargar() {
+    const r = await api('/api/workflows');
+    flujos = Array.isArray(r) ? r : [];
+    render();
+  }
 
-  ctx.content.innerHTML = `<div class="os-content__max">
-    <div class="grid grid--3 rise rise-1" style="margin-bottom:var(--s3)">
-      ${metric('automations','Flujos', flujos.length)}
-      ${metric('activity','Activos', activos)}
-      ${metric('spark','Ejecuciones hoy', 42)}
-    </div>
-
-    <!-- Preview de flujo (nodos) -->
-    <div class="card card--pad rise rise-2" style="margin-bottom:var(--s3)">
-      <div class="u-between" style="margin-bottom:var(--s2)"><div class="t-h3">Flujo: Bienvenida a lead nuevo</div><span class="badge badge--green">Activo</span></div>
-      <div class="flow">
-        ${node('inbox','Disparador','Entra lead nuevo','var(--gold-soft)','var(--gold)')}
-        <div class="flowline"></div>
-        ${node('ai','Acción','Responder con IA','var(--blue-soft)','var(--blue)')}
-        <div class="flowline"></div>
-        ${node('team','Asignar','Round-robin','var(--green-soft)','#83B778')}
-        <div class="flowline"></div>
-        ${node('clock','Esperar','30 minutos','var(--amber-soft)','var(--amber)')}
-        <div class="flowline"></div>
-        ${node('msg','Seguimiento','Enviar plantilla','var(--gold-soft)','var(--gold)')}
+  function render() {
+    const activos = flujos.filter(f=>f.activo).length;
+    ctx.content.innerHTML = `<div class="os-content__max">
+      <div class="grid grid--3 rise rise-1" style="margin-bottom:var(--s3)">
+        ${metric('automations','Flujos', flujos.length)}
+        ${metric('activity','Activos', activos)}
+        ${metric('clock','Pausados', flujos.length - activos)}
       </div>
-    </div>
 
-    <!-- Lista de flujos -->
-    <div class="card rise rise-3" style="overflow:hidden">
-      <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Todos los flujos</div></div>
-      <table class="table">
-        <thead><tr><th>Flujo</th><th>Disparador</th><th>Estado</th><th></th></tr></thead>
-        <tbody>${flujos.map(f=>`<tr>
-          <td style="font-weight:500">${f.nombre}</td>
-          <td><span class="badge badge--mute">${(f.trigger_event||'—').replace(/_/g,' ')}</span></td>
-          <td><span class="badge badge--${f.activo?'green':'mute'}">${f.activo?'Activo':'Pausado'}</span></td>
-          <td style="text-align:right"><button class="btn btn--quiet btn--sm" data-id="${f.id}">${f.activo?'Pausar':'Activar'}</button></td>
-        </tr>`).join('')}</tbody>
-      </table>
-    </div>
-  </div>`;
+      <div class="card rise rise-2" style="overflow:hidden">
+        <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Todos los flujos</div></div>
+        ${flujos.length ? `<table class="table">
+          <thead><tr><th>Flujo</th><th>Disparador</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${flujos.map(f=>`<tr>
+            <td style="font-weight:500">${String(f.nombre).replace(/</g,'&lt;')}</td>
+            <td><span class="badge badge--mute">${(f.trigger_event||'—').replace(/_/g,' ')}</span></td>
+            <td><span class="badge badge--${f.activo?'green':'mute'}">${f.activo?'Activo':'Pausado'}</span></td>
+            <td style="text-align:right"><button class="btn btn--quiet btn--sm" data-id="${f.id}" data-a="${f.activo?0:1}">${f.activo?'Pausar':'Activar'}</button></td>
+          </tr>`).join('')}</tbody>
+        </table>` : `<div class="card--pad t-dim3" style="font-size:13px;padding-top:0">Aún no hay flujos. Crea el primero con "Nuevo flujo" — por ejemplo: si un lead lleva 30 minutos sin respuesta, avisar al admin.</div>`}
+      </div>
+    </div>`;
 
-  document.getElementById('new').addEventListener('click', ()=> toast('El constructor visual de flujos llega pronto','ok'));
-  ctx.content.querySelectorAll('[data-id]').forEach(b=>b.addEventListener('click',()=>toast('Estado del flujo actualizado','ok')));
+    document.getElementById('new').addEventListener('click', crearFlujo);
+    ctx.content.querySelectorAll('[data-id]').forEach(b=>b.addEventListener('click', async ()=>{
+      const r = await api('/api/workflows/'+b.dataset.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ activo: b.dataset.a === '1' }) });
+      if (r) { toast('Estado del flujo actualizado','ok'); await cargar(); }
+      else toast('Error al actualizar','err');
+    }));
+  }
+
+  async function crearFlujo() {
+    const nombre = prompt('Nombre del flujo (ej: "Alerta lead sin respuesta"):');
+    if (!nombre || !nombre.trim()) return;
+    const trigger = prompt('Disparador — escribe uno de:\nmessage:incoming · message:outgoing · conversation:assigned · conversation:closed', 'message:incoming');
+    if (!trigger || !trigger.trim()) return;
+    const r = await api('/api/workflows', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ nombre: nombre.trim(), trigger_event: trigger.trim(), conditions: [], actions: [] }) });
+    if (r) { toast('Flujo creado (configura condiciones y acciones vía API)','ok'); await cargar(); }
+    else toast('Error al crear el flujo','err');
+  }
+
+  await cargar();
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
   function node(icon,t,s,bg,col){ return `<div class="node"><div class="node__ic" style="background:${bg};color:${col}">${ICONS[icon].replace('<svg ','<svg style="width:17px;height:17px" ')}</div><div><div class="node__t">${t}</div><div class="node__s">${s}</div></div></div>`; }
