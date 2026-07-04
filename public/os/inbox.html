@@ -235,6 +235,7 @@
   listEl.innerHTML = `
     <div class="ibx-list__top">
       <h3>Inbox · <span id="ibxCount" style="color:var(--gold)">0</span></h3>
+      <button class="btn btn--gold btn--sm" id="btnNewChat" style="margin-left:auto;white-space:nowrap">${I(D.plus,14)} Nuevo chat</button>
       <div class="os-search" style="width:100%">${I(D.search,14)}<input id="ibxQ" placeholder="Buscar conversación…"></div>
     </div>
     <div class="ibx-chips">${CHIPS.map(([k,l],i)=>`<button class="ibx-chip${i===0?' active':''}" data-c="${k}">${l}</button>`).join('')}</div>
@@ -246,6 +247,11 @@
   renderList();
   wiring();
   conectarStream();
+
+  // Auto-abrir modal de nuevo chat si se viene con ?newchat=1
+  if (new URLSearchParams(location.search).get('newchat') === '1') {
+    setTimeout(() => openNewChatModal(), 500);
+  }
 
   /* ── Render lista ── */
   function convsFiltradas() {
@@ -307,6 +313,7 @@
           <div class="ibx-thead__sub">${ch.e} ${ch.t} · ${esc(fmtPhone(c.customer_phone))}</div>
         </div>
         <span class="conn-dot" id="connDot" title="Estado"></span>
+        <span id="windowBadge" style="display:none;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600"></span>
       </div>
       <div class="ibx-tools">
         <label>Etiqueta:</label>
@@ -408,6 +415,24 @@
     document.getElementById('btnReactivar')?.addEventListener('click', () => {
       const p = document.getElementById('reactivarPanel'); if (p) p.style.display = p.style.display === 'none' ? 'flex' : 'none';
     });
+
+    /* ── Window status check ── */
+    if (c.lead_id && c.channel === 'whatsapp') {
+      try {
+        const ws = await api('/api/leads/' + c.lead_id + '/window-status');
+        const badge = document.getElementById('windowBadge');
+        if (badge) {
+          badge.style.display = 'inline';
+          if (ws.open) {
+            badge.textContent = 'Ventana abierta';
+            badge.style.background = '#2d5a27'; badge.style.color = '#8fe88a';
+          } else {
+            badge.textContent = ws.templateName ? 'Ventana cerrada — se enviará template' : 'Ventana cerrada';
+            badge.style.background = '#5a2727'; badge.style.color = '#e88a8a';
+          }
+        }
+      } catch (e) { /* noop */ }
+    }
 
     /* Compositor */
     iniciarCompositor(id, c);
@@ -534,8 +559,12 @@
     try {
       const r = await api('/api/inbox/conversations/' + id + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensaje: txt }) });
       if (!r) throw new Error('Sin respuesta');
-      toast('Enviado', 'ok');
-    } catch (e) { toast('Error: ' + e.message, 'err'); }
+      if (r.templateSent) toast('Template enviado, ventana reabierta. Mensaje entregado.', 'ok');
+      else toast('Enviado', 'ok');
+    } catch (e) {
+      if (e.message && e.message.includes('window_closed_no_template')) toast('Ventana cerrada. Configura un template de reactivación en Configuración.', 'err');
+      else toast('Error: ' + e.message, 'err');
+    }
     finally { if (btn) btn.disabled = false; updateMainBtn(); }
   }
 
@@ -678,6 +707,57 @@
       document.querySelectorAll('.ibx-chip').forEach(x => x.classList.remove('active'));
       c.classList.add('active'); chanFilter = c.dataset.c; renderList();
     }));
+    document.getElementById('btnNewChat')?.addEventListener('click', () => openNewChatModal());
+  }
+
+  function openNewChatModal() {
+    const existing = document.getElementById('newChatModal');
+    if (existing) existing.remove();
+    const tmplNames = waTemplates.map(t => t.nombre);
+    const modal = document.createElement('div');
+    modal.id = 'newChatModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)';
+    modal.innerHTML = `
+      <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:90%;max-width:400px;border:1px solid var(--border-soft)">
+        <h3 style="margin:0 0 16px;color:var(--text-1)">Nuevo chat WhatsApp</h3>
+        <form id="newChatForm">
+          <label style="font-size:12px;color:var(--text-3)">Teléfono (ej: 573211234567)</label>
+          <input type="tel" id="ncPhone" required style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
+          <label style="font-size:12px;color:var(--text-3)">Nombre</label>
+          <input type="text" id="ncName" placeholder="Nombre del cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
+          <label style="font-size:12px;color:var(--text-3)">Mensaje</label>
+          <textarea id="ncMsg" required rows="3" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px;resize:none"></textarea>
+          ${tmplNames.length ? `<label style="font-size:12px;color:var(--text-3)">Template (opcional, para reabrir ventana)</label>
+          <select id="ncTemplate" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
+            <option value="">Sin template</option>
+            ${tmplNames.map(n => `<option value="${n}">${n}</option>`).join('')}
+          </select>` : ''}
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button type="button" class="btn btn--ghost" id="ncCancel">Cancelar</button>
+            <button type="submit" class="btn btn--gold">Enviar</button>
+          </div>
+        </form>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    modal.querySelector('#ncCancel').addEventListener('click', () => modal.remove());
+    modal.querySelector('#newChatForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const phone = document.getElementById('ncPhone').value.trim();
+      const name = document.getElementById('ncName').value.trim();
+      const message = document.getElementById('ncMsg').value.trim();
+      const tpl = document.getElementById('ncTemplate')?.value || '';
+      if (!phone || !message) return;
+      modal.remove();
+      try {
+        await api('/api/leads/proactive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, name, message, templateName: tpl }) });
+        toast('Chat enviado a ' + phone, 'ok');
+        const r = await api('/api/inbox/conversations');
+        if (Array.isArray(r)) { convs = r; renderList(); }
+      } catch (err) {
+        toast('Error: ' + (err.message || err.detalle || 'desconocido'), 'err');
+      }
+    });
   }
 
   /* ── SSE ── */

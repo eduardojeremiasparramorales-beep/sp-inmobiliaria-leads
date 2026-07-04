@@ -93,6 +93,8 @@ async function initDB() {
   ensureColumn('vendedores', 'pin', 'TEXT');
   ensureColumn('leads', 'etiqueta', 'TEXT');
   ensureColumn('leads', 'unread_count', 'INTEGER DEFAULT 0');
+  ensureColumn('leads', 'last_customer_message_at', 'DATETIME');
+  ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS lead_notes (
@@ -184,7 +186,7 @@ function saveLead(customerPhone, customerName, messageBody) {
     return { leadId: existing.id, isNew: false };
   }
 
-  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count) VALUES (?, ?, ?, ?, 1)', [customerPhone, customerName, messageBody, messageBody]);
+  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\'))', [customerPhone, customerName, messageBody, messageBody]);
 
   const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [customerPhone]);
   if (!r || !r.id) {
@@ -220,6 +222,34 @@ function saveMessage(leadId, from, to, body, direction, media) {
 
 function getMessageById(id) {
   return one('SELECT * FROM messages WHERE id = ? LIMIT 1', [id]);
+}
+
+// === 24-HOUR WINDOW TRACKING ===
+
+function updateCustomerMessageTimestamp(leadId) {
+  run('UPDATE leads SET last_customer_message_at = datetime(\'now\') WHERE id = ?', [leadId]);
+  try {
+    const lead = one('SELECT lead_id FROM conversations WHERE lead_id = ?', [leadId]);
+    if (lead) {
+      run('UPDATE conversations SET last_customer_message_at = datetime(\'now\') WHERE lead_id = ?', [leadId]);
+    }
+  } catch (e) { /* conversación puede no existir aún */ }
+}
+
+function isWindowOpen(leadId) {
+  const lead = one('SELECT last_customer_message_at FROM leads WHERE id = ?', [leadId]);
+  if (!lead || !lead.last_customer_message_at) return false;
+  const lastMsg = new Date(lead.last_customer_message_at + 'Z');
+  const now = new Date();
+  const hoursDiff = (now - lastMsg) / (1000 * 60 * 60);
+  return hoursDiff < 24;
+}
+
+function getWindowExpiresAt(leadId) {
+  const lead = one('SELECT last_customer_message_at FROM leads WHERE id = ?', [leadId]);
+  if (!lead || !lead.last_customer_message_at) return null;
+  const lastMsg = new Date(lead.last_customer_message_at + 'Z');
+  return new Date(lastMsg.getTime() + 24 * 60 * 60 * 1000);
 }
 
 function getVendedoresActivos() {
@@ -852,6 +882,7 @@ module.exports = {
   getWATemplates, addWATemplate, deleteWATemplate,
   setLeadEtiqueta, getNotasByLead, addNota, deleteNota, reassignLead,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
+  updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   // Nuevo schema multicanal
   createCustomer, getCustomerById, findCustomerByChannel,
   linkChannelToCustomer, getCustomerChannels, getCustomers, updateCustomer, deleteCustomer,

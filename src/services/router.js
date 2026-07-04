@@ -126,8 +126,16 @@ class MessageRouter {
     const adapter = getAdapter(conversation.channel);
     if (!adapter) throw new Error(`Adapter no registrado para canal ${conversation.channel}`);
 
-    // 3. Enviar mensaje
-    await adapter.sendMessage(channelUserId, text);
+    // 3. Enviar mensaje (smart: detecta ventana 24h y envía template si está cerrada)
+    let templateSent = false;
+    if (conversation.channel === 'whatsapp') {
+      const { sendMessageSmart } = require('./whatsapp');
+      const leadId = conversation.lead_id || null;
+      const smartResult = await sendMessageSmart(channelUserId, text, leadId);
+      templateSent = smartResult.templateSent || false;
+    } else {
+      await adapter.sendMessage(channelUserId, text);
+    }
 
     // 4. Guardar en timeline
     const message = store.addTimelineEvent(conversation.id, 'message', {

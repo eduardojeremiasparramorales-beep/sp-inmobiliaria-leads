@@ -1,4 +1,4 @@
-const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse, getConfig } = require('../db/store');
+const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse, getConfig, updateCustomerMessageTimestamp } = require('../db/store');
 const { emitToVendedor, emitToAdmins } = require('./events');
 
 const WELCOME_DEFAULT = 'Hola 👋 Gracias por contactar a *SP Inmobiliaria*. Un asesor te atenderá en los próximos minutos. ¡Estamos para ayudarte!';
@@ -96,6 +96,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
     if (!v) v = activos[0];
 
     saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming');
+    updateCustomerMessageTimestamp(lead.id);
     syncMulticanal(lead.id, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: v.telefono });
     notificarPanel(v.id, lead.id, 'mensaje_cliente');
 
@@ -113,11 +114,11 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
   const { saveLead: saveL } = require('../db/store');
   const r = saveL(fromPhone, customerName || 'Cliente', messageBody);
   const a = getVendedoresActivos();
-  const { sendMessage } = require('./whatsapp');
+  const { sendMessageSmart } = require('./whatsapp');
 
   // Enviar mensaje de bienvenida automático al nuevo lead
   const welcome = getWelcomeMsg();
-  sendMessage(fromPhone, welcome)
+  sendMessageSmart(fromPhone, welcome, r.leadId)
     .then(() => saveMessage(r.leadId, 'sistema', fromPhone, welcome, 'outgoing'))
     .catch(e => console.error('Error enviando bienvenida:', e.message));
 
@@ -129,6 +130,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
       console.error('Error asignando lead:', e.message);
     }
     saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming');
+    updateCustomerMessageTimestamp(r.leadId);
     syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
     sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nCliente: ${customerName || 'Cliente'}\nTel: ${fromPhone}\n\n${messageBody}`)
@@ -167,6 +169,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, callback) {
   }
 
   store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', body, 'incoming', mediaData);
+  updateCustomerMessageTimestamp(lead.id);
   syncMulticanal(lead.id, { direction: 'incoming', body, media: mediaData, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '' });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
 

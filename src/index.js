@@ -7,7 +7,7 @@ const store = require('./db/store');
 const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
-const { sendMessage, uploadMedia, sendMedia } = require('./services/whatsapp');
+const { sendMessage, sendMessageSmart, uploadMedia, sendMedia } = require('./services/whatsapp');
 const mediaStore = require('./services/media');
 const auth = require('./services/auth');
 const events = require('./services/events');
@@ -347,6 +347,16 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   res.json({ lead, mensajes: store.getMessagesByLead(lead.id) });
 });
 
+// Estado de la ventana de 24h de WhatsApp para un lead
+app.get('/api/leads/:id/window-status', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  const isOpen = store.isWindowOpen(lead.id);
+  const expiresAt = store.getWindowExpiresAt(lead.id);
+  const templateName = store.getConfig('reengagement_template') || '';
+  res.json({ open: isOpen, expiresAt, templateName });
+});
+
 // ===================== INBOX MULTICANAL (Nuevo Schema) =====================
 
 app.get('/api/inbox/conversations', auth.requireAuth, (req, res) => {
@@ -531,7 +541,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
   }
 
   try {
-    await sendMessage(lead.customer_phone, String(mensaje));
+    const smartResult = await sendMessageSmart(lead.customer_phone, String(mensaje), lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing');
     store.setFirstResponse(lead.id);
@@ -541,10 +551,11 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
     store.syncLeadToConversation(store.getLeadById(lead.id), { direction: 'outgoing', body: String(mensaje), fromNumber, toNumber: lead.customer_phone });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
-    res.json({ ok: true });
+    res.json({ ok: true, templateSent: smartResult.templateSent || false });
   } catch (e) {
     console.error('Error enviando respuesta desde panel:', e.message);
-    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+    const detail = e.windowClosed ? 'window_closed_no_template' : e.message;
+    res.status(502).json({ error: 'error_whatsapp', detalle: detail });
   }
 });
 
@@ -779,6 +790,55 @@ app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
   res.json({ ok: true, vendedor: { id: vendedor.id, nombre: vendedor.nombre } });
 });
 
+// ===================== LEAD PROACTIVO (iniciar chat sin que el cliente escriba) =====================
+
+app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
+  const { phone, name, message, templateName } = req.body || {};
+  if (!phone || !String(phone).trim()) return res.status(400).json({ error: 'telefono_requerido' });
+  if (!message || !String(message).trim()) return res.status(400).json({ error: 'mensaje_requerido' });
+
+  const cleanPhone = String(phone).replace(/[^0-9]/g, '');
+  if (cleanPhone.length < 10) return res.status(400).json({ error: 'telefono_invalido' });
+
+  try {
+    // 1. Crear lead en la BD
+    const result = store.saveLead(cleanPhone, name || 'Cliente', String(message).trim());
+    const lead = store.getLeadById(result.leadId);
+
+    // 2. Asignar vendedor por round-robin
+    const activos = store.getVendedoresActivos();
+    if (activos.length > 0) {
+      store.assignLeadToVendedor(lead.id, activos[0]);
+    }
+
+    // 3. Enviar template si se especificó, luego el mensaje
+    const { sendTemplate: sendT, sendMessageSmart } = require('./services/whatsapp');
+    const tpl = templateName || store.getConfig('reengagement_template');
+    if (tpl) {
+      await sendT(cleanPhone, tpl);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    await sendMessageSmart(cleanPhone, String(message).trim(), lead.id);
+
+    // 4. Guardar mensaje outgoing
+    store.saveMessage(lead.id, 'sistema', cleanPhone, String(message).trim(), 'outgoing');
+    store.syncLeadToConversation(store.getLeadById(lead.id), {
+      direction: 'outgoing', body: String(message).trim(), fromNumber: 'sistema', toNumber: cleanPhone,
+    });
+
+    // 5. Notificar
+    if (activos.length > 0) {
+      events.emitToVendedor(activos[0].id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'lead_proactivo', ts: Date.now() });
+    }
+    events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'lead_proactivo', ts: Date.now() });
+
+    res.json({ ok: true, leadId: lead.id });
+  } catch (e) {
+    console.error('Error creando lead proactivo:', e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
 // ===================== TIEMPO REAL (SSE) =====================
 
 app.get('/api/stream', auth.requireAuth, (req, res) => {
@@ -819,6 +879,7 @@ app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
 
 const CONFIG_KEYS = [
   'welcome_message',
+  'reengagement_template',
   'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
   'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
 ];

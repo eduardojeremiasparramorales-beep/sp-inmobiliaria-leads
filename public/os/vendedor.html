@@ -367,6 +367,22 @@
     return ESTADOS.disponible;
   }
 
+  async function checkWindowStatus(lead) {
+    const badge = document.getElementById('windowBadge');
+    if (!badge || !lead || lead.channel === 'messenger' || lead.channel === 'instagram') return;
+    try {
+      const ws = await api('/api/leads/' + lead.id + '/window-status');
+      badge.style.display = 'inline';
+      if (ws.open) {
+        badge.textContent = 'Ventana abierta';
+        badge.style.background = '#2d5a27'; badge.style.color = '#8fe88a';
+      } else {
+        badge.textContent = ws.templateName ? 'Ventana cerrada — se enviará template' : 'Ventana cerrada';
+        badge.style.background = '#5a2727'; badge.style.color = '#e88a8a';
+      }
+    } catch (e) { badge.style.display = 'none'; }
+  }
+
   /* ── v2.0 · MOCK — Fase IA: tareas y propiedades por lead (memoria de sesión) ── */
   const tareasMock = {};            // { [leadId]: [{txt, due, done}] }
   function tareasDe(id) {
@@ -633,6 +649,7 @@
     renderLeads();
     renderChat(data.lead, data.mensajes);
     renderPanel(data.lead, currentMensajes);
+    checkWindowStatus(data.lead);
     if (window.innerWidth <= 720) {
       document.getElementById('vndList').classList.add('hide');
       $thread.classList.remove('hide');
@@ -667,6 +684,7 @@
           <div class="vnd-head__sub"><span class="st-dot ${est.cls}"></span> ${est.label} · ${escapeHtml(fmtPhone(lead.customer_phone))}</div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
+          <span id="windowBadge" style="display:none;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600"></span>
           ${connDot}
           ${waTemplates.length ? `<button class="btn btn--ghost btn--sm" id="btnReactivar">${I(SVG.megaphone, 15)} Reactivar</button>` : ''}
         </div>
@@ -993,8 +1011,12 @@
       if (!r) throw new Error('Sin respuesta del servidor');
       input.value = ''; input.style.height = 'auto';
       await abrirLead(currentLead.id); await cargarLeads();
-      toast('Enviado', 'ok');
-    } catch (e) { toast('Error: ' + e.message, 'err'); }
+      if (r.templateSent) toast('Template enviado, ventana reabierta. Mensaje entregado.', 'ok');
+      else toast('Enviado', 'ok');
+    } catch (e) {
+      if (e.message && e.message.includes('window_closed_no_template')) toast('Ventana cerrada. Configura un template de reactivación en Configuración.', 'err');
+      else toast('Error: ' + e.message, 'err');
+    }
     finally { if (btn) btn.disabled = false; }
   }
 

@@ -1,6 +1,7 @@
 const axios = require('axios');
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
+const WINDOW_CLOSED_CODE = 131047;
 
 function getApiConfig() {
   const token = process.env.WHATSAPP_TOKEN;
@@ -22,6 +23,40 @@ async function sendMessage(to, text) {
     text: { preview_url: false, body: text },
   }, { headers });
   return res.data;
+}
+
+// Envío inteligente: si la ventana de 24h está cerrada, envía template automáticamente
+async function sendMessageSmart(to, text, leadId) {
+  try {
+    const result = await sendMessage(to, text);
+    return { data: result, templateSent: false, reopenedWindow: false };
+  } catch (err) {
+    const errData = err.response && err.response.data && err.response.data.error;
+    const errCode = errData && (errData.code || errData.error_subcode);
+    const isWindowClosed = errCode === WINDOW_CLOSED_CODE ||
+      (errData && errData.message && errData.message.includes('free-form'));
+
+    if (!isWindowClosed) throw err;
+
+    // Ventana cerrada: buscar template de reactivación configurado
+    let store;
+    try { store = require('../db/store'); } catch (e) { throw err; }
+    const templateName = store.getConfig('reengagement_template');
+    if (!templateName) {
+      const e2 = new Error('Ventana de 24h cerrada. Configura un template de reactivación en Configuración.');
+      e2.windowClosed = true;
+      throw e2;
+    }
+
+    console.log(`[WhatsApp] Ventana cerrada para ${to} — enviando template "${templateName}" para reabrir`);
+    await sendTemplate(to, templateName);
+
+    // Esperar 3 segundos para que Meta procese el template
+    await new Promise(r => setTimeout(r, 3000));
+
+    const result = await sendMessage(to, text);
+    return { data: result, templateSent: true, reopenedWindow: true };
+  }
 }
 
 async function sendTemplate(to, templateName, params) {
@@ -108,4 +143,4 @@ async function sendMedia(to, mediaId, type, caption, filename) {
   return res.data;
 }
 
-module.exports = { sendMessage, sendTemplate, markAsRead, getMediaUrl, downloadMedia, uploadMedia, sendMedia };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, getMediaUrl, downloadMedia, uploadMedia, sendMedia };

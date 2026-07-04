@@ -129,7 +129,7 @@
     ctx.content.querySelectorAll('#filters .chip').forEach(x => x.classList.remove('active'));
     c.classList.add('active'); filter = c.dataset.f; render();
   }));
-  document.getElementById('newLead').addEventListener('click', () => toast('El alta de leads llega en la próxima fase', 'ok'));
+  document.getElementById('newLead').addEventListener('click', () => location.href = '/os/inbox.html?newchat=1');
 
   render();
 })();
