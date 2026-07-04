@@ -84,8 +84,11 @@ app.get('/sw.js', (req, res) => {
 
 app.use(express.static('public', {
   setHeaders: (res, filePath) => {
-    // Íconos y logo: caché de 1 día; el resto sin caché larga
-    if (filePath.includes('icons')) res.setHeader('Cache-Control', 'public, max-age=86400');
+    if (filePath.endsWith('.js') || filePath.endsWith('.html') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (filePath.includes('icons')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
   },
 }));
 
