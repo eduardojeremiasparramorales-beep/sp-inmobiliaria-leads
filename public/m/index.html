@@ -310,6 +310,38 @@
   .sel-bar .sel-act svg{ width:19px; height:19px; }
   .sel-bar .sel-act.danger{ color:var(--red); }
   .sel-bar .sel-act.x{ color:var(--text-3); background:none; }
+  /* ── Reactions ── */
+  .bub-reactions{ display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; padding-top:4px; border-top:1px solid rgba(255,255,255,.06); }
+  .bub--in .bub-reactions{ border-top-color:rgba(255,255,255,.06); }
+  .bub--out .bub-reactions{ border-top-color:rgba(255,255,255,.12); }
+  .bub-reaction{ display:inline-flex; align-items:center; gap:2px; padding:1px 6px 1px 5px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); font-size:14px; line-height:1.3; cursor:pointer; transition:all .15s; }
+  .bub--out .bub-reaction{ background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.18); }
+  .bub-reaction:active{ transform:scale(1.15); }
+  .bub-reaction .r-count{ font-size:10px; color:var(--text-3); font-weight:600; min-width:8px; text-align:center; }
+  .bub-reaction.mine{ background:var(--gold-soft)!important; border-color:var(--gold)!important; }
+  .bub-reaction.mine .r-count{ color:var(--gold); }
+  /* ── Edit badge ── */
+  .bub__edited{ font-size:10px; color:var(--text-3); font-style:italic; margin-right:4px; }
+  .bub--out .bub__edited{ color:rgba(255,255,255,.4); }
+  /* ── Deleted message placeholder ── */
+  .bub-deleted{ font-style:italic; color:var(--text-3); font-size:13px; }
+  .bub--out .bub-deleted{ color:rgba(255,255,255,.35); }
+  /* ── Pin badge on card ── */
+  .m-card__pin{ position:absolute; top:-1px; right:12px; color:var(--gold); font-size:9px; display:flex; align-items:center; gap:2px; opacity:.7; }
+  .m-card__pin svg{ width:11px; height:11px; }
+  /* ── Context menu (bottom sheet) ── */
+  .ctx-item{ display:flex; align-items:center; gap:12px; padding:14px 16px; font-size:14px; color:var(--text); border-bottom:1px solid var(--border-soft); cursor:pointer; transition:background .1s; -webkit-tap-highlight-color:transparent; }
+  .ctx-item:active{ background:var(--bg-2); }
+  .ctx-item .ctx-ic{ width:32px; height:32px; border-radius:8px; display:grid; place-items:center; flex-shrink:0; }
+  .ctx-item .ctx-ic svg{ width:18px; height:18px; }
+  .ctx-item.danger{ color:var(--red); }
+  .ctx-item.primary{ color:var(--gold); }
+  /* ── Emoji picker ── */
+  .emoji-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; padding:10px 0; }
+  .emoji-grid button{ width:100%; aspect-ratio:1; border:none; background:var(--bg-3); border-radius:12px; font-size:26px; display:grid; place-items:center; cursor:pointer; transition:all .12s; -webkit-tap-highlight-color:transparent; }
+  .emoji-grid button:active{ transform:scale(1.2); background:var(--bg-4); }
+  .emoji-grid button.active{ background:var(--gold-soft); box-shadow:0 0 0 2px var(--gold); }
+  .emoji-grid button .e-count{ font-size:10px; color:var(--text-3); margin-left:2px; }
   .sch-item{ display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border-soft); }
   .sch-item:last-child{ border-bottom:none; }
   .sch-item .sch-time{ font-size:12px; color:var(--text-3); flex-shrink:0; width:60px; }
@@ -407,6 +439,9 @@ const SVG = {
   lock:'M12 2a5 5 0 0 0-5 5v3H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2V7a5 5 0 0 0-5-5zM9 10V7a3 3 0 0 1 6 0v3',
   arrowUp:'M12 5v14M5 12l7-7 7 7',
   trash:'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+  pin:'M12 2l3 7h7l-5.5 5 2 8L12 17l-6.5 4 2-8L2 9h7z',
+  smile:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01',
+  edit:'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
 };
 
 /* ════════ Estado / helpers ════════ */
@@ -563,7 +598,7 @@ function cardHTML(l,idx){
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
     <div class="m-row__actions left">
       <button class="swipe-act sa-call" data-a="call">${I(SVG.phone,19)}Llamar</button>
-      ${archived?`<button class="swipe-act sa-wa" data-a="unarch">${I(SVG.archive,19)}Volver</button>`:`<button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button>`}
+      ${archived?`<button class="swipe-act sa-wa" data-a="unarch">${I(SVG.archive,19)}Volver</button>`:`<button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button><button class="swipe-act sa-pin" data-a="pin">${I(SVG.pin,17)}${l.pinned_at?'Quitar':'Fijar'}</button>`}
     </div>
     <div class="m-row__actions right">
       ${archived?'':`<button class="swipe-act sa-tag" data-a="tag">${I(SVG.tag,19)}No leído</button>`}
@@ -571,6 +606,7 @@ function cardHTML(l,idx){
     </div>
     <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
+      ${l.pinned_at?`<span class="m-card__pin">${I(SVG.pin,11)} Fijado</span>`:''}
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread && !archived ? greenDot : ''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
         <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
@@ -608,11 +644,12 @@ function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.d
   else if(a==='unarch'){
     if(l){ toast('Restaurando...'); api(`/api/leads/${id}/desarchivar`,{method:'POST'}).then(async()=>{ await cargarArchivados(); if(showArchivados) renderList(); else { cargar(); } toast('Restaurado a bandeja principal'); }); }
   }
+  else if(a==='pin'){ togglePinLead(id); }
 }
 function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>x.id===id); }
 
 /* ════════ Chat ════════ */
-async function abrirChat(id){ clearSelection(); haptic(10); const l = leads.find(x=>x.id===id); current=l;
+async function abrirChat(id){ clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); const l = leads.find(x=>x.id===id); current=l;
   let msgs;
   if(DEMO){ msgs=demoMsgs(); } else { const d=await api(`/api/leads/${id}/mensajes`); if(d){ current=d.lead; msgs=d.mensajes; api(`/api/leads/${id}/leido`,{method:'POST'}); if(l) l.unread_count=0; } else msgs=[]; }
   currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
@@ -667,13 +704,16 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
     </div>`;
   const box=$('#cMsgs'); box.scrollTop=box.scrollHeight;
   // Wire message swipe (reply)
-  // Selection mode: toggle on sel-check tap, exit on background tap
+  // Reaction click — toggle reaction
   const msgsBox=$('#cMsgs');
   if(msgsBox) msgsBox.addEventListener('click',e=>{
-    if(!selMode) return;
-    if(e.target===msgsBox) clearSelection();
-    const check=e.target.closest('.sel-check');
-    if(check){ const wrap=check.closest('.msg-wrap'); if(wrap) toggleSel(wrap.dataset.msgid); }
+    const react=e.target.closest('.bub-reaction');
+    if(react){ const wrap=react.closest('.msg-wrap'); if(wrap) toggleReaction(wrap.dataset.msgid, react.dataset.emoji); return; }
+    if(selMode){
+      if(e.target===msgsBox) clearSelection();
+      const check=e.target.closest('.sel-check');
+      if(check){ const wrap=check.closest('.msg-wrap'); if(wrap) toggleSel(wrap.dataset.msgid); }
+    }
   });
   setTimeout(()=>{ document.querySelectorAll('.msg-wrap').forEach(w=>{ wireMsgSwipe(w); wireMsgLongPress(w); }); }, 100);
   // Selection bar
@@ -681,8 +721,8 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   if(selBar){ selBar.querySelectorAll('[data-sel]').forEach(b=>b.onclick=()=>{
     const a=b.dataset.sel;
     if(a==='copy') selCopy();
-    else if(a==='delete') selDelete();
-    else if(a==='forward') selForward();
+    else if(a==='delete') selDelete(null);
+    else if(a==='forward') selForward(null);
     else if(a==='share') selShare();
     else if(a==='clear') clearSelection();
   }); }
@@ -795,6 +835,7 @@ function wireHoldRecord(btn){
   btn.addEventListener('touchend',onTouchEnd);
 }
 
+let _editingMsg=null;
 /* ════════ Selection Mode ════════ */
 let selMode=false, selIds=new Set();
 function enterSelMode(msgId){
@@ -824,81 +865,162 @@ function updateSelBar(){
   if(selIds.size>0){ bar.classList.add('show'); if(ct) ct.textContent=selIds.size+' seleccionado'+(selIds.size>1?'s':''); }
   else bar.classList.remove('show');
 }
-function wireMsgLongPress(wrap){
-  if(wrap._lp) return; wrap._lp=true;
-  const bub=wrap.querySelector('.bub'); if(!bub) return;
-  let timer=null, moved=false, sx=0,sy=0;
-  function onStart(e){
-    if(selMode){ toggleSel(wrap.dataset.msgid); return; }
-    moved=false; timer=setTimeout(()=>{
-      timer=null; enterSelMode(wrap.dataset.msgid);
-    },400);
-  }
-  function onMove(e){
-    if(timer){ const dx=Math.abs(e.touches[0].clientX-sx),dy=Math.abs(e.touches[0].clientY-sy); if(dx>8||dy>8){ clearTimeout(timer); timer=null; } }
-  }
-  function onEnd(){
-    if(timer){ clearTimeout(timer); timer=null; }
-  }
-  bub.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; onStart(e); },{passive:true});
-  bub.addEventListener('touchmove',onMove,{passive:true});
-  bub.addEventListener('touchend',onEnd);
-}
 function getSelTexts(){ return currentMsgs.filter(m=>selIds.has(String(m.id))).map(m=>m.body||'').filter(Boolean); }
-async function selCopy(){
-  const texts=getSelTexts();
-  if(!texts.length){ toast('Sin texto para copiar'); return; }
-  try{ await navigator.clipboard.writeText(texts.join('\n\n')); toast('Copiado'); }catch(e){ toast('No se pudo copiar'); }
-  clearSelection();
+async function selCopy(texts){
+  const t=texts||getSelTexts();
+  if(!t.length){ toast('Sin texto para copiar'); return; }
+  try{ await navigator.clipboard.writeText(t.join('\n\n')); toast('Copiado'); }catch(e){ toast('No se pudo copiar'); }
+  if(!texts) clearSelection();
 }
-async function selShare(){
-  const texts=getSelTexts();
-  if(!texts.length){ toast('Sin texto para compartir'); return; }
-  if(navigator.share){ try{ await navigator.share({text:texts.join('\n\n')}); }catch(e){} }
-  else await selCopy();
-  clearSelection();
+async function selShare(texts){
+  const t=texts||getSelTexts();
+  if(!t.length){ toast('Sin contenido'); return; }
+  if(navigator.share){ try{ await navigator.share({text:t.join('\n\n')}); }catch(e){} }
+  else await selCopy(t);
+  if(!texts) clearSelection();
 }
-async function selDelete(){
-  if(!selIds.size) return;
-  // Confirmar
-  openSheet('Eliminar mensajes', `
-    <div style="text-align:center;padding:10px 0">
-      <div style="font-size:40px;margin-bottom:10px">${I(SVG.trash,32)}</div>
-      <div style="font-size:16px;font-weight:600;margin-bottom:6px">¿Eliminar ${selIds.size} mensaje${selIds.size>1?'s':''}?</div>
-      <div style="font-size:13px;color:var(--text-3);margin-bottom:20px">Esta acción no se puede deshacer</div>
-      <div style="display:flex;gap:10px">
-        <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text);border:1px solid var(--border)" id="selDelCancel">Cancelar</button>
-        <button class="cop-use" style="flex:1;background:var(--red);color:#fff" id="selDelConfirm">Eliminar</button>
-      </div>
-    </div>`);
-  $('#selDelCancel').onclick=closeSheet;
-  $('#selDelConfirm').onclick=async()=>{
-    closeSheet(); haptic(12); toast('Eliminando...');
+async function selDelete(msgId, mode){
+  if(!msgId) {
+    // Desde selección múltiple — borrar para todos cada uno
+    if(!selIds.size) return;
     const ids=[...selIds];
     for(const id of ids){
-      await api('/api/messages/'+id,{method:'DELETE'});
+      await api('/api/messages/'+id+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'everyone'})});
     }
     if(current){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; } }
     clearSelection();
     if(current){ renderChat(current,currentMsgs); const b=$('#cMsgs'); if(b) b.scrollTop=b.scrollHeight; }
     toast('Eliminado'+(ids.length>1?'s':''));
-  };
+    return;
+  }
+  // Desde menú contextual
+  const r=await api('/api/messages/'+msgId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
+  if(r){ 
+    if(current){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; renderChat(current,currentMsgs); } }
+    toast(mode==='me'?'Eliminado para ti':'Eliminado para todos');
+  } else toast('Error');
 }
-async function selForward(){
-  const texts=getSelTexts(); if(!texts.length){ toast('Sin contenido'); clearSelection(); return; }
-  // Mostrar lista de leads para elegir destino
-  const destinos=leads.filter(l=>l.id!==(current?current.id:null));
-  openSheet('Reenviar a…', `
-    <div style="max-height:300px;overflow-y:auto">
-      ${destinos.length?destinos.map(l=>`<div class="m-row" style="padding:0;border:none"><div class="m-card" style="border:none;padding:10px 14px;gap:10px" data-fwd="${l.id}"><div class="m-avatar" style="width:36px;height:36px;border-radius:10px;font-size:12px;background:${avatarColor(l.customer_name||'')}">${initials(l.customer_name)}</div><div style="font-size:14px;font-weight:500">${esc(l.customer_name||'Cliente')}</div></div></div>`).join(''):'<div style="text-align:center;color:var(--text-3);padding:20px">Sin otros leads disponibles</div>'}
+function showDeleteOptions(msgId){
+  const isOut=currentMsgs.find(m=>String(m.id)===String(msgId))?.direction==='outgoing';
+  openSheet('Eliminar mensaje', `
+    <div style="padding:6px 0">
+      <div class="ctx-item" id="delMe"><div class="ctx-ic">${I(SVG.trash,18)}</div><div>Eliminar para mí</div></div>
+      ${isOut?`<div class="ctx-item danger" id="delAll"><div class="ctx-ic">${I(SVG.trash,18)}</div><div>Eliminar para todos</div></div>`:''}
     </div>`);
+  $('#delMe').onclick=()=>{ closeSheet(); selDelete(msgId,'me'); };
+  if(isOut) $('#delAll').onclick=()=>{ closeSheet(); selDelete(msgId,'everyone'); };
+}
+async function selForward(msgId){
+  let texts=[];
+  if(msgId){ const m=currentMsgs.find(x=>String(x.id)===String(msgId)); if(m&&m.body) texts=[m.body]; }
+  else texts=getSelTexts();
+  if(!texts.length){ toast('Sin contenido'); clearSelection(); return; }
+  const destinos=leads.filter(l=>l.id!==(current?current.id:null));
+  openSheet('Reenviar a…', `<div style="max-height:300px;overflow-y:auto">${destinos.length?destinos.map(l=>`<div class="m-row" style="padding:0;border:none"><div class="m-card" style="border:none;padding:10px 14px;gap:10px" data-fwd="${l.id}"><div class="m-avatar" style="width:36px;height:36px;border-radius:10px;font-size:12px;background:${avatarColor(l.customer_name||'')}">${initials(l.customer_name)}</div><div style="font-size:14px;font-weight:500">${esc(l.customer_name||'Cliente')}</div></div></div>`).join(''):'<div style="text-align:center;color:var(--text-3);padding:20px">Sin otros leads disponibles</div>'}</div>`);
   document.querySelectorAll('[data-fwd]').forEach(el=>el.addEventListener('click',async()=>{
     const destId=Number(el.dataset.fwd); closeSheet(); toast('Reenviando...');
     for(const t of texts){
       await api(`/api/leads/${destId}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:'✉️ Reenviado: '+t})});
     }
-    clearSelection(); toast('Reenviado');
+    if(!msgId) clearSelection(); toast('Reenviado');
   }));
+}
+/* ════════ Context menu (long-press) ════════ */
+function showCtxMenu(msgId){
+  const m=currentMsgs.find(x=>String(x.id)===String(msgId));
+  if(!m) return;
+  const out=m.direction==='outgoing';
+  const hasText=!!(m.body||'');
+  const C=(ic,label,id,cls)=>`<div class="ctx-item${cls?' '+cls:''}" id="${id}"><div class="ctx-ic">${ic}</div><div>${label}</div></div>`;
+  openSheet('Opciones', `<div style="padding:6px 0">
+    ${C(I(SVG.smile,18),'Reaccionar','ctxReact')}
+    ${out&&hasText?C(I(SVG.edit,18),'Editar','ctxEdit'):''}
+    ${hasText?C(I(SVG.copy,18),'Copiar texto','ctxCopy'):''}
+    ${C(I(SVG.arrowUp,18),'Compartir','ctxShare')}
+    ${C(I(SVG.reply,18),'Responder','ctxReply')}
+    ${C(I(SVG.trash,18),'Borrar','ctxDelete','danger')}
+    ${C(I(SVG.checkSquare,18),'Seleccionar','ctxSelect')}
+  </div>`);
+  $('#ctxReact').onclick=()=>{ closeSheet(); openEmojiPicker(msgId); };
+  if(out&&hasText){ $('#ctxEdit').onclick=()=>{ closeSheet(); startEditMsg(msgId); }; }
+  if(hasText){ $('#ctxCopy').onclick=()=>{ closeSheet(); selCopy([m.body]); }; }
+  $('#ctxShare').onclick=()=>{ closeSheet(); selShare([m.body||'']); };
+  $('#ctxReply').onclick=()=>{ closeSheet(); setReply(msgId); };
+  $('#ctxDelete').onclick=()=>{ closeSheet(); showDeleteOptions(msgId); };
+  $('#ctxSelect').onclick=()=>{ closeSheet(); enterSelMode(msgId); };
+}
+/* ════════ Emoji Picker ════════ */
+const EMOJIS=['👍','❤️','😂','😮','😢','🙏','🔥','🎉','💯','⭐','👏','💪'];
+function openEmojiPicker(msgId){
+  const m=currentMsgs.find(x=>String(x.id)===String(msgId));
+  const existingReactions=m?.reactions||[];
+  const myNumber=me?.telefono||'self';
+  const getCount=emoji=>existingReactions.filter(r=>r.emoji===emoji).length;
+  const iHave=emoji=>existingReactions.some(r=>r.emoji===emoji&&r.sender_number===myNumber);
+  openSheet('Reaccionar', `<div class="emoji-grid">${EMOJIS.map(e=>`<button data-emoji="${e}" class="${iHave(e)?'active':''}">${e}${getCount(e)>0?`<span class="e-count">${getCount(e)}</span>`:''}</button>`).join('')}</div>`);
+  document.querySelectorAll('.emoji-grid button').forEach(b=>b.onclick=async()=>{
+    const emoji=b.dataset.emoji; closeSheet();
+    await toggleReaction(msgId,emoji);
+  });
+}
+async function toggleReaction(msgId,emoji){
+  const r=await api('/api/messages/'+msgId+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+  if(r&&r.reactions!==undefined){
+    if(current){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }
+  }
+}
+/* ════════ Editar mensaje ════════ */
+function startEditMsg(msgId){
+  const m=currentMsgs.find(x=>String(x.id)===String(msgId));
+  if(!m||!m.body) return;
+  _editingMsg=msgId;
+  const inp=$('#cInput'); if(!inp) return;
+  inp.value=m.body; inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px';
+  inp.focus(); updateSend();
+  // Mostrar indicador de edición
+  const replyBar=$('#cReply');
+  if(replyBar){
+    replyBar.innerHTML=`<div class="c-reply__line"></div><div class="c-reply__info"><div class="c-reply__label" style="color:var(--gold)">Editando mensaje</div><div class="c-reply__preview">${esc(String(m.body).slice(0,60))}</div></div><button class="c-reply__x" id="editCancel">${I(SVG.x,16)}</button>`;
+    replyBar.classList.add('show');
+    $('#editCancel').onclick=cancelEdit;
+  }
+}
+function cancelEdit(){
+  _editingMsg=null;
+  const bar=$('#cReply');
+  if(bar){ bar.innerHTML=`<div class="c-reply__line"></div><div class="c-reply__info"><div class="c-reply__label" id="replyLabel"></div><div class="c-reply__preview" id="replyPreview"></div></div><button class="c-reply__x" id="replyX">${I(SVG.x,16)}</button>`; bar.classList.remove('show'); }
+  $('#replyX').onclick=cancelarReply;
+  const inp=$('#cInput'); if(inp){ inp.value=''; inp.style.height='auto'; updateSend(); }
+}
+/* ════════ Pin lead (desde swipe) ════════ */
+async function togglePinLead(leadId){
+  const l=findLead(leadId); if(!l) return;
+  const pin=!l.pinned_at;
+  const r=await api('/api/leads/'+leadId+'/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:pin})});
+  if(r){ l.pinned_at=pin?new Date().toISOString():null; cargar(); toast(pin?'Fijado arriba':'Quitado de fijados'); }
+}
+/* ════════ Wire Long Press (reemplaza enterSelMode directo) ════════ */
+function wireMsgLongPress(wrap){
+  if(wrap._lp) return; wrap._lp=true;
+  const bub=wrap.querySelector('.bub'); if(!bub) return;
+  let timer=null, sx=0,sy=0;
+  function onStart(e){
+    if(selMode){ toggleSel(wrap.dataset.msgid); return; }
+    if(_editingMsg) return; // no abrir menú mientras se edita
+    const touch=e.touches[0]; sx=touch.clientX; sy=touch.clientY;
+    timer=setTimeout(()=>{
+      timer=null; haptic(12); showCtxMenu(wrap.dataset.msgid);
+    },400);
+  }
+  function onMove(e){
+    if(timer){ const dx=Math.abs(e.touches[0].clientX-sx),dy=Math.abs(e.touches[0].clientY-sy); if(dx>10||dy>10){ clearTimeout(timer); timer=null; } }
+  }
+  function onEnd(){
+    if(timer){ clearTimeout(timer); timer=null; }
+  }
+  bub.addEventListener('touchstart',onStart,{passive:true});
+  bub.addEventListener('touchmove',onMove,{passive:true});
+  bub.addEventListener('touchend',onEnd);
 }
 /* ════════ Scheduled Messages ════════ */
 function abrirProgramar(){
@@ -951,8 +1073,15 @@ async function enviarMensajeProgramado(body){
 }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${chk}</div></div></div>`; }
+  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${reacHTML}</div></div>`; }
   return h;
+}
+function renderReactions(reactions){
+  if(!reactions||!reactions.length) return '';
+  const counts={}; const mine=reactions.filter(r=>r.sender_number===me?.telefono||r.direction==='outgoing');
+  for(const r of reactions){ counts[r.emoji]=(counts[r.emoji]||0)+1; }
+  const mineSet=new Set(mine.map(r=>r.emoji));
+  return '<div class="bub-reactions">'+Object.entries(counts).map(([emoji,cnt])=>`<span class="bub-reaction${mineSet.has(emoji)?' mine':''}" data-emoji="${esc(emoji)}">${emoji}${cnt>1?`<span class="r-count">${cnt}</span>`:''}</span>`).join('')+'</div>';
 }
 function msgInner(m){
   let quoteHTML='';
@@ -969,6 +1098,16 @@ function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type
 
 async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current||window._sending) return; window._sending=true; haptic([10,20,10]);
   const sendBtn=$('#cSend'); if(sendBtn) sendBtn.disabled=true;
+  if(_editingMsg){
+    // Modo edición
+    const r=await api('/api/messages/'+_editingMsg,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:msg})});
+    if(r){
+      const d=await api(`/api/leads/${current.id}/mensajes`);
+      if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; }
+      toast('Mensaje editado');
+    } else toast('Error al editar');
+    cancelEdit(); inp.value=''; inp.style.height='auto'; updateSend(); cancelarReply(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return;
+  }
   if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return; }
   // Optimistic — mostrar mensaje inmediatamente
   const tempId = 'temp_'+Date.now();

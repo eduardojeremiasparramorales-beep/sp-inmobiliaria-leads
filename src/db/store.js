@@ -100,7 +100,23 @@ async function initDB() {
   ensureColumn('leads', 'last_customer_message_at', 'DATETIME');
   ensureColumn('leads', 'proyecto', 'TEXT');
   ensureColumn('leads', 'origen', 'TEXT');
+  ensureColumn('leads', 'pinned_at', 'DATETIME');
+  ensureColumn('messages', 'edited_at', 'DATETIME');
+  ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
+
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL,
+      emoji TEXT NOT NULL,
+      sender_number TEXT NOT NULL,
+      direction TEXT DEFAULT 'incoming',
+      created_at DATETIME DEFAULT (datetime('now')),
+      UNIQUE(message_id, emoji, sender_number),
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    );
+  `);
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS lead_notes (
@@ -259,6 +275,57 @@ function getMessageById(id) {
   return one('SELECT * FROM messages WHERE id = ? LIMIT 1', [id]);
 }
 
+// --- Reacciones emoji ---
+function addReaction(messageId, emoji, senderNumber, direction) {
+  try {
+    run('INSERT OR IGNORE INTO message_reactions (message_id, emoji, sender_number, direction) VALUES (?, ?, ?, ?)',
+      [messageId, emoji, senderNumber, direction || 'incoming']);
+    return true;
+  } catch (e) { return false; }
+}
+function removeReaction(messageId, emoji, senderNumber) {
+  run('DELETE FROM message_reactions WHERE message_id = ? AND emoji = ? AND sender_number = ?', [messageId, emoji, senderNumber]);
+}
+function getReactionsForMessage(messageId) {
+  return all('SELECT * FROM message_reactions WHERE message_id = ?', [messageId]);
+}
+function getReactionsForMessages(messageIds) {
+  if (!messageIds.length) return {};
+  const ids = messageIds.map(Number).filter(Boolean);
+  if (!ids.length) return {};
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = all(`SELECT * FROM message_reactions WHERE message_id IN (${placeholders})`, ids);
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.message_id]) map[r.message_id] = [];
+    map[r.message_id].push(r);
+  }
+  return map;
+}
+
+// --- Editar mensaje ---
+function editMessage(messageId, newBody) {
+  run("UPDATE messages SET body = ?, edited_at = datetime('now') WHERE id = ?", [String(newBody).trim(), messageId]);
+}
+
+// --- Borrar para mí ---
+function softDeleteMessage(messageId, senderNumber) {
+  if (senderNumber) {
+    run("UPDATE messages SET body = '', deleted_for_sender = 1 WHERE id = ? AND from_number = ?", [messageId, senderNumber]);
+  } else {
+    run("UPDATE messages SET body = '', deleted_for_sender = 1 WHERE id = ?", [messageId]);
+  }
+}
+
+// --- Pin de lead ---
+function pinLead(leadId, pinned) {
+  if (pinned) {
+    run("UPDATE leads SET pinned_at = datetime('now') WHERE id = ?", [leadId]);
+  } else {
+    run("UPDATE leads SET pinned_at = NULL WHERE id = ?", [leadId]);
+  }
+}
+
 // === 24-HOUR WINDOW TRACKING ===
 
 function updateCustomerMessageTimestamp(leadId) {
@@ -395,7 +462,7 @@ function updateUsuarioVendedorId(id, vendedorId) {
 
 // --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
-  return all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.updated_at DESC", [vendedorId, 'cerrado']);
+  return all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.pinned_at DESC, l.updated_at DESC", [vendedorId, 'cerrado']);
 }
 
 function getArchivedLeadsByVendedorId(vendedorId) {
@@ -1114,4 +1181,6 @@ module.exports = {
   getCitas, getCitaById, createCita, updateCita, deleteCita,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
+  addReaction, removeReaction, getReactionsForMessage, getReactionsForMessages,
+  editMessage, softDeleteMessage, pinLead,
 };

@@ -416,7 +416,15 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
-  res.json({ lead, mensajes: store.getMessagesByLead(lead.id) });
+  const mensajes = store.getMessagesByLead(lead.id);
+  // Adjuntar reacciones a cada mensaje
+  const msgIds = mensajes.map(m => m.id);
+  const reactionsMap = store.getReactionsForMessages(msgIds);
+  const mensajesConReacciones = mensajes.map(m => ({
+    ...m,
+    reactions: reactionsMap[m.id] || [],
+  }));
+  res.json({ lead, mensajes: mensajesConReacciones });
 });
 
 // Estado de la ventana de 24h de WhatsApp para un lead
@@ -714,35 +722,102 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   }
 });
 
-// Eliminar un mensaje
-app.delete('/api/messages/:id', auth.requireAuth, (req, res) => {
+// ===================== MENSAJES: reacciones, editar, borrar =====================
+
+// Reaccionar a un mensaje (toggle)
+app.post('/api/messages/:id/react', auth.requireAuth, (req, res) => {
   const msgId = req.params.id;
-  if (!msgId || isNaN(Number(msgId))) return res.status(400).json({ error: 'id_invalido' });
-  try {
-    const store = require('./db/store');
-    const adapter = require('./db/adapter');
-    // Verificar que el mensaje pertenezca a un lead del vendedor
-    const row = adapter.get('SELECT lead_id, media_type, media_filename FROM messages WHERE id = ?', [Number(msgId)]);
-    if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
-    if (req.session.rol !== 'admin') {
-      const lead = store.getLeadById(row.lead_id);
-      if (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
-        return res.status(403).json({ error: 'sin_permiso' });
-      }
-    }
-    // Eliminar archivo de media si existe
-    if (row.media_filename) {
-      try {
-        const mediaPath = require('path').join(__dirname, '..', 'data', 'media', String(row.media_filename));
-        if (require('fs').existsSync(mediaPath)) require('fs').unlinkSync(mediaPath);
-      } catch (e) { /* ignorar */ }
-    }
-    adapter.run('DELETE FROM messages WHERE id = ?', [Number(msgId)]);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Error eliminando mensaje:', e.message);
-    res.status(500).json({ error: 'error_interno' });
+  const { emoji } = req.body || {};
+  if (!msgId || isNaN(Number(msgId)) || !emoji) return res.status(400).json({ error: 'id_y_emoji_requeridos' });
+  const store = require('./db/store');
+  const row = store.getMessageById(msgId);
+  if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
+  const lead = store.getLeadById(row.lead_id);
+  if (req.session.rol !== 'admin' && (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId))) {
+    return res.status(403).json({ error: 'sin_permiso' });
   }
+  const sender = req.session.telefono || 'self';
+  const dir = row.direction === 'outgoing' ? 'outgoing' : 'incoming';
+  // Toggle: si ya existe, la quita
+  const existing = store.getReactionsForMessage(msgId);
+  const found = existing.find(r => r.emoji === emoji && r.sender_number === sender);
+  if (found) store.removeReaction(msgId, emoji, sender);
+  else store.addReaction(msgId, emoji, sender, dir);
+  const reactions = store.getReactionsForMessage(msgId);
+  res.json({ ok: true, reactions });
+});
+
+// Editar mensaje enviado (solo outgoing y reciente)
+app.put('/api/messages/:id', auth.requireAuth, (req, res) => {
+  const msgId = req.params.id;
+  const { body: newBody } = req.body || {};
+  if (!msgId || isNaN(Number(msgId)) || !newBody || !String(newBody).trim()) return res.status(400).json({ error: 'id_y_body_requeridos' });
+  const store = require('./db/store');
+  const row = store.getMessageById(msgId);
+  if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
+  if (row.direction !== 'outgoing') return res.status(400).json({ error: 'solo_mensajes_enviados' });
+  const lead = store.getLeadById(row.lead_id);
+  if (req.session.rol !== 'admin' && (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId))) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.editMessage(msgId, newBody.trim());
+  // Intentar editar en WhatsApp si hay wamid y ventana abierta
+  const { editMessage: editWA } = require('./services/whatsapp');
+  if (row.wamid && store.isWindowOpen(row.lead_id)) {
+    editWA(lead.customer_phone, row.wamid, newBody.trim()).catch(() => {});
+  }
+  const updated = store.getMessageById(msgId);
+  res.json({ ok: true, message: { ...updated, reactions: store.getReactionsForMessage(msgId) } });
+});
+
+// Borrar mensaje (para mí / para todos)
+app.post('/api/messages/:id/delete', auth.requireAuth, async (req, res) => {
+  const msgId = req.params.id;
+  const { mode } = req.body || {};
+  if (!msgId || isNaN(Number(msgId)) || !mode) return res.status(400).json({ error: 'id_y_mode_requeridos' });
+  if (!['me', 'everyone'].includes(mode)) return res.status(400).json({ error: 'mode_invalido' });
+  const store = require('./db/store');
+  const adapter = require('./db/adapter');
+  const row = store.getMessageById(msgId);
+  if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
+  const lead = store.getLeadById(row.lead_id);
+  if (req.session.rol !== 'admin' && (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId))) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  if (mode === 'me') {
+    store.softDeleteMessage(msgId, req.session.telefono || 'self');
+    return res.json({ ok: true, mode: 'me' });
+  }
+  // mode === 'everyone'
+  // Si tiene media, eliminar archivo
+  if (row.media_filename) {
+    try {
+      const mediaPath = require('path').join(__dirname, '..', 'data', 'media', String(row.media_filename));
+      if (require('fs').existsSync(mediaPath)) require('fs').unlinkSync(mediaPath);
+    } catch (e) { /* ignorar */ }
+  }
+  // Intentar revocar en WhatsApp
+  if (row.direction === 'outgoing' && row.wamid) {
+    try {
+      const { revokeMessage } = require('./services/whatsapp');
+      await revokeMessage(lead.customer_phone, row.wamid).catch(() => {});
+    } catch (e) { /* ignorar */ }
+  }
+  adapter.run('DELETE FROM messages WHERE id = ?', [Number(msgId)]);
+  store.getMessagesByLead(row.lead_id); // refresh cache
+  res.json({ ok: true, mode: 'everyone' });
+});
+
+// Pin / unpin lead
+app.post('/api/leads/:id/pin', auth.requireAuth, (req, res) => {
+  const { pinned } = req.body || {};
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.pinLead(lead.id, !!pinned);
+  res.json({ ok: true, pinned: !!pinned });
 });
 
 // ===================== CITAS =====================

@@ -143,4 +143,27 @@ async function sendMedia(to, mediaId, type, caption, filename) {
   return res.data;
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, getMediaUrl, downloadMedia, uploadMedia, sendMedia };
+// WhatsApp Business API no expone edición ni revocación directa.
+// editMessage: marca como editado en nuestro DB y opcionalmente envía un nuevo mensaje con la corrección.
+async function editMessage(to, wamid, newText) {
+  try {
+    // Envía un nuevo mensaje indicando que es una corrección
+    const msg = `✏️ *Editado:* ${newText}`;
+    return await sendMessage(to, msg);
+  } catch (e) {
+    throw e;
+  }
+}
+
+// revokeMessage: no podemos borrar de WhatsApp real, pero eliminamos del DB.
+async function revokeMessage(to, wamid) {
+  try {
+    // Opcional: enviar un mensaje indicando eliminación
+    // await sendMessage(to, '🚫 Este mensaje fue eliminado');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, getMediaUrl, downloadMedia, uploadMedia, sendMedia, editMessage, revokeMessage };
