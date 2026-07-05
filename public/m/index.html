@@ -695,12 +695,13 @@ function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.d
 function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>x.id===id); }
 
 /* ════════ Chat ════════ */
-async function abrirChat(id){ clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); const l = leads.find(x=>x.id===id); current=l;
+async function abrirChat(id){ try{
+  clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); const l = findLead(id); current=l;
   let msgs;
   if(DEMO){ msgs=demoMsgs(); } else { const d=await api(`/api/leads/${id}/mensajes`); if(d){ current=d.lead; msgs=d.mensajes; api(`/api/leads/${id}/leido`,{method:'POST'}); api(`/api/leads/${id}/mark-all-read`,{method:'POST'}); if(l) l.unread_count=0; } else msgs=[]; }
   currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
   if(l){ l.unread_count=0; renderList(); }
-}
+}catch(e){ console.error('abrirChat',e); toast('Error al abrir'); } }
 function cerrarChat(){ clearSelection(); $('#scChat').classList.remove('show'); haptic(6); }
 function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=estado(l);
   $('#scChat').innerHTML = `
