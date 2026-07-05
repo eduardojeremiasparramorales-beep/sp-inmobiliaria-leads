@@ -696,9 +696,15 @@ function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>
 
 /* ════════ Chat ════════ */
 async function abrirChat(id){ try{
-  clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); const l = findLead(id); current=l;
+  clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); let l = findLead(id); current=l||{customer_name:'Cliente',customer_phone:''};
   let msgs;
-  if(DEMO){ msgs=demoMsgs(); } else { const d=await api(`/api/leads/${id}/mensajes`); if(d){ current=d.lead; msgs=d.mensajes; api(`/api/leads/${id}/leido`,{method:'POST'}); api(`/api/leads/${id}/mark-all-read`,{method:'POST'}); if(l) l.unread_count=0; } else msgs=[]; }
+  if(DEMO){ msgs=demoMsgs(); } else {
+    const d=await api(`/api/leads/${id}/mensajes`);
+    if(d){ current=d.lead; msgs=d.mensajes; } else msgs=[];
+    api(`/api/leads/${id}/leido`,{method:'POST'});
+    api(`/api/leads/${id}/mark-all-read`,{method:'POST'});
+    if(l) l.unread_count=0;
+  }
   currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
   if(l){ l.unread_count=0; renderList(); }
 }catch(e){ console.error('abrirChat',e); toast('Error al abrir'); } }
@@ -1803,8 +1809,8 @@ async function cargarTareas(){
 
 /* ════════ Tiempo real ════════ */
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
-  es.addEventListener('lead_actualizado',async ev=>{ await cargar(); if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } });
+  es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
+  es.addEventListener('lead_actualizado',async ev=>{ const d=await api('/api/mis-leads'); if(d) leads=d; if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); } });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
 
