@@ -101,8 +101,10 @@ async function initDB() {
   ensureColumn('leads', 'proyecto', 'TEXT');
   ensureColumn('leads', 'origen', 'TEXT');
   ensureColumn('leads', 'pinned_at', 'DATETIME');
+  ensureColumn('leads', 'muted_at', 'DATETIME');
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
+  ensureColumn('messages', 'read_at', 'DATETIME');
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
   execSQL(`
@@ -271,6 +273,14 @@ function updateMessageStatus(wamid, status) {
   run('UPDATE messages SET status = ? WHERE wamid = ?', [status, wamid]);
 }
 
+function markMessageAsRead(messageId) {
+  run("UPDATE messages SET status = 'read', read_at = datetime('now') WHERE id = ? AND status != 'read'", [messageId]);
+}
+
+function markLeadMessagesAsRead(leadId, fromNumber) {
+  run("UPDATE messages SET status = 'read', read_at = datetime('now') WHERE lead_id = ? AND from_number = ? AND (status IS NULL OR status != 'read')", [leadId, fromNumber]);
+}
+
 function getMessageById(id) {
   return one('SELECT * FROM messages WHERE id = ? LIMIT 1', [id]);
 }
@@ -323,6 +333,20 @@ function pinLead(leadId, pinned) {
     run("UPDATE leads SET pinned_at = datetime('now') WHERE id = ?", [leadId]);
   } else {
     run("UPDATE leads SET pinned_at = NULL WHERE id = ?", [leadId]);
+  }
+}
+
+// --- Mute lead ---
+function clearLeadMessages(leadId) {
+  run('DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE lead_id = ?)', [leadId]);
+  run('UPDATE messages SET body = ?, deleted_for_sender = 1 WHERE lead_id = ?', ['', leadId]);
+}
+
+function muteLead(leadId, muted) {
+  if (muted) {
+    run("UPDATE leads SET muted_at = datetime('now') WHERE id = ?", [leadId]);
+  } else {
+    run("UPDATE leads SET muted_at = NULL WHERE id = ?", [leadId]);
   }
 }
 
@@ -1182,5 +1206,6 @@ module.exports = {
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
   addReaction, removeReaction, getReactionsForMessage, getReactionsForMessages,
-  editMessage, softDeleteMessage, pinLead,
+  editMessage, softDeleteMessage, pinLead, muteLead, clearLeadMessages,
+  markMessageAsRead, markLeadMessagesAsRead,
 };

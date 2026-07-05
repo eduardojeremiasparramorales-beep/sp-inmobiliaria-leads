@@ -3,6 +3,8 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const http = require('http');
 const store = require('./db/store');
 const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
@@ -674,6 +676,33 @@ app.get('/api/media/:messageId', auth.requireAuth, (req, res) => {
   res.sendFile(filePath);
 });
 
+// Link preview: fetch OG tags from a URL
+app.post('/api/preview', auth.requireAuth, (req, res) => {
+  const { url } = req.body || {};
+  if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url_requerida' });
+  try {
+    const parsed = new URL(url);
+    const fetcher = parsed.protocol === 'https:' ? https : http;
+    const req_ = fetcher.get(parsed.href, { timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SPCBot/1.0)' } }, (resp_) => {
+      let data = '';
+      resp_.on('data', chunk => { data += chunk; if (data.length > 32768) { req_.destroy(); } });
+      resp_.on('end', () => {
+        const og = { title: '', description: '', image: '', site_name: '', url };
+        const extract = (pattern) => { const m = data.match(pattern); return m ? m[1].replace(/['"]/g, '') : ''; };
+        og.title = extract(/<meta[^>]+property="og:title"[^>]+content="([^"]*)"/i) || extract(/<meta[^>]+name="twitter:title"[^>]+content="([^"]*)"/i) || extract(/<title[^>]*>([^<]*)<\/title>/i);
+        og.description = extract(/<meta[^>]+property="og:description"[^>]+content="([^"]*)"/i) || extract(/<meta[^>]+name="description"[^>]+content="([^"]*)"/i) || extract(/<meta[^>]+name="twitter:description"[^>]+content="([^"]*)"/i);
+        og.image = extract(/<meta[^>]+property="og:image"[^>]+content="([^"]*)"/i) || extract(/<meta[^>]+name="twitter:image"[^>]+content="([^"]*)"/i);
+        og.site_name = extract(/<meta[^>]+property="og:site_name"[^>]+content="([^"]*)"/i);
+        res.json({ ok: true, og });
+      });
+    });
+    req_.on('error', () => res.json({ ok: true, og: { title: '', description: '', image: '', site_name: '', url } }));
+    req_.on('timeout', () => { req_.destroy(); res.json({ ok: true, og: { title: '', description: '', image: '', site_name: '', url } }); });
+  } catch (e) {
+    res.json({ ok: true, og: { title: '', description: '', image: '', site_name: '', url } });
+  }
+});
+
 // Responder a un cliente con un archivo (imagen/audio/video/documento) desde el panel.
 // Body JSON: { mime, filename, dataBase64, caption }
 app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async (req, res) => {
@@ -820,6 +849,17 @@ app.post('/api/leads/:id/pin', auth.requireAuth, (req, res) => {
   res.json({ ok: true, pinned: !!pinned });
 });
 
+app.post('/api/leads/:id/mute', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const { muted } = req.body || {};
+  store.muteLead(lead.id, !!muted);
+  res.json({ ok: true, muted: !!muted });
+});
+
 // ===================== CITAS =====================
 
 // Listar citas: admin ve todas (o filtra por vendedor); vendedor solo las suyas
@@ -907,6 +947,25 @@ app.delete('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Marcar mensaje(s) como leídos
+app.post('/api/messages/:id/read-receipt', auth.requireAuth, (req, res) => {
+  const msgId = req.params.id;
+  if (!msgId || isNaN(Number(msgId))) return res.status(400).json({ error: 'id_invalido' });
+  store.markMessageAsRead(Number(msgId));
+  res.json({ ok: true });
+});
+
+// Marcar todos los mensajes de un lead como leídos (usado al abrir chat)
+app.post('/api/leads/:id/mark-all-read', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.markLeadMessagesAsRead(lead.id, lead.customer_phone);
+  res.json({ ok: true });
+});
+
 // Cerrar un lead (mantenido por compatibilidad, pero la UI ya no lo usa)
 app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
@@ -916,6 +975,16 @@ app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   }
   const adapter = require('./db/adapter');
   adapter.run("UPDATE leads SET status = ?, updated_at = created_at WHERE id = ?", ['cerrado', lead.id]);
+  res.json({ ok: true });
+});
+
+app.post('/api/leads/:id/clear-messages', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.clearLeadMessages(lead.id);
   res.json({ ok: true });
 });
 

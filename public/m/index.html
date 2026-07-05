@@ -280,12 +280,34 @@
   .chk-sent{ color:var(--text-3); }
   .chk-delivered{ color:var(--text-2); }
   .chk-read{ color:var(--gold); }
+  .chk-visto{ font-size:9.5px; color:var(--text-3); vertical-align:middle; }
+  .link-preview{ margin:6px 0 2px; border-radius:12px; overflow:hidden; background:var(--bg-3); border:1px solid var(--border); cursor:pointer; transition:opacity .15s; }
+  .link-preview:active{ opacity:.7; }
+  .link-preview .lp-img{ width:100%; max-height:140px; overflow:hidden; background:var(--bg-1); }
+  .link-preview .lp-img img{ width:100%; height:100%; object-fit:cover; }
+  .link-preview .lp-body{ padding:8px 12px 10px; }
+  .link-preview .lp-site{ font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; margin-bottom:2px; }
+  .link-preview .lp-title{ font-size:13px; font-weight:600; color:var(--text); line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .link-preview .lp-desc{ font-size:11px; color:var(--text-2); margin-top:3px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .bub-body--trunc{ cursor:pointer; }
+  .bub__more{ display:block; background:none; border:none; color:var(--gold); font-size:12px; font-weight:500; padding:2px 0 0; cursor:pointer; font-family:inherit; }
+  .up-bar{ position:fixed; bottom:80px; left:50%; transform:translateX(-50%); z-index:999; background:var(--bg-1); border:1px solid var(--border); border-radius:12px; padding:12px 16px; display:flex; align-items:center; gap:10px; box-shadow:0 4px 20px rgba(0,0,0,.3); max-width:260px; }
+  .up-bar__track{ flex:1; height:4px; background:var(--bg-3); border-radius:2px; overflow:hidden; }
+  .up-bar__fill{ height:100%; background:var(--gold); border-radius:2px; width:0; transition:width .15s; }
+  .up-bar__label{ font-size:11px; color:var(--text-3); white-space:nowrap; }
+  .audio-wrap{ background:var(--bg-3); border-radius:12px; padding:6px 8px; margin:2px 0; }
+  .audio-wrap audio{ width:100%; height:36px; outline:none; }
   .c-search{ display:none; padding:10px 14px; background:var(--bg-1); border-bottom:1px solid var(--border-soft); gap:6px; }
   .c-search.show{ display:flex; }
   .c-search input{ flex:1; height:36px; border-radius:10px; border:1px solid var(--border); background:var(--bg-3); color:var(--text); padding:0 12px; font-size:14px; outline:none; }
   .c-search input:focus{ border-color:var(--gold-line); }
   .c-search__x{ width:36px; height:36px; border-radius:50%; background:none; border:none; color:var(--text-3); display:grid; place-items:center; }
   .bub.highlight{ outline:2px solid var(--gold); outline-offset:2px; border-radius:18px; }
+  .msg-info{ display:flex; flex-direction:column; gap:8px; }
+  .mi-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
+  .mi-row:last-child{ border-bottom:none; }
+  .mi-l{ font-size:13px; color:var(--text-3); }
+  .mi-v{ font-size:13px; color:var(--text); text-align:right; max-width:60%; }
   .rec-bar{ display:none; align-items:center; gap:10px; padding:8px 12px; background:var(--bg-3); border-top:1px solid var(--border-soft); }
   .rec-bar.show{ display:flex; }
   .rec-bar .rec-dot{ width:10px; height:10px; border-radius:50%; background:var(--red); animation:pulse-dot 1s ease-in-out infinite; }
@@ -329,6 +351,9 @@
   /* ── Pin badge on card ── */
   .m-card__pin{ position:absolute; top:-1px; right:12px; color:var(--gold); font-size:9px; display:flex; align-items:center; gap:2px; opacity:.7; }
   .m-card__pin svg{ width:11px; height:11px; }
+  /* ── Mute badge ── */
+  .m-card__mute{ position:absolute; top:-1px; left:12px; color:var(--text-3); font-size:9px; display:flex; align-items:center; gap:2px; opacity:.6; }
+  .m-card__mute svg{ width:11px; height:11px; }
   /* ── Context menu (bottom sheet) ── */
   .ctx-item{ display:flex; align-items:center; gap:12px; padding:14px 16px; font-size:14px; color:var(--text); border-bottom:1px solid var(--border-soft); cursor:pointer; transition:background .1s; -webkit-tap-highlight-color:transparent; }
   .ctx-item:active{ background:var(--bg-2); }
@@ -518,6 +543,25 @@ async function api(url, opts){
   catch(e){ return null; }
 }
 
+/* ════════ Upload with progress ════════ */
+function showProgressBar(){
+  const div=document.createElement('div'); div.className='up-bar';
+  div.innerHTML='<div class="up-bar__track"><div class="up-bar__fill" id="upFill"></div></div><span class="up-bar__label">Subiendo...</span>';
+  document.body.appendChild(div);
+  return div;
+}
+function apiUpload(url, body, pb){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type','application/json');
+    xhr.withCredentials=true;
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable&&pb){ const f=pb.querySelector('#upFill'); if(f) f.style.width=Math.round(e.loaded/e.total*100)+'%'; } };
+    xhr.onload=()=>{ try{ const r=JSON.parse(xhr.responseText); resolve(r); }catch(e){ resolve(null); } };
+    xhr.onerror=()=>reject(new Error('upload failed'));
+    xhr.send(JSON.stringify(body));
+  });
+}
 /* ════════ Datos demo ════════ */
 function demoLeads(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
   {id:1,customer_name:'Juan Díaz',customer_phone:'+573001234567',etiqueta:'negociacion',status:'activo',updated_at:now,created_at:now,unread_count:3,last_message:'¿Cuál es el precio del lote de 250m²?',messages_count:14,assigned_to_nombre:'Vendedor Test'},
@@ -598,7 +642,7 @@ function cardHTML(l,idx){
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
     <div class="m-row__actions left">
       <button class="swipe-act sa-call" data-a="call">${I(SVG.phone,19)}Llamar</button>
-      ${archived?`<button class="swipe-act sa-wa" data-a="unarch">${I(SVG.archive,19)}Volver</button>`:`<button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button><button class="swipe-act sa-pin" data-a="pin">${I(SVG.pin,17)}${l.pinned_at?'Quitar':'Fijar'}</button>`}
+      ${archived?`<button class="swipe-act sa-wa" data-a="unarch">${I(SVG.archive,19)}Volver</button>`:`<button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button><button class="swipe-act sa-mute" data-a="mute" style="color:${l.muted_at?'var(--gold)':'var(--text-2)'}">${l.muted_at?I('<path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/>',15):I(SVG.bell,15)}</button><button class="swipe-act sa-pin" data-a="pin">${I(SVG.pin,17)}${l.pinned_at?'Quitar':'Fijar'}</button>`}
     </div>
     <div class="m-row__actions right">
       ${archived?'':`<button class="swipe-act sa-tag" data-a="tag">${I(SVG.tag,19)}No leído</button>`}
@@ -607,6 +651,7 @@ function cardHTML(l,idx){
     <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
       ${l.pinned_at?`<span class="m-card__pin">${I(SVG.pin,11)} Fijado</span>`:''}
+      ${l.muted_at?`<span class="m-card__mute"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/><path d="M14.5 6.5a2.5 2.5 0 0 0-3.26-1.12"/></svg> Silenciado</span>`:''}
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread && !archived ? greenDot : ''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
         <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
@@ -645,13 +690,14 @@ function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.d
     if(l){ toast('Restaurando...'); api(`/api/leads/${id}/desarchivar`,{method:'POST'}).then(async()=>{ await cargarArchivados(); if(showArchivados) renderList(); else { cargar(); } toast('Restaurado a bandeja principal'); }); }
   }
   else if(a==='pin'){ togglePinLead(id); }
+  else if(a==='mute'){ current=l; toggleMuteLead(); }
 }
 function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>x.id===id); }
 
 /* ════════ Chat ════════ */
 async function abrirChat(id){ clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); const l = leads.find(x=>x.id===id); current=l;
   let msgs;
-  if(DEMO){ msgs=demoMsgs(); } else { const d=await api(`/api/leads/${id}/mensajes`); if(d){ current=d.lead; msgs=d.mensajes; api(`/api/leads/${id}/leido`,{method:'POST'}); if(l) l.unread_count=0; } else msgs=[]; }
+  if(DEMO){ msgs=demoMsgs(); } else { const d=await api(`/api/leads/${id}/mensajes`); if(d){ current=d.lead; msgs=d.mensajes; api(`/api/leads/${id}/leido`,{method:'POST'}); api(`/api/leads/${id}/mark-all-read`,{method:'POST'}); if(l) l.unread_count=0; } else msgs=[]; }
   currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
   if(l){ l.unread_count=0; renderList(); }
 }
@@ -703,6 +749,8 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       </div>
     </div>`;
   const box=$('#cMsgs'); box.scrollTop=box.scrollHeight;
+  // Link preview: detect URLs and fetch previews
+  setTimeout(()=>{ linkPreviews(); }, 300);
   // Wire message swipe (reply)
   // Reaction click — toggle reaction
   const msgsBox=$('#cMsgs');
@@ -712,7 +760,23 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
     if(selMode){
       if(e.target===msgsBox) clearSelection();
       const check=e.target.closest('.sel-check');
-      if(check){ const wrap=check.closest('.msg-wrap'); if(wrap) toggleSel(wrap.dataset.msgid); }
+      if(check){ const wrap=check.closest('.msg-wrap'); if(wrap) toggleSel(wrap.dataset.msgid); return; }
+    }
+    // Ver más toggle
+    const moreBtn=e.target.closest('.bub__more');
+    if(moreBtn){
+      const span=moreBtn.closest('.bub-body--trunc');
+      if(span){ span.innerHTML=esc(span.dataset.full); span.classList.remove('bub-body--trunc'); }
+      return;
+    }
+    // Tap text body → copy
+    const bub=e.target.closest('.bub');
+    if(bub&&!e.target.closest('.bub__t')&&!e.target.closest('.bub-reactions')&&!e.target.closest('button')&&!e.target.closest('img')&&!e.target.closest('video')&&!e.target.closest('audio')&&!e.target.closest('a')&&!e.target.closest('.link-preview')){
+      const wrap=bub.closest('.msg-wrap');
+      if(wrap){
+        const m=currentMsgs.find(x=>String(x.id)===String(wrap.dataset.msgid));
+        if(m&&m.body&&!m.deleted_for_sender){ navigator.clipboard.writeText(m.body).then(()=>toast('Copiado')).catch(()=>{}); }
+      }
     }
   });
   setTimeout(()=>{ document.querySelectorAll('.msg-wrap').forEach(w=>{ wireMsgSwipe(w); wireMsgLongPress(w); }); }, 100);
@@ -936,7 +1000,9 @@ function showCtxMenu(msgId){
     ${C(I(SVG.smile,18),'Reaccionar','ctxReact')}
     ${out&&hasText?C(I(SVG.edit,18),'Editar','ctxEdit'):''}
     ${hasText?C(I(SVG.copy,18),'Copiar texto','ctxCopy'):''}
+    ${C(I(SVG.send,18),'Reenviar','ctxForward')}
     ${C(I(SVG.arrowUp,18),'Compartir','ctxShare')}
+    ${out?C(I(SVG.info||'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01',18),'Info del mensaje','ctxInfo'):''}
     ${C(I(SVG.reply,18),'Responder','ctxReply')}
     ${C(I(SVG.trash,18),'Borrar','ctxDelete','danger')}
     ${C(I(SVG.checkSquare,18),'Seleccionar','ctxSelect')}
@@ -944,7 +1010,9 @@ function showCtxMenu(msgId){
   $('#ctxReact').onclick=()=>{ closeSheet(); openEmojiPicker(msgId); };
   if(out&&hasText){ $('#ctxEdit').onclick=()=>{ closeSheet(); startEditMsg(msgId); }; }
   if(hasText){ $('#ctxCopy').onclick=()=>{ closeSheet(); selCopy([m.body]); }; }
+  $('#ctxForward').onclick=()=>{ closeSheet(); selForward(msgId); };
   $('#ctxShare').onclick=()=>{ closeSheet(); selShare([m.body||'']); };
+  if(out){ $('#ctxInfo').onclick=()=>{ closeSheet(); showMsgInfo(msgId); }; }
   $('#ctxReply').onclick=()=>{ closeSheet(); setReply(msgId); };
   $('#ctxDelete').onclick=()=>{ closeSheet(); showDeleteOptions(msgId); };
   $('#ctxSelect').onclick=()=>{ closeSheet(); enterSelMode(msgId); };
@@ -968,6 +1036,20 @@ async function toggleReaction(msgId,emoji){
   if(r&&r.reactions!==undefined){
     if(current){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }
   }
+}
+/* ════════ Info del mensaje ════════ */
+function showMsgInfo(msgId){
+  const m=currentMsgs.find(x=>String(x.id)===String(msgId));
+  if(!m) return;
+  const ts=m.timestamp?new Date(m.timestamp).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const readTs=m.read_at?new Date(m.read_at).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const editTs=m.edited_at?new Date(m.edited_at).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):null;
+  openSheet('Info del mensaje', `<div class="msg-info">
+    <div class="mi-row"><span class="mi-l">Enviado</span><span class="mi-v">${esc(ts)}</span></div>
+    ${m.status==='read'?`<div class="mi-row"><span class="mi-l">Visto</span><span class="mi-v">${esc(readTs)}</span></div>`:''}
+    ${editTs?`<div class="mi-row"><span class="mi-l">Editado</span><span class="mi-v">${esc(editTs)}</span></div>`:''}
+    <div class="mi-row"><span class="mi-l">Tipo</span><span class="mi-v">${m.media_type||'Texto'}</span></div>
+  </div>`);
 }
 /* ════════ Editar mensaje ════════ */
 function startEditMsg(msgId){
@@ -998,6 +1080,12 @@ async function togglePinLead(leadId){
   const pin=!l.pinned_at;
   const r=await api('/api/leads/'+leadId+'/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:pin})});
   if(r){ l.pinned_at=pin?new Date().toISOString():null; cargar(); toast(pin?'Fijado arriba':'Quitado de fijados'); }
+}
+async function toggleMuteLead(){
+  if(!current) return;
+  const muted=!current.muted_at;
+  const r=await api('/api/leads/'+current.id+'/mute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({muted})});
+  if(r){ current.muted_at=muted?new Date().toISOString():null; toast(muted?'Silenciado':'Sonido activado'); closeSheet(); abrirPerfil(); }
 }
 /* ════════ Wire Long Press (reemplaza enterSelMode directo) ════════ */
 function wireMsgLongPress(wrap){
@@ -1073,7 +1161,7 @@ async function enviarMensajeProgramado(body){
 }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${reacHTML}</div></div>`; }
+  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st,m.read_at):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${reacHTML}</div></div>`; }
   return h;
 }
 function renderReactions(reactions){
@@ -1086,15 +1174,38 @@ function renderReactions(reactions){
 function msgInner(m){
   let quoteHTML='';
   if(m.reply_to_id && m.reply_to_body){ const icon=m.reply_to_media_type?{'image':'🖼️','video':'🎬','audio':'🎙️','document':'📄'}[m.reply_to_media_type]||'📎':''; const preview=icon+(m.reply_to_body||'').slice(0,80); const label=m.reply_to_direction!=='incoming'?'Tú':'Cliente'; quoteHTML=`<div class="bub-quote"><span>${esc(label)}</span>${esc(preview)}</div>`; }
-  const content=m.media_type?renderMedia(m):esc(m.body||'');
+  if(m.media_type) return quoteHTML+renderMedia(m);
+  const body=m.body||''; const long=body.length>200;
+  const content=long?`<span class="bub-body bub-body--trunc" data-full="${esc(body)}">${esc(body.slice(0,200))}<button class="bub__more">Ver más</button></span>`:`<span class="bub-body">${esc(body)}</span>`;
   return quoteHTML+content;
 }
-function chkHTML(st){
-  if(st==='read') return `<span class="chk chk-read"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>`;
+/* ════════ Link Preview ════════ */
+function linkPreviews(){
+  document.querySelectorAll('.bub .bub-body').forEach(el=>{
+    if(el.dataset._lp) return; el.dataset._lp='1';
+    const txt=el.textContent||'';
+    const urlM=txt.match(/(https?:\/\/[^\s<>"]+)/gi);
+    if(!urlM) return;
+    const url=urlM[0];
+    fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url}),credentials:'include'})
+      .then(r=>r.json()).then(d=>{
+        if(!d.ok||!d.og||!d.og.title) return;
+        const wrap=el.closest('.msg-wrap');
+        if(!wrap||wrap.querySelector('.link-preview')) return;
+        const div=document.createElement('div'); div.className='link-preview';
+        div.innerHTML=`${d.og.image?`<div class="lp-img"><img src="${esc(d.og.image)}" onerror="this.style.display='none'"></div>`:''}<div class="lp-body"><div class="lp-site">${esc(d.og.site_name||new URL(url).hostname)}</div><div class="lp-title">${esc(d.og.title)}</div>${d.og.description?`<div class="lp-desc">${esc(d.og.description)}</div>`:''}</div>`;
+        div.onclick=()=>window.open(url,'_blank');
+        el.after(div);
+      }).catch(()=>{});
+  });
+}
+function chkHTML(st,readAt){
+  const visto=readAt?` <span class="chk-visto">Visto ${soloHora(readAt)}</span>`:'';
+  if(st==='read') return `<span class="chk chk-read"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>${visto}`;
   if(st==='delivered') return `<span class="chk chk-delivered"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>`;
   return `<span class="chk chk-sent"><svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="10"><path d="M2 7l4 4L14 3"/></svg></span>`;
 }
-function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<audio src="${src}" controls></audio>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; }
+function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<div class="audio-wrap"><audio src="${src}" controls></audio></div>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; }
 
 async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current||window._sending) return; window._sending=true; haptic([10,20,10]);
   const sendBtn=$('#cSend'); if(sendBtn) sendBtn.disabled=true;
@@ -1162,11 +1273,15 @@ function initFileInput(){
   fi.onchange=async()=>{ const file=fi.files[0]; if(!file||!current) return; fi.value=''; haptic(10);
     const toBase64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
     const dataBase64=await toBase64(file); const mime=file.type||'application/octet-stream';
-    closeSheet(); toast('Enviando...');
+    closeSheet();
+    const pb=showProgressBar();
     const mediaBody = {mime,filename:file.name,dataBase64,caption:''}; if(replyTo) mediaBody.replyTo=replyTo.id;
-    const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(mediaBody)});
-    cancelarReply();
-    if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Enviado'); } else toast('Error al enviar archivo');
+    try{
+      const r=await apiUpload(`/api/leads/${current.id}/responder-media`,mediaBody,pb);
+      cancelarReply();
+      if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Enviado'); } else toast('Error al enviar archivo');
+    }catch(e){ toast('Error al enviar archivo'); }
+    pb.remove();
   };
   document.body.appendChild(fi);
 }
@@ -1202,6 +1317,7 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
         <button data-lp="call">${I(SVG.phone,21)}</button>
         <button data-lp="cal">${I(SVG.calendar,21)}</button>
         <button data-lp="tl">${I(SVG.clock,21)}</button>
+        <button data-lp="mute" style="color:${l.muted_at?'var(--gold)':'var(--text-3)'}">${l.muted_at?I('<path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/>',21):I(SVG.bell,21)}</button>
       </div>
     </div>
     <div class="prob-wrap">
@@ -1220,9 +1336,13 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="cop-use" style="flex:1" data-lp="cop">${I(SVG.sparkles,16)} Copiloto SP</button>
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="tl2">${I(SVG.clock,16)} Timeline</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="export">${I(SVG.arrowUp,16)} Exportar</button>
+      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--red)" data-lp="clear">${I(SVG.trash,16)} Vaciar</button>
     </div>`);
   $('#sheetBody').querySelectorAll('[data-lp]').forEach(b=>b.onclick=()=>{ const k=b.dataset.lp; const p=(l.customer_phone||'').replace(/[^\d+]/g,''); haptic(10);
-    if(k==='call'&&p) location.href='tel:'+p; else if(k==='cal') toast('Agendar — próximamente'); else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); });
+    if(k==='call'&&p) location.href='tel:'+p; else if(k==='cal') toast('Agendar — próximamente'); else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion(); });
 }
 
 function abrirTimeline(){ const l=current;
@@ -1249,6 +1369,26 @@ function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Client
 }
 const PROPS=[{emoji:'🏡',nombre:'Lote Campestre Tocaima',ciudad:'Tocaima',precio:48000000,m2:250,match:96},{emoji:'🏘️',nombre:'Parcelación Girardot',ciudad:'Girardot',precio:72000000,m2:320,match:88},{emoji:'🌄',nombre:'Lote Vista Valle',ciudad:'Melgar',precio:35000000,m2:180,match:79}];
 
+function exportarConversacion(){
+  if(!current||!currentMsgs||!currentMsgs.length){ toast('Sin mensajes'); return; }
+  const nombre=current.customer_name||'Cliente';
+  const lines=currentMsgs.filter(m=>!m.deleted_for_sender).map(m=>{
+    const who=m.direction==='incoming'?'Cliente':'Tú';
+    const ts=m.timestamp?new Date(m.timestamp).toLocaleString('es-CO'):'';
+    const body=m.media_type?`[${m.media_type}]`:m.body||'';
+    return `[${ts}] ${who}: ${body}`;
+  });
+  const txt='Conversación con '+nombre+'\n'+'='.repeat(30)+'\n\n'+lines.join('\n');
+  try{ navigator.clipboard.writeText(txt); toast('Copiado al portapapeles'); }catch(e){ toast('No se pudo exportar'); }
+}
+function vaciarConversacion(){
+  if(!current) return;
+  if(!confirm('¿Vaciar esta conversación? Esto eliminará los mensajes para ti.')) return;
+  api('/api/leads/'+current.id+'/clear-messages',{method:'POST'}).then(async()=>{
+    const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; renderChat(current,currentMsgs); }
+    toast('Conversación vaciada');
+  });
+}
 function abrirNota(){ openSheet('Nota rápida', `<textarea id="ntx" class="c-pill" style="width:100%;min-height:120px;padding:14px;color:var(--text);background:var(--bg-3);border:1px solid var(--border);border-radius:14px;outline:none" placeholder="Ej: Llamar después de las 6 PM. Quiere financiación…"></textarea><button class="cop-use" id="ntok" style="margin-top:12px">Guardar nota</button>`);
   $('#ntok').onclick=async()=>{ const v=$('#ntx').value.trim(); if(!v) return; if(!DEMO&&current) await api(`/api/leads/${current.id}/notas`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota:v})}); haptic([10,20,10]); closeSheet(); toast('Nota guardada'); };
 }
@@ -1552,7 +1692,7 @@ function wire(){
 }
 
 function abrirNotificaciones(){ haptic(8);
-  const sinResp = leads.filter(l => Number(l.unread_count||0) > 0).slice(0,10);
+  const sinResp = leads.filter(l => Number(l.unread_count||0) > 0 && !l.muted_at).slice(0,10);
   const items = sinResp.length ? sinResp.map(l=>[l.unread_count>0?'chat':'bell',`${esc(l.customer_name||'Cliente')} — ${l.unread_count||0} mensaje(s) sin responder`,horaCorta(l.updated_at||l.created_at),'var(--red)']) : [['bell','Sin notificaciones nuevas','','var(--text-3)']];
   openSheet('Notificaciones', items.map(([ic,t,s,c])=>`<div class="tl-i" style="padding-bottom:14px"><div class="tl-dot" style="color:${c}">${I(SVG[ic]||SVG.bell,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join(''));
 }
@@ -1662,7 +1802,7 @@ async function cargarTareas(){
 
 /* ════════ Tiempo real ════════ */
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
+  es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
   es.addEventListener('lead_actualizado',async ev=>{ await cargar(); if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
