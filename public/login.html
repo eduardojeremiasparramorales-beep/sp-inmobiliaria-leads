@@ -11,338 +11,263 @@
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>SP Inmobiliaria — Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --black:#0A0A0A; --gold:#C8A45A; --gold2:#A8872B; --gold3:#E8C84A;
-    --txt:#F8F8F8; --txt2:rgba(248,248,248,.55); --txt3:rgba(248,248,248,.25);
-    --border:#1E1E1E; --surface:#111111; --surface2:#171717; --surface3:#1C1C1C;
-    --red:#E5484D; --ease:cubic-bezier(.32,.72,0,1);
+    --bg:#0A0A0A; --gold:#C8A45A; --gold-2:#A8872B; --gold-3:#E8C86A;
+    --green:#4E7B46; --txt:#F8F8F8; --txt-2:rgba(248,248,248,.5);
+    --txt-3:rgba(248,248,248,.22); --border:#1A1A1A; --surface:#111;
+    --red:#E5484D; --ease:cubic-bezier(.22,1,.36,1);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow:hidden}
   body{
-    font-family:'Inter',sans-serif;color:var(--txt);background:var(--black);
-    display:flex;flex-direction:column;
-    -webkit-user-select:none;user-select:none;
-    -webkit-tap-highlight-color:transparent;
+    font-family:'Inter',system-ui,sans-serif;color:var(--txt);background:var(--bg);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   }
 
-  /* ── Screen container ── */
-  .screen{position:absolute;inset:0;display:flex;flex-direction:column;transition:opacity .35s var(--ease),transform .35s var(--ease);z-index:1}
-  .screen.hidden{opacity:0;pointer-events:none;transform:translateX(40px)}
-  .screen.hidden-left{opacity:0;pointer-events:none;transform:translateX(-40px)}
+  .login{width:100%;max-width:380px;padding:32px 28px;display:flex;flex-direction:column;align-items:center;gap:0}
 
-  /* ── SCREEN 1: Phone entry ── */
-  #s1{align-items:center;justify-content:space-between;padding:clamp(40px,8vh,80px) 28px clamp(24px,5vh,48px)}
-
-  .s1-top{text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
-
-  .logo-mark{
-    width:88px;height:88px;border-radius:22px;
-    background:linear-gradient(140deg,#E8C84A 0%,#C8A45A 45%,#9E7E3C 100%);
-    display:grid;place-items:center;
-    box-shadow:0 12px 40px rgba(0,0,0,.6),0 0 0 1px rgba(200,164,90,.15);
+  /* Logo */
+  .logo{
+    width:72px;height:72px;border-radius:18px;
+    background:linear-gradient(140deg,var(--gold-3),var(--gold) 50%,var(--gold-2));
+    display:grid;place-items:center;margin-bottom:20px;
+    box-shadow:0 8px 32px rgba(200,164,90,.2),0 0 0 1px rgba(200,164,90,.1);
   }
-  .logo-mark span{font-family:'Cinzel',serif;font-weight:700;font-size:28px;color:#0A0A0A;letter-spacing:.05em}
+  .logo span{font-family:'Cinzel',serif;font-weight:700;font-size:24px;color:#0A0A0A;letter-spacing:.04em}
 
-  .brand-name{
-    font-family:'Cinzel',serif;font-weight:600;font-size:1.3rem;letter-spacing:.14em;
-    background:linear-gradient(135deg,var(--gold3),var(--gold),var(--gold2));
+  .brand{font-family:'Cinzel',serif;font-weight:600;font-size:1.1rem;letter-spacing:.16em;text-align:center;margin-bottom:4px;
+    background:linear-gradient(135deg,var(--gold-3),var(--gold),var(--gold-2));
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   }
-  .brand-sub{font-size:.7rem;color:var(--txt2);letter-spacing:.28em;text-transform:uppercase;font-weight:300}
+  .sub{font-family:'Cormorant Garamond',serif;font-size:.85rem;color:var(--txt-2);letter-spacing:.1em;text-align:center;margin-bottom:28px;font-weight:400}
 
-  .gold-line{height:2px;width:48px;background:linear-gradient(90deg,transparent,var(--gold),transparent);border-radius:1px;opacity:.4}
+  /* Línea Patrimonial SP */
+  .sp-line{width:40px;height:1.5px;background:var(--gold);opacity:.35;margin-bottom:28px;border-radius:1px}
 
-  .s1-bottom{width:100%;max-width:400px}
-
-  .phone-display{
-    text-align:center;padding:16px 0;margin-bottom:20px;
-    font-size:1.4rem;font-weight:500;letter-spacing:.08em;
-    color:var(--txt);min-height:52px;
-    border-bottom:1px solid var(--border);
+  /* Inputs */
+  .field{width:100%;margin-bottom:14px}
+  .field label{display:block;font-size:.7rem;color:var(--txt-3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;font-weight:500}
+  .field input{
+    width:100%;height:50px;border-radius:12px;border:1.5px solid var(--border);
+    background:var(--surface);color:var(--txt);font-size:1rem;font-family:'Inter',sans-serif;
+    padding:0 16px;outline:none;transition:border-color .2s,box-shadow .2s;
+    -webkit-appearance:none;appearance:none;
   }
-  .phone-display.empty{color:var(--txt3);font-size:1rem;font-weight:400}
-  .phone-display .cursor{display:inline-block;width:2px;height:1.2em;background:var(--gold);margin-left:2px;animation:blink 1s step-end infinite;vertical-align:text-bottom}
-  @keyframes blink{50%{opacity:0}}
-
-  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:0 auto}
-  .key{
-    height:56px;border-radius:14px;border:none;
-    background:var(--surface2);color:var(--txt);font-size:1.35rem;font-weight:400;font-family:'Inter',sans-serif;
-    cursor:pointer;transition:background .12s ease,transform .08s ease;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-    -webkit-tap-highlight-color:transparent;
+  .field input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(200,164,90,.08)}
+  .field input::placeholder{color:var(--txt-3);font-weight:400}
+  .field input.error{border-color:var(--red);box-shadow:0 0 0 3px rgba(229,72,77,.08)}
+  .field .prefix{display:flex;align-items:center;gap:0}
+  .field .prefix span{
+    position:absolute;left:16px;font-size:1rem;color:var(--txt-2);font-weight:500;pointer-events:none;
   }
-  .key:active{background:var(--surface3);transform:scale(.95)}
-  .key-sub{font-size:.55rem;color:var(--txt3);letter-spacing:.08em;font-weight:500;text-transform:uppercase}
-  .key--action{background:transparent}
-  .key--action:active{background:var(--surface3)}
-  .key--enter{
-    background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0A0A0A;font-weight:600;font-size:1rem;
+  .field .prefix input{padding-left:46px}
+
+  /* PIN dots */
+  .pin-row{display:flex;gap:10px;justify-content:center;margin-bottom:6px}
+  .pin-dot{
+    width:48px;height:52px;border-radius:12px;border:1.5px solid var(--border);
+    background:var(--surface);display:grid;place-items:center;
+    transition:border-color .2s,background .2s;
   }
-  .key--enter:active{opacity:.85;transform:scale(.96)}
-  .key--enter:disabled{opacity:.3;cursor:not-allowed;transform:none}
-  .key--del{font-size:.85rem;color:var(--txt2)}
+  .pin-dot.active{border-color:var(--gold);background:rgba(200,164,90,.04)}
+  .pin-dot.filled{border-color:var(--gold);background:rgba(200,164,90,.06)}
+  .pin-dot.error{border-color:var(--red);animation:shake .35s ease}
+  .pin-dot .circ{width:12px;height:12px;border-radius:50%;background:var(--txt)}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 
-  .s1-footer{text-align:center;padding-top:16px;font-size:.65rem;color:var(--txt3);letter-spacing:.05em}
-
-  /* ── SCREEN 2: PIN entry ── */
-  #s2{align-items:center;justify-content:space-between;padding:clamp(40px,8vh,80px) 28px clamp(24px,5vh,48px)}
-
-  .s2-top{text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
-
-  .back-btn{
-    position:absolute;top:16px;left:16px;z-index:10;
-    width:40px;height:40px;border-radius:12px;border:none;
-    background:var(--surface2);color:var(--txt2);font-size:18px;
-    cursor:pointer;display:grid;place-items:center;
-    transition:background .12s ease;
+  /* Keypad */
+  .keypad{width:100%;max-width:280px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+  .k{
+    height:52px;border-radius:12px;border:none;background:transparent;
+    color:var(--txt);font-size:1.3rem;font-weight:400;font-family:'Inter',sans-serif;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:background .1s;position:relative;
   }
-  .back-btn:active{background:var(--surface3)}
-
-  .pin-label{font-size:.8rem;color:var(--txt2);letter-spacing:.08em;font-weight:400}
-  .pin-phone{font-size:1.05rem;color:var(--txt);font-weight:500;letter-spacing:.04em;margin-top:2px}
-
-  .pin-boxes{display:flex;gap:14px;justify-content:center;margin:24px 0}
-  .pin-box{
-    width:54px;height:60px;border-radius:14px;
-    background:var(--surface2);border:2px solid var(--border);
-    display:grid;place-items:center;
-    font-size:1.6rem;font-weight:600;color:var(--txt);
-    transition:border-color .2s ease,background .2s ease;
+  .k:active{background:rgba(255,255,255,.06)}
+  .k-sub{position:absolute;bottom:4px;font-size:.5rem;color:var(--txt-3);letter-spacing:.06em;font-weight:500;text-transform:uppercase}
+  .k-del{color:var(--txt-2)}
+  .k-del svg{width:22px;height:22px}
+  .k-ok{
+    background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#0A0A0A;
+    font-weight:600;font-size:.9rem;letter-spacing:.04em;
   }
-  .pin-box.active{border-color:var(--gold);background:rgba(200,164,90,.06)}
-  .pin-box.filled{border-color:var(--gold);background:rgba(200,164,90,.08)}
-  .pin-box.error{border-color:var(--red);background:rgba(229,72,77,.06);animation:shake .4s ease}
-  .pin-box .dot{width:14px;height:14px;border-radius:50%;background:var(--txt)}
-  @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+  .k-ok:active{opacity:.8;transform:scale(.96)}
+  .k-ok:disabled{opacity:.25;cursor:not-allowed;transform:none}
 
-  .pin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:0 auto}
-  .pin-key{
-    height:60px;border-radius:14px;border:none;
-    background:var(--surface2);color:var(--txt);font-size:1.4rem;font-weight:400;font-family:'Inter',sans-serif;
-    cursor:pointer;transition:background .12s ease,transform .08s ease;
-    display:flex;align-items:center;justify-content:center;
-    -webkit-tap-highlight-color:transparent;
-  }
-  .pin-key:active{background:var(--surface3);transform:scale(.95)}
-  .pin-key--empty{background:transparent;pointer-events:none}
-  .pin-key--biometric{font-size:1.3rem;color:var(--gold)}
-  .pin-key--biometric:active{background:rgba(200,164,90,.08)}
-  .pin-key--del{font-size:.8rem;color:var(--txt2)}
+  /* Mensajes */
+  .msg{text-align:center;font-size:.78rem;min-height:18px;margin-top:8px;transition:opacity .2s}
+  .msg.err{color:var(--red)}
+  .msg.ok{color:var(--green)}
 
-  .pin-error{
-    text-align:center;font-size:.8rem;color:var(--red);min-height:20px;
-    margin-top:12px;opacity:0;transition:opacity .2s ease;
-  }
-  .pin-error.show{opacity:1}
+  /* Footer */
+  .foot{margin-top:auto;padding-top:20px;text-align:center;font-size:.6rem;color:var(--txt-3);letter-spacing:.08em}
 
-  .s2-footer{text-align:center;padding-top:12px;font-size:.65rem;color:var(--txt3);letter-spacing:.05em}
+  /* Transición */
+  .fade-out{opacity:0;transform:translateY(8px);pointer-events:none}
 
-  /* ── Shared ── */
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   @media (min-width:768px){
-    .key{height:64px;font-size:1.5rem;border-radius:16px}
-    .pin-key{height:68px;font-size:1.5rem;border-radius:16px}
-    .pin-box{width:62px;height:68px;font-size:1.8rem}
+    .k{height:58px;font-size:1.4rem}
+    .pin-dot{width:54px;height:58px}
   }
 </style>
 </head>
 <body>
 
-<!-- ═══════════ SCREEN 1: Phone number ═══════════ -->
-<div class="screen" id="s1">
-  <div class="s1-top">
-    <div class="logo-mark"><span>SP</span></div>
-    <div class="brand-name">SP INMOBILIARIA</div>
-    <div class="brand-sub">Inversiones &amp; Finca Raíz</div>
-    <div class="gold-line"></div>
+<div class="login" id="login">
+  <div class="logo"><span>SP</span></div>
+  <div class="brand">SP INMOBILIARIA</div>
+  <div class="sub">Inversiones &amp; Finca Raíz</div>
+  <div class="sp-line"></div>
+
+  <!-- Teléfono -->
+  <div class="field" id="phoneField">
+    <label>Teléfono</label>
+    <div style="position:relative">
+      <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1rem;color:var(--txt-2);font-weight:500;pointer-events:none;z-index:1">+57</span>
+      <input type="tel" id="phone" placeholder="300 123 4567" inputmode="numeric" maxlength="12" autocomplete="tel" style="padding-left:46px">
+    </div>
   </div>
 
-  <div class="s1-bottom">
-    <div class="phone-display empty" id="phoneDisplay">Ingresa tu número</div>
-    <div class="keypad">
-      <button class="key" data-v="1">1</button>
-      <button class="key" data-v="2">2<span class="key-sub">ABC</span></button>
-      <button class="key" data-v="3">3<span class="key-sub">DEF</span></button>
-      <button class="key" data-v="4">4<span class="key-sub">GHI</span></button>
-      <button class="key" data-v="5">5<span class="key-sub">JKL</span></button>
-      <button class="key" data-v="6">6<span class="key-sub">MNO</span></button>
-      <button class="key" data-v="7">7<span class="key-sub">PQRS</span></button>
-      <button class="key" data-v="8">8<span class="key-sub">TUV</span></button>
-      <button class="key" data-v="9">9<span class="key-sub">WXYZ</span></button>
-      <button class="key key--action key--del" id="delKey">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-      </button>
-      <button class="key" data-v="0">0</button>
-      <button class="key key--enter" id="enterKey" disabled>Entrar</button>
+  <!-- PIN -->
+  <div id="pinSection" style="width:100%;display:none">
+    <div class="pin-row">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
     </div>
-    <div class="s1-footer">Acceso exclusivo del equipo SP</div>
+    <input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px">
   </div>
+
+  <div class="keypad" id="keypad"></div>
+  <div class="msg" id="msg"></div>
 </div>
 
-<!-- ═══════════ SCREEN 2: PIN ═══════════ -->
-<div class="screen hidden" id="s2">
-  <button class="back-btn" id="backBtn">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-  </button>
-
-  <div class="s2-top">
-    <div class="pin-label">Ingresa tu PIN</div>
-    <div class="pin-phone" id="pinPhone"></div>
-
-    <div class="pin-boxes">
-      <div class="pin-box" id="pb0"></div>
-      <div class="pin-box" id="pb1"></div>
-      <div class="pin-box" id="pb2"></div>
-      <div class="pin-box" id="pb3"></div>
-    </div>
-
-    <div class="pin-error" id="pinError"></div>
-  </div>
-
-  <div class="pin-keypad">
-    <button class="pin-key" data-p="1">1</button>
-    <button class="pin-key" data-p="2">2</button>
-    <button class="pin-key" data-p="3">3</button>
-    <button class="pin-key" data-p="4">4</button>
-    <button class="pin-key" data-p="5">5</button>
-    <button class="pin-key" data-p="6">6</button>
-    <button class="pin-key" data-p="7">7</button>
-    <button class="pin-key" data-p="8">8</button>
-    <button class="pin-key" data-p="9">9</button>
-    <button class="pin-key pin-key--empty"></button>
-    <button class="pin-key" data-p="0">0</button>
-    <button class="pin-key pin-key--del" id="pinDel">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-    </button>
-  </div>
-  <div class="s2-footer">Acceso exclusivo del equipo SP</div>
-</div>
+<div class="foot">Línea Patrimonial SP™</div>
 
 <script>
 (function(){
   'use strict';
 
-  // Si ya hay sesión, redirigir
+  // Sesión activa
   fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
     if(u) location.href = u.rol==='admin' ? '/os/dashboard.html' : '/m/';
   });
 
-  // ── SCREEN 1: Phone number ──
+  const $ = id => document.getElementById(id);
+  const msg = $('msg');
+  let step = 'phone'; // phone | pin
   let phone = '';
-  const phoneDisplay = document.getElementById('phoneDisplay');
-  const enterKey = document.getElementById('enterKey');
-
-  function updatePhoneDisplay(){
-    if(!phone){ phoneDisplay.textContent='Ingresa tu número'; phoneDisplay.className='phone-display empty'; enterKey.disabled=true; return; }
-    // Format: +57 XXX XXX XXXX
-    let formatted = phone;
-    if(phone.length > 0) formatted = '+57 ' + phone;
-    if(phone.length > 3) formatted = '+57 ' + phone.slice(0,3) + ' ' + phone.slice(3);
-    if(phone.length > 6) formatted = '+57 ' + phone.slice(0,3) + ' ' + phone.slice(3,6) + ' ' + phone.slice(6,10);
-    phoneDisplay.textContent = formatted;
-    phoneDisplay.className = 'phone-display';
-    phoneDisplay.innerHTML = formatted + '<span class="cursor"></span>';
-    enterKey.disabled = phone.length < 10;
-  }
-
-  document.querySelectorAll('.keypad .key[data-v]').forEach(k=>{
-    k.addEventListener('click',()=>{
-      if(phone.length >= 10) return;
-      phone += k.dataset.v;
-      updatePhoneDisplay();
-    });
-  });
-
-  document.getElementById('delKey').addEventListener('click',()=>{
-    phone = phone.slice(0,-1);
-    updatePhoneDisplay();
-  });
-
-  // Keyboard support for screen 1
-  document.addEventListener('keydown', e=>{
-    if(!document.getElementById('s1').classList.contains('hidden')){
-      if(e.key >= '0' && e.key <= '9' && phone.length < 10){ phone += e.key; updatePhoneDisplay(); }
-      else if(e.key === 'Backspace'){ phone = phone.slice(0,-1); updatePhoneDisplay(); }
-      else if(e.key === 'Enter' && phone.length >= 10){ showPinScreen(); }
-    }
-  });
-
-  enterKey.addEventListener('click', ()=>{
-    if(phone.length >= 10) showPinScreen();
-  });
-
-  // ── SCREEN 2: PIN ──
   let pin = '';
-  const pinBoxes = [document.getElementById('pb0'),document.getElementById('pb1'),document.getElementById('pb2'),document.getElementById('pb3')];
-  const pinError = document.getElementById('pinError');
   let attempting = false;
 
-  function showPinScreen(){
-    document.getElementById('pinPhone').textContent = '+57 ' + phone.slice(0,3) + ' ' + phone.slice(3,6) + ' ' + phone.slice(6,10);
-    document.getElementById('s1').classList.add('hidden');
-    document.getElementById('s2').classList.remove('hidden');
-    pin = '';
-    updatePinBoxes();
-    // Check for biometric support
-    checkBiometric();
-  }
-
-  function updatePinBoxes(){
-    pinBoxes.forEach((box,i)=>{
-      box.className = 'pin-box';
-      if(i < pin.length){ box.innerHTML = '<div class="dot"></div>'; box.classList.add('filled'); }
-      else if(i === pin.length){ box.classList.add('active'); box.innerHTML = ''; }
-      else { box.innerHTML = ''; }
-    });
-    pinError.classList.remove('show');
-  }
-
-  document.querySelectorAll('.pin-keypad .pin-key[data-p]').forEach(k=>{
-    k.addEventListener('click',()=>{
-      if(attempting || pin.length >= 4) return;
-      pin += k.dataset.p;
-      updatePinBoxes();
-      if(pin.length === 4) attemptLogin();
-    });
-  });
-
-  document.getElementById('pinDel').addEventListener('click',()=>{
-    if(attempting) return;
-    pin = pin.slice(0,-1);
-    updatePinBoxes();
-  });
-
-  // Keyboard support for screen 2
-  document.addEventListener('keydown', e=>{
-    if(!document.getElementById('s2').classList.contains('hidden')){
-      if(e.key >= '0' && e.key <= '9' && pin.length < 4 && !attempting){
-        pin += e.key; updatePinBoxes();
-        if(pin.length === 4) attemptLogin();
-      }
-      else if(e.key === 'Backspace' && !attempting){
-        pin = pin.slice(0,-1); updatePinBoxes();
-      }
-      else if(e.key === 'Escape'){
-        goBack();
-      }
+  // ── Keypad ──
+  function renderKeypad(){
+    const kp = $('keypad');
+    if(step === 'phone'){
+      kp.innerHTML = `
+        <button class="k" data-v="1">1</button>
+        <button class="k" data-v="2">2<span class="k-sub">ABC</span></button>
+        <button class="k" data-v="3">3<span class="k-sub">DEF</span></button>
+        <button class="k" data-v="4">4<span class="k-sub">GHI</span></button>
+        <button class="k" data-v="5">5<span class="k-sub">JKL</span></button>
+        <button class="k" data-v="6">6<span class="k-sub">MNO</span></button>
+        <button class="k" data-v="7">7<span class="k-sub">PQRS</span></button>
+        <button class="k" data-v="8">8<span class="k-sub">TUV</span></button>
+        <button class="k" data-v="9">9<span class="k-sub">WXYZ</span></button>
+        <button class="k k-del" id="kDel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg></button>
+        <button class="k" data-v="0">0</button>
+        <button class="k k-ok" id="kOk" disabled>Entrar</button>`;
+      kp.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{ if(phone.length<10){ phone+=b.dataset.v; updatePhone(); }});
+      $('kDel').onclick=()=>{ phone=phone.slice(0,-1); updatePhone(); };
+      $('kOk').onclick=goToPin;
+    } else {
+      kp.innerHTML = `
+        <button class="k" data-p="1">1</button>
+        <button class="k" data-p="2">2</button>
+        <button class="k" data-p="3">3</button>
+        <button class="k" data-p="4">4</button>
+        <button class="k" data-p="5">5</button>
+        <button class="k" data-p="6">6</button>
+        <button class="k" data-p="7">7</button>
+        <button class="k" data-p="8">8</button>
+        <button class="k" data-p="9">9</button>
+        <button class="k k-del" id="kBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <button class="k" data-p="0">0</button>
+        <button class="k k-del" id="kDel2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg></button>`;
+      kp.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{ if(pin.length<4&&!attempting){ pin+=b.dataset.p; updatePinDots(); if(pin.length===4) doLogin(); }});
+      $('kBack').onclick=goToPhone;
+      $('kDel2').onclick=()=>{ if(!attempting){ pin=pin.slice(0,-1); updatePinDots(); }};
     }
-  });
-
-  document.getElementById('backBtn').addEventListener('click', goBack);
-
-  function goBack(){
-    document.getElementById('s2').classList.add('hidden');
-    document.getElementById('s1').classList.remove('hidden');
-    pin = '';
-    updatePinBoxes();
   }
 
-  async function attemptLogin(){
+  // ── Phone ──
+  function updatePhone(){
+    const raw = phone.replace(/\D/g,'');
+    phone = raw;
+    let formatted = raw;
+    if(raw.length > 3) formatted = raw.slice(0,3) + ' ' + raw.slice(3);
+    if(raw.length > 6) formatted = raw.slice(0,3) + ' ' + raw.slice(3,6) + ' ' + raw.slice(6);
+    $('phone').value = formatted;
+    const ok = $('kOk'); if(ok) ok.disabled = raw.length < 10;
+    msg.textContent = ''; msg.className = 'msg';
+  }
+
+  $('phone').addEventListener('input', e=>{
+    let raw = e.target.value.replace(/\D/g,'');
+    if(raw.length > 10) raw = raw.slice(0,10);
+    phone = raw;
+    let formatted = raw;
+    if(raw.length > 3) formatted = raw.slice(0,3) + ' ' + raw.slice(3);
+    if(raw.length > 6) formatted = raw.slice(0,3) + ' ' + raw.slice(3,6) + ' ' + raw.slice(6);
+    e.target.value = formatted;
+    const ok = $('kOk'); if(ok) ok.disabled = raw.length < 10;
+  });
+
+  $('phone').addEventListener('keydown', e=>{
+    if(e.key === 'Enter' && phone.length >= 10) goToPin();
+  });
+
+  function goToPin(){
+    if(phone.length < 10) return;
+    step = 'pin'; pin = '';
+    $('phoneField').style.display = 'none';
+    $('pinSection').style.display = 'block';
+    updatePinDots();
+    renderKeypad();
+    msg.textContent = '';
+    $('pinInput').focus();
+  }
+
+  function goToPhone(){
+    step = 'phone'; pin = '';
+    $('phoneField').style.display = '';
+    $('pinSection').style.display = 'none';
+    updatePinDots();
+    renderKeypad();
+    msg.textContent = '';
+  }
+
+  // ── PIN dots ──
+  function updatePinDots(){
+    for(let i=0;i<4;i++){
+      const d = $('pd'+i);
+      d.className = 'pin-dot';
+      if(i < pin.length){ d.innerHTML = '<div class="circ"></div>'; d.classList.add('filled'); }
+      else if(i === pin.length){ d.classList.add('active'); d.innerHTML = ''; }
+      else { d.innerHTML = ''; }
+    }
+    msg.className = 'msg';
+  }
+
+  // ── Login ──
+  async function doLogin(){
     attempting = true;
+    msg.textContent = 'Verificando…'; msg.className = 'msg';
     try {
       const res = await fetch('/api/login', {
         method:'POST',
@@ -352,50 +277,38 @@
       const data = await res.json();
       if(!res.ok){
         if(data.error === 'credenciales_invalidas'){
-          pinBoxes.forEach(b => b.classList.add('error'));
-          pinError.textContent = 'Número o PIN incorrecto';
-          pinError.classList.add('show');
-          setTimeout(()=>{ pin=''; updatePinBoxes(); attempting=false; }, 800);
+          for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
+          msg.textContent = 'Número o PIN incorrecto'; msg.className = 'msg err';
+          setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
         } else {
           throw new Error(data.error || 'Error');
         }
         return;
       }
-      // Éxito
-      location.href = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/m/';
+      msg.textContent = 'Bienvenido'; msg.className = 'msg ok';
+      setTimeout(()=>{
+        location.href = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/m/';
+      }, 300);
     } catch(err) {
-      pinError.textContent = 'Error de conexión';
-      pinError.classList.add('show');
-      setTimeout(()=>{ pin=''; updatePinBoxes(); attempting=false; }, 800);
+      msg.textContent = 'Error de conexión'; msg.className = 'msg err';
+      setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
     }
   }
 
-  // ── Biometric (WebAuthn) ──
-  async function checkBiometric(){
-    try {
-      if(!window.PublicKeyCredential) return;
-      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-      if(!available) return;
-      // Show biometric button in place of empty center key
-      const centerKey = document.querySelector('.pin-keypad .pin-key--empty');
-      if(centerKey){
-        centerKey.classList.remove('pin-key--empty');
-        centerKey.classList.add('pin-key--biometric');
-        centerKey.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v4"/><path d="M7.5 12.5a5 5 0 019 0"/><path d="M5 12a7 7 0 0014 0"/><path d="M8.5 16a3 3 0 017 0"/><circle cx="12" cy="19" r="1"/></svg>';
-        centerKey.title = 'Usar huella digital';
-        centerKey.addEventListener('click', attemptBiometric);
-      }
-    } catch(e){ /* biometric not supported */ }
-  }
+  // ── Keyboard ──
+  document.addEventListener('keydown', e=>{
+    if(step === 'phone') return;
+    if(e.key >= '0' && e.key <= '9' && pin.length < 4 && !attempting){
+      pin += e.key; updatePinDots();
+      if(pin.length === 4) doLogin();
+    } else if(e.key === 'Backspace' && !attempting){
+      pin = pin.slice(0,-1); updatePinDots();
+    } else if(e.key === 'Escape'){
+      goToPhone();
+    }
+  });
 
-  async function attemptBiometric(){
-    // Placeholder: biometric login would need server-side WebAuthn challenge
-    // For now, show a toast
-    pinError.textContent = 'Biometría próximamente';
-    pinError.classList.add('show');
-    setTimeout(()=> pinError.classList.remove('show'), 2000);
-  }
-
+  renderKeypad();
 })();
 </script>
 </body>
