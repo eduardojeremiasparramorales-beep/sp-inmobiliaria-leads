@@ -342,10 +342,6 @@ function dateLabel(ts){ if(!ts) return ''; const d=new Date(String(ts).replace('
 
 function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const dias=ref?(Date.now()-new Date(String(ref).replace(' ','T')+'Z').getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
 function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=88; else if(e==='cita')s=80; else if(e==='interesado')s=66; else if(e==='vendido')s=100; s+=Math.min(20,(l.messages_count||0)); return Math.min(99,s); }
-const PROYECTOS = ['Lotes Tocaima','Parcelación Girardot','Vista Valle','Campestre Melgar'];
-const ORIGENES = ['Facebook Ads','Instagram','WhatsApp'];
-function proyectoDe(l){ return PROYECTOS[l.id % PROYECTOS.length]; }
-function origenDe(l){ return ORIGENES[l.id % ORIGENES.length]; }
 
 /* ════════ API ════════ */
 async function api(url, opts){
@@ -385,6 +381,7 @@ async function init(){
     conectarStream();
   }
   wire();
+  initFileInput();
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
 }
@@ -423,8 +420,8 @@ function cardHTML(l,idx){
         <div class="m-card__l2"><span class="m-card__msg">${esc(l.last_message||l.first_message||'—')}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
         <div class="m-card__l3">
           <span class="m-tag t-${e.cls}">${e.t}</span>
-          <span class="m-meta">${I(SVG.building,11)} ${proyectoDe(l)}</span>
-          <span class="m-meta">${I(SVG.facebook,11)} ${origenDe(l)}</span>
+          <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
+          <span class="m-meta">${I(SVG.facebook,11)} ${l.origen||'—'}</span>
           <span class="m-score">${score} ${'<span class="bar"><i style="width:'+score+'%"></i></span>'}</span>
         </div>
       </div>
@@ -446,7 +443,10 @@ function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.d
   else if(a==='wa'){ if(phone) window.open('https://wa.me/'+phone.replace('+',''),'_blank'); }
   else if(a==='note'){ current=l; abrirNota(); }
   else if(a==='tag'){ current=l; abrirEtapa(); }
-  else if(a==='arch'){ toast('Conversación archivada'); }
+  else if(a==='arch'){
+    const l=leads.find(x=>x.id===id);
+    if(l){ toast('Archivando...'); api(`/api/leads/${id}/cerrar`,{method:'POST'}).then(()=>{ toast('Conversación archivada'); cargar(); }); }
+  }
 }
 
 /* ════════ Chat ════════ */
@@ -541,16 +541,38 @@ const QUICK=[
 function abrirAdjuntos(){
   const items=[['image','Imagen',SVG.image],['video','Video',SVG.video],['file','Documento',SVG.file],['audio','Audio',SVG.mic],['mapPin','Ubicación',SVG.mapPin],['contact','Contacto',SVG.contact],['tpl','Plantilla',SVG.zap],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
-  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='mapPin'){ const i=$('#cInput'); i.value=QUICK[2].body; updateSend(); } else toast('Adjuntar '+b.textContent+' — próximamente'); });
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='mapPin'){ const i=$('#cInput'); i.value=QUICK[2].body; updateSend(); } else if(k==='image'){ const fi=$('#fileInput'); if(fi) fi.click(); } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else toast('Adjuntar '+b.textContent+' — próximamente'); });
+}
+// File input for media uploads
+function initFileInput(){
+  const fi=document.createElement('input'); fi.type='file'; fi.id='fileInput'; fi.style.display='none'; fi.accept='image/*,video/*,.pdf,.doc,.docx';
+  fi.onchange=async()=>{ const file=fi.files[0]; if(!file||!current) return; fi.value=''; haptic(10);
+    const toBase64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
+    const dataBase64=await toBase64(file); const mime=file.type||'application/octet-stream';
+    closeSheet(); toast('Enviando...');
+    const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mime,filename:file.name,dataBase64,caption:''})});
+    if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Enviado'); } else toast('Error al enviar archivo');
+  };
+  document.body.appendChild(fi);
 }
 
 function abrirPlantillas(){
   const cats=[['Saludos',['Saludo']],['Precio',['Precio']],['Ubicación',['Ubicación']],['Agenda',['Agenda']],['Financiación',['Financiación']],['Catálogo',['Catálogo']],['Despedida',['Despedida']]];
-  openSheet('Respuestas rápidas', cats.map(([c,keys])=>{ const q=QUICK.find(x=>x.t===keys[0]); return `<div style="margin-bottom:12px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">${c}</div><button class="lp-cell wide" style="text-align:left;width:100%;color:var(--text-2)" data-tpl="${esc(q.body)}">${esc(q.body)}</button></div>`; }).join('') );
+  const qs = QUICK;
+  openSheet('Respuestas rápidas', cats.map(([c,keys])=>{ const q=qs.find(x=>x.t===keys[0]); return `<div style="margin-bottom:12px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">${c}</div><button class="lp-cell wide" style="text-align:left;width:100%;color:var(--text-2)" data-tpl="${esc(q.body)}">${esc(q.body)}</button></div>`; }).join('') );
+  // Cargar plantillas del servidor y agregarlas si existen
+  api('/api/templates').then(tpls=>{
+    if(tpls&&tpls.length){
+      const h=document.createElement('div'); h.style.cssText='margin-top:16px;border-top:1px solid var(--bg-4);padding-top:12px';
+      h.innerHTML='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:8px">Plantillas personalizadas</div>'+tpls.map(t=>`<button class="lp-cell wide" style="text-align:left;width:100%;color:var(--text-2)" data-tpl="${esc(t.cuerpo)}">${esc(t.titulo)}: ${esc(t.cuerpo)}</button>`).join('');
+      $('#sheetBody').appendChild(h);
+      $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.tpl; updateSend(); closeSheet(); haptic(8); i.focus(); });
+    }
+  });
   $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.tpl; updateSend(); closeSheet(); haptic(8); i.focus(); });
 }
 
-function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'; const st=estado(l); const score=leadScore(l); const valor = money(48000000 + (l.id%4)*12000000);
+function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'; const st=estado(l); const score=leadScore(l);
   openSheet('Perfil del lead', `
     <div class="lp-head">
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}</div>
@@ -564,15 +586,13 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
     </div>
     <div class="prob-wrap">
       <div class="prob-top"><span style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em">Probabilidad de cierre</span></div>
-      <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px"><span class="prob-num">${score}%</span><span style="font-size:12.5px;color:var(--text-3)">Valor esperado <b style="color:var(--gold)">${valor}</b></span></div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px"><span class="prob-num">${score}%</span></div>
       <div class="prob-bar"><i style="width:${score}%"></i></div>
     </div>
     <div class="lp-grid">
       <div class="lp-cell"><span>Estado</span><strong style="color:var(--gold)">${etqLabel(l.etiqueta||'sin_clasificar')}</strong></div>
-      <div class="lp-cell mock"><span>Ciudad</span><strong>—</strong></div>
-      <div class="lp-cell"><span>Proyecto</span><strong>${proyectoDe(l)}</strong></div>
-      <div class="lp-cell mock"><span>Presupuesto</span><strong>—</strong></div>
-      <div class="lp-cell"><span>Origen</span><strong>${origenDe(l)}</strong></div>
+      <div class="lp-cell"><span>Proyecto</span><strong>${l.proyecto || '—'}</strong></div>
+      <div class="lp-cell"><span>Origen</span><strong>${l.origen || '—'}</strong></div>
       <div class="lp-cell"><span>Asesor</span><strong>${esc(l.assigned_to_nombre||me.nombre||'—')}</strong></div>
       <div class="lp-cell"><span>Mensajes</span><strong>${l.messages_count||0}</strong></div>
       <div class="lp-cell"><span>Creado</span><strong>${horaCorta(l.created_at)}</strong></div>
@@ -586,14 +606,17 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
 }
 
 function abrirTimeline(){ const l=current;
-  const ev=[['facebook','Llegó desde '+origenDe(l),'Hace 5 días'],['chat','Primer mensaje recibido','Hace 5 días'],['image','Se envió el catálogo','Hace 4 días'],['phone','Llamada realizada','Hace 3 días'],['calendar','Agendó visita al proyecto','Hace 2 días'],['tag','Cambio de etapa → '+etqLabel(l.etiqueta||'interesado'),'Hoy']];
-  openSheet('Timeline', `<div class="tl">${ev.map(([ic,t,s])=>`<div class="tl-i"><div class="tl-dot">${I(SVG[ic]||SVG.chat,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join('')}</div>`);
+  const msgs=currentMsgs||[];
+  const ev=msgs.map(m=>({ic:'chat',t:(m.direction==='incoming'?'Cliente: ':'Tú: ')+esc(m.body||'[media]'),s:horaCorta(m.timestamp)}));
+  if(!ev.length) ev.push({ic:'chat',t:'Sin actividad aún',s:''});
+  openSheet('Timeline', `<div class="tl">${ev.map(({ic,t,s})=>`<div class="tl-i"><div class="tl-dot">${I(SVG[ic]||SVG.chat,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join('')}</div>`);
 }
 
 function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Cliente'; const score=leadScore(l); const sug=`Hola ${nombre}, con gusto te resuelvo lo de la financiación: manejamos cuota inicial baja y plazos flexibles. ¿Agendamos una visita esta semana para que conozcas el lote?`;
+  const proyecto = l.proyecto || 'nuestros proyectos';
   openSheet('Copiloto SP', `
     <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><span class="cop-badge">${I(SVG.sparkles,11)} Fase IA</span></div>
-    <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(nombre)} llegó por ${origenDe(l)} e interesa en ${proyectoDe(l)}. ${l.messages_count||0} mensajes. Conviene reforzar confianza y proponer visita.</p></div>
+    <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(nombre)} — ${l.messages_count||0} mensajes. Interesa en ${proyecto}. Conviene reforzar confianza y proponer visita.</p></div>
     <div class="cop-card"><h5>${I(SVG.target,14)} Sentimiento</h5><p class="cop-sent">${I(SVG.check,14)} Positivo · alta intención de compra</p></div>
     <div class="cop-card"><h5>${I(SVG.zap,14)} Objeciones</h5><div class="cop-obj">Duda sobre formas de pago / financiación.</div><div class="cop-obj">Quiere confirmar ubicación y legalidad.</div></div>
     <div class="cop-card"><h5>${I(SVG.checkSquare,14)} Probabilidad de cierre</h5><div style="display:flex;align-items:baseline;gap:10px"><span class="prob-num">${score}%</span><span style="font-size:12px;color:var(--text-3)">Mejor hora para responder: <b style="color:var(--gold)">6:00–8:00 PM</b></span></div><div class="prob-bar"><i style="width:${score}%"></i></div></div>
@@ -611,6 +634,23 @@ function abrirNota(){ openSheet('Nota rápida', `<textarea id="ntx" class="c-pil
 }
 function abrirEtapa(){ const l=current; openSheet('Cambiar etapa', Object.entries(ETQ).map(([v,e])=>`<button class="lp-cell wide" style="display:flex;align-items:center;gap:10px;text-align:left;width:100%;margin-bottom:8px;color:var(--text)" data-etq="${v}"><span class="m-tag t-${e.cls}">${e.t}</span>${(l.etiqueta||'sin_clasificar')===v?'<span style="margin-left:auto;color:var(--gold)">✓</span>':''}</button>`).join(''));
   $('#sheetBody').querySelectorAll('[data-etq]').forEach(b=>b.onclick=async()=>{ const v=b.dataset.etq; if(!DEMO){ await api(`/api/leads/${l.id}/etiqueta`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({etiqueta:v})}); } l.etiqueta=v; haptic([10,20,10]); closeSheet(); renderList(); if(!DEMO) cargar(); toast('Etapa actualizada'); });
+}
+
+function abrirNuevoLead(){
+  openSheet('Nueva conversación', `
+    <form id="nlForm" style="display:flex;flex-direction:column;gap:12px">
+      <input name="phone" placeholder="Teléfono +573XXXXXXXXX" required inputmode="tel" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
+      <input name="name" placeholder="Nombre del cliente" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
+      <textarea name="message" placeholder="Mensaje inicial (opcional)" style="width:100%;min-height:60px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none;resize:none"></textarea>
+      <button type="submit" class="cop-use" style="margin-top:4px">${I(SVG.send,16)} Iniciar conversación</button>
+    </form>`);
+  $('#nlForm').addEventListener('submit', async e=>{
+    e.preventDefault(); const fd=new FormData(e.target); const phone=fd.get('phone').trim(); const name=fd.get('name').trim(); const message=fd.get('message').trim();
+    if(!phone){ toast('Teléfono requerido','error'); return; }
+    haptic(10); closeSheet(); toast('Creando lead...');
+    const r=await api('/api/leads/proactive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name:name||'Cliente',message:message||'Hola, me interesan sus proyectos'})});
+    if(r&&r.leadId){ toast('Lead creado'); cargar(); } else toast('Error al crear lead','error');
+  });
 }
 
 /* ════════ Bottom Nav / tabs ════════ */
@@ -643,9 +683,6 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       </div>`;
   } else {
     const map={ propiedades:[SVG.building,'Propiedades','Catálogo inteligente de lotes y proyectos con coincidencia por IA.'], tareas:[SVG.checkSquare,'Tareas','Tu día organizado: prioridades, recordatorios y seguimiento de cada lead.'], copiloto:[SVG.sparkles,'Copiloto SP','El centro inteligente: resúmenes, objeciones y próxima mejor acción.'] };
-    const [ic,ti,de]=map[t]||[SVG.user,'',''];
-    box.innerHTML=`<div class="m-empty"><div class="ic">${I(ic,28)}</div><h3>${ti}</h3><p>${de}</p><span class="cop-badge">${I(SVG.sparkles,11)} Próximamente</span></div>`;
-  }
   $('#scHome').insertBefore(box, $('#fab'));
 }
 
@@ -653,7 +690,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
 function wire(){
   $('#q').addEventListener('input',e=>{ term=e.target.value.trim(); renderList(); });
   $('#filters').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filtro=b.dataset.f; haptic(8); renderList(); });
-  $('#fab').onclick=()=>{ haptic(10); toast('Nueva conversación — próximamente'); };
+  $('#fab').onclick=()=>abrirNuevoLead();
   $('#btnNotif').onclick=()=>abrirNotificaciones();
   $('#sheetX').onclick=closeSheet; $('#sheetBg').onclick=closeSheet;
   // Logout
@@ -669,8 +706,9 @@ function wire(){
 }
 
 function abrirNotificaciones(){ haptic(8);
-  const nots=[['bell','3 leads sin responder','Hace 15 min','var(--red)'],['chat','María Gómez respondió','Hace 32 min','var(--gold)'],['calendar','Visita agendada mañana 10:00','Hoy','var(--green)'],['sparkles','Copiloto sugiere contactar a Pedro','Hoy','var(--gold)']];
-  openSheet('Notificaciones', nots.map(([ic,t,s,c])=>`<div class="tl-i" style="padding-bottom:14px"><div class="tl-dot" style="color:${c}">${I(SVG[ic]||SVG.bell,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join(''));
+  const sinResp = leads.filter(l => Number(l.unread_count||0) > 0).slice(0,10);
+  const items = sinResp.length ? sinResp.map(l=>[l.unread_count>0?'chat':'bell',`${esc(l.customer_name||'Cliente')} — ${l.unread_count||0} mensaje(s) sin responder`,horaCorta(l.updated_at||l.created_at),'var(--red)']) : [['bell','Sin notificaciones nuevas','','var(--text-3)']];
+  openSheet('Notificaciones', items.map(([ic,t,s,c])=>`<div class="tl-i" style="padding-bottom:14px"><div class="tl-dot" style="color:${c}">${I(SVG[ic]||SVG.bell,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join(''));
 }
 
 /* ════════ Tiempo real ════════ */

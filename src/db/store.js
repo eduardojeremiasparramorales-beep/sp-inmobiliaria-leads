@@ -94,6 +94,8 @@ async function initDB() {
   ensureColumn('leads', 'etiqueta', 'TEXT');
   ensureColumn('leads', 'unread_count', 'INTEGER DEFAULT 0');
   ensureColumn('leads', 'last_customer_message_at', 'DATETIME');
+  ensureColumn('leads', 'proyecto', 'TEXT');
+  ensureColumn('leads', 'origen', 'TEXT');
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
   execSQL(`
