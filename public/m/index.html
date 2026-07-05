@@ -633,6 +633,7 @@ function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div cl
   box.querySelectorAll('.m-row').forEach(row=>wireSwipe(row));
   const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
 }
+function updateCardBadges(){ const rows=document.querySelectorAll('.m-row'); rows.forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); card.classList.toggle('unread',unread>0); const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
 
 function toggleArchivados(){ haptic(8); showArchivados = !showArchivados; renderList(); }
 function cardHTML(l,idx){
@@ -707,7 +708,7 @@ async function abrirChat(id){ try{
   }
   currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
   if(l){ l.unread_count=0; renderList(); }
-}catch(e){ console.error('abrirChat',e); toast('Error al abrir'); } }
+}catch(e){ console.error('abrirChat',e.name,e.message,e.stack); toast('Error al abrir'); } }
 function cerrarChat(){ clearSelection(); $('#scChat').classList.remove('show'); haptic(6); }
 function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=estado(l);
   $('#scChat').innerHTML = `
@@ -1809,8 +1810,8 @@ async function cargarTareas(){
 
 /* ════════ Tiempo real ════════ */
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderList(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
-  es.addEventListener('lead_actualizado',async ev=>{ const d=await api('/api/mis-leads'); if(d) leads=d; if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); } });
+  es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
+  es.addEventListener('lead_actualizado',async ev=>{ const d=await api('/api/mis-leads'); if(d) leads=d; if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
 
