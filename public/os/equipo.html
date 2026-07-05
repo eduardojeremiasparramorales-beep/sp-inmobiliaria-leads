@@ -81,7 +81,44 @@
     </div>
    </div>`;
 
-  document.getElementById('add').addEventListener('click', ()=> location.href='/equipo.html');
+  document.getElementById('add').addEventListener('click', ()=>{
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:grid;place-items:center;animation:fadeIn .2s ease';
+    overlay.innerHTML = `
+      <div style="background:var(--bg-1);border:1px solid var(--border-soft);border-radius:16px;padding:28px;width:90%;max-width:380px;animation:slideUp .25s var(--ease)">
+        <div style="font-size:16px;font-weight:600;margin-bottom:20px">Agregar asesor</div>
+        <form id="addForm" style="display:flex;flex-direction:column;gap:14px">
+          <input name="nombre" placeholder="Nombre completo" required style="background:var(--bg);border:1px solid var(--border-soft);border-radius:10px;padding:12px;color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <input name="telefono" placeholder="+573XXXXXXXXX" required pattern="\\+573\\d{9}" style="background:var(--bg);border:1px solid var(--border-soft);border-radius:10px;padding:12px;color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <input name="pin" placeholder="PIN de 4 dígitos" required pattern="\\d{4}" maxlength="4" inputmode="numeric" style="background:var(--bg);border:1px solid var(--border-soft);border-radius:10px;padding:12px;color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <div style="display:flex;gap:10px;margin-top:6px">
+            <button type="button" id="cancelAdd" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:transparent;color:var(--txt2);font-size:14px;font-family:inherit;cursor:pointer">Cancelar</button>
+            <button type="submit" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--gold);color:#0A0A0A;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">Crear</button>
+          </div>
+        </form>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+    overlay.querySelector('#cancelAdd').addEventListener('click', ()=> overlay.remove());
+    overlay.querySelector('#addForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const nombre = fd.get('nombre').trim();
+      const telefono = fd.get('telefono').trim();
+      const pin = fd.get('pin').trim();
+      if(!nombre || !telefono || !pin){ toast('Campos requeridos','error'); return; }
+      try {
+        const r = await api('/api/vendedores', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ nombre, telefono, pin }) });
+        if(r && r.vendedorId){
+          toast('Asesor creado');
+          overlay.remove();
+          setTimeout(()=> location.reload(), 600);
+        } else {
+          toast(r?.error || 'Error al crear','error');
+        }
+      } catch(err){ toast('Error de conexión','error'); }
+    });
+  });
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
   function miniStat(k,v){ return `<div style="background:var(--bg-1);border:1px solid var(--border-soft);border-radius:10px;padding:9px;text-align:center"><div class="t-num" style="font-size:16px;font-weight:600">${v}</div><div class="t-dim3" style="font-size:10.5px">${k}</div></div>`; }

@@ -331,6 +331,10 @@ function getUsuarioById(id) {
   return one('SELECT * FROM usuarios WHERE id = ? LIMIT 1', [id]);
 }
 
+function getUsuarioByVendedorId(vendedorId) {
+  return one('SELECT * FROM usuarios WHERE vendedor_id = ? LIMIT 1', [vendedorId]);
+}
+
 function getUsuarios() {
   return all('SELECT id, email, nombre, rol, vendedor_id, created_at FROM usuarios ORDER BY nombre');
 }
@@ -872,7 +876,7 @@ module.exports = {
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setLeadNombre,
   addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, setVendedorPin,
-  createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarios,
+  createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword,
   getLeadsByVendedorId, getMessagesByLead, getMessageById,
   getTemplates, addTemplate, deleteTemplate,

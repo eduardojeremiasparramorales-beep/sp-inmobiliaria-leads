@@ -2,254 +2,401 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#0A0A0A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="SP Panel">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>SP Inmobiliaria — Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* ── iOS 18 · Login Sheet · SP Inmobiliaria ── */
   :root{
-    --black:#000000; --bg:#0B141A; --bg2:#111B21; --bg3:#1F2C33;
-    --txt:#E9EDEF; --txt2:rgba(233,237,239,.5); --txt3:rgba(233,237,239,.25);
-    --gold:#C8A45A; --gold2:#A8872B; --red:#FF453A;
-    --ease:cubic-bezier(.32,.72,0,1);
+    --black:#0A0A0A; --gold:#C8A45A; --gold2:#A8872B; --gold3:#E8C84A;
+    --txt:#F8F8F8; --txt2:rgba(248,248,248,.55); --txt3:rgba(248,248,248,.25);
+    --border:#1E1E1E; --surface:#111111; --surface2:#171717; --surface3:#1C1C1C;
+    --red:#E5484D; --ease:cubic-bezier(.32,.72,0,1);
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
   body{
-    font-family:'Inter',sans-serif;color:var(--txt);
-    background:var(--black);
-    min-height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
+    font-family:'Inter',sans-serif;color:var(--txt);background:var(--black);
+    display:flex;flex-direction:column;
     -webkit-user-select:none;user-select:none;
-    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
-    overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
   }
-  input{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 
-  /* iOS Status Bar */
-  .ios-statusbar{height:44px;background:var(--black);display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:13px;font-weight:600;flex-shrink:0;position:fixed;top:0;left:0;right:0;z-index:10}
-  .ios-statusbar .s-time{font-weight:700;letter-spacing:.5px;color:var(--txt)}
-  .ios-statusbar .s-icons{display:flex;align-items:center;gap:5px}
-  .ios-statusbar .s-icons svg{display:block}
+  /* ── Screen container ── */
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;transition:opacity .35s var(--ease),transform .35s var(--ease);z-index:1}
+  .screen.hidden{opacity:0;pointer-events:none;transform:translateX(40px)}
+  .screen.hidden-left{opacity:0;pointer-events:none;transform:translateX(-40px)}
 
-  /* Background: subtle gradient */
-  .bg-gradient{position:fixed;inset:0;background:radial-gradient(ellipse 120% 80% at 50% -10%,#1F2C33 0%,#000 60%);z-index:0}
+  /* ── SCREEN 1: Phone entry ── */
+  #s1{align-items:center;justify-content:space-between;padding:clamp(40px,8vh,80px) 28px clamp(24px,5vh,48px)}
 
-  /* Logo centered above sheet */
-  .logo-area{position:relative;z-index:1;text-align:center;padding:0 20px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
-  .logo-area img{width:80px;height:80px;border-radius:20px;object-fit:cover;box-shadow:0 8px 30px rgba(0,0,0,.6);margin-bottom:16px}
-  .logo-area .sp{font-family:'Cinzel',serif;font-weight:600;letter-spacing:.12em;font-size:1.2rem;
-    background:linear-gradient(135deg,#E8C84A,var(--gold),var(--gold2));
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .logo-area .sub{font-size:.65rem;color:var(--txt2);letter-spacing:.24em;text-transform:uppercase;margin-top:6px}
-  .logo-area .linea{height:2px;width:40px;background:linear-gradient(90deg,var(--gold),var(--gold2));margin:14px auto 0;border-radius:1px;opacity:.5}
+  .s1-top{text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
 
-  /* Bottom Sheet Card */
-  .card{
-    position:relative;z-index:2;width:100%;background:var(--bg2);
-    border-radius:22px 22px 0 0;padding:20px 28px 36px;
-    padding-bottom:calc(36px + env(safe-area-inset-bottom));
-    animation:sheetUp .5s var(--ease);
-    box-shadow:0 -10px 40px rgba(0,0,0,.5);
+  .logo-mark{
+    width:88px;height:88px;border-radius:22px;
+    background:linear-gradient(140deg,#E8C84A 0%,#C8A45A 45%,#9E7E3C 100%);
+    display:grid;place-items:center;
+    box-shadow:0 12px 40px rgba(0,0,0,.6),0 0 0 1px rgba(200,164,90,.15);
   }
-  @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-  @media (prefers-reduced-motion: reduce){.card{animation:none}}
-  :focus-visible{outline:2px solid rgba(200,164,90,.4);outline-offset:2px}
+  .logo-mark span{font-family:'Cinzel',serif;font-weight:700;font-size:28px;color:#0A0A0A;letter-spacing:.05em}
 
-  /* Drag Handle */
-  .dw-handle{width:36px;height:5px;border-radius:3px;background:var(--txt3);margin:6px auto 16px}
-
-  .input-group{margin-bottom:14px}
-  .input-group label{display:block;font-size:.65rem;color:var(--txt2);margin-bottom:6px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
-  .input-group input{
-    width:100%;height:44px;padding:0 16px;background:var(--bg3);
-    border:none;border-radius:10px;color:var(--txt);font-size:16px;font-family:inherit;
-    transition:box-shadow .15s ease;
+  .brand-name{
+    font-family:'Cinzel',serif;font-weight:600;font-size:1.3rem;letter-spacing:.14em;
+    background:linear-gradient(135deg,var(--gold3),var(--gold),var(--gold2));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   }
-  .input-group input::placeholder{color:var(--txt3);font-weight:400}
-  .input-group input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(200,164,90,.3)}
-  .input-group input[type=password]{letter-spacing:2px;font-size:1.2rem}
+  .brand-sub{font-size:.7rem;color:var(--txt2);letter-spacing:.28em;text-transform:uppercase;font-weight:300}
 
-  .pin-wrap{display:flex;gap:8px;justify-content:center;margin-top:4px}
-  .pin-wrap input{
-    width:56px;height:56px;text-align:center;font-size:1.5rem;
-    font-weight:600;letter-spacing:0;padding:0;font-feature-settings:'tnum';
-    background:var(--bg3);border:none;border-radius:10px;color:var(--txt);
-    transition:box-shadow .15s ease;
-  }
-  .pin-wrap input:focus{outline:none;box-shadow:0 0 0 1.5px rgba(200,164,90,.3)}
+  .gold-line{height:2px;width:48px;background:linear-gradient(90deg,transparent,var(--gold),transparent);border-radius:1px;opacity:.4}
 
-  .btn{
-    width:100%;margin-top:18px;height:48px;
-    background:linear-gradient(135deg,var(--gold),var(--gold2));
-    color:#000;border:none;border-radius:12px;font-weight:600;
-    font-size:.95rem;cursor:pointer;letter-spacing:.03em;font-family:inherit;
-    box-shadow:0 4px 12px rgba(0,0,0,.4);
-    transition:opacity .15s ease,transform .1s ease;
-  }
-  .btn:hover{opacity:.9}
-  .btn:active{transform:scale(.97)}
-  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .s1-bottom{width:100%;max-width:400px}
 
-  .error{
-    margin-top:14px;padding:10px 14px;background:rgba(255,69,58,.08);
-    border-radius:10px;color:#FF9F94;font-size:.82rem;display:none;text-align:center;
+  .phone-display{
+    text-align:center;padding:16px 0;margin-bottom:20px;
+    font-size:1.4rem;font-weight:500;letter-spacing:.08em;
+    color:var(--txt);min-height:52px;
+    border-bottom:1px solid var(--border);
   }
-  .toggle{text-align:center;margin-top:18px;font-size:.76rem;color:var(--txt2)}
-  .toggle a{color:var(--gold);cursor:pointer;text-decoration:none;transition:opacity .15s ease;opacity:.8}
-  .toggle a:hover{opacity:1}
-  .foot{text-align:center;margin-top:12px;font-size:.66rem;color:var(--txt3)}
+  .phone-display.empty{color:var(--txt3);font-size:1rem;font-weight:400}
+  .phone-display .cursor{display:inline-block;width:2px;height:1.2em;background:var(--gold);margin-left:2px;animation:blink 1s step-end infinite;vertical-align:text-bottom}
+  @keyframes blink{50%{opacity:0}}
+
+  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:0 auto}
+  .key{
+    height:56px;border-radius:14px;border:none;
+    background:var(--surface2);color:var(--txt);font-size:1.35rem;font-weight:400;font-family:'Inter',sans-serif;
+    cursor:pointer;transition:background .12s ease,transform .08s ease;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .key:active{background:var(--surface3);transform:scale(.95)}
+  .key-sub{font-size:.55rem;color:var(--txt3);letter-spacing:.08em;font-weight:500;text-transform:uppercase}
+  .key--action{background:transparent}
+  .key--action:active{background:var(--surface3)}
+  .key--enter{
+    background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0A0A0A;font-weight:600;font-size:1rem;
+  }
+  .key--enter:active{opacity:.85;transform:scale(.96)}
+  .key--enter:disabled{opacity:.3;cursor:not-allowed;transform:none}
+  .key--del{font-size:.85rem;color:var(--txt2)}
+
+  .s1-footer{text-align:center;padding-top:16px;font-size:.65rem;color:var(--txt3);letter-spacing:.05em}
+
+  /* ── SCREEN 2: PIN entry ── */
+  #s2{align-items:center;justify-content:space-between;padding:clamp(40px,8vh,80px) 28px clamp(24px,5vh,48px)}
+
+  .s2-top{text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+
+  .back-btn{
+    position:absolute;top:16px;left:16px;z-index:10;
+    width:40px;height:40px;border-radius:12px;border:none;
+    background:var(--surface2);color:var(--txt2);font-size:18px;
+    cursor:pointer;display:grid;place-items:center;
+    transition:background .12s ease;
+  }
+  .back-btn:active{background:var(--surface3)}
+
+  .pin-label{font-size:.8rem;color:var(--txt2);letter-spacing:.08em;font-weight:400}
+  .pin-phone{font-size:1.05rem;color:var(--txt);font-weight:500;letter-spacing:.04em;margin-top:2px}
+
+  .pin-boxes{display:flex;gap:14px;justify-content:center;margin:24px 0}
+  .pin-box{
+    width:54px;height:60px;border-radius:14px;
+    background:var(--surface2);border:2px solid var(--border);
+    display:grid;place-items:center;
+    font-size:1.6rem;font-weight:600;color:var(--txt);
+    transition:border-color .2s ease,background .2s ease;
+  }
+  .pin-box.active{border-color:var(--gold);background:rgba(200,164,90,.06)}
+  .pin-box.filled{border-color:var(--gold);background:rgba(200,164,90,.08)}
+  .pin-box.error{border-color:var(--red);background:rgba(229,72,77,.06);animation:shake .4s ease}
+  .pin-box .dot{width:14px;height:14px;border-radius:50%;background:var(--txt)}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+
+  .pin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:0 auto}
+  .pin-key{
+    height:60px;border-radius:14px;border:none;
+    background:var(--surface2);color:var(--txt);font-size:1.4rem;font-weight:400;font-family:'Inter',sans-serif;
+    cursor:pointer;transition:background .12s ease,transform .08s ease;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .pin-key:active{background:var(--surface3);transform:scale(.95)}
+  .pin-key--empty{background:transparent;pointer-events:none}
+  .pin-key--biometric{font-size:1.3rem;color:var(--gold)}
+  .pin-key--biometric:active{background:rgba(200,164,90,.08)}
+  .pin-key--del{font-size:.8rem;color:var(--txt2)}
+
+  .pin-error{
+    text-align:center;font-size:.8rem;color:var(--red);min-height:20px;
+    margin-top:12px;opacity:0;transition:opacity .2s ease;
+  }
+  .pin-error.show{opacity:1}
+
+  .s2-footer{text-align:center;padding-top:12px;font-size:.65rem;color:var(--txt3);letter-spacing:.05em}
+
+  /* ── Shared ── */
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media (min-width:768px){
+    .key{height:64px;font-size:1.5rem;border-radius:16px}
+    .pin-key{height:68px;font-size:1.5rem;border-radius:16px}
+    .pin-box{width:62px;height:68px;font-size:1.8rem}
+  }
 </style>
 </head>
 <body>
-  <div class="bg-gradient"></div>
 
-  <!-- Logo Area -->
-  <div class="logo-area">
-    <img src="/icons/icon-192.png" alt="SP" onerror="this.style.display='none'">
-    <div class="sp">SP INMOBILIARIA</div>
-    <div class="sub">Inversiones &amp; Finca Raíz</div>
-    <div class="linea"></div>
+<!-- ═══════════ SCREEN 1: Phone number ═══════════ -->
+<div class="screen" id="s1">
+  <div class="s1-top">
+    <div class="logo-mark"><span>SP</span></div>
+    <div class="brand-name">SP INMOBILIARIA</div>
+    <div class="brand-sub">Inversiones &amp; Finca Raíz</div>
+    <div class="gold-line"></div>
   </div>
 
-  <!-- Bottom Sheet Card -->
-  <div class="card">
-    <div class="dw-handle"></div>
-
-    <!-- Form vendedor: WhatsApp + PIN -->
-    <form id="formVendedor">
-      <div class="input-group">
-        <label for="telefono">WhatsApp</label>
-        <input id="telefono" type="tel" inputmode="tel" autocomplete="tel" placeholder="+573001112233" required>
-      </div>
-      <div class="input-group">
-        <label>PIN</label>
-        <div class="pin-wrap">
-          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required autofocus>
-          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
-          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
-          <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" pattern="\d" required>
-        </div>
-      </div>
-      <button class="btn" id="btnV" type="submit">Ingresar</button>
-      <div class="error" id="errorV"></div>
-    </form>
-
-    <!-- Form admin (hidden by default) -->
-    <form id="formAdmin" style="display:none">
-      <div class="input-group">
-        <label for="email">Correo</label>
-        <input id="email" type="email" autocomplete="username" required placeholder="admin@spinmobiliaria.com">
-      </div>
-      <div class="input-group">
-        <label for="password">Contraseña</label>
-        <input id="password" type="password" autocomplete="current-password" required placeholder="••••••••">
-      </div>
-      <button class="btn" id="btnA" type="submit">Ingresar</button>
-      <div class="error" id="errorA"></div>
-    </form>
-
-    <div class="toggle" id="toggleWrap">
-      <a id="toggleLink">Acceso administrador</a>
+  <div class="s1-bottom">
+    <div class="phone-display empty" id="phoneDisplay">Ingresa tu número</div>
+    <div class="keypad">
+      <button class="key" data-v="1">1</button>
+      <button class="key" data-v="2">2<span class="key-sub">ABC</span></button>
+      <button class="key" data-v="3">3<span class="key-sub">DEF</span></button>
+      <button class="key" data-v="4">4<span class="key-sub">GHI</span></button>
+      <button class="key" data-v="5">5<span class="key-sub">JKL</span></button>
+      <button class="key" data-v="6">6<span class="key-sub">MNO</span></button>
+      <button class="key" data-v="7">7<span class="key-sub">PQRS</span></button>
+      <button class="key" data-v="8">8<span class="key-sub">TUV</span></button>
+      <button class="key" data-v="9">9<span class="key-sub">WXYZ</span></button>
+      <button class="key key--action key--del" id="delKey">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+      </button>
+      <button class="key" data-v="0">0</button>
+      <button class="key key--enter" id="enterKey" disabled>Entrar</button>
     </div>
-    <div class="foot">Acceso exclusivo del equipo SP</div>
+    <div class="s1-footer">Acceso exclusivo del equipo SP</div>
   </div>
+</div>
+
+<!-- ═══════════ SCREEN 2: PIN ═══════════ -->
+<div class="screen hidden" id="s2">
+  <button class="back-btn" id="backBtn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+
+  <div class="s2-top">
+    <div class="pin-label">Ingresa tu PIN</div>
+    <div class="pin-phone" id="pinPhone"></div>
+
+    <div class="pin-boxes">
+      <div class="pin-box" id="pb0"></div>
+      <div class="pin-box" id="pb1"></div>
+      <div class="pin-box" id="pb2"></div>
+      <div class="pin-box" id="pb3"></div>
+    </div>
+
+    <div class="pin-error" id="pinError"></div>
+  </div>
+
+  <div class="pin-keypad">
+    <button class="pin-key" data-p="1">1</button>
+    <button class="pin-key" data-p="2">2</button>
+    <button class="pin-key" data-p="3">3</button>
+    <button class="pin-key" data-p="4">4</button>
+    <button class="pin-key" data-p="5">5</button>
+    <button class="pin-key" data-p="6">6</button>
+    <button class="pin-key" data-p="7">7</button>
+    <button class="pin-key" data-p="8">8</button>
+    <button class="pin-key" data-p="9">9</button>
+    <button class="pin-key pin-key--empty"></button>
+    <button class="pin-key" data-p="0">0</button>
+    <button class="pin-key pin-key--del" id="pinDel">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+    </button>
+  </div>
+  <div class="s2-footer">Acceso exclusivo del equipo SP</div>
+</div>
 
 <script>
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('/sw.js').catch(()=>{});
-  }
+(function(){
+  'use strict';
 
-  // Si ya hay sesión, redirigir según rol
+  // Si ya hay sesión, redirigir
   fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
     if(u) location.href = u.rol==='admin' ? '/os/dashboard.html' : '/os/vendedor.html';
   });
 
-  // Toggle entre modos
-  let modoAdmin = false;
-  document.getElementById('toggleLink').addEventListener('click', () => {
-    modoAdmin = !modoAdmin;
-    document.getElementById('formVendedor').style.display = modoAdmin ? 'none' : '';
-    document.getElementById('formAdmin').style.display = modoAdmin ? '' : 'none';
-    document.getElementById('toggleLink').textContent = modoAdmin ? 'Acceso vendedor' : 'Acceso administrador';
-  });
+  // ── SCREEN 1: Phone number ──
+  let phone = '';
+  const phoneDisplay = document.getElementById('phoneDisplay');
+  const enterKey = document.getElementById('enterKey');
 
-  // --- PIN: auto-avanzar entre dígitos ---
-  const digits = document.querySelectorAll('.pin-digit');
-  digits.forEach((d, i) => {
-    d.addEventListener('input', () => {
-      d.value = d.value.replace(/\D/g, '').slice(-1);
-      if (d.value && i < digits.length - 1) digits[i+1].focus();
-    });
-    d.addEventListener('keydown', e => {
-      if (e.key === 'Backspace' && !d.value && i > 0) digits[i-1].focus();
-    });
-    d.addEventListener('paste', e => {
-      e.preventDefault();
-      const pasted = (e.clipboardData||window.clipboardData).getData('text').replace(/\D/g,'').slice(0,4);
-      pasted.split('').forEach((ch, j) => { if(digits[j]) digits[j].value = ch; });
-      const last = Math.min(pasted.length, digits.length-1);
-      digits[last].focus();
+  function updatePhoneDisplay(){
+    if(!phone){ phoneDisplay.textContent='Ingresa tu número'; phoneDisplay.className='phone-display empty'; enterKey.disabled=true; return; }
+    // Format: +57 XXX XXX XXXX
+    let formatted = phone;
+    if(phone.length > 0) formatted = '+57 ' + phone;
+    if(phone.length > 3) formatted = '+57 ' + phone.slice(0,3) + ' ' + phone.slice(3);
+    if(phone.length > 6) formatted = '+57 ' + phone.slice(0,3) + ' ' + phone.slice(3,6) + ' ' + phone.slice(6,10);
+    phoneDisplay.textContent = formatted;
+    phoneDisplay.className = 'phone-display';
+    phoneDisplay.innerHTML = formatted + '<span class="cursor"></span>';
+    enterKey.disabled = phone.length < 10;
+  }
+
+  document.querySelectorAll('.keypad .key[data-v]').forEach(k=>{
+    k.addEventListener('click',()=>{
+      if(phone.length >= 10) return;
+      phone += k.dataset.v;
+      updatePhoneDisplay();
     });
   });
 
-  // --- Login vendedor ---
-  document.getElementById('formVendedor').addEventListener('submit', async e => {
-    e.preventDefault();
-    const errBox = document.getElementById('errorV');
-    const btn = document.getElementById('btnV');
-    errBox.style.display = 'none';
-    btn.disabled = true; btn.textContent = 'Verificando...';
+  document.getElementById('delKey').addEventListener('click',()=>{
+    phone = phone.slice(0,-1);
+    updatePhoneDisplay();
+  });
 
-    const pin = Array.from(digits).map(d=>d.value).join('');
-    if (pin.length !== 4) {
-      errBox.textContent = 'Ingresa los 4 dígitos del PIN';
-      errBox.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Ingresar';
-      return;
+  // Keyboard support for screen 1
+  document.addEventListener('keydown', e=>{
+    if(!document.getElementById('s1').classList.contains('hidden')){
+      if(e.key >= '0' && e.key <= '9' && phone.length < 10){ phone += e.key; updatePhoneDisplay(); }
+      else if(e.key === 'Backspace'){ phone = phone.slice(0,-1); updatePhoneDisplay(); }
+      else if(e.key === 'Enter' && phone.length >= 10){ showPinScreen(); }
     }
+  });
 
+  enterKey.addEventListener('click', ()=>{
+    if(phone.length >= 10) showPinScreen();
+  });
+
+  // ── SCREEN 2: PIN ──
+  let pin = '';
+  const pinBoxes = [document.getElementById('pb0'),document.getElementById('pb1'),document.getElementById('pb2'),document.getElementById('pb3')];
+  const pinError = document.getElementById('pinError');
+  let attempting = false;
+
+  function showPinScreen(){
+    document.getElementById('pinPhone').textContent = '+57 ' + phone.slice(0,3) + ' ' + phone.slice(3,6) + ' ' + phone.slice(6,10);
+    document.getElementById('s1').classList.add('hidden');
+    document.getElementById('s2').classList.remove('hidden');
+    pin = '';
+    updatePinBoxes();
+    // Check for biometric support
+    checkBiometric();
+  }
+
+  function updatePinBoxes(){
+    pinBoxes.forEach((box,i)=>{
+      box.className = 'pin-box';
+      if(i < pin.length){ box.innerHTML = '<div class="dot"></div>'; box.classList.add('filled'); }
+      else if(i === pin.length){ box.classList.add('active'); box.innerHTML = ''; }
+      else { box.innerHTML = ''; }
+    });
+    pinError.classList.remove('show');
+  }
+
+  document.querySelectorAll('.pin-keypad .pin-key[data-p]').forEach(k=>{
+    k.addEventListener('click',()=>{
+      if(attempting || pin.length >= 4) return;
+      pin += k.dataset.p;
+      updatePinBoxes();
+      if(pin.length === 4) attemptLogin();
+    });
+  });
+
+  document.getElementById('pinDel').addEventListener('click',()=>{
+    if(attempting) return;
+    pin = pin.slice(0,-1);
+    updatePinBoxes();
+  });
+
+  // Keyboard support for screen 2
+  document.addEventListener('keydown', e=>{
+    if(!document.getElementById('s2').classList.contains('hidden')){
+      if(e.key >= '0' && e.key <= '9' && pin.length < 4 && !attempting){
+        pin += e.key; updatePinBoxes();
+        if(pin.length === 4) attemptLogin();
+      }
+      else if(e.key === 'Backspace' && !attempting){
+        pin = pin.slice(0,-1); updatePinBoxes();
+      }
+      else if(e.key === 'Escape'){
+        goBack();
+      }
+    }
+  });
+
+  document.getElementById('backBtn').addEventListener('click', goBack);
+
+  function goBack(){
+    document.getElementById('s2').classList.add('hidden');
+    document.getElementById('s1').classList.remove('hidden');
+    pin = '';
+    updatePinBoxes();
+  }
+
+  async function attemptLogin(){
+    attempting = true;
     try {
       const res = await fetch('/api/login', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ telefono: document.getElementById('telefono').value.trim(), pin }),
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ telefono: '+57' + phone, pin }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error==='credenciales_invalidas' ? 'Número o PIN incorrecto' : 'Error al ingresar');
-      location.href = '/os/vendedor.html';
+      if(!res.ok){
+        if(data.error === 'credenciales_invalidas'){
+          pinBoxes.forEach(b => b.classList.add('error'));
+          pinError.textContent = 'Número o PIN incorrecto';
+          pinError.classList.add('show');
+          setTimeout(()=>{ pin=''; updatePinBoxes(); attempting=false; }, 800);
+        } else {
+          throw new Error(data.error || 'Error');
+        }
+        return;
+      }
+      // Éxito
+      location.href = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/os/vendedor.html';
     } catch(err) {
-      errBox.textContent = err.message;
-      errBox.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Ingresar';
-      digits.forEach(d=>d.value=''); digits[0].focus();
+      pinError.textContent = 'Error de conexión';
+      pinError.classList.add('show');
+      setTimeout(()=>{ pin=''; updatePinBoxes(); attempting=false; }, 800);
     }
-  });
+  }
 
-  // --- Login admin ---
-  document.getElementById('formAdmin').addEventListener('submit', async e => {
-    e.preventDefault();
-    const errBox = document.getElementById('errorA');
-    const btn = document.getElementById('btnA');
-    errBox.style.display = 'none';
-    btn.disabled = true; btn.textContent = 'Verificando...';
+  // ── Biometric (WebAuthn) ──
+  async function checkBiometric(){
     try {
-      const res = await fetch('/api/login', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ email: document.getElementById('email').value, password: document.getElementById('password').value }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error==='credenciales_invalidas' ? 'Correo o contraseña incorrectos' : 'Error al ingresar');
-      location.href = data.usuario.rol==='admin' ? '/os/dashboard.html' : '/os/vendedor.html';
-    } catch(err) {
-      errBox.textContent = err.message;
-      errBox.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Ingresar como admin';
-    }
-  });
+      if(!window.PublicKeyCredential) return;
+      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      if(!available) return;
+      // Show biometric button in place of empty center key
+      const centerKey = document.querySelector('.pin-keypad .pin-key--empty');
+      if(centerKey){
+        centerKey.classList.remove('pin-key--empty');
+        centerKey.classList.add('pin-key--biometric');
+        centerKey.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v4"/><path d="M7.5 12.5a5 5 0 019 0"/><path d="M5 12a7 7 0 0014 0"/><path d="M8.5 16a3 3 0 017 0"/><circle cx="12" cy="19" r="1"/></svg>';
+        centerKey.title = 'Usar huella digital';
+        centerKey.addEventListener('click', attemptBiometric);
+      }
+    } catch(e){ /* biometric not supported */ }
+  }
+
+  async function attemptBiometric(){
+    // Placeholder: biometric login would need server-side WebAuthn challenge
+    // For now, show a toast
+    pinError.textContent = 'Biometría próximamente';
+    pinError.classList.add('show');
+    setTimeout(()=> pinError.classList.remove('show'), 2000);
+  }
+
+})();
 </script>
 </body>
 </html>

@@ -287,18 +287,21 @@ app.post('/api/login', loginLimiter, (req, res) => {
   const oldToken = auth.getTokenFromReq(req);
   if (oldToken) auth.destroySession(oldToken);
 
-  // Modo vendedor: teléfono + PIN de 4 dígitos
+  // Teléfono + PIN (vendedor o admin)
   if (telefono && pin) {
     const vendedor = store.getVendedorByTelefono(String(telefono).trim());
     if (!vendedor || !vendedor.pin || !auth.verifyPassword(String(pin), vendedor.pin)) {
       return res.status(401).json({ error: 'credenciales_invalidas' });
     }
-    const token = auth.createSession({ vendedorId: vendedor.id, rol: 'vendedor', nombre: vendedor.nombre });
+    // Verificar si tiene rol admin
+    const usuario = store.getUsuarioByVendedorId(vendedor.id);
+    const rol = usuario && usuario.rol === 'admin' ? 'admin' : 'vendedor';
+    const token = auth.createSession({ vendedorId: vendedor.id, userId: usuario ? usuario.id : null, rol, nombre: vendedor.nombre });
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
-    return res.json({ ok: true, token, usuario: { nombre: vendedor.nombre, rol: 'vendedor', vendedorId: vendedor.id } });
+    return res.json({ ok: true, token, usuario: { nombre: vendedor.nombre, rol, vendedorId: vendedor.id } });
   }
 
-  // Modo admin: email + contraseña
+  // Email + contraseña (legacy admin)
   if (email && password) {
     const usuario = store.getUsuarioByEmail(String(email).toLowerCase().trim());
     if (!usuario || !auth.verifyPassword(password, usuario.password)) {
@@ -1065,9 +1068,9 @@ app.delete('/api/templates/:id', auth.requireAdmin, (req, res) => {
 
 app.get('/api/usuarios', auth.requireAdmin, (req, res) => res.json(store.getUsuarios()));
 
-// Crea un vendedor + su usuario de login en un solo paso
+// Crea un usuario (vendedor o admin) + vendedor + PIN en un solo paso
 app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
-  const { nombre, telefono, email, password, rol } = req.body || {};
+  const { nombre, telefono, email, password, pin, rol } = req.body || {};
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: 'nombre, email y password requeridos' });
   }
@@ -1078,17 +1081,23 @@ app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
   if (store.getUsuarioByEmail(emailNorm)) {
     return res.status(409).json({ error: 'email_ya_existe' });
   }
-  let vendedorId = null;
   const rolFinal = rol === 'admin' ? 'admin' : 'vendedor';
-  if (rolFinal === 'vendedor') {
-    if (!telefono) return res.status(400).json({ error: 'telefono requerido para vendedores' });
+  let vendedorId = null;
+
+  // Para vendedores: teléfono es obligatorio
+  if (rolFinal === 'vendedor' && !telefono) {
+    return res.status(400).json({ error: 'telefono requerido para vendedores' });
+  }
+
+  // Crear registro en vendedores si se proporciona teléfono (vendedor o admin con PIN)
+  if (telefono) {
     vendedorId = store.addVendedor(nombre, telefono);
-    // PIN de acceso móvil: usa el campo `pin` si viene, o el password si es de 4 dígitos
-    const pinFinal = (req.body && req.body.pin) || (/^\d{4}$/.test(String(password)) ? String(password) : null);
+    const pinFinal = pin || (/^\d{4}$/.test(String(password)) ? String(password) : null);
     if (pinFinal && /^\d{4}$/.test(String(pinFinal))) {
       store.setVendedorPin(vendedorId, auth.hashPassword(String(pinFinal)));
     }
   }
+
   store.createUsuario(emailNorm, auth.hashPassword(password), nombre, rolFinal, vendedorId);
   res.json({ ok: true, vendedorId });
 });
