@@ -94,7 +94,7 @@
             const tieneCuenta = vUserMap[v.id] ? true : false;
             return `<tr>
               <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)}">${initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span></div></td>
-              <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}</td>
+              <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}${v.telefono && !v.telefono.startsWith('+57') ? ` <button class="btn btn--ghost btn--xs" data-action="fixPhone" data-id="${v.id}" data-tel="${esc(v.telefono)}" title="Corregir teléfono (agregar +57)">${S.refresh}Fix</button>` : ''}</td>
               <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
               <td>${tieneCuenta ? '<span class="badge badge--green" style="font-size:10px">Sí</span>' : '<span class="t-dim3" style="font-size:11px">—</span>'}</td>
               <td><button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button></td>
@@ -162,6 +162,18 @@
           else toast('Error al actualizar PIN','error');
         } catch(err){ toast('Error de conexión','error'); }
       });
+    }));
+
+    document.querySelectorAll('[data-action="fixPhone"]').forEach(btn => btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.id;
+      const oldTel = btn.dataset.tel;
+      const newTel = oldTel.startsWith('57') ? '+'+oldTel : '+57'+oldTel.replace(/\D/g,'');
+      if(!confirm(`Corregir teléfono de ${oldTel} a ${newTel}?`)) return;
+      try {
+        const r = await api('/api/vendedores/'+id+'/telefono', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ telefono: newTel }) });
+        if(r && r.ok){ toast('Teléfono corregido'); cargar(); }
+        else toast(r?.error || 'Error','error');
+      } catch(err){ toast('Error de conexión','error'); }
     }));
 
     document.querySelectorAll('[data-action="estado"]').forEach(btn => btn.addEventListener('click', async ()=>{

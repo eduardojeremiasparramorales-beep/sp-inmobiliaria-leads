@@ -312,8 +312,10 @@ function incrementEscalation(leadId) {
 }
 
 function addVendedor(nombre, telefono) {
-  run('INSERT OR IGNORE INTO vendedores (nombre, telefono) VALUES (?, ?)', [nombre, telefono]);
-  const r = one('SELECT id FROM vendedores WHERE telefono = ? LIMIT 1', [telefono]);
+  let t = String(telefono).replace(/[\s-]/g, '');
+  if (t.startsWith('57') && !t.startsWith('+')) t = '+' + t;
+  run('INSERT OR IGNORE INTO vendedores (nombre, telefono) VALUES (?, ?)', [nombre, t]);
+  const r = one('SELECT id FROM vendedores WHERE telefono = ? LIMIT 1', [t]);
   return r ? r.id : null;
 }
 
@@ -454,6 +456,10 @@ function deleteWATemplate(id) {
 
 function setVendedorEstado(id, estado) {
   run('UPDATE vendedores SET estado = ? WHERE id = ?', [estado, id]);
+}
+
+function setVendedorTelefono(id, telefono) {
+  run('UPDATE vendedores SET telefono = ? WHERE id = ?', [telefono, id]);
 }
 
 // --- Etiqueta de pipeline del lead ---
@@ -883,7 +889,7 @@ module.exports = {
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setLeadNombre,
-  addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, getVendedorById, setVendedorPin,
+  addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
   getLeadsByVendedorId, getMessagesByLead, getMessageById,

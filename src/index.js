@@ -274,6 +274,16 @@ app.post('/api/vendedores/:id/pin', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/vendedores/:id/telefono', auth.requireAdmin, (req, res) => {
+  const { telefono } = req.body || {};
+  if (!telefono) return res.status(400).json({ error: 'telefono_requerido' });
+  let t = String(telefono).replace(/[\s-]/g, '');
+  if (t.startsWith('57') && !t.startsWith('+')) t = '+' + t;
+  if (!/^\+57\d{10}$/.test(t)) return res.status(400).json({ error: 'formato_invalido_debe_ser_57_10_digitos' });
+  store.setVendedorTelefono(req.params.id, t);
+  res.json({ ok: true, telefono: t });
+});
+
 app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
   const { estado } = req.body;
   const estadosValidos = ['activo', 'ocupado', 'inactivo', 'vacaciones', 'suspendido'];
