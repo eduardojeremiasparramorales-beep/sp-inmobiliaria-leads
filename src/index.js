@@ -632,7 +632,8 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
     const smartResult = await sendMessageSmart(lead.customer_phone, String(mensaje), lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
-    store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing', null, replyToId);
+    const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing', null, replyToId, wamid, 'sent');
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') {
       store.updateLeadStatus(lead.id, 'contactado');
@@ -685,13 +686,14 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
     if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
     const mediaId = await uploadMedia(buffer, mime, filename);
-    await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
+    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
+    const wamid = mediaResult && mediaResult.messages && mediaResult.messages[0] ? mediaResult.messages[0].id : null;
 
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
     store.saveMessage(lead.id, fromNumber, lead.customer_phone, caption || `[${tipo}]`, 'outgoing', {
       media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
-    }, replyToId);
+    }, replyToId, wamid, 'sent');
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
     store.syncLeadToConversation(store.getLeadById(lead.id), {

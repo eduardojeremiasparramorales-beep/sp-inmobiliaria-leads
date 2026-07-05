@@ -91,6 +91,8 @@ async function initDB() {
   ensureColumn('messages', 'media_mime', 'TEXT');
   ensureColumn('messages', 'media_filename', 'TEXT');
   ensureColumn('messages', 'reply_to_id', 'INTEGER');
+  ensureColumn('messages', 'wamid', 'TEXT');
+  ensureColumn('messages', 'status', 'TEXT DEFAULT \'sent\'');
   ensureColumn('vendedores', 'pin', 'TEXT');
   ensureColumn('vendedores', 'foto', 'TEXT');
   ensureColumn('leads', 'etiqueta', 'TEXT');
@@ -214,16 +216,21 @@ function assignLeadToVendedor(leadId, vendedor) {
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
 }
 
-function saveMessage(leadId, from, to, body, direction, media, replyToId) {
+function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid, status) {
   const m = media || {};
-  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+  const st = status || (direction === 'outgoing' ? 'sent' : null);
+  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id, wamid, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
     leadId, from, to, body, direction,
     m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
-    replyToId ? Number(replyToId) : null,
+    replyToId ? Number(replyToId) : null, wamid || null, st,
   ]);
   run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
   const r = one('SELECT id FROM messages WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
   return r ? r.id : null;
+}
+
+function updateMessageStatus(wamid, status) {
+  run('UPDATE messages SET status = ? WHERE wamid = ?', [status, wamid]);
 }
 
 function getMessageById(id) {
@@ -1009,7 +1016,7 @@ module.exports = {
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
-  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById,
+  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus,
   getTemplates, addTemplate, deleteTemplate,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
   createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,

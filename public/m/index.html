@@ -257,8 +257,10 @@
   .m-arch-btn svg{ width:17px; height:17px; }
   .m-arch-btn .badge{ margin-left:auto; background:var(--bg-3); color:var(--text-2); padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; }
   .m-arch-btn.active{ color:var(--gold); }
-  .m-card.archived{ opacity:.6; }
-  .m-card.archived .m-card__time{ color:var(--text-3); }
+  .m-card.archived{ opacity:1; }
+  .m-card.archived .m-card__name,
+  .m-card.archived .m-card__msg{ opacity:.55; }
+  .m-card.archived .m-card__time{ opacity:.35; color:var(--text-3); }
 
   /* ── Reply bar ── */
   .c-reply{ display:none; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-3); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); }
@@ -272,7 +274,11 @@
 
   /* ── Swipe en mensajes ── */
   .msg-wrap{ position:relative; overflow:hidden; flex-shrink:0; }
-  .msg-wrap .msg-reply-act{ position:absolute; top:0; bottom:0; right:0; width:56px; display:flex; align-items:center; justify-content:center; background:var(--bg-4); border:none; color:var(--gold); font-size:10px; font-weight:600; flex-direction:column; gap:2px; }
+  .msg-wrap .msg-reply-act{ position:absolute; top:0; bottom:0; right:0; width:36px; display:flex; align-items:center; justify-content:center; background:var(--bg-4); border:none; color:var(--gold); }
+  .chk{ font-size:9px; vertical-align:middle; margin-left:3px; letter-spacing:1px; }
+  .chk-sent{ color:var(--text-3); }
+  .chk-delivered{ color:var(--text-2); }
+  .chk-read{ color:var(--gold); }
   .m-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
   .hidden{ display:none !important; }
@@ -342,7 +348,7 @@ const SVG = {
   zap:'M13 2 3 14h9l-1 8 10-12h-9l1-8z', copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   contact:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87',
   calendar:'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
-  clock:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2', tag:'M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01',
+  clock:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2', reply:'M4 12h11a4 4 0 0 1 4 4v2M4 12l4-4M4 12l4 4', tag:'M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01',
   archive:'M21 8v13H3V8M1 3h22v5H1zM10 12h4', building:'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4',
   target:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
   megaphone:'m3 11 18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6', facebook:'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z',
@@ -582,7 +588,7 @@ function setReply(msgId){
 function cancelarReply(){ replyTo=null; const bar=document.getElementById('cReply'); if(bar) bar.classList.remove('show'); }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; h+=`<div class="msg-wrap" data-msgid="${m.id}" id="${wrapId}"><button class="msg-reply-act" data-r="${m.id}">${I(SVG.back,16)}Responder</button><div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${out?' ✓✓':''}</div></div></div>`; }
+  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st):''; h+=`<div class="msg-wrap" data-msgid="${m.id}" id="${wrapId}"><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${chk}</div></div></div>`; }
   return h;
 }
 function msgInner(m){
@@ -590,6 +596,11 @@ function msgInner(m){
   if(m.reply_to_id && m.reply_to_body){ const icon=m.reply_to_media_type?{'image':'🖼️','video':'🎬','audio':'🎙️','document':'📄'}[m.reply_to_media_type]||'📎':''; const preview=icon+(m.reply_to_body||'').slice(0,80); const label=m.reply_to_direction!=='incoming'?'Tú':'Cliente'; quoteHTML=`<div class="bub-quote"><span>${esc(label)}</span>${esc(preview)}</div>`; }
   const content=m.media_type?renderMedia(m):esc(m.body||'');
   return quoteHTML+content;
+}
+function chkHTML(st){
+  if(st==='read') return `<span class="chk chk-read">✓✓</span>`;
+  if(st==='delivered') return `<span class="chk chk-delivered">✓✓</span>`;
+  return `<span class="chk chk-sent">✓</span>`;
 }
 function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<audio src="${src}" controls></audio>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; }
 

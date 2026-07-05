@@ -1,6 +1,7 @@
 const { routeReply, routeIncomingMedia } = require('../services/assigner');
 const { sendMessage, downloadMedia } = require('../services/whatsapp');
 const { saveMessageMedia } = require('../services/media');
+const store = require('../db/store');
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 
@@ -56,6 +57,13 @@ function handleMessage(req, res) {
               .catch(e => console.error('Error procesando media entrante:', e.message));
             continue;
           }
+        }
+
+        const statuses = value.statuses || [];
+        for (const st of statuses) {
+          if (!st || !st.id || !st.status) continue;
+          console.log(`[Webhook] Status update: ${st.id} → ${st.status}`);
+          store.updateMessageStatus(st.id, st.status);
         }
       }
     }
