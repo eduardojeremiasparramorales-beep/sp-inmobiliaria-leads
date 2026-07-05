@@ -495,11 +495,28 @@ function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" st
 }
 function msgInner(m){ if(m.media_type){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<audio src="${src}" controls></audio>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; } return esc(m.body); }
 
-async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current) return; haptic([10,20,10]);
-  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); return; }
+async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current||window._sending) return; window._sending=true; haptic([10,20,10]);
+  const sendBtn=$('#cSend'); if(sendBtn) sendBtn.disabled=true;
+  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return; }
+  // Optimistic — mostrar mensaje inmediatamente
+  const tempId = 'temp_'+Date.now();
+  const tempMsg = {id:tempId,body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')};
+  currentMsgs.push(tempMsg);
   inp.value=''; inp.style.height='auto'; updateSend();
+  $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
   const r=await api(`/api/leads/${current.id}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:msg})});
-  if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); } else toast('Error al enviar');
+  if(r!==null){
+    const d=await api(`/api/leads/${current.id}/mensajes`);
+    if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); b.scrollTop=b.scrollHeight; }
+    cargar();
+  } else {
+    // Falló — quitar mensaje optimista y restaurar texto
+    currentMsgs = currentMsgs.filter(m => m.id !== tempId);
+    inp.value = msg; inp.style.height='auto'; updateSend();
+    $('#cMsgs').innerHTML=msgsHTML(currentMsgs); b.scrollTop=b.scrollHeight;
+    toast('Error al enviar. Toca enviar para reintentar.');
+  }
+  window._sending=false; if(sendBtn) sendBtn.disabled=false;
 }
 function chatAccion(a){ haptic(10); const p=(current.customer_phone||'').replace(/[^\d+]/g,'');
   if(a==='call'){ if(p) location.href='tel:'+p; }
@@ -609,17 +626,18 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
   const box=document.createElement('div'); box.id='tabScreen'; box.className='m-scroll'; box.style.cssText='display:flex;';
   if(t==='perfil'){
     const n=me||{nombre:'Vendedor',rol:'vendedor'};
+    const misLeads = leads||[];
     box.innerHTML=`
       <div style="padding:24px 18px;width:100%;max-width:400px;margin:0 auto">
         <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:28px">
           <div class="m-avatar" style="width:76px;height:76px;border-radius:24px;font-size:28px;background:${avatarColor(n.nombre)}">${initials(n.nombre)}</div>
           <div style="font-size:18px;font-weight:600;text-align:center">${esc(n.nombre)}</div>
-          <div style="font-size:13px;color:var(--text-2)">${esc(n.email||n.telefono||'')}</div>
+          <div style="font-size:13px;color:var(--text-2)">${esc(n.telefono||n.email||'')}</div>
           <span class="m-tag" style="text-transform:uppercase;letter-spacing:.08em;font-size:11px">${n.rol}</span>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px">
-          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${leads.filter(l => l.assigned_to_phone === n.telefono).length}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Leads</div></div>
-          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${leads.filter(l => Number(l.unread_count||0) > 0 && l.assigned_to_phone === n.telefono).length}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Pendientes</div></div>
+          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${misLeads.length}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Leads</div></div>
+          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${misLeads.filter(l => Number(l.unread_count||0) > 0).length}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Pendientes</div></div>
         </div>
         <button id="btnLogout" style="width:100%;height:48px;border-radius:12px;border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);font-size:15px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit">${I('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',18)} Cerrar sesión</button>
       </div>`;

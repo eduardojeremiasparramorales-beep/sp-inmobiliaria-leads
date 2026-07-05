@@ -357,9 +357,11 @@ app.post('/api/logout', auth.requireAuth, (req, res) => {
 });
 
 app.get('/api/me', auth.requireAuth, (req, res) => {
+  const v = req.session.vendedorId ? store.getVendedorById(req.session.vendedorId) : null;
   res.json({
     nombre: req.session.nombre, email: req.session.email,
     rol: req.session.rol, vendedorId: req.session.vendedorId,
+    telefono: v ? v.telefono : null,
   });
 });
 

@@ -356,7 +356,7 @@ function updateUsuarioVendedorId(id, vendedorId) {
 
 // --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
-  return all('SELECT * FROM leads WHERE assigned_to_id = ? ORDER BY updated_at DESC', [vendedorId]);
+  return all('SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? ORDER BY l.updated_at DESC', [vendedorId]);
 }
 
 function getMessagesByLead(leadId) {
