@@ -1281,18 +1281,45 @@ async function checkEscalation() {
   }
 }
 
-// Crea el usuario administrador inicial si no existe ninguno
+// Crea el usuario administrador inicial + vendedor admin con teléfono oficial y PIN 0000
 function ensureAdminUser() {
-  if (store.countUsuarios() > 0) return;
+  const ADMIN_PHONE = '+573214625618';
+  const ADMIN_PIN = '0000';
   const email = (process.env.ADMIN_EMAIL || process.env.ADMIN_USERNAME || 'admin@spinmobiliaria.com').toLowerCase();
   const password = process.env.ADMIN_PASSWORD || 'changeme123';
-  store.createUsuario(email, auth.hashPassword(password), 'Administrador', 'admin', null);
-  console.log('===========================================');
-  console.log('Usuario ADMIN inicial creado:');
-  console.log(`  Email:    ${email}`);
-  console.log(`  Password: ${password}`);
-  console.log('  (cámbialo en .env: ADMIN_EMAIL / ADMIN_PASSWORD)');
-  console.log('===========================================');
+
+  // Crear admin user si no existe ninguno
+  if (store.countUsuarios() === 0) {
+    store.createUsuario(email, auth.hashPassword(password), 'Administrador', 'admin', null);
+    console.log('===========================================');
+    console.log('Usuario ADMIN inicial creado:');
+    console.log(`  Email:    ${email}`);
+    console.log(`  Password: ${password}`);
+    console.log('  (cámbialo en .env: ADMIN_EMAIL / ADMIN_PASSWORD)');
+    console.log('===========================================');
+  }
+
+  // Asegurar vendedor admin con el número oficial + PIN 0000
+  let vendedorAdmin = store.getVendedorByTelefono(ADMIN_PHONE);
+  if (!vendedorAdmin) {
+    const vId = store.addVendedor('Administrador', ADMIN_PHONE);
+    store.setVendedorPin(vId, auth.hashPassword(ADMIN_PIN));
+    vendedorAdmin = store.getVendedorByTelefono(ADMIN_PHONE);
+    console.log(`Vendedor admin creado: ${ADMIN_PHONE} · PIN: ${ADMIN_PIN}`);
+  } else if (!vendedorAdmin.pin) {
+    store.setVendedorPin(vendedorAdmin.id, auth.hashPassword(ADMIN_PIN));
+    console.log(`PIN reset para admin: ${ADMIN_PIN}`);
+  }
+
+  // Vincular con el usuario admin si no lo está
+  if (vendedorAdmin) {
+    const usuarios = store.getUsuarios();
+      const adminUser = usuarios.find(u => u.rol === 'admin');
+      if (adminUser && !adminUser.vendedor_id) {
+        getDB().run('UPDATE usuarios SET vendedor_id = ? WHERE id = ?', [vendedorAdmin.id, adminUser.id]);
+      console.log(`Admin vinculado a vendedor ID ${vendedorAdmin.id}`);
+    }
+  }
 }
 
 (async () => {
