@@ -189,7 +189,9 @@
   }
 
   phoneEl.addEventListener('input', e=>{
-    let raw = e.target.value.replace(/\D/g,'').slice(0,10);
+    let raw = e.target.value.replace(/\D/g,'');
+    // Si el usuario escribió el código de país, tomar solo los últimos 10 dígitos
+    if(raw.length > 10) raw = raw.slice(-10);
     phone = raw;
     e.target.value = formatPhone(raw);
     btnEntrar.disabled = raw.length < 10;

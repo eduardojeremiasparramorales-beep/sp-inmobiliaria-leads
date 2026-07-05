@@ -396,6 +396,10 @@ function getVendedorByTelefono(telefono) {
   return one('SELECT * FROM vendedores WHERE telefono = ? LIMIT 1', [telefono]);
 }
 
+function getVendedorById(id) {
+  return one('SELECT * FROM vendedores WHERE id = ? LIMIT 1', [id]);
+}
+
 function setVendedorPin(id, pinHash) {
   run('UPDATE vendedores SET pin = ? WHERE id = ?', [pinHash, id]);
 }
@@ -879,7 +883,7 @@ module.exports = {
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setLeadNombre,
-  addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, setVendedorPin,
+  addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
   getLeadsByVendedorId, getMessagesByLead, getMessageById,

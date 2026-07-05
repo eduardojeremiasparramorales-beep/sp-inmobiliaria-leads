@@ -246,6 +246,16 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
 
 app.get('/api/vendedores', auth.requireAuth, (req, res) => res.json(getVendedores()));
 
+app.get('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
+  const v = store.getVendedorById(req.params.id);
+  if (!v) return res.status(404).json({ error: 'no_encontrado' });
+  const u = store.getUsuarioByVendedorId(v.id);
+  res.json({
+    id: v.id, nombre: v.nombre, telefono: v.telefono, estado: v.estado,
+    tienePin: !!v.pin, usuarioId: u ? u.id : null, usuarioEmail: u ? u.email : null,
+  });
+});
+
 app.post('/api/vendedores', auth.requireAdmin, (req, res) => {
   const { nombre, telefono, pin } = req.body;
   if (!nombre || !telefono) return res.status(400).json({ error: 'nombre y telefono requeridos' });
@@ -289,8 +299,22 @@ app.post('/api/login', loginLimiter, (req, res) => {
 
   // Teléfono + PIN (vendedor o admin)
   if (telefono && pin) {
-    const vendedor = store.getVendedorByTelefono(String(telefono).trim());
-    if (!vendedor || !vendedor.pin || !auth.verifyPassword(String(pin), vendedor.pin)) {
+    const tel = String(telefono).trim();
+    let vendedor = store.getVendedorByTelefono(tel);
+    // Fallback: buscar sin prefijo + (por si se almacenó sin él)
+    if (!vendedor && tel.startsWith('+57')) {
+      vendedor = store.getVendedorByTelefono(tel.replace('+', ''));
+    }
+    if (!vendedor) {
+      console.log('[LOGIN] Vendedor no encontrado para teléfono:', tel);
+      return res.status(401).json({ error: 'credenciales_invalidas' });
+    }
+    if (!vendedor.pin) {
+      console.log('[LOGIN] Vendedor sin PIN:', vendedor.nombre, vendedor.id);
+      return res.status(401).json({ error: 'credenciales_invalidas' });
+    }
+    if (!auth.verifyPassword(String(pin), vendedor.pin)) {
+      console.log('[LOGIN] PIN incorrecto para:', vendedor.nombre, vendedor.id);
       return res.status(401).json({ error: 'credenciales_invalidas' });
     }
     // Verificar si tiene rol admin
