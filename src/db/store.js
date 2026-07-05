@@ -348,6 +348,10 @@ function updateUsuarioPassword(id, passwordHash) {
   run('UPDATE usuarios SET password = ? WHERE id = ?', [passwordHash, id]);
 }
 
+function updateUsuarioVendedorId(id, vendedorId) {
+  run('UPDATE usuarios SET vendedor_id = ? WHERE id = ?', [vendedorId, id]);
+}
+
 // --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
   return all('SELECT * FROM leads WHERE assigned_to_id = ? ORDER BY updated_at DESC', [vendedorId]);
@@ -877,7 +881,7 @@ module.exports = {
   marcarLeido, setLeadNombre,
   addVendedor, getVendedores, setVendedorEstado, getVendedorByTelefono, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
-  countUsuarios, updateUsuarioPassword,
+  countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
   getLeadsByVendedorId, getMessagesByLead, getMessageById,
   getTemplates, addTemplate, deleteTemplate,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,

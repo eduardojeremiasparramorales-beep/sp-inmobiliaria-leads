@@ -1316,7 +1316,7 @@ function ensureAdminUser() {
     const usuarios = store.getUsuarios();
       const adminUser = usuarios.find(u => u.rol === 'admin');
       if (adminUser && !adminUser.vendedor_id) {
-        getDB().run('UPDATE usuarios SET vendedor_id = ? WHERE id = ?', [vendedorAdmin.id, adminUser.id]);
+        store.updateUsuarioVendedorId(adminUser.id, vendedorAdmin.id);
       console.log(`Admin vinculado a vendedor ID ${vendedorAdmin.id}`);
     }
   }
