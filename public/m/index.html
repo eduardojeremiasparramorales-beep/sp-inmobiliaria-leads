@@ -280,6 +280,20 @@
   .chk-delivered{ color:var(--text-2); }
   .chk-read{ color:var(--gold); }
   .m-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .sec{ margin-bottom:20px; }
+  .sec-label{ font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; padding:0 4px; }
+  .sec-body{ background:var(--bg-2); border-radius:14px; overflow:hidden; }
+  .sec-row{ display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid var(--border-soft); cursor:pointer; }
+  .sec-row:last-child{ border-bottom:none; }
+  .sec-row label{ font-size:14px; color:var(--text); }
+  .sec-row input{ border:none; background:var(--bg-3); color:var(--text); font-size:14px; font-family:inherit; padding:8px 12px; border-radius:10px; outline:none; width:100%; }
+  .sec-btn{ width:100%; height:44px; border:none; background:none; color:var(--text-2); font-size:14px; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; padding:0 16px; }
+  .sec-btn:active{ background:var(--bg-3); }
+  .sec-btn.danger{ color:var(--red); }
+  .toggle-sw{ position:relative; width:44px; height:26px; border-radius:13px; background:var(--bg-4); border:2px solid var(--border-soft); cursor:pointer; transition:all .25s var(--spring); flex-shrink:0; padding:0; }
+  .toggle-sw.on{ background:var(--green); border-color:var(--green); }
+  .toggle-sw::after{ content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .25s var(--spring); }
+  .toggle-sw.on::after{ transform:translateX(18px); }
 
   .hidden{ display:none !important; }
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
@@ -371,8 +385,50 @@ const avatarColor = n => AV[(String(n||'').length + String(n||'').charCodeAt(0)|
 const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 const money = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function haptic(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
+function haptic(p){ if(localStorage.getItem('sp_notif_vibrate')==='false') return; try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+function playNotifSound(){
+  if(localStorage.getItem('sp_notif_sound')==='false') return;
+  const custom=localStorage.getItem('sp_notif_sound_custom');
+  if(custom){ try{ new Audio(custom).play(); }catch(e){} return; }
+  try{
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    const g=ac.createGain(); g.connect(ac.destination);
+    g.gain.setValueAtTime(.25,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(.01,ac.currentTime+.25);
+    const o=ac.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(800,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1100,ac.currentTime+.12);
+    o.connect(g); o.start(); o.stop(ac.currentTime+.25);
+  }catch(e){}
+}
+function urlBase64ToUint8Array(b){
+  const s=b.replace(/-/g,'+').replace(/_/g,'/');
+  const r=atob(s); const u=new Uint8Array(r.length);
+  for(let i=0;i<r.length;i++) u[i]=r.charCodeAt(i);
+  return u;
+}
+async function suscribirPush(){
+  if(!('Notification'in window)||!('serviceWorker'in navigator)) return;
+  if(Notification.permission==='denied') return;
+  if(Notification.permission==='default'){
+    const p=await Notification.requestPermission();
+    if(p!=='granted') return;
+  }
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    const kr=await api('/api/push/clave');
+    if(!kr||!kr.publicKey) return;
+    const key=urlBase64ToUint8Array(kr.publicKey);
+    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+    await api('/api/push/suscribir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});
+  }catch(e){}
+}
+async function limpiarCache(){
+  if('caches'in window){ const k=await caches.keys(); await Promise.all(k.map(x=>caches.delete(x))); }
+  ['sp_notif_sound_custom'].forEach(k=>localStorage.removeItem(k));
+  toast('Caché limpiado');
+}
 
 function horaCorta(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return ''; const h=new Date(); const sd=d.toDateString()===h.toDateString(); return sd? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'}); }
 function soloHora(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); return isNaN(d)?'':d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
@@ -422,6 +478,7 @@ async function init(){
   }
   wire();
   initFileInput();
+  setTimeout(suscribirPush, 3000);
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
 }
@@ -557,7 +614,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   $('#cPlus').onclick=()=>{ $('#cPlus').classList.toggle('open'); abrirAdjuntos(); };
   $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
   const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); });
-  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviar(); } });
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(localStorage.getItem('sp_chat_enter_sends')!=='false')&&!e.shiftKey){ e.preventDefault(); enviar(); } });
   $('#cSend').onclick=enviar;
   $('#replyX').onclick=cancelarReply;
   updateSend();
@@ -588,7 +645,7 @@ function setReply(msgId){
 function cancelarReply(){ replyTo=null; const bar=document.getElementById('cReply'); if(bar) bar.classList.remove('show'); }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st):''; h+=`<div class="msg-wrap" data-msgid="${m.id}" id="${wrapId}"><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${chk}</div></div></div>`; }
+  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out&&localStorage.getItem('sp_chat_show_ticks')!=='false'?chkHTML(st):''; h+=`<div class="msg-wrap" data-msgid="${m.id}" id="${wrapId}"><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${chk}</div></div></div>`; }
   return h;
 }
 function msgInner(m){
@@ -858,6 +915,39 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           <div style="font-size:12px;color:var(--text-3);margin-bottom:5px">Última actividad</div>
           <div style="font-size:14px;color:var(--text-2);font-weight:500">${m.ultimaActividad ? horaCorta(m.ultimaActividad) : '—'}</div>
         </div>
+
+        <div class="sec">
+          <div class="sec-label">Acerca de</div>
+          <div class="sec-body"><div class="sec-row">
+            <input id="inpAbout" placeholder="¿Qué haces ahora?" value="${esc(localStorage.getItem('sp_about_text')||'')}">
+          </div></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Notificaciones</div>
+          <div class="sec-body">
+            <div class="sec-row"><label>Sonido</label><button class="toggle-sw${localStorage.getItem('sp_notif_sound')!=='false'?' on':''}" data-key="sp_notif_sound"></button></div>
+            <div class="sec-row"><label>Vibración</label><button class="toggle-sw${localStorage.getItem('sp_notif_vibrate')!=='false'?' on':''}" data-key="sp_notif_vibrate"></button></div>
+            <div class="sec-row"><label>Tono personalizado</label><button class="sec-btn" id="btnCustomSound" style="width:auto;color:var(--gold);flex:none">${localStorage.getItem('sp_notif_sound_custom')?'Cambiar':'Subir'}</button></div>
+            ${localStorage.getItem('sp_notif_sound_custom')?'<div class="sec-row"><button class="sec-btn danger" id="btnRemoveSound">Eliminar tono</button></div>':''}
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Chat</div>
+          <div class="sec-body">
+            <div class="sec-row"><label>Enter envía mensaje</label><button class="toggle-sw${localStorage.getItem('sp_chat_enter_sends')!=='false'?' on':''}" data-key="sp_chat_enter_sends"></button></div>
+            <div class="sec-row"><label>Confirmaciones (chulitos)</label><button class="toggle-sw${localStorage.getItem('sp_chat_show_ticks')!=='false'?' on':''}" data-key="sp_chat_show_ticks"></button></div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Almacenamiento</div>
+          <div class="sec-body">
+            <div class="sec-row"><button class="sec-btn" id="btnClearCache">${I(SVG.trash||'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',14)} Limpiar caché de medios</button></div>
+          </div>
+        </div>
+
         <div style="display:flex;gap:8px;margin-bottom:20px">
           <button id="btnEditarPerfil" style="flex:1;height:44px;border-radius:12px;border:1px solid var(--border-strong);background:var(--bg-2);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;font-family:inherit">${I(SVG.settings,16)} Editar</button>
           <select id="selEstado" style="flex:1;height:44px;border-radius:12px;border:1px solid var(--border-strong);background:var(--bg-2);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;padding:0 10px;outline:none;appearance:none;-webkit-appearance:none">
@@ -868,6 +958,23 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       </div>`;
     // Wire estado selector
     setTimeout(() => {
+      document.querySelectorAll('.toggle-sw').forEach(b=>b.addEventListener('click',function(){
+        const key=this.dataset.key; const cur=this.classList.contains('on');
+        this.classList.toggle('on'); localStorage.setItem(key,cur?'false':'true'); haptic(6);
+      }));
+      const inp=document.getElementById('inpAbout');
+      if(inp) inp.addEventListener('change',function(){ localStorage.setItem('sp_about_text',this.value); haptic(6); });
+      const csBtn=document.getElementById('btnCustomSound');
+      if(csBtn) csBtn.addEventListener('click',function(){
+        const fi=document.createElement('input'); fi.type='file'; fi.accept='audio/*';
+        fi.onchange=function(){ const f=this.files[0]; if(!f) return;
+          const r=new FileReader(); r.onload=function(e){ localStorage.setItem('sp_notif_sound_custom',e.target.result); toast('Tono guardado'); irTab('perfil'); }; r.readAsDataURL(f);
+        }; fi.click();
+      });
+      const rsBtn=document.getElementById('btnRemoveSound');
+      if(rsBtn) rsBtn.addEventListener('click',function(){ localStorage.removeItem('sp_notif_sound_custom'); toast('Tono eliminado'); irTab('perfil'); });
+      const ccBtn=document.getElementById('btnClearCache');
+      if(ccBtn) ccBtn.addEventListener('click',limpiarCache);
       const sel = document.getElementById('selEstado');
       if (sel) sel.addEventListener('change', async function() {
         if (!me || !me.vendedorId) return;
@@ -914,7 +1021,7 @@ function abrirNotificaciones(){ haptic(8);
 
 /* ════════ Tiempo real ════════ */
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); } }catch(e){} });
+  es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
   es.addEventListener('lead_actualizado',async ev=>{ await cargar(); if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
