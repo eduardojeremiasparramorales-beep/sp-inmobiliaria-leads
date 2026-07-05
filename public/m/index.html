@@ -683,6 +683,9 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       </div>`;
   } else {
     const map={ propiedades:[SVG.building,'Propiedades','Catálogo inteligente de lotes y proyectos con coincidencia por IA.'], tareas:[SVG.checkSquare,'Tareas','Tu día organizado: prioridades, recordatorios y seguimiento de cada lead.'], copiloto:[SVG.sparkles,'Copiloto SP','El centro inteligente: resúmenes, objeciones y próxima mejor acción.'] };
+    const [ic,ti,de]=map[t]||[SVG.user,'',''];
+    box.innerHTML=`<div class="m-empty"><div class="ic">${I(ic,28)}</div><h3>${ti}</h3><p>${de}</p><span class="cop-badge">${I(SVG.sparkles,11)} Próximamente</span></div>`;
+  }
   $('#scHome').insertBefore(box, $('#fab'));
 }
 
