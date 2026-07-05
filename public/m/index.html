@@ -324,10 +324,11 @@ const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats';
-let current = null, currentMsgs = [];
+let current = null, currentMsgs = [], metricas = null;
 
 const ETQ = { sin_clasificar:{t:'Nuevo',cls:'sin_clasificar'}, interesado:{t:'Interesado',cls:'interesado'}, negociacion:{t:'Negociación',cls:'negociacion'}, cita:{t:'Cita',cls:'cita'}, vendido:{t:'Vendido',cls:'vendido'}, no_interesado:{t:'No int.',cls:'no_interesado'} };
 const etqLabel = v => (ETQ[v]||{t:v}).t;
+const estadoColores = { activo:{bg:'rgba(87,193,104,.15)',fg:'#57C168',bd:'rgba(87,193,104,.3)'}, ocupado:{bg:'rgba(200,164,90,.15)',fg:'#C8A45A',bd:'rgba(200,164,90,.3)'}, inactivo:{bg:'rgba(109,109,109,.15)',fg:'#6D6D6D',bd:'rgba(109,109,109,.3)'}, vacaciones:{bg:'rgba(91,139,236,.15)',fg:'#5B8BEC',bd:'rgba(91,139,236,.3)'} };
 const AV = ['#4E7B46','#C8A45A','#5B8DEF','#E0A44A','#7C6BB0','#2E7D8C'];
 const avatarColor = n => AV[(String(n||'').length + String(n||'').charCodeAt(0)||0) % AV.length];
 const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
@@ -376,6 +377,7 @@ async function init(){
   else {
     me = await api('/api/me');
     if(!me){ location.replace('/login.html'); return; }
+    metricas = await api('/api/me/metricas');
     renderFilters();
     await cargar();
     conectarStream();
@@ -392,7 +394,7 @@ async function cargar(){ const d = await api('/api/mis-leads'); leads = d || [];
 const FILTROS = [['todos','Todos'],['sin_clasificar','Nuevos'],['interesado','Interesados'],['negociacion','Negociación'],['cita','Citas'],['vendido','Vendidos']];
 function renderFilters(){ $('#filters').innerHTML = FILTROS.map(([k,l])=>{ const n = k==='todos'?leads.length:leads.filter(x=>(x.etiqueta||'sin_clasificar')===k).length; return `<button class="m-chip ${k===filtro?'active':''}" data-f="${k}">${l}${n?` <b>${n}</b>`:''}</button>`; }).join(''); }
 
-function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); } return a; }
+function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); } return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
 
 /* ════════ Lista ════════ */
 function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div class="m-ptr" id="ptr"><span class="spin"></span></div>'; const items=leadsFiltrados();
@@ -405,7 +407,6 @@ function cardHTML(l,idx){
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
     <div class="m-row__actions left">
       <button class="swipe-act sa-call" data-a="call">${I(SVG.phone,19)}Llamar</button>
-      <button class="swipe-act sa-wa" data-a="wa">${I(SVG.megaphone,19)}WhatsApp</button>
       <button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button>
     </div>
     <div class="m-row__actions right">
@@ -440,7 +441,6 @@ function wireSwipe(row){
 }
 function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.dataset.phone||'').replace(/[^\d+]/g,''); const l=leads.find(x=>x.id===id); haptic(12);
   if(a==='call'){ if(phone) location.href='tel:'+phone; else toast('Sin número'); }
-  else if(a==='wa'){ if(phone) window.open('https://wa.me/'+phone.replace('+',''),'_blank'); }
   else if(a==='note'){ current=l; abrirNota(); }
   else if(a==='tag'){ current=l; abrirEtapa(); }
   else if(a==='arch'){
@@ -653,34 +653,120 @@ function abrirNuevoLead(){
   });
 }
 
+function abrirEditarPerfil(){
+  const n = me || {};
+  openSheet('Editar perfil', `
+    <form id="editPerfilForm" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+        <div class="m-avatar" id="editFotoPreview" style="width:80px;height:80px;border-radius:22px;font-size:30px;background:${avatarColor(n.nombre)};cursor:pointer;position:relative;overflow:hidden">
+          ${n.foto ? `<img src="${n.foto}" alt="">` : initials(n.nombre)}
+          <div style="position:absolute;inset:0;background:rgba(0,0,0,.4);display:grid;place-items:center;opacity:0;transition:opacity .2s;font-size:22px">📷</div>
+        </div>
+        <label style="font-size:12px;color:var(--text-3);cursor:pointer">Toca para cambiar foto
+          <input type="file" id="editFotoInput" accept="image/*" style="display:none">
+        </label>
+      </div>
+      <label style="font-size:12px;color:var(--text-3);font-weight:500">Nombre</label>
+      <input name="nombre" value="${esc(n.nombre||'')}" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:15px;font-family:inherit;outline:none" required>
+      <button type="submit" class="cop-use" style="margin-top:4px">${I(SVG.check,16)} Guardar cambios</button>
+    </form>`);
+  // Preview foto al seleccionar
+  const fi = document.getElementById('editFotoInput');
+  if (fi) fi.addEventListener('change', function() {
+    const file = this.files[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = function(e) {
+      const prev = document.getElementById('editFotoPreview');
+      if (prev) prev.innerHTML = '<img src="'+e.target.result+'" alt="">';
+    };
+    r.readAsDataURL(file);
+  });
+  // Submit
+  const form = document.getElementById('editPerfilForm');
+  if (form) form.addEventListener('submit', async function(e) {
+    e.preventDefault(); haptic(10);
+    const fd = new FormData(this);
+    const nombre = fd.get('nombre').trim();
+    if (!nombre) { toast('Nombre requerido','err'); return; }
+    let ok = true;
+    // Cambiar nombre
+    const r = await api('/api/me/nombre', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ nombre }) });
+    if (r) { me.nombre = nombre; toast('Nombre actualizado'); } else { ok = false; toast('Error al actualizar nombre','err'); }
+    // Subir foto si se seleccionó
+    const fotoFile = document.getElementById('editFotoInput').files[0];
+    if (fotoFile && ok) {
+      const toBase64 = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
+      const base64 = await toBase64(fotoFile);
+      const fr = await api('/api/me/foto', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ foto:'data:image/jpeg;base64,'+base64 }) });
+      if (fr) { me.foto = 'data:image/jpeg;base64,'+base64; toast('Foto actualizada'); } else { ok = false; toast('Error al subir foto','err'); }
+    }
+    closeSheet();
+    if (ok) { irTab('perfil'); }
+  });
+}
+
 /* ════════ Bottom Nav / tabs ════════ */
 const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
 function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
   $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
-function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
+async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
   if(t==='chats'){ $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='SP OS Enterprise'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
-  else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = TABS.find(x=>x[0]===t); pantallaTab(t,label); }
+  else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = TABS.find(x=>x[0]===t);
+    if(t==='perfil'){ const m = await api('/api/me/metricas'); if(m) metricas=m; }
+    pantallaTab(t,label);
+  }
 }
 function mostrarLista(v){ $('#list').style.display=v?'':'none'; $('#filters').style.display=v?'':'none'; let ph=$('#tabScreen'); if(ph) ph.remove(); }
 function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='SP OS Enterprise';
   const box=document.createElement('div'); box.id='tabScreen'; box.className='m-scroll'; box.style.cssText='display:flex;';
   if(t==='perfil'){
-    const n=me||{nombre:'Vendedor',rol:'vendedor'};
-    const misLeads = leads||[];
+    const n=me||{nombre:'Vendedor',rol:'vendedor',estado:'activo'};
+    const m=metricas||{leadsActivos:0,leadsHoy:0,leadsCerrados:0,tasaRespuesta:0,ultimaActividad:null};
+    const ec=estadoColores[n.estado||'activo']||estadoColores.activo;
     box.innerHTML=`
       <div style="padding:24px 18px;width:100%;max-width:400px;margin:0 auto">
         <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:28px">
-          <div class="m-avatar" style="width:76px;height:76px;border-radius:24px;font-size:28px;background:${avatarColor(n.nombre)}">${initials(n.nombre)}</div>
+          <div class="m-avatar" style="width:76px;height:76px;border-radius:24px;font-size:28px;background:${avatarColor(n.nombre)};position:relative">
+            ${n.foto ? `<img src="${n.foto}" alt="">` : initials(n.nombre)}
+          </div>
           <div style="font-size:18px;font-weight:600;text-align:center">${esc(n.nombre)}</div>
           <div style="font-size:13px;color:var(--text-2)">${esc(n.telefono||n.email||'')}</div>
-          <span class="m-tag" style="text-transform:uppercase;letter-spacing:.08em;font-size:11px">${n.rol}</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="m-tag" style="text-transform:uppercase;letter-spacing:.08em;font-size:11px">${n.rol}</span>
+            <span class="m-tag" style="background:${ec.bg};color:${ec.fg};border:1px solid ${ec.bd}">${(n.estado||'activo').toUpperCase()}</span>
+          </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px">
-          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${misLeads.length}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Leads</div></div>
-          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${misLeads.filter(l => Number(l.unread_count||0) > 0).length}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Pendientes</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${m.leadsActivos}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Activos</div></div>
+          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${m.leadsHoy}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Hoy</div></div>
+          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${m.tasaRespuesta}%</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Tasa resp.</div></div>
+          <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${m.leadsCerrados}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">Cerrados</div></div>
+        </div>
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:5px">Última actividad</div>
+          <div style="font-size:14px;color:var(--text-2);font-weight:500">${m.ultimaActividad ? horaCorta(m.ultimaActividad) : '—'}</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:20px">
+          <button id="btnEditarPerfil" style="flex:1;height:44px;border-radius:12px;border:1px solid var(--border-strong);background:var(--bg-2);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;font-family:inherit">${I(SVG.settings,16)} Editar</button>
+          <select id="selEstado" style="flex:1;height:44px;border-radius:12px;border:1px solid var(--border-strong);background:var(--bg-2);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;padding:0 10px;outline:none;appearance:none;-webkit-appearance:none">
+            ${['activo','ocupado','inactivo','vacaciones'].map(s => `<option value="${s}" ${n.estado===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
+          </select>
         </div>
         <button id="btnLogout" style="width:100%;height:48px;border-radius:12px;border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);font-size:15px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit">${I('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',18)} Cerrar sesión</button>
       </div>`;
+    // Wire estado selector
+    setTimeout(() => {
+      const sel = document.getElementById('selEstado');
+      if (sel) sel.addEventListener('change', async function() {
+        if (!me || !me.vendedorId) return;
+        haptic(8);
+        await api('/api/vendedores/'+me.vendedorId+'/estado', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ estado: this.value }) });
+        me.estado = this.value;
+        toast('Estado actualizado');
+      });
+      const edBtn = document.getElementById('btnEditarPerfil');
+      if (edBtn) edBtn.addEventListener('click', () => abrirEditarPerfil());
+    }, 50);
   } else {
     const map={ propiedades:[SVG.building,'Propiedades','Catálogo inteligente de lotes y proyectos con coincidencia por IA.'], tareas:[SVG.checkSquare,'Tareas','Tu día organizado: prioridades, recordatorios y seguimiento de cada lead.'], copiloto:[SVG.sparkles,'Copiloto SP','El centro inteligente: resúmenes, objeciones y próxima mejor acción.'] };
     const [ic,ti,de]=map[t]||[SVG.user,'',''];
@@ -717,6 +803,7 @@ function abrirNotificaciones(){ haptic(8);
 /* ════════ Tiempo real ════════ */
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
   es.addEventListener('nuevo_mensaje',async ev=>{ await cargar(); const dot=$('#navDot'); if(dot) dot.style.display=''; if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); } }catch(e){} });
+  es.addEventListener('lead_actualizado',async ev=>{ await cargar(); if(current&&$('#scChat').classList.contains('show')){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
 

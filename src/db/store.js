@@ -91,6 +91,7 @@ async function initDB() {
   ensureColumn('messages', 'media_mime', 'TEXT');
   ensureColumn('messages', 'media_filename', 'TEXT');
   ensureColumn('vendedores', 'pin', 'TEXT');
+  ensureColumn('vendedores', 'foto', 'TEXT');
   ensureColumn('leads', 'etiqueta', 'TEXT');
   ensureColumn('leads', 'unread_count', 'INTEGER DEFAULT 0');
   ensureColumn('leads', 'last_customer_message_at', 'DATETIME');
@@ -218,6 +219,8 @@ function saveMessage(leadId, from, to, body, direction, media) {
     leadId, from, to, body, direction,
     m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
   ]);
+  // Actualizar last_message, last_message_at y updated_at en el lead
+  run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
   const r = one('SELECT id FROM messages WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
   return r ? r.id : null;
 }
@@ -462,6 +465,30 @@ function setVendedorEstado(id, estado) {
 
 function setVendedorTelefono(id, telefono) {
   run('UPDATE vendedores SET telefono = ? WHERE id = ?', [telefono, id]);
+}
+
+function setVendedorNombre(id, nombre) {
+  run('UPDATE vendedores SET nombre = ? WHERE id = ?', [nombre, id]);
+}
+
+function setVendedorFoto(id, fotoBase64) {
+  run('UPDATE vendedores SET foto = ? WHERE id = ?', [fotoBase64, id]);
+}
+
+function getVendedorMetricas(id) {
+  const a = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND status != ?", [id, 'cerrado']);
+  const h = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND date(created_at) = date('now')", [id]);
+  const cer = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND status = ?", [id, 'cerrado']);
+  const res = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND first_response_at IS NOT NULL", [id]);
+  const tot = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ?", [id]);
+  const ua = one("SELECT MAX(timestamp) as t FROM messages WHERE direction = ? AND lead_id IN (SELECT id FROM leads WHERE assigned_to_id = ?)", ['outgoing', id]);
+  return {
+    leadsActivos: a ? a.c : 0,
+    leadsHoy: h ? h.c : 0,
+    leadsCerrados: cer ? cer.c : 0,
+    tasaRespuesta: tot && tot.c > 0 ? Math.round((res.c / tot.c) * 100) : 0,
+    ultimaActividad: ua ? ua.t : null,
+  };
 }
 
 // --- Etiqueta de pipeline del lead ---
@@ -838,6 +865,79 @@ function getLastMessageByConversation(conversationId) {
   return one('SELECT * FROM timeline WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', [conversationId]);
 }
 
+// --- Inbox unificado: legacy leads + nuevo schema ---
+function getUnlinkedLeads() {
+  return all(`
+    SELECT l.*, v.nombre AS assigned_to_nombre
+    FROM leads l
+    LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+    WHERE l.id NOT IN (SELECT lead_id FROM conversations WHERE lead_id IS NOT NULL)
+    ORDER BY l.updated_at DESC, l.id DESC
+  `);
+}
+
+function getOrCreateConversationForLead(leadId) {
+  const lead = one('SELECT * FROM leads WHERE id = ?', [leadId]);
+  if (!lead) return null;
+  let conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
+  if (conv) return getConversationById(conv.id);
+  const phone = lead.customer_phone || '';
+  let customer = findCustomerByChannel('whatsapp', phone);
+  if (!customer) {
+    customer = createCustomer(lead.customer_name || 'Cliente', phone);
+    linkChannelToCustomer(customer.id, 'whatsapp', phone, lead.customer_name || '');
+  }
+  run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta, last_message, last_message_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null,
+     lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
+     lead.etiqueta || 'sin_clasificar',
+     lead.last_message || '', lead.updated_at || lead.created_at, lead.updated_at || lead.created_at]);
+  conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
+  if (!conv) return null;
+  const msgs = getMessagesByLead(lead.id);
+  msgs.forEach(m => {
+    addTimelineEvent(conv.id, 'message', {
+      channel: 'whatsapp',
+      body: m.body || '',
+      direction: m.direction || 'incoming',
+      from_number: m.from_number || '',
+      to_number: m.to_number || '',
+      media_type: m.media_type || null,
+      media_id: m.media_id || null,
+      media_mime: m.media_mime || null,
+      media_filename: m.media_filename || null,
+      metadata: JSON.stringify({ legacy_message_id: m.id }),
+    });
+  });
+  return getConversationById(conv.id);
+}
+
+function getUnifiedConversations({ busqueda, vendedorId, limite } = {}) {
+  const lim = Number(limite) || 200;
+  const convs = getConversations({ busqueda, vendedorId, limite: lim });
+  const unified = convs.map(c => ({ ...c, _type: 'conversation' }));
+  const leads = getUnlinkedLeads();
+  leads.forEach(l => {
+    if (busqueda) {
+      const q = busqueda.toLowerCase();
+      if (!(String(l.customer_name || '')).toLowerCase().includes(q) && !(String(l.customer_phone || '')).includes(q)) return;
+    }
+    if (vendedorId && Number(l.assigned_to_id) !== Number(vendedorId)) return;
+    unified.push({
+      _type: 'lead',
+      id: l.id, channel: 'whatsapp',
+      customer_name: l.customer_name, customer_phone: l.customer_phone,
+      assigned_to_id: l.assigned_to_id, assigned_to_nombre: l.assigned_to_nombre,
+      status: l.status, unread_count: l.unread_count || 0,
+      last_message: l.last_message, last_message_at: l.updated_at || l.created_at,
+      etiqueta: l.etiqueta, lead_id: l.id,
+      updated_at: l.updated_at || l.created_at, created_at: l.created_at,
+    });
+  });
+  unified.sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
+  return unified;
+}
+
 // --- Workflows (automatización IF/THEN) ---
 function getAllWorkflows({ activo } = {}) {
   if (activo === true) return all('SELECT * FROM workflows WHERE activo = 1 ORDER BY id');
@@ -891,7 +991,7 @@ module.exports = {
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setLeadNombre,
-  addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, getVendedorByTelefono, getVendedorById, setVendedorPin,
+  addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
   getLeadsByVendedorId, getMessagesByLead, getMessageById,
@@ -912,6 +1012,7 @@ module.exports = {
   updateConversationPriority, getConversations, getConversationCount,
   addTimelineEvent, getTimelineByConversation, getLastMessageByConversation,
   syncLeadToConversation,
+  getOrCreateConversationForLead, getUnifiedConversations,
   getCitas, getCitaById, createCita, updateCita, deleteCita,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,

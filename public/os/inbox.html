@@ -272,12 +272,12 @@
   let current = null, chanFilter = 'todos', query = '', slashIdx = -1;
 
   /* ── Cargar datos ── */
-  const [convData, tplData, waTplData, vendData] = await Promise.all([
-    api('/api/inbox/conversations'),
-    api('/api/templates'),
-    api('/api/wa-templates'),
-    api('/api/vendedores'),
-  ]);
+    const [convData, tplData, waTplData, vendData] = await Promise.all([
+      api('/api/inbox/unified-conversations'),
+      api('/api/templates'),
+      api('/api/wa-templates'),
+      api('/api/vendedores'),
+    ]);
 
   convs = Array.isArray(convData) ? convData : [];
   templates = tplData || [];
@@ -338,7 +338,7 @@
             <span class="ibx-item__time">${timeago(c.updated_at)}</span>
           </div>
           <div class="ibx-item__bot">
-            <span class="ibx-item__prev">${esc(c.last || '—')}</span>
+            <span class="ibx-item__prev">${esc(c.last_message || c.last || '—')}</span>
             ${c.unread_count > 0 ? `<span class="ibx-badge">${c.unread_count > 99 ? '99+' : c.unread_count}</span>` : ''}
           </div>
         </div>
@@ -353,6 +353,15 @@
   async function abrirConv(id) {
     current = id; renderList();
     const c = convs.find(x => x.id === id); if (!c) return;
+    // Si es legacy lead sin conversación, convertir primero
+    if (c._type === 'lead') {
+      const res = await api('/api/inbox/leads/' + id + '/open', { method: 'POST' });
+      if (!res || !res.conversation) { toast('Error al abrir lead', 'err'); return; }
+      const conv = res.conversation; conv._type = 'conversation';
+      const idx = convs.findIndex(x => x.id === id && x._type === 'lead');
+      if (idx >= 0) convs[idx] = conv;
+      await abrirConv(conv.id); return;
+    }
     const ch = chan(c.channel);
     if (window.innerWidth <= 860) { listEl.classList.add('hide'); threadEl.classList.remove('hide'); }
 
@@ -926,7 +935,7 @@
       try {
         await api('/api/leads/proactive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, name, message, templateName: tpl }) });
         toast('Chat enviado a ' + phone, 'ok');
-        const r = await api('/api/inbox/conversations');
+        const r = await api('/api/inbox/unified-conversations');
         if (Array.isArray(r)) { convs = r; renderList(); }
       } catch (err) {
         toast('Error: ' + (err.message || err.detalle || 'desconocido'), 'err');
@@ -943,7 +952,7 @@
     es.addEventListener('nuevo_mensaje', async ev => {
       try {
         const data = JSON.parse(ev.data);
-        const r = await api('/api/inbox/conversations');
+        const r = await api('/api/inbox/unified-conversations');
         if (Array.isArray(r)) { convs = r; renderList(); }
         if (current && (data.leadId === current || data.conversationId === current)) await recargarMensajes(current);
         if (data.tipo === 'mensaje_cliente') {

@@ -362,7 +362,35 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
     nombre: req.session.nombre, email: req.session.email,
     rol: req.session.rol, vendedorId: req.session.vendedorId,
     telefono: v ? v.telefono : null,
+    foto: v ? v.foto : null,
+    estado: v ? v.estado : null,
   });
+});
+
+app.post('/api/me/nombre', auth.requireAuth, (req, res) => {
+  const { nombre } = req.body || {};
+  if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'nombre_requerido' });
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.setVendedorNombre(req.session.vendedorId, String(nombre).trim());
+  if (req.session.userId) {
+    try { const a = require('./db/adapter'); a.run('UPDATE usuarios SET nombre = ? WHERE id = ?', [String(nombre).trim(), req.session.userId]); } catch (e) {}
+  }
+  req.session.nombre = String(nombre).trim();
+  res.json({ ok: true, nombre: String(nombre).trim() });
+});
+
+app.post('/api/me/foto', auth.requireAuth, (req, res) => {
+  const { foto } = req.body || {};
+  if (!foto) return res.status(400).json({ error: 'foto_requerida' });
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.setVendedorFoto(req.session.vendedorId, String(foto));
+  res.json({ ok: true });
+});
+
+app.get('/api/me/metricas', auth.requireAuth, (req, res) => {
+  const vendedorId = req.session.vendedorId;
+  if (!vendedorId) return res.json({ leadsActivos: 0, leadsHoy: 0, leadsCerrados: 0, tasaRespuesta: 0, ultimaActividad: null });
+  res.json(store.getVendedorMetricas(vendedorId));
 });
 
 // ===================== PANEL DEL VENDEDOR =====================
@@ -446,6 +474,22 @@ app.get('/api/inbox/conversations/:id/leido', auth.requireAuth, async (req, res)
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   const adapter = require('./db/adapter'); adapter.run('UPDATE conversations SET unread_count = 0 WHERE id = ?', [conv.id]);
   res.json({ ok: true });
+});
+
+app.get('/api/inbox/unified-conversations', auth.requireAuth, (req, res) => {
+  if (req.session.rol !== 'admin') return res.json([]);
+  const { busqueda, vendedorId, limite } = req.query;
+  res.json(store.getUnifiedConversations({ busqueda, vendedorId, limite }));
+});
+
+app.post('/api/inbox/leads/:id/open', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId))
+    return res.status(403).json({ error: 'sin_permiso' });
+  const conversation = store.getOrCreateConversationForLead(lead.id);
+  if (!conversation) return res.status(500).json({ error: 'error_conversion' });
+  res.json({ conversation });
 });
 
 app.post('/api/inbox/conversations/:id/etiqueta', auth.requireAuth, (req, res) => {
