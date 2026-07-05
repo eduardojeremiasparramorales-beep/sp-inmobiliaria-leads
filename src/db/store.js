@@ -265,6 +265,10 @@ function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid,
     replyToId ? Number(replyToId) : null, wamid || null, st,
   ]);
   run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
+  // Incrementar unread_count para mensajes entrantes del cliente
+  if (direction === 'incoming') {
+    run('UPDATE leads SET unread_count = COALESCE(unread_count,0) + 1 WHERE id = ?', [leadId]);
+  }
   const r = one('SELECT id FROM messages WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
   return r ? r.id : null;
 }
