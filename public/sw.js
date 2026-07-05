@@ -74,7 +74,7 @@ self.addEventListener('push', (event) => {
     vibrate: [120, 60, 120],
     tag: data.tag || 'sp-lead',
     renotify: true,
-    data: { leadId: data.leadId || null, url: '/os/vendedor.html' },
+    data: { leadId: data.leadId || null, url: '/m/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

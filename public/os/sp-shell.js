@@ -109,7 +109,7 @@
   /* --- Nav mínima para vendedores --- */
   const NAV_VENDEDOR = [{
     title: 'Mi Trabajo',
-    items: [{ id: 'inbox', label: 'Mi Panel', icon: 'inbox', href: '/os/vendedor.html', badge: 'live' }],
+    items: [{ id: 'inbox', label: 'Mi Panel', icon: 'inbox', href: '/m/', badge: 'live' }],
   }];
 
   /* --- Montaje del shell --- */
@@ -124,11 +124,11 @@
     const isAdmin = me.rol === 'admin';
 
     // Vendedor intentando entrar a página de admin → su panel
-    if (!isAdmin && opts.adminOnly) { location.replace('/os/vendedor.html'); return null; }
+    if (!isAdmin && opts.adminOnly) { location.replace('/m/'); return null; }
 
     // Vendedor en cualquier página que no sea su panel → redirigir
-    if (!isAdmin && location.pathname !== '/os/vendedor.html') {
-      location.replace('/os/vendedor.html'); return null;
+    if (!isAdmin && location.pathname !== '/m/' && !location.pathname.startsWith('/m/')) {
+      location.replace('/m/'); return null;
     }
 
     const navGroups = isAdmin ? NAV : NAV_VENDEDOR;

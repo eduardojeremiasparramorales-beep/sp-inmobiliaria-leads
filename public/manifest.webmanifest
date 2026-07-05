@@ -21,7 +21,7 @@
       "name": "Mis Leads",
       "short_name": "Leads",
       "description": "Ver mis leads asignados",
-      "url": "/os/vendedor.html",
+      "url": "/m/",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ],

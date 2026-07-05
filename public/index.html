@@ -27,8 +27,7 @@
     .then(function (u) {
       if (!u) { location.replace('/login.html'); return; }
       if (u.rol === 'admin') { location.replace('/os/dashboard.html'); return; }
-      var isMobile = window.matchMedia('(max-width: 820px)').matches || ('ontouchstart' in window && window.innerWidth < 900);
-      location.replace(isMobile ? '/m/' : '/os/vendedor.html');
+      location.replace('/m/');
     })
     .catch(function () { location.replace('/login.html'); });
 </script>

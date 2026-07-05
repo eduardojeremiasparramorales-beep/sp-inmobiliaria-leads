@@ -228,7 +228,7 @@
 
   // Si ya hay sesión, redirigir
   fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
-    if(u) location.href = u.rol==='admin' ? '/os/dashboard.html' : '/os/vendedor.html';
+    if(u) location.href = u.rol==='admin' ? '/os/dashboard.html' : '/m/';
   });
 
   // ── SCREEN 1: Phone number ──
@@ -362,7 +362,7 @@
         return;
       }
       // Éxito
-      location.href = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/os/vendedor.html';
+      location.href = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/m/';
     } catch(err) {
       pinError.textContent = 'Error de conexión';
       pinError.classList.add('show');
