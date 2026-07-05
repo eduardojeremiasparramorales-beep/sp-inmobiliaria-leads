@@ -154,6 +154,28 @@ async function initDB() {
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_push_vendedor ON push_subscriptions(vendedor_id)`);
 
+  execSQL(`CREATE TABLE IF NOT EXISTS vendedor_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendedor_id INTEGER NOT NULL,
+    titulo TEXT NOT NULL,
+    cuerpo TEXT NOT NULL,
+    created_at DATETIME DEFAULT (datetime('now'))
+  )`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_vt_vendedor ON vendedor_templates(vendedor_id)`);
+
+  execSQL(`CREATE TABLE IF NOT EXISTS propiedades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    descripcion TEXT DEFAULT '',
+    ciudad TEXT DEFAULT '',
+    precio REAL DEFAULT 0,
+    m2 REAL DEFAULT 0,
+    tipo TEXT DEFAULT 'lote',
+    estado TEXT DEFAULT 'disponible' CHECK (estado IN ('disponible','reservado','vendido')),
+    imagen_url TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now'))
+  )`);
+
   createNewTables(adapter.getDB());
 
   // Puente legacy → multicanal: cada conversación puede apuntar a su lead
@@ -401,6 +423,58 @@ function addTemplate(titulo, cuerpo) {
 
 function deleteTemplate(id) {
   run('DELETE FROM templates WHERE id = ?', [id]);
+}
+
+// --- Templates del vendedor (respuestas rápidas personalizadas) ---
+function getVendedorTemplates(vendedorId) {
+  return all('SELECT * FROM vendedor_templates WHERE vendedor_id = ? ORDER BY titulo', [vendedorId]);
+}
+function addVendedorTemplate(vendedorId, titulo, cuerpo) {
+  run('INSERT INTO vendedor_templates (vendedor_id, titulo, cuerpo) VALUES (?, ?, ?)', [vendedorId, titulo, cuerpo]);
+}
+function deleteVendedorTemplate(id) {
+  run('DELETE FROM vendedor_templates WHERE id = ?', [id]);
+}
+
+// --- Estadísticas semanales del vendedor ---
+function getStatsSemanales(vendedorId) {
+  const semana = "datetime('now', '-7 days')";
+  const anterior = "datetime('now', '-14 days')";
+  const nuevos = one(`SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND created_at >= ${semana}`, [vendedorId]);
+  const anteriores = one(`SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND created_at >= ${anterior} AND created_at < ${semana}`, [vendedorId]);
+  const respondidos = one(`SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND first_response_at IS NOT NULL AND first_response_at >= ${semana}`, [vendedorId]);
+  const respondidosAnt = one(`SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND first_response_at IS NOT NULL AND first_response_at >= ${anterior} AND first_response_at < ${semana}`, [vendedorId]);
+  const cerrados = one(`SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND status = 'cerrado' AND updated_at >= ${semana}`, [vendedorId]);
+  const cerradosAnt = one(`SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND status = 'cerrado' AND updated_at >= ${anterior} AND updated_at < ${semana}`, [vendedorId]);
+  const tprom = one(`SELECT AVG((julianday(first_response_at) - julianday(created_at)) * 1440) as c FROM leads WHERE assigned_to_id = ? AND first_response_at IS NOT NULL AND first_response_at >= ${semana}`, [vendedorId]);
+  const tpromAnt = one(`SELECT AVG((julianday(first_response_at) - julianday(created_at)) * 1440) as c FROM leads WHERE assigned_to_id = ? AND first_response_at IS NOT NULL AND first_response_at >= ${anterior} AND first_response_at < ${semana}`, [vendedorId]);
+  return {
+    nuevos: nuevos ? nuevos.c : 0, nuevosAnt: anteriores ? anteriores.c : 0,
+    respondidos: respondidos ? respondidos.c : 0, respondidosAnt: respondidosAnt ? respondidosAnt.c : 0,
+    cerrados: cerrados ? cerrados.c : 0, cerradosAnt: cerradosAnt ? cerradosAnt.c : 0,
+    tiempoPromedio: tprom ? Math.round(tprom.c) : 0,
+    tiempoPromedioAnt: tpromAnt ? Math.round(tpromAnt.c) : 0,
+  };
+}
+
+// --- Propiedades (lotes / inmuebles) ---
+function getPropiedades() {
+  return all('SELECT * FROM propiedades ORDER BY created_at DESC');
+}
+function getPropiedadById(id) {
+  return one('SELECT * FROM propiedades WHERE id = ?', [id]);
+}
+function createPropiedad(data) {
+  run('INSERT INTO propiedades (nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [data.nombre, data.descripcion||'', data.ciudad||'', data.precio||0, data.m2||0, data.tipo||'lote', data.estado||'disponible', data.imagen_url||'']);
+  return getPropiedadById(lastID());
+}
+function updatePropiedad(id, data) {
+  run('UPDATE propiedades SET nombre=?, descripcion=?, ciudad=?, precio=?, m2=?, tipo=?, estado=?, imagen_url=? WHERE id=?',
+    [data.nombre, data.descripcion||'', data.ciudad||'', data.precio||0, data.m2||0, data.tipo||'lote', data.estado||'disponible', data.imagen_url||'', id]);
+}
+function deletePropiedad(id) {
+  run('DELETE FROM propiedades WHERE id = ?', [id]);
 }
 
 // --- Suscripciones push ---
@@ -1018,6 +1092,8 @@ module.exports = {
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
   getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus,
   getTemplates, addTemplate, deleteTemplate,
+  getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
+  getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
   createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,
   getConfig, setConfig,

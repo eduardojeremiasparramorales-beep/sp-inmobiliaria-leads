@@ -629,7 +629,9 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
   }
 
   try {
-    const smartResult = await sendMessageSmart(lead.customer_phone, String(mensaje), lead.id);
+    const nombreVendedor = req.session.nombre || 'Asesor SP';
+    const mensajeConPrefijo = `*${nombreVendedor}:* ${String(mensaje)}`;
+    const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConPrefijo, lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
     const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
@@ -684,20 +686,23 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   try {
     const buffer = Buffer.from(dataBase64, 'base64');
     if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
+    const nombreVendedor = req.session.nombre || 'Asesor SP';
+    const captionConPrefijo = caption ? `*${nombreVendedor}:* ${caption}` : '';
+    const displayBody = caption ? captionConPrefijo : `[${tipo}]`;
     const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
     const mediaId = await uploadMedia(buffer, mime, filename);
-    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
+    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, captionConPrefijo, filename);
     const wamid = mediaResult && mediaResult.messages && mediaResult.messages[0] ? mediaResult.messages[0].id : null;
 
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
-    store.saveMessage(lead.id, fromNumber, lead.customer_phone, caption || `[${tipo}]`, 'outgoing', {
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
       media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
     }, replyToId, wamid, 'sent');
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
     store.syncLeadToConversation(store.getLeadById(lead.id), {
-      direction: 'outgoing', body: caption || `[${tipo}]`, fromNumber, toNumber: lead.customer_phone,
+      direction: 'outgoing', body: displayBody, fromNumber, toNumber: lead.customer_phone,
       media: { media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename },
     });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
@@ -706,6 +711,37 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   } catch (e) {
     console.error('Error enviando media desde panel:', e.message);
     res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// Eliminar un mensaje
+app.delete('/api/messages/:id', auth.requireAuth, (req, res) => {
+  const msgId = req.params.id;
+  if (!msgId || isNaN(Number(msgId))) return res.status(400).json({ error: 'id_invalido' });
+  try {
+    const store = require('./db/store');
+    const adapter = require('./db/adapter');
+    // Verificar que el mensaje pertenezca a un lead del vendedor
+    const row = adapter.get('SELECT lead_id, media_type, media_filename FROM messages WHERE id = ?', [Number(msgId)]);
+    if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
+    if (req.session.rol !== 'admin') {
+      const lead = store.getLeadById(row.lead_id);
+      if (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+        return res.status(403).json({ error: 'sin_permiso' });
+      }
+    }
+    // Eliminar archivo de media si existe
+    if (row.media_filename) {
+      try {
+        const mediaPath = require('path').join(__dirname, '..', 'data', 'media', String(row.media_filename));
+        if (require('fs').existsSync(mediaPath)) require('fs').unlinkSync(mediaPath);
+      } catch (e) { /* ignorar */ }
+    }
+    adapter.run('DELETE FROM messages WHERE id = ?', [Number(msgId)]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error eliminando mensaje:', e.message);
+    res.status(500).json({ error: 'error_interno' });
   }
 });
 
@@ -757,6 +793,42 @@ app.delete('/api/citas/:id', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   store.deleteCita(cita.id);
+  res.json({ ok: true });
+});
+
+// ===================== PROPIEDADES =====================
+app.get('/api/propiedades', auth.requireAuth, (req, res) => {
+  res.json(store.getPropiedades());
+});
+app.get('/api/propiedades/:id', auth.requireAuth, (req, res) => {
+  const p = store.getPropiedadById(req.params.id);
+  if (!p) return res.status(404).json({ error: 'no_existe' });
+  res.json(p);
+});
+app.post('/api/propiedades', auth.requireAdmin, (req, res) => {
+  const { nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'nombre_requerido' });
+  const p = store.createPropiedad({ nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url });
+  res.json({ ok: true, propiedad: p });
+});
+app.put('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
+  const existente = store.getPropiedadById(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'no_existe' });
+  const d = req.body || {};
+  store.updatePropiedad(req.params.id, {
+    nombre: d.nombre || existente.nombre,
+    descripcion: d.descripcion !== undefined ? d.descripcion : existente.descripcion,
+    ciudad: d.ciudad !== undefined ? d.ciudad : existente.ciudad,
+    precio: d.precio !== undefined ? d.precio : existente.precio,
+    m2: d.m2 !== undefined ? d.m2 : existente.m2,
+    tipo: d.tipo || existente.tipo,
+    estado: d.estado || existente.estado,
+    imagen_url: d.imagen_url !== undefined ? d.imagen_url : existente.imagen_url,
+  });
+  res.json({ ok: true });
+});
+app.delete('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
+  store.deletePropiedad(req.params.id);
   res.json({ ok: true });
 });
 
@@ -1171,6 +1243,32 @@ app.post('/api/templates', auth.requireAdmin, (req, res) => {
 app.delete('/api/templates/:id', auth.requireAdmin, (req, res) => {
   store.deleteTemplate(req.params.id);
   res.json({ ok: true });
+});
+
+// ===================== TEMPLATES DEL VENDEDOR (mis respuestas) =====================
+app.get('/api/mis-templates', auth.requireAuth, (req, res) => {
+  const vendedorId = req.user.vendedorId;
+  if (!vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  res.json(store.getVendedorTemplates(vendedorId));
+});
+app.post('/api/mis-templates', auth.requireAuth, (req, res) => {
+  const { titulo, cuerpo } = req.body || {};
+  if (!titulo || !cuerpo) return res.status(400).json({ error: 'titulo y cuerpo requeridos' });
+  const vendedorId = req.user.vendedorId;
+  if (!vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.addVendedorTemplate(vendedorId, titulo, cuerpo);
+  res.json({ ok: true });
+});
+app.delete('/api/mis-templates/:id', auth.requireAuth, (req, res) => {
+  store.deleteVendedorTemplate(req.params.id);
+  res.json({ ok: true });
+});
+
+// ===================== ESTADÍSTICAS SEMANALES =====================
+app.get('/api/me/stats-semanales', auth.requireAuth, (req, res) => {
+  const vendedorId = req.user.vendedorId;
+  if (!vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  res.json(store.getStatsSemanales(vendedorId));
 });
 
 // ===================== USUARIOS (admin) =====================
