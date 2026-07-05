@@ -90,6 +90,7 @@ async function initDB() {
   ensureColumn('messages', 'media_id', 'TEXT');
   ensureColumn('messages', 'media_mime', 'TEXT');
   ensureColumn('messages', 'media_filename', 'TEXT');
+  ensureColumn('messages', 'reply_to_id', 'INTEGER');
   ensureColumn('vendedores', 'pin', 'TEXT');
   ensureColumn('vendedores', 'foto', 'TEXT');
   ensureColumn('leads', 'etiqueta', 'TEXT');
@@ -213,13 +214,13 @@ function assignLeadToVendedor(leadId, vendedor) {
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
 }
 
-function saveMessage(leadId, from, to, body, direction, media) {
+function saveMessage(leadId, from, to, body, direction, media, replyToId) {
   const m = media || {};
-  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
     leadId, from, to, body, direction,
     m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
+    replyToId ? Number(replyToId) : null,
   ]);
-  // Actualizar last_message, last_message_at y updated_at en el lead
   run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
   const r = one('SELECT id FROM messages WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
   return r ? r.id : null;
@@ -298,6 +299,10 @@ function marcarLeido(leadId) {
   run('UPDATE leads SET unread_count = 0 WHERE id = ?', [Number(leadId)]);
 }
 
+function setUnreadCount(leadId, count) {
+  run('UPDATE leads SET unread_count = ? WHERE id = ?', [Number(count), Number(leadId)]);
+}
+
 // Editar el nombre del contacto
 function setLeadNombre(leadId, nombre) {
   run('UPDATE leads SET customer_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(nombre), Number(leadId)]);
@@ -361,11 +366,21 @@ function updateUsuarioVendedorId(id, vendedorId) {
 
 // --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
-  return all('SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? ORDER BY l.updated_at DESC', [vendedorId]);
+  return all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.updated_at DESC", [vendedorId, 'cerrado']);
+}
+
+function getArchivedLeadsByVendedorId(vendedorId) {
+  return all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status = ? ORDER BY l.updated_at DESC", [vendedorId, 'cerrado']);
 }
 
 function getMessagesByLead(leadId) {
-  return all('SELECT * FROM messages WHERE lead_id = ? ORDER BY timestamp ASC, id ASC', [leadId]);
+  return all(`
+    SELECT m.*, r.body AS reply_to_body, r.direction AS reply_to_direction, r.media_type AS reply_to_media_type
+    FROM messages m
+    LEFT JOIN messages r ON r.id = m.reply_to_id
+    WHERE m.lead_id = ?
+    ORDER BY m.timestamp ASC, m.id ASC
+  `, [leadId]);
 }
 
 // --- Templates (respuestas rápidas) ---
@@ -990,11 +1005,11 @@ module.exports = {
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
-  marcarLeido, setLeadNombre,
+  marcarLeido, setUnreadCount, setLeadNombre,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
-  getLeadsByVendedorId, getMessagesByLead, getMessageById,
+  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById,
   getTemplates, addTemplate, deleteTemplate,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
   createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,

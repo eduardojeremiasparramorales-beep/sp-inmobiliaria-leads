@@ -141,6 +141,9 @@
   .bub img,.bub video{ max-width:210px; border-radius:12px; display:block; }
   .bub audio{ width:210px; }
   .bub a.file{ color:inherit; text-decoration:underline; word-break:break-all; }
+  .bub-quote{ border-left:3px solid var(--gold); padding:4px 8px; margin-bottom:6px; border-radius:4px; background:rgba(200,164,90,.08); font-size:12.5px; line-height:1.3; }
+  .bub-quote span{ display:block; font-size:10px; color:var(--gold); font-weight:600; margin-bottom:2px; }
+  .bub--out .bub-quote{ border-left-color:#83B778; }
 
   /* ── Input inteligente ── */
   .c-input{ padding:8px 12px calc(8px + var(--safe-b)); border-top:1px solid var(--border-soft); background:var(--bg-1); }
@@ -243,6 +246,33 @@
 
   /* Toast */
   .m-toast{ position:absolute; left:50%; bottom:calc(var(--nav-h) + var(--safe-b) + 20px); transform:translateX(-50%) translateY(20px); background:rgba(28,28,28,.95); backdrop-filter:blur(20px); border:1px solid var(--border-strong); color:var(--text); padding:11px 18px; border-radius:999px; font-size:13.5px; font-weight:500; box-shadow:var(--sh-3); opacity:0; transition:all .3s var(--spring); z-index:60; pointer-events:none; white-space:nowrap; }
+
+  /* ── Green dot unread ── */
+  .m-unread-dot{ position:absolute; top:-1px; right:-1px; width:13px; height:13px; border-radius:50%; background:#34C759; border:2.5px solid var(--bg-0); z-index:3; animation:pulse-dot 2s ease-in-out infinite; }
+  @keyframes pulse-dot{ 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  /* ── Archivados toggle ── */
+  .m-arch-btn{ display:flex; align-items:center; gap:8px; padding:8px 18px; font-size:13px; color:var(--text-3); cursor:pointer; border-bottom:1px solid var(--border-soft); background:var(--bg-1); transition:background .15s; }
+  .m-arch-btn:active{ background:var(--bg-2); }
+  .m-arch-btn svg{ width:17px; height:17px; }
+  .m-arch-btn .badge{ margin-left:auto; background:var(--bg-3); color:var(--text-2); padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .m-arch-btn.active{ color:var(--gold); }
+  .m-card.archived{ opacity:.6; }
+  .m-card.archived .m-card__time{ color:var(--text-3); }
+
+  /* ── Reply bar ── */
+  .c-reply{ display:none; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-3); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); }
+  .c-reply.show{ display:flex; }
+  .c-reply__line{ width:3px; border-radius:3px; background:var(--gold); flex-shrink:0; height:32px; }
+  .c-reply__info{ flex:1; min-width:0; }
+  .c-reply__label{ font-size:11px; color:var(--gold); font-weight:600; }
+  .c-reply__preview{ font-size:13px; color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .c-reply__x{ width:28px; height:28px; border-radius:50%; background:none; border:none; color:var(--text-3); display:grid; place-items:center; flex-shrink:0; cursor:pointer; }
+  .c-reply__x svg{ width:16px; height:16px; }
+
+  /* ── Swipe en mensajes ── */
+  .msg-wrap{ position:relative; overflow:hidden; margin-bottom:3px; }
+  .msg-wrap .msg-reply-act{ position:absolute; top:0; bottom:0; right:0; width:56px; display:flex; align-items:center; justify-content:center; background:var(--bg-4); border:none; color:var(--gold); font-size:10px; font-weight:600; flex-direction:column; gap:2px; }
   .m-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
   .hidden{ display:none !important; }
@@ -325,6 +355,7 @@ const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats';
 let current = null, currentMsgs = [], metricas = null;
+let showArchivados = false, archivadosCount = 0, archivedLeads = [], replyTo = null;
 
 const ETQ = { sin_clasificar:{t:'Nuevo',cls:'sin_clasificar'}, interesado:{t:'Interesado',cls:'interesado'}, negociacion:{t:'Negociación',cls:'negociacion'}, cita:{t:'Cita',cls:'cita'}, vendido:{t:'Vendido',cls:'vendido'}, no_interesado:{t:'No int.',cls:'no_interesado'} };
 const etqLabel = v => (ETQ[v]||{t:v}).t;
@@ -380,6 +411,7 @@ async function init(){
     metricas = await api('/api/me/metricas');
     renderFilters();
     await cargar();
+    await cargarArchivados();
     conectarStream();
   }
   wire();
@@ -389,6 +421,9 @@ async function init(){
 }
 
 async function cargar(){ const d = await api('/api/mis-leads'); leads = d || []; renderList(); }
+async function cargarArchivados(){ const d = await api('/api/mis-leads/archivados'); archivedLeads = d || []; archivadosCount = archivedLeads.length; }
+function leadsActivos(){ return leadsFiltrados(); }
+function leadsArchivados(){ let a = archivedLeads; if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)); } return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
 
 /* ════════ Filtros ════════ */
 const FILTROS = [['todos','Todos'],['sin_clasificar','Nuevos'],['interesado','Interesados'],['negociacion','Negociación'],['cita','Citas'],['vendido','Vendidos']];
@@ -397,25 +432,41 @@ function renderFilters(){ $('#filters').innerHTML = FILTROS.map(([k,l])=>{ const
 function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); } return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
 
 /* ════════ Lista ════════ */
-function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div class="m-ptr" id="ptr"><span class="spin"></span></div>'; const items=leadsFiltrados();
-  if(!items.length){ box.innerHTML = ptr + `<div class="m-empty"><div class="ic">${I(SVG.chat,28)}</div><h3>Sin conversaciones</h3><p>${leads.length?'No hay resultados para este filtro.':'Aquí aparecerán tus leads asignados.'}</p></div>`; return; }
-  box.innerHTML = ptr + items.map((l,idx)=>cardHTML(l,idx)).join('');
+function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div class="m-ptr" id="ptr"><span class="spin"></span></div>';
+  const items = showArchivados ? leadsArchivados() : leadsFiltrados();
+  const archBtn = archivadosCount > 0 ? `<div class="m-arch-btn" id="archToggle">${I(SVG.archive,17)}<span>Archivados</span><span class="badge">${archivadosCount}</span></div>` : '';
+  if(!items.length && showArchivados){
+    box.innerHTML = ptr + archBtn + `<div class="m-empty"><div class="ic">${I(SVG.archive,28)}</div><h3>Sin archivados</h3><p>Los leads que archives aparecerán aquí.</p></div>`;
+    const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
+    return;
+  }
+  if(!items.length){
+    box.innerHTML = ptr + archBtn + `<div class="m-empty"><div class="ic">${I(SVG.chat,28)}</div><h3>Sin conversaciones</h3><p>${leads.length?'No hay resultados para este filtro.':'Aquí aparecerán tus leads asignados.'}</p></div>`;
+    const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
+    return;
+  }
+  box.innerHTML = ptr + archBtn + items.map((l,idx)=>cardHTML(l,idx)).join('');
   box.querySelectorAll('.m-row').forEach(row=>wireSwipe(row));
+  const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
 }
+
+function toggleArchivados(){ haptic(8); showArchivados = !showArchivados; renderList(); }
 function cardHTML(l,idx){
-  const nombre=l.customer_name||'Cliente'; const unread=Number(l.unread_count||0); const st=estado(l); const e=ETQ[l.etiqueta||'sin_clasificar']||ETQ.sin_clasificar; const score=leadScore(l); const prio = score>=80?'var(--red)':score>=60?'var(--gold)':'transparent';
+  const nombre=l.customer_name||'Cliente'; const unread=Number(l.unread_count||0); const st=estado(l); const e=ETQ[l.etiqueta||'sin_clasificar']||ETQ.sin_clasificar; const score=leadScore(l); const prio = unread?'#34C759':score>=80?'var(--red)':score>=60?'var(--gold)':'transparent';
+  const archived = showArchivados;
+  const greenDot = unread && !archived ? '<span class="m-unread-dot"></span>' : '';
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
     <div class="m-row__actions left">
       <button class="swipe-act sa-call" data-a="call">${I(SVG.phone,19)}Llamar</button>
-      <button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button>
+      ${archived?`<button class="swipe-act sa-wa" data-a="unarch">${I(SVG.archive,19)}Volver</button>`:`<button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button>`}
     </div>
     <div class="m-row__actions right">
-      <button class="swipe-act sa-tag" data-a="tag">${I(SVG.tag,19)}Etapa</button>
-      <button class="swipe-act sa-arch" data-a="arch">${I(SVG.archive,19)}Archivar</button>
+      ${archived?'':`<button class="swipe-act sa-tag" data-a="tag">${I(SVG.tag,19)}No leído</button>`}
+      <button class="swipe-act sa-arch" data-a="${archived?'unarch':'arch'}">${I(SVG.archive,19)}${archived?'Volver':'Archivar'}</button>
     </div>
-    <div class="m-card ${unread?'unread':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
+    <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
-      <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}<span class="m-avatar__st ${st.cls}"></span></div>
+      <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread && !archived ? greenDot : ''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
         <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
         <div class="m-card__l2"><span class="m-card__msg">${esc(l.last_message||l.first_message||'—')}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
@@ -439,15 +490,21 @@ function wireSwipe(row){
   row.querySelectorAll('.swipe-act').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); card.style.transform='translateX(0)'; swipeAction(b.dataset.a, row); }));
   card.addEventListener('click',()=>{ if(Math.abs(dx)>6){ card.style.transform='translateX(0)'; dx=0; return; } abrirChat(Number(card.dataset.open)); });
 }
-function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.dataset.phone||'').replace(/[^\d+]/g,''); const l=leads.find(x=>x.id===id); haptic(12);
+function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.dataset.phone||'').replace(/[^\d+]/g,''); const l=findLead(id); haptic(12);
   if(a==='call'){ if(phone) location.href='tel:'+phone; else toast('Sin número'); }
   else if(a==='note'){ current=l; abrirNota(); }
   else if(a==='tag'){ current=l; abrirEtapa(); }
   else if(a==='arch'){
-    const l=leads.find(x=>x.id===id);
-    if(l){ toast('Archivando...'); api(`/api/leads/${id}/cerrar`,{method:'POST'}).then(()=>{ toast('Conversación archivada'); cargar(); }); }
+    if(l){ toast('Archivando...'); api(`/api/leads/${id}/cerrar`,{method:'POST'}).then(async()=>{ toast('Archivado'); await cargarArchivados(); if(!showArchivados) cargar(); else renderList(); }); }
+  }
+  else if(a==='unread'){
+    if(l){ api(`/api/leads/${id}/marcar-no-leido`,{method:'POST'}).then(()=>{ l.unread_count=1; renderList(); toast('Marcado como no leído'); }); }
+  }
+  else if(a==='unarch'){
+    if(l){ toast('Restaurando...'); api(`/api/leads/${id}/desarchivar`,{method:'POST'}).then(async()=>{ await cargarArchivados(); if(showArchivados) renderList(); else { cargar(); } toast('Restaurado a bandeja principal'); }); }
   }
 }
+function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>x.id===id); }
 
 /* ════════ Chat ════════ */
 async function abrirChat(id){ haptic(10); const l = leads.find(x=>x.id===id); current=l;
@@ -469,6 +526,14 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       </div>
     </header>
     <div class="c-msgs" id="cMsgs">${msgsHTML(msgs)}</div>
+    <div class="c-reply" id="cReply">
+      <div class="c-reply__line"></div>
+      <div class="c-reply__info">
+        <div class="c-reply__label" id="replyLabel"></div>
+        <div class="c-reply__preview" id="replyPreview"></div>
+      </div>
+      <button class="c-reply__x" id="replyX">${I(SVG.x,16)}</button>
+    </div>
     <div class="c-input">
       <div class="c-quick" id="cQuick">${QUICK.map(q=>`<button data-q="${esc(q.body)}">${q.t}</button>`).join('')}</div>
       <div class="c-input__row">
@@ -478,6 +543,8 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       </div>
     </div>`;
   const box=$('#cMsgs'); box.scrollTop=box.scrollHeight;
+  // Wire message swipe (reply)
+  setTimeout(()=>{ document.querySelectorAll('.msg-wrap').forEach(wireMsgSwipe); }, 100);
   $('#cBack').onclick=cerrarChat;
   $('#cId').onclick=()=>abrirPerfil();
   $('#scChat').querySelectorAll('.c-act').forEach(b=>b.onclick=()=>chatAccion(b.dataset.ca));
@@ -486,14 +553,45 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); });
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviar(); } });
   $('#cSend').onclick=enviar;
+  $('#replyX').onclick=cancelarReply;
   updateSend();
 }
 function updateSend(){ const b=$('#cSend'); if(!b) return; const hay=($('#cInput').value||'').trim().length>0; b.innerHTML=I(hay?SVG.send:SVG.mic,21); }
+
+/* ════════ Swipe to reply ──── */
+function wireMsgSwipe(wrap){ if(wrap._swipe) return; wrap._swipe=true;
+  const bub=wrap.querySelector('.bub'); if(!bub) return;
+  const actBtn=wrap.querySelector('.msg-reply-act'); if(!actBtn) return;
+  let x0=0,dx=0,drag=false;
+  bub.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; dx=0; drag=true; bub.style.transition='none'; wrap.style.overflow='visible'; },{passive:true});
+  bub.addEventListener('touchmove',e=>{ if(!drag) return; dx=Math.min(0,e.touches[0].clientX-x0); if(dx<-50){ dx=-56; drag=false; bub.style.transition='transform .25s var(--spring)'; bub.style.transform='translateX(-56px)'; haptic(8); const t=setTimeout(()=>{ bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; clearTimeout(t); },600); setReply(wrap.dataset.msgid); return; } bub.style.transform='translateX('+dx+'px)'; },{passive:true});
+  bub.addEventListener('touchend',()=>{ if(!drag) return; drag=false; bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; });
+  actBtn.addEventListener('click',e=>{ e.stopPropagation(); setReply(wrap.dataset.msgid); });
+}
+function setReply(msgId){
+  const m = currentMsgs.find(x=>String(x.id)===String(msgId)||String(x.id)===('temp_'+msgId));
+  if(!m) return; replyTo=m; haptic(12);
+  const bar=document.getElementById('cReply'); const lbl=document.getElementById('replyLabel'); const prev=document.getElementById('replyPreview');
+  if(!bar||!lbl||!prev) return;
+  const sender = m.direction!=='incoming' ? 'Tú' : (current?current.customer_name||'Cliente':'Cliente');
+  let preview= m.reply_to_body ? '↳ '+(m.body||'') : (m.body||'');
+  if(m.media_type){ const icons={'image':'🖼️','video':'🎬','audio':'🎙️','document':'📄'}; preview=icons[m.media_type]||'📎'; }
+  lbl.textContent='Respondiendo a '+sender; prev.textContent=preview.slice(0,100); bar.classList.add('show');
+  const inp=document.getElementById('cInput'); if(inp) inp.focus();
+}
+function cancelarReply(){ replyTo=null; const bar=document.getElementById('cReply'); if(bar) bar.classList.remove('show'); }
+
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; h+=`<div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${out?' ✓✓':''}</div></div>`; }
+  for(const m of msgs){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; h+=`<div class="msg-wrap" data-msgid="${m.id}" id="${wrapId}"><button class="msg-reply-act" data-r="${m.id}">${I(SVG.back,16)}Responder</button><div class="bub bub--${out?'out':'in'}">${msgInner(m)}<div class="bub__t">${soloHora(m.timestamp)}${out?' ✓✓':''}</div></div></div>`; }
   return h;
 }
-function msgInner(m){ if(m.media_type){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<audio src="${src}" controls></audio>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; } return esc(m.body); }
+function msgInner(m){
+  let quoteHTML='';
+  if(m.reply_to_id && m.reply_to_body){ const icon=m.reply_to_media_type?{'image':'🖼️','video':'🎬','audio':'🎙️','document':'📄'}[m.reply_to_media_type]||'📎':''; const preview=icon+(m.reply_to_body||'').slice(0,80); const label=m.reply_to_direction!=='incoming'?'Tú':'Cliente'; quoteHTML=`<div class="bub-quote"><span>${esc(label)}</span>${esc(preview)}</div>`; }
+  const content=m.media_type?renderMedia(m):esc(m.body||'');
+  return quoteHTML+content;
+}
+function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<audio src="${src}" controls></audio>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; }
 
 async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current||window._sending) return; window._sending=true; haptic([10,20,10]);
   const sendBtn=$('#cSend'); if(sendBtn) sendBtn.disabled=true;
@@ -504,7 +602,9 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
   currentMsgs.push(tempMsg);
   inp.value=''; inp.style.height='auto'; updateSend();
   $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
-  const r=await api(`/api/leads/${current.id}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:msg})});
+  const body = replyTo ? {mensaje:msg, replyTo:replyTo.id} : {mensaje:msg};
+  const r=await api(`/api/leads/${current.id}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  cancelarReply();
   if(r!==null){
     const d=await api(`/api/leads/${current.id}/mensajes`);
     if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); b.scrollTop=b.scrollHeight; }
@@ -550,7 +650,9 @@ function initFileInput(){
     const toBase64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
     const dataBase64=await toBase64(file); const mime=file.type||'application/octet-stream';
     closeSheet(); toast('Enviando...');
-    const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mime,filename:file.name,dataBase64,caption:''})});
+    const mediaBody = {mime,filename:file.name,dataBase64,caption:''}; if(replyTo) mediaBody.replyTo=replyTo.id;
+    const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(mediaBody)});
+    cancelarReply();
     if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Enviado'); } else toast('Error al enviar archivo');
   };
   document.body.appendChild(fi);
@@ -579,7 +681,6 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
       <div><div class="lp-name">${esc(nombre)}</div><div class="c-sub" style="justify-content:center">${esc(l.customer_phone||'')}</div></div>
       <div class="lp-actions">
         <button data-lp="call">${I(SVG.phone,21)}</button>
-        <button data-lp="wa">${I(SVG.megaphone,21)}</button>
         <button data-lp="cal">${I(SVG.calendar,21)}</button>
         <button data-lp="tl">${I(SVG.clock,21)}</button>
       </div>
@@ -602,7 +703,7 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="tl2">${I(SVG.clock,16)} Timeline</button>
     </div>`);
   $('#sheetBody').querySelectorAll('[data-lp]').forEach(b=>b.onclick=()=>{ const k=b.dataset.lp; const p=(l.customer_phone||'').replace(/[^\d+]/g,''); haptic(10);
-    if(k==='call'&&p) location.href='tel:'+p; else if(k==='wa'&&p) window.open('https://wa.me/'+p.replace('+',''),'_blank'); else if(k==='cal') toast('Agendar — próximamente'); else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); });
+    if(k==='call'&&p) location.href='tel:'+p; else if(k==='cal') toast('Agendar — próximamente'); else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); });
 }
 
 function abrirTimeline(){ const l=current;
@@ -710,7 +811,7 @@ const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building
 function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
   $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
 async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
-  if(t==='chats'){ $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='SP OS Enterprise'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
+  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='SP OS Enterprise'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
   else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = TABS.find(x=>x[0]===t);
     if(t==='perfil'){ const m = await api('/api/me/metricas'); if(m) metricas=m; }
     pantallaTab(t,label);

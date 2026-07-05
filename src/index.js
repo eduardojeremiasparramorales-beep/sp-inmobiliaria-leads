@@ -404,6 +404,11 @@ app.get('/api/mis-leads', auth.requireAuth, (req, res) => {
   res.json(leads.slice(0, limite));
 });
 
+app.get('/api/mis-leads/archivados', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.json([]);
+  res.json(store.getArchivedLeadsByVendedorId(req.session.vendedorId));
+});
+
 // Historial de mensajes de un lead (solo si le pertenece o es admin)
 app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
@@ -613,7 +618,7 @@ app.get('/api/inbox/media/:timelineId', auth.requireAuth, (req, res) => {
 
 // Responder a un cliente DESDE EL PANEL → se envía por el número oficial
 app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
-  const { mensaje } = req.body || {};
+  const { mensaje, replyTo } = req.body || {};
   if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_vacio' });
   if (String(mensaje).length > 4096) return res.status(400).json({ error: 'mensaje_muy_largo' });
 
@@ -626,7 +631,8 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
   try {
     const smartResult = await sendMessageSmart(lead.customer_phone, String(mensaje), lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
-    store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing');
+    const replyToId = replyTo ? Number(replyTo) : null;
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing', null, replyToId);
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') {
       store.updateLeadStatus(lead.id, 'contactado');
@@ -660,7 +666,7 @@ app.get('/api/media/:messageId', auth.requireAuth, (req, res) => {
 // Responder a un cliente con un archivo (imagen/audio/video/documento) desde el panel.
 // Body JSON: { mime, filename, dataBase64, caption }
 app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async (req, res) => {
-  const { mime, filename, dataBase64, caption } = req.body || {};
+  const { mime, filename, dataBase64, caption, replyTo } = req.body || {};
   if (!mime || !dataBase64) return res.status(400).json({ error: 'mime y dataBase64 requeridos' });
 
   const lead = store.getLeadById(req.params.id);
@@ -669,7 +675,6 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
     return res.status(403).json({ error: 'sin_permiso' });
   }
 
-  // Determinar el tipo de WhatsApp según el mime
   let tipo = 'document';
   if (mime.startsWith('image/')) tipo = 'image';
   else if (mime.startsWith('audio/')) tipo = 'audio';
@@ -683,9 +688,10 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
     await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
 
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
+    const replyToId = replyTo ? Number(replyTo) : null;
     store.saveMessage(lead.id, fromNumber, lead.customer_phone, caption || `[${tipo}]`, 'outgoing', {
       media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
-    });
+    }, replyToId);
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
     store.syncLeadToConversation(store.getLeadById(lead.id), {
@@ -759,7 +765,18 @@ app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
-  store.updateLeadStatus(lead.id, 'cerrado');
+  const adapter = require('./db/adapter');
+  adapter.run("UPDATE leads SET status = ?, updated_at = created_at WHERE id = ?", ['cerrado', lead.id]);
+  res.json({ ok: true });
+});
+
+app.post('/api/leads/:id/desarchivar', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.updateLeadStatus(lead.id, 'asignado');
   res.json({ ok: true });
 });
 
@@ -788,6 +805,16 @@ app.post('/api/leads/:id/leido', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   store.marcarLeido(lead.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/leads/:id/marcar-no-leido', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.setUnreadCount(lead.id, 1);
   res.json({ ok: true });
 });
 
