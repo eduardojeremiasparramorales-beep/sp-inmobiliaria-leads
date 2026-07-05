@@ -59,7 +59,7 @@
       { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: M('campaigns') },
       { id: 'automations', label: 'Automatizaciones', icon: 'automations', href: '/os/automatizaciones.html' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar', href: '/os/calendario.html' },
-      { id: 'analytics', label: 'Analytics', icon: 'analytics', href: '/os/analytics.html' },
+      { id: 'reportes', label: 'Reportes', icon: 'analytics', href: '/os/reportes.html' },
     ]},
     { title: 'Organización', items: [
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },

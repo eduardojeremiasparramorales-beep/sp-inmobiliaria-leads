@@ -246,6 +246,78 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
   }
 });
 
+// Reportes detallados (admin)
+app.get('/api/reportes', auth.requireAdmin, (req, res) => {
+  try {
+    const dbx = getDB();
+    const all = getLeads();
+    const vendedores = getVendedores();
+
+    // Leads por día (últimos 30)
+    const leadsPorDia = dbx.exec(`
+      SELECT date(created_at) as dia, COUNT(*) as total
+      FROM leads WHERE created_at >= datetime('now', '-30 days')
+      GROUP BY dia ORDER BY dia
+    `);
+    const leadsDiarios = (leadsPorDia[0] && leadsPorDia[0].values) ? leadsPorDia[0].values.map(r => ({ dia: r[0], total: r[1] })) : [];
+
+    // Mensajes por día (últimos 30)
+    const msgsPorDia = dbx.exec(`
+      SELECT date(timestamp) as dia, COUNT(*) as total
+      FROM messages WHERE timestamp >= datetime('now', '-30 days')
+      GROUP BY dia ORDER BY dia
+    `);
+    const msgsDiarios = (msgsPorDia[0] && msgsPorDia[0].values) ? msgsPorDia[0].values.map(r => ({ dia: r[0], total: r[1] })) : [];
+
+    // Origen
+    const origen = {};
+    all.forEach(l => { const o = l.origen || 'desconocido'; origen[o] = (origen[o] || 0) + 1; });
+
+    // Leads por hora
+    const porHora = dbx.exec(`
+      SELECT CAST(strftime('%H', created_at) AS INTEGER) as h, COUNT(*) as total
+      FROM leads GROUP BY h ORDER BY h
+    `);
+    const horaDist = (porHora[0] && porHora[0].values) ? porHora[0].values.map(r => ({ h: r[0], total: r[1] })) : [];
+
+    // Rendimiento detallado por vendedor
+    const vendData = vendedores.map(v => {
+      const suyos = all.filter(l => Number(l.assigned_to_id) === Number(v.id));
+      const vendidos = suyos.filter(l => l.etiqueta === 'vendido').length;
+      const activos = suyos.filter(l => l.status !== 'cerrado').length;
+      const respondidos = suyos.filter(l => l.first_response_at).length;
+      const tot = suyos.length;
+      let tiempoResp = null;
+      if (tot && respondidos) {
+        let suma = 0, count = 0;
+        suyos.forEach(l => {
+          if (l.first_response_at && l.created_at) {
+            const t0 = new Date(l.created_at.replace(' ', 'T') + 'Z').getTime();
+            const t1 = new Date(l.first_response_at.replace(' ', 'T') + 'Z').getTime();
+            if (t1 >= t0) { suma += (t1 - t0) / 60000; count++; }
+          }
+        });
+        tiempoResp = count ? Math.round(suma / count) : null;
+      }
+      return { id: v.id, nombre: v.nombre, estado: v.estado, total: tot, activos, vendidos, respondidos, conversion: tot ? Math.round((vendidos / tot) * 100) : 0, tiempoRespuesta: tiempoResp };
+    }).sort((a, b) => b.total - a.total);
+
+    // Etiquetas distribución
+    const porEtiqueta = { sin_clasificar: 0, interesado: 0, negociacion: 0, cita: 0, vendido: 0 };
+    all.forEach(l => { const e = l.etiqueta || 'sin_clasificar'; if (porEtiqueta[e] !== undefined) porEtiqueta[e]++; });
+
+    res.json({
+      leadsDiarios, msgsDiarios, origen, horaDist,
+      porEtiqueta, vendData,
+      totalLeads: all.length,
+      totalVendidos: porEtiqueta.vendido || 0,
+    });
+  } catch (e) {
+    console.error('Error en /api/reportes:', e.message);
+    res.status(500).json({ error: 'error_reportes' });
+  }
+});
+
 app.get('/api/vendedores', auth.requireAuth, (req, res) => res.json(getVendedores()));
 
 app.get('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
