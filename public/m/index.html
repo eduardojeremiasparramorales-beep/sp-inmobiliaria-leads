@@ -132,7 +132,7 @@
   .c-act svg{ width:20px; height:20px; }
 
   .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px 6px; display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
-  .c-date{ align-self:center; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:8px 0; }
+  .c-date{ align-self:center; flex-shrink:0; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:8px 0; }
   .bub{ max-width:80%; padding:9px 13px; border-radius:18px; font-size:14.5px; line-height:1.42; word-wrap:break-word; position:relative; animation:bubIn .28s var(--spring); }
   @keyframes bubIn{ from{ opacity:0; transform:translateY(6px) scale(.98); } }
   .bub--in{ background:var(--bg-3); border-bottom-left-radius:6px; }
@@ -271,7 +271,7 @@
   .c-reply__x svg{ width:16px; height:16px; }
 
   /* ── Swipe en mensajes ── */
-  .msg-wrap{ position:relative; overflow:hidden; }
+  .msg-wrap{ position:relative; overflow:hidden; flex-shrink:0; }
   .msg-wrap .msg-reply-act{ position:absolute; top:0; bottom:0; right:0; width:56px; display:flex; align-items:center; justify-content:center; background:var(--bg-4); border:none; color:var(--gold); font-size:10px; font-weight:600; flex-direction:column; gap:2px; }
   .m-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
