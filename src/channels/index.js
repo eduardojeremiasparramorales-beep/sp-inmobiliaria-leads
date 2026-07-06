@@ -22,6 +22,7 @@ function bootstrapChannels() {
 
 async function webhookReceiver(req, res) {
   const channel = req.params.channel || 'whatsapp';
+  console.log(`[WEBHOOK ${channel}] Recibido POST — Body:`, JSON.stringify(req.body).slice(0, 300));
   const adapter = getAdapter(channel);
 
   if (!adapter) {
@@ -31,7 +32,7 @@ async function webhookReceiver(req, res) {
   if (typeof adapter.verifySignature === 'function') {
     const valid = adapter.verifySignature(req);
     if (!valid) {
-      console.warn(`Webhook ${channel}: firma inválida — rechazado`);
+      console.warn(`[WEBHOOK ${channel}] Firma inválida — rechazado`);
       return res.sendStatus(401);
     }
   }
@@ -41,7 +42,11 @@ async function webhookReceiver(req, res) {
 
   try {
     const payload = adapter.parseWebhookPayload(req.body);
-    if (!payload) return;
+    if (!payload) {
+      console.warn(`[WEBHOOK ${channel}] Payload nulo — ignorado`);
+      return;
+    }
+    console.log(`[WEBHOOK ${channel}] Payload OK — from: ${payload.from}, type: ${payload.type}, body: ${payload.body}`);
 
     // Obtener nombre real del cliente desde Facebook/Instagram
     if (payload.channel === 'messenger' && typeof adapter.getUserName === 'function') {
@@ -63,11 +68,13 @@ async function webhookReceiver(req, res) {
     }
 
     const MessageRouter = require('../services/router');
+    console.log(`[WEBHOOK ${channel}] Enrutando mensaje de ${payload.from}...`);
     await MessageRouter.routeIncoming(payload.channel, payload.from, payload.body, {
       media: payload.media,
       metadata: payload.metadata,
       type: payload.type,
     });
+    console.log(`[WEBHOOK ${channel}] Mensaje enrutado correctamente`);
   } catch (e) {
     console.error(`Error procesando webhook de ${channel}:`, e.message);
   }
