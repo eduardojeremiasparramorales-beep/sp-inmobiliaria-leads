@@ -712,7 +712,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
 
   try {
     const nombreVendedor = req.session.nombre || 'Asesor';
-    const compania = store.getConfig('company_name') || 'SP Inmobiliaria';
+    const compania = store.getConfig('company_name') || 'Sp Leons Group';
     const mensajeConFirma = `${String(mensaje)}\n\n____________________\n*${nombreVendedor}*\n_Asesor · ${compania}_`;
     const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';

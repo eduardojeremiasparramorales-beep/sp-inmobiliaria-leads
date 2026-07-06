@@ -867,9 +867,11 @@ function startGrabacion(){
 }
 function detenerGrabacion(){ if(!_rec) return; _rec.stop(); clearInterval(_recTimer); _rec=null; }
 function cancelarGrabacion(){ _recCancelling=true; detenerGrabacion(); _recChunks=[]; _recSec=0; limpiarRecUI(); }
-async function enviarGrabacion(){ if(!_rec||_recChunks.length===0) return; detenerGrabacion(); haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
-  const blob=new Blob(_recChunks,{type:'audio/webm'}); const toBase64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
-  const dataBase64=await toBase64(blob); const mediaBody={mime:'audio/webm',filename:'nota-voz.webm',dataBase64,caption:''};
+async function enviarGrabacion(){ if(!_rec||_recChunks.length===0) return; haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
+  clearInterval(_recTimer); _recTimer=null; _rec.stop();
+  await new Promise(r=>{ const orig=_rec.onstop; _rec.onstop=()=>{ if(orig) orig(); r(); }; });
+  const blob=new Blob(_recChunks,{type:'audio/ogg; codecs=opus'}); const toBase64=f=>new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(f); });
+  const dataBase64=await toBase64(blob); const mediaBody={mime:'audio/ogg; codecs=opus',filename:'nota-voz.ogg',dataBase64,caption:''};
   if(replyTo) mediaBody.replyTo=replyTo.id;
   const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(mediaBody)});
   cancelarReply(); _recChunks=[]; _recSec=0; limpiarRecUI();
