@@ -1,0 +1,132 @@
+<script type="module">
+import { html, render } from 'https://unpkg.com/lit-html@3?module';
+
+const SPOS = window.SPOS;
+if (!SPOS) location.href = '/';
+
+let state = {
+  groups: [],
+  loading: true,
+  merging: null,
+  result: null,
+  error: null
+};
+
+async function loadGroups() {
+  state.loading = true;
+  state.error = null;
+  state.result = null;
+  renderView();
+  try {
+    const data = await SPOS.api('/api/admin/duplicates');
+    if (!data || !data.ok) throw new Error(data?.error || 'Error al cargar');
+    state.groups = data.groups || [];
+  } catch (e) {
+    state.error = e.message;
+  }
+  state.loading = false;
+  renderView();
+}
+
+async function mergeDuplicates(keepId, removeId) {
+  state.merging = { keepId, removeId };
+  renderView();
+  try {
+    const data = await SPOS.api('/api/admin/duplicates/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keepLeadId: keepId, removeLeadId: removeId })
+    });
+    if (!data || !data.ok) throw new Error(data?.error || 'Error al fusionar');
+    state.result = { type: 'success', msg: `Lead ${removeId} fusionado en ${keepId}. ${data.result.messagesMoved} mensajes movidos.` };
+    await loadGroups();
+  } catch (e) {
+    state.result = { type: 'error', msg: e.message };
+  }
+  state.merging = null;
+  renderView();
+}
+
+function renderView() {
+  const ctx = render(html`<div class="dedup-page">
+    <div class="dedup-header">
+      <h2 style="margin:0;font-size:18px">${SPOS.ICONS.zap} Depuración de leads</h2>
+      <p style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Busca y fusiona leads duplicados por teléfono</p>
+    </div>
+
+    ${state.error ? html`<div class="alert alert--error" style="margin:16px 0">${state.error}</div>` : ''}
+    ${state.result ? html`<div class="alert alert--${state.result.type === 'success' ? 'ok' : 'error'}" style="margin:16px 0">${state.result.msg}</div>` : ''}
+
+    <div style="display:flex;gap:8px;margin:16px 0">
+      <button class="btn btn--primary" @click=${loadGroups} ?disabled=${state.loading}>
+        ${state.loading ? 'Escaneando...' : `${SPOS.ICONS.refresh} Escanear duplicados`}
+      </button>
+    </div>
+
+    ${state.loading ? html`<div style="text-align:center;padding:40px;color:var(--text-3)">${SPOS.ICONS.refresh} Analizando base de datos...</div>` : ''}
+
+    ${!state.loading && state.groups.length === 0 ? html`
+      <div class="dedup-empty">
+        <div style="font-size:48px;margin-bottom:8px;opacity:0.5">${SPOS.ICONS.zap}</div>
+        <h3 style="margin:0;color:var(--text-2)">No hay duplicados</h3>
+        <p style="color:var(--text-3);margin:4px 0 0">Todos los leads tienen un teléfono único. Base de datos limpia.</p>
+      </div>
+    ` : ''}
+
+    ${!state.loading && state.groups.map(g => html`
+      <div class="dedup-group">
+        <div class="dedup-group-header">
+          <span class="dedup-phone">${g.phone}</span>
+          <span class="dedup-badge">${g.leads.length} registros</span>
+        </div>
+        <div class="dedup-leads">
+          ${g.leads.map((l, i) => html`
+            <div class="dedup-lead ${i === 0 ? 'dedup-lead--primary' : ''}">
+              <div class="dedup-lead-info">
+                <strong>#${l.id}</strong> ${l.nombre}
+                <span class="dedup-tag dedup-tag--${l.status}">${l.status}</span>
+                ${i === 0 ? html`<span class="dedup-tag dedup-tag--primary">Primario</span>` : ''}
+              </div>
+              <div class="dedup-lead-meta">
+                ${l.vendedorId ? html`<span>Vendedor: <strong>${l.vendedorId}</strong></span>` : html`<span style="color:var(--text-3)">Sin vendedor</span>`}
+                <span>${l.mensajes} mensajes</span>
+                <span>${l.creado ? new Date(l.creado).toLocaleDateString() : ''}</span>
+              </div>
+              ${i > 0 ? html`
+                <button class="btn btn--sm btn--primary" style="margin-top:8px"
+                  @click=${() => mergeDuplicates(g.leads[0].id, l.id)}
+                  ?disabled=${state.merging?.keepId === g.leads[0].id && state.merging?.removeId === l.id}>
+                  ${state.merging?.keepId === g.leads[0].id && state.merging?.removeId === l.id ? 'Fusionando...' : `Fusionar → #${g.leads[0].id}`}
+                </button>
+              ` : ''}
+            </div>
+          `)}
+        </div>
+      </div>
+    `)}
+  </div>`, SPOS.mount({ active: 'dedup', title: 'Depuración', crumb: 'Depuración de leads duplicados', padded: true, adminOnly: true }));
+}
+
+loadGroups();
+</script>
+<style>
+  .dedup-page { max-width: 800px; margin: 0 auto; }
+  .dedup-group { background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+  .dedup-group-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-3); border-bottom: 1px solid var(--border); }
+  .dedup-phone { font-family: 'Courier New', monospace; font-weight: 600; color: var(--gold); }
+  .dedup-badge { font-size: 11px; background: var(--gold); color: #000; padding: 2px 10px; border-radius: 10px; font-weight: 600; }
+  .dedup-leads { padding: 8px; }
+  .dedup-lead { padding: 10px 12px; border-radius: 8px; margin-bottom: 6px; background: var(--bg-1); border: 1px solid var(--border-soft); }
+  .dedup-lead--primary { border-color: var(--gold); background: rgba(200,164,90,0.05); }
+  .dedup-lead-info { display: flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+  .dedup-lead-meta { display: flex; gap: 16px; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+  .dedup-tag { font-size: 10px; padding: 1px 8px; border-radius: 6px; font-weight: 600; text-transform: uppercase; }
+  .dedup-tag--cerrado { background: rgba(255,80,80,0.15); color: #ff5050; }
+  .dedup-tag--asignado { background: rgba(78,123,70,0.15); color: var(--green); }
+  .dedup-tag--nuevo { background: rgba(200,164,90,0.15); color: var(--gold); }
+  .dedup-tag--primary { background: var(--gold); color: #000; }
+  .dedup-empty { text-align: center; padding: 60px 20px; background: var(--bg-2); border-radius: 16px; border: 1px dashed var(--border); }
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; }
+  .alert--ok { background: rgba(78,123,70,0.15); color: var(--green); border: 1px solid rgba(78,123,70,0.3); }
+  .alert--error { background: rgba(255,80,80,0.15); color: #ff5050; border: 1px solid rgba(255,80,80,0.3); }
+</style>

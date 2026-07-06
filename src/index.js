@@ -1725,6 +1725,29 @@ app.post('/api/seed', auth.requireAdmin, (req, res) => {
   res.json({ ok: true, vendedoresCreados: demo.length });
 });
 
+// ===================== DEDUPLICACIÓN =====================
+
+app.get('/api/admin/duplicates', auth.requireAdmin, (req, res) => {
+  try {
+    const groups = store.getDuplicateGroups();
+    res.json({ ok: true, groups });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/admin/duplicates/merge', auth.requireAdmin, (req, res) => {
+  try {
+    const { keepLeadId, removeLeadId } = req.body || {};
+    if (!keepLeadId || !removeLeadId) return res.status(400).json({ error: 'keepLeadId y removeLeadId requeridos' });
+    const result = store.mergeLeads(keepLeadId, removeLeadId);
+    console.log(`[DEDUP] Fusionado lead ${removeLeadId} → ${keepLeadId} (${result.messagesMoved} mensajes)`);
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Test webhook simulator
 app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
   const { phone, name, message } = req.body;

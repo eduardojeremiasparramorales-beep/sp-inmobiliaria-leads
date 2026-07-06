@@ -67,6 +67,7 @@
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
       { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: '/os/configuracion.html', admin: true },
+      { id: 'dedup', label: 'Depurar', icon: 'zap', href: '/os/deduplicar.html', admin: true },
       { id: 'design', label: 'Design System', icon: 'spark', href: '/os/design-system.html' },
     ]},
   ];

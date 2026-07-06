@@ -247,19 +247,32 @@ function saveLead(customerPhone, customerName, messageBody) {
   }
 
   const phone = normalizePhone(customerPhone);
-  const existing = one('SELECT id, messages_count, status FROM leads WHERE customer_phone = ? AND status != ?', [phone, 'cerrado']);
-  if (existing) {
-    run('UPDATE leads SET messages_count = ?, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\') WHERE id = ?', [existing.messages_count + 1, messageBody, existing.id]);
-    return { leadId: existing.id, isNew: false };
+
+  // Buscar en TODOS los leads (incluso cerrados) para NUNCA crear duplicados del mismo teléfono
+  const allMatches = all('SELECT id, messages_count, status, assigned_to_id FROM leads WHERE customer_phone = ? ORDER BY id ASC LIMIT 2', [phone]);
+
+  if (allMatches.length > 0) {
+    const existing = allMatches[0];
+    const wasClosed = existing.status === 'cerrado';
+
+    // Si estaba cerrado, lo reabrimos como 'asignado' para que entre al flujo de nuevo
+    if (wasClosed) {
+      run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', ['asignado', messageBody, existing.id]);
+    } else {
+      run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', [messageBody, existing.id]);
+    }
+
+    return { leadId: existing.id, isNew: false, wasClosed };
   }
 
-  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\'))', [phone, customerName, messageBody, messageBody]);
+  // No existe ningún lead con este teléfono → insertar nuevo
+  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\'))', [phone, customerName || 'Cliente', messageBody, messageBody]);
 
   const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [phone]);
   if (!r || !r.id) {
     throw new Error('No se pudo obtener ID del lead después de INSERT');
   }
-  return { leadId: r.id, isNew: true };
+  return { leadId: r.id, isNew: true, wasClosed: false };
 }
 
 function assignLeadToVendedor(leadId, vendedor) {
@@ -453,6 +466,63 @@ function resetLead(leadId) {
 
 function setFirstResponse(leadId) {
   run('UPDATE leads SET first_response_at = datetime(\'now\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
+}
+
+function getDuplicateGroups() {
+  const dupMap = {};
+  const rows = all("SELECT id, customer_phone, status, assigned_to_id, customer_name, messages_count, created_at FROM leads ORDER BY id");
+  rows.forEach(l => {
+    const norm = normalizePhone(l.customer_phone);
+    if (!dupMap[norm]) dupMap[norm] = [];
+    dupMap[norm].push(l);
+  });
+  const groups = [];
+  for (const [phone, leads] of Object.entries(dupMap)) {
+    if (leads.length > 1) {
+      groups.push({ phone, leads: leads.map(l => ({
+        id: l.id, status: l.status, vendedorId: l.assigned_to_id,
+        nombre: l.customer_name, mensajes: l.messages_count,
+        creado: l.created_at
+      }))});
+    }
+  }
+  return groups;
+}
+
+function mergeLeads(keepLeadId, removeLeadId) {
+  const keep = one('SELECT * FROM leads WHERE id = ?', [keepLeadId]);
+  const remove = one('SELECT * FROM leads WHERE id = ?', [removeLeadId]);
+  if (!keep || !remove) throw new Error('Uno de los leads no existe');
+
+  // Mover mensajes
+  const msgs = all('SELECT id FROM messages WHERE lead_id = ?', [removeLeadId]);
+  if (msgs.length > 0) {
+    const ids = msgs.map(m => m.id).join(',');
+    run(`UPDATE messages SET lead_id = ? WHERE id IN (${ids})`, [keepLeadId]);
+  }
+
+  // Mover notas
+  try {
+    const notes = all('SELECT id FROM lead_notes WHERE lead_id = ?', [removeLeadId]);
+    if (notes.length > 0) {
+      const ids = notes.map(n => n.id).join(',');
+      run(`UPDATE lead_notes SET lead_id = ? WHERE id IN (${ids})`, [keepLeadId]);
+    }
+  } catch(e) {}
+
+  // Mover conversaciones
+  try {
+    const convs = all('SELECT id FROM conversations WHERE lead_id = ?', [removeLeadId]);
+    if (convs.length > 0) {
+      const ids = convs.map(c => c.id).join(',');
+      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ? WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
+    }
+  } catch(e) {}
+
+  // Cerrar el lead duplicado
+  run("UPDATE leads SET status = 'cerrado' WHERE id = ?", [removeLeadId]);
+
+  return { keepId: keepLeadId, removedId: removeLeadId, messagesMoved: msgs.length };
 }
 
 function getLeads() {
@@ -1262,4 +1332,5 @@ module.exports = {
   editMessage, softDeleteMessage, pinLead, muteLead, clearLeadMessages,
   markMessageAsRead, markLeadMessagesAsRead,
   markDeletedForAll, markDeletedByClientWamid, getMessageByWamid,
+  getDuplicateGroups, mergeLeads,
 };
