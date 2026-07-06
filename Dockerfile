@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# ffmpeg: conversión de notas de voz (webm/mp4 → ogg/opus) para WhatsApp
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 COPY package*.json ./

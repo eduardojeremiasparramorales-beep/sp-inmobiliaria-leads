@@ -1,0 +1,68 @@
+// Conversión de audio a OGG/Opus con ffmpeg para compatibilidad con WhatsApp Cloud API.
+// Los navegadores graban en formatos distintos (Chrome: webm, Safari: mp4) y WhatsApp
+// solo acepta notas de voz en audio/ogg; codecs=opus.
+const { spawn, spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+let _ffmpegOk = null; // cache: null = no chequeado aún
+
+function isFfmpegAvailable() {
+  if (_ffmpegOk !== null) return _ffmpegOk;
+  try {
+    const r = spawnSync('ffmpeg', ['-version'], { timeout: 5000 });
+    _ffmpegOk = r.status === 0;
+  } catch (e) {
+    _ffmpegOk = false;
+  }
+  if (!_ffmpegOk) console.warn('[AUDIO] ffmpeg no disponible — solo se aceptarán audios OGG/Opus sin conversión');
+  return _ffmpegOk;
+}
+
+function isOggOpus(mime) {
+  return String(mime || '').split(';')[0].trim().toLowerCase() === 'audio/ogg';
+}
+
+// Convierte cualquier audio soportado por ffmpeg a OGG/Opus (mono, 32kbps, 48kHz),
+// el formato de nota de voz nativa de WhatsApp.
+// Devuelve { buffer, mime, ext }. Si ya es OGG, pasa sin convertir.
+async function convertToOggOpus(buffer, inputMime) {
+  if (isOggOpus(inputMime)) {
+    return { buffer, mime: 'audio/ogg; codecs=opus', ext: 'ogg' };
+  }
+  if (!isFfmpegAvailable()) {
+    const err = new Error('ffmpeg_no_disponible: no se puede convertir ' + inputMime + ' a OGG/Opus');
+    err.code = 'FFMPEG_MISSING';
+    throw err;
+  }
+
+  const id = crypto.randomBytes(6).toString('hex');
+  const inPath = path.join(os.tmpdir(), `sp-audio-in-${id}`);
+  const outPath = path.join(os.tmpdir(), `sp-audio-out-${id}.ogg`);
+  try {
+    fs.writeFileSync(inPath, buffer);
+    await new Promise((resolve, reject) => {
+      const args = ['-y', '-i', inPath, '-vn', '-c:a', 'libopus', '-b:a', '32k', '-ar', '48000', '-ac', '1', '-f', 'ogg', outPath];
+      const p = spawn('ffmpeg', args);
+      let stderr = '';
+      p.stderr.on('data', d => { stderr += d; if (stderr.length > 8192) stderr = stderr.slice(-8192); });
+      p.on('error', reject);
+      p.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error('ffmpeg salió con código ' + code + ': ' + stderr.slice(-500)));
+      });
+      // timeout de seguridad (60s)
+      setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} }, 60000).unref();
+    });
+    const out = fs.readFileSync(outPath);
+    if (!out || out.length === 0) throw new Error('ffmpeg produjo un archivo vacío');
+    return { buffer: out, mime: 'audio/ogg; codecs=opus', ext: 'ogg' };
+  } finally {
+    try { fs.unlinkSync(inPath); } catch (e) {}
+    try { fs.unlinkSync(outPath); } catch (e) {}
+  }
+}
+
+module.exports = { convertToOggOpus, isFfmpegAvailable };

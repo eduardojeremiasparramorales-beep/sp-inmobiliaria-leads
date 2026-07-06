@@ -11,6 +11,7 @@ const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
 const { sendMessage, sendMessageSmart, uploadMedia, sendMedia } = require('./services/whatsapp');
 const mediaStore = require('./services/media');
+const { convertToOggOpus } = require('./services/audio');
 const auth = require('./services/auth');
 const events = require('./services/events');
 const push = require('./services/push');
@@ -651,16 +652,22 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
   else if (mime.startsWith('video/')) tipo = 'video';
 
   try {
-    const buffer = Buffer.from(dataBase64, 'base64');
+    let buffer = Buffer.from(dataBase64, 'base64');
     if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
-    const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
-    const mediaId = await uploadMedia(buffer, mime, filename);
-    await sendMedia(telefono, mediaId, tipo, caption, filename);
+    let sendMime = mime, sendFilename = filename;
+    if (tipo === 'audio') {
+      // WhatsApp solo acepta notas de voz en OGG/Opus; los navegadores graban webm/mp4
+      const conv2 = await convertToOggOpus(buffer, mime);
+      buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
+    }
+    const storedFilename = mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
+    const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
+    await sendMedia(telefono, mediaId, tipo, caption, sendFilename);
 
     store.addTimelineEvent(conv.id, 'message', {
       channel: 'whatsapp', body: caption || `[${tipo}]`, direction: 'outgoing',
       from_number: 'panel', to_number: telefono,
-      media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+      media_type: tipo, media_id: mediaId, media_mime: sendMime, media_filename: storedFilename,
     });
     const adapter = require('./db/adapter');
     adapter.run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE id = ?', [caption || `[${tipo}]`, conv.id]);
@@ -668,7 +675,7 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
     if (conv.lead_id) {
       try {
         store.saveMessage(conv.lead_id, 'panel', telefono, caption || `[${tipo}]`, 'outgoing', {
-          media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+          media_type: tipo, media_id: mediaId, media_mime: sendMime, media_filename: storedFilename,
         });
       } catch (e) { console.error('media espejo lead:', e.message); }
     }
@@ -794,24 +801,30 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   else if (mime.startsWith('video/')) tipo = 'video';
 
   try {
-    const buffer = Buffer.from(dataBase64, 'base64');
+    let buffer = Buffer.from(dataBase64, 'base64');
     if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
+    let sendMime = mime, sendFilename = filename;
+    if (tipo === 'audio') {
+      // WhatsApp solo acepta notas de voz en OGG/Opus; los navegadores graban webm/mp4
+      const conv2 = await convertToOggOpus(buffer, mime);
+      buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
+    }
     const displayBody = caption || `[${tipo}]`;
-    const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
-    const mediaId = await uploadMedia(buffer, mime, filename);
-    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
+    const storedFilename = mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
+    const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
+    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, sendFilename);
     const wamid = mediaResult && mediaResult.messages && mediaResult.messages[0] ? mediaResult.messages[0].id : null;
 
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
     store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
-      media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+      media_type: tipo, media_id: mediaId, media_mime: sendMime, media_filename: storedFilename,
     }, replyToId, wamid, 'sent');
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
     store.syncLeadToConversation(store.getLeadById(lead.id), {
       direction: 'outgoing', body: displayBody, fromNumber, toNumber: lead.customer_phone,
-      media: { media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename },
+      media: { media_type: tipo, media_id: mediaId, media_mime: sendMime, media_filename: storedFilename },
     });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });

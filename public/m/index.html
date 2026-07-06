@@ -856,7 +856,8 @@ function startGrabacion(){
   _recSec=0; _recChunks=[]; _recCancelling=false; _recLocked=false;
   try{
     navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
-      _rec=new MediaRecorder(s);
+      const mt=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
+      _rec=new MediaRecorder(s, mt?{mimeType:mt}:{});
       _rec.ondataavailable=e=>{ if(e.data.size>0) _recChunks.push(e.data); };
       _rec.onstop=()=>{ s.getTracks().forEach(t=>t.stop()); };
       _rec.start(); haptic(20);
@@ -868,10 +869,13 @@ function startGrabacion(){
 function detenerGrabacion(){ if(!_rec) return; _rec.stop(); clearInterval(_recTimer); _rec=null; }
 function cancelarGrabacion(){ _recCancelling=true; detenerGrabacion(); _recChunks=[]; _recSec=0; limpiarRecUI(); }
 async function enviarGrabacion(){ if(!_rec||_recChunks.length===0) return; haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
-  clearInterval(_recTimer); _recTimer=null; _rec.stop();
+  clearInterval(_recTimer); _recTimer=null;
+  const recMime=_rec.mimeType||'audio/webm'; _rec.stop();
   await new Promise(r=>{ const orig=_rec.onstop; _rec.onstop=()=>{ if(orig) orig(); r(); }; });
-  const blob=new Blob(_recChunks,{type:'audio/ogg; codecs=opus'}); const toBase64=f=>new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(f); });
-  const dataBase64=await toBase64(blob); const mediaBody={mime:'audio/ogg; codecs=opus',filename:'nota-voz.ogg',dataBase64,caption:''};
+  // Usar el formato REAL que grabó el navegador (Chrome: webm, Safari: mp4); el servidor lo convierte a OGG/Opus
+  const ext=recMime.includes('ogg')?'ogg':recMime.includes('mp4')?'m4a':'webm';
+  const blob=new Blob(_recChunks,{type:recMime}); const toBase64=f=>new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(f); });
+  const dataBase64=await toBase64(blob); const mediaBody={mime:recMime,filename:'nota-voz.'+ext,dataBase64,caption:''};
   if(replyTo) mediaBody.replyTo=replyTo.id;
   const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(mediaBody)});
   cancelarReply(); _recChunks=[]; _recSec=0; limpiarRecUI();
