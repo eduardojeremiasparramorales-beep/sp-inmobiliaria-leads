@@ -43,6 +43,25 @@ async function webhookReceiver(req, res) {
     const payload = adapter.parseWebhookPayload(req.body);
     if (!payload) return;
 
+    // Obtener nombre real del cliente desde Facebook/Instagram
+    if (payload.channel === 'messenger' && typeof adapter.getUserName === 'function') {
+      try {
+        const profile = await adapter.getUserName(payload.from);
+        payload.metadata.name = profile.name;
+        payload.metadata.profile_pic = profile.profile_pic;
+      } catch (e) {
+        console.warn(`[${payload.channel}] No se pudo obtener perfil:`, e.message);
+      }
+    } else if (payload.channel === 'instagram' && typeof adapter.getUserProfile === 'function') {
+      try {
+        const profile = await adapter.getUserProfile(payload.from);
+        payload.metadata.name = profile.name;
+        payload.metadata.username = profile.username;
+      } catch (e) {
+        console.warn(`[${payload.channel}] No se pudo obtener perfil:`, e.message);
+      }
+    }
+
     const MessageRouter = require('../services/router');
     await MessageRouter.routeIncoming(payload.channel, payload.from, payload.body, {
       media: payload.media,

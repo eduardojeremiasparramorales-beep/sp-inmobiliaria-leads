@@ -657,11 +657,10 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
     return res.status(403).json({ error: 'sin_permiso' });
-  if (conv.channel !== 'whatsapp') return res.status(400).json({ error: 'canal_no_soporta_media' });
 
   const customer = store.getCustomerById(conv.customer_id);
-  const telefono = (customer && customer.phone) || conv.channel_conversation_id;
-  if (!telefono) return res.status(400).json({ error: 'cliente_sin_telefono' });
+  const to = (customer && customer.phone) || conv.channel_conversation_id;
+  if (!to) return res.status(400).json({ error: 'cliente_sin_telefono' });
 
   let tipo = 'document';
   if (mime.startsWith('image/')) tipo = 'image';
@@ -672,26 +671,37 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
     let buffer = Buffer.from(dataBase64, 'base64');
     if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     let sendMime = mime, sendFilename = filename;
-    if (tipo === 'audio') {
-      // WhatsApp solo acepta notas de voz en OGG/Opus; los navegadores graban webm/mp4
+    if (tipo === 'audio' && conv.channel === 'whatsapp') {
       const conv2 = await convertToOggOpus(buffer, mime);
       buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
     }
     const storedFilename = mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
-    const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
-    await sendMedia(telefono, mediaId, tipo, caption, sendFilename);
+
+    let mediaId = null;
+    if (conv.channel === 'whatsapp') {
+      mediaId = await uploadMedia(buffer, sendMime, sendFilename);
+      await sendMedia(to, mediaId, tipo, caption, sendFilename);
+    } else {
+      const { getAdapter } = require('./channels');
+      const chAdapter = getAdapter(conv.channel);
+      if (!chAdapter || typeof chAdapter.sendMedia !== 'function') {
+        return res.status(400).json({ error: 'canal_no_soporta_media' });
+      }
+      const publicUrl = `${req.protocol}://${req.get('host')}/api/public/media/${storedFilename}`;
+      const result = await chAdapter.sendMedia(to, publicUrl, tipo, caption || '');
+      mediaId = (result && result.message_id) || publicUrl;
+    }
 
     store.addTimelineEvent(conv.id, 'message', {
-      channel: 'whatsapp', body: caption || `[${tipo}]`, direction: 'outgoing',
-      from_number: 'panel', to_number: telefono,
+      channel: conv.channel, body: caption || `[${tipo}]`, direction: 'outgoing',
+      from_number: 'panel', to_number: to,
       media_type: tipo, media_id: mediaId, media_mime: sendMime, media_filename: storedFilename,
     });
     const adapter = require('./db/adapter');
     adapter.run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE id = ?', [caption || `[${tipo}]`, conv.id]);
-    // Espejo hacia el lead legacy para que el vendedor lo vea en su panel
     if (conv.lead_id) {
       try {
-        store.saveMessage(conv.lead_id, 'panel', telefono, caption || `[${tipo}]`, 'outgoing', {
+        store.saveMessage(conv.lead_id, 'panel', to, caption || `[${tipo}]`, 'outgoing', {
           media_type: tipo, media_id: mediaId, media_mime: sendMime, media_filename: storedFilename,
         });
       } catch (e) { console.error('media espejo lead:', e.message); }
@@ -701,7 +711,7 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
     res.json({ ok: true });
   } catch (e) {
     console.error('Error enviando media desde inbox:', e.message);
-    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+    res.status(502).json({ error: 'error_envio_media', detalle: e.message });
   }
 });
 
@@ -717,6 +727,22 @@ app.get('/api/inbox/media/:timelineId', auth.requireAuth, async (req, res) => {
   const filePath = mediaStore.getMediaPath(ev.media_filename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
   await sendMediaFile(res, filePath, ev.media_mime, ev.media_type);
+});
+
+// Ruta pública para servir media a canales externos (Messenger, Instagram)
+app.get('/api/public/media/:filename', async (req, res) => {
+  const filename = req.params.filename;
+  if (!filename || filename.includes('..') || filename.includes('/')) {
+    return res.status(400).json({ error: 'filename_invalido' });
+  }
+  const filePath = mediaStore.getMediaPath(filename);
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
+  const ext = require('path').extname(filename).toLowerCase();
+  const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.mp4': 'video/mp4', '.webm': 'video/webm', '.pdf': 'application/pdf', '.mp3': 'audio/mpeg', '.wav': 'audio/wav' };
+  const mime = mimeMap[ext] || 'application/octet-stream';
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(filePath);
 });
 
 // ===================== RESPONDER (OLD) =====================
