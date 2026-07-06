@@ -81,6 +81,18 @@
   .media-img { max-width: 220px; max-height: 280px; border-radius: 10px; display: block; cursor: pointer; }
   .media-video { max-width: 220px; border-radius: 10px; display: block; }
   .media-audio { width: 210px; display: block; border-radius: 8px; }
+  .audio-player{ display:inline-flex; align-items:center; gap:8px; padding:4px 10px 4px 4px; border-radius:12px; min-width:190px; max-width:240px; }
+  .bubble--in .audio-player{ background:var(--bg-3); }
+  .bubble--out .audio-player{ background:rgba(200,164,90,.12); }
+  .audio-player__btn{ width:34px; height:34px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; padding:0; transition:transform .15s; background:var(--gold); }
+  .audio-player__btn:active{ transform:scale(.92); }
+  .audio-player__btn svg{ width:14px; height:14px; fill:#000; margin-left:2px; }
+  .audio-player__btn.playing svg{ margin-left:0; }
+  .audio-player__wave{ flex:1; display:flex; align-items:center; gap:2px; height:24px; }
+  .audio-player__bar{ width:3px; border-radius:2px; background:var(--text-3); transition:background .12s; }
+  .bubble--out .audio-player__bar{ background:rgba(200,164,90,.3); }
+  .audio-player__bar.active{ background:var(--gold) !important; }
+  .audio-player__time{ font-size:11px; color:var(--text-2); font-variant-numeric:tabular-nums; white-space:nowrap; min-width:32px; text-align:right; }
   .media-file { color: var(--text-2); text-decoration: none; border-bottom: 1px solid var(--border-soft); word-break: break-all; }
   .media-cap { margin-top: 4px; font-size: 12.5px; }
 
@@ -790,7 +802,7 @@
     const src = '/api/inbox/media/' + m.id;
     const cap = (m.body && !/^\[(image|audio|video|document|sticker)\]$/.test(m.body)) ? `<div class="media-cap">${esc(m.body)}</div>` : '';
     if (m.media_type === 'image' || m.media_type === 'sticker') return `<a href="${src}" target="_blank" onclick="event.preventDefault();abrirLightbox(this.querySelector('img').src)"><img class="media-img" src="${src}" alt="imagen" loading="lazy"></a>${cap}`;
-    if (m.media_type === 'audio') return `<audio class="media-audio" controls src="${src}"></audio>${cap}`;
+    if (m.media_type === 'audio') return renderAudioPlayer(m.id, src) + cap;
     if (m.media_type === 'video') return `<video class="media-video" controls src="${src}"></video>${cap}`;
     return `<a class="media-file" href="${src}" target="_blank">📄 ${esc(m.media_filename || 'archivo')}</a>${cap}`;
   }
@@ -971,6 +983,11 @@
     await recargarMensajes(current);
   }, 30000);
 })();
+const _audioPlayers = {};
+function generateWaveform(id){ let h=0; const s=String(id); for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } const b=[]; for(let i=0;i<20;i++){ b.push(Math.round(Math.abs(Math.sin(h*(i+1)*137.5))*18+4)); } return b; }
+function formatDuration(s){ const m=Math.floor(s/60); const sec=Math.floor(s%60); return m+':'+(sec<10?'0':'')+sec; }
+function togglePlay(id){ const btn=document.getElementById(id+'_btn'); const wave=document.getElementById(id+'_wave'); const timeEl=document.getElementById(id+'_time'); if(!btn||!wave) return; const container=btn.closest('.audio-player'); if(!container) return; const src=container.dataset.src; Object.keys(_audioPlayers).forEach(k=>{ if(k!==id&&_audioPlayers[k]&&!_audioPlayers[k].paused){ _audioPlayers[k].pause(); const ob=document.getElementById(k+'_btn'); if(ob) ob.classList.remove('playing'); } }); if(_audioPlayers[id]&&!_audioPlayers[id].paused){ _audioPlayers[id].pause(); btn.classList.remove('playing'); return; } if(!_audioPlayers[id]){ const a=new Audio(src); a.addEventListener('timeupdate',()=>{ const p=a.duration?Math.min(a.currentTime/a.duration,1):0; const bars=wave.querySelectorAll('.audio-player__bar'); if(!bars.length) return; bars.forEach((bar,i)=>bar.classList.toggle('active',i<Math.floor(p*bars.length))); timeEl.textContent=formatDuration(a.currentTime); }); a.addEventListener('ended',()=>{ btn.classList.remove('playing'); timeEl.textContent=formatDuration(a.duration||0); wave.querySelectorAll('.audio-player__bar').forEach(b=>b.classList.remove('active')); }); a.addEventListener('loadedmetadata',()=>{ timeEl.textContent=formatDuration(a.duration||0); }); _audioPlayers[id]=a; } _audioPlayers[id].play(); btn.classList.add('playing'); }
+function renderAudioPlayer(id,src){ if(!id||!src) return '🎙️ Audio'; const bars=generateWaveform(id); return `<div class="audio-player" data-src="${src}" data-id="${id}"><button class="audio-player__btn" id="${id}_btn" onclick="togglePlay('${id}')"><svg viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg></button><div class="audio-player__wave" id="${id}_wave">${bars.map(h=>`<div class="audio-player__bar" style="height:${h}px"></div>`).join('')}</div><span class="audio-player__time" id="${id}_time">0:00</span></div>`; }
 </script>
 </body>
 </html>
