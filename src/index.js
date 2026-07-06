@@ -153,19 +153,85 @@ app.get('/api/channels/:name/test', auth.requireAdmin, async (req, res) => {
   }
 });
 
-// ===================== PRUEBA DE IA (NLP) =====================
+// ===================== IA / COPILOTO (NLP con OpenRouter) =====================
 
 app.post('/api/nlp/test', auth.requireAdmin, async (req, res) => {
   try {
     const nlp = require('./services/nlp');
+    if (!nlp.isAIEnabled()) return res.status(400).json({ ok: false, error: 'IA desactivada. Configura una API Key en Ajustes → IA Copiloto.' });
     const texto = (req.body && req.body.texto) || 'Hola, me interesan los lotes';
     const [sentiment, intent] = await Promise.all([
       nlp.analyzeSentiment(texto),
       nlp.classifyIntent(texto),
     ]);
-    res.json({ ok: true, texto, sentiment, intent });
+    res.json({ ok: true, texto, sentiment, intent, model: nlp.getModel() });
   } catch (e) {
     res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/nlp/suggest-response', auth.requireAuth, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    if (!nlp.isAIEnabled()) return res.json({ ok: true, suggestions: [] });
+    const { leadId, customerName } = req.body || {};
+    if (!leadId) return res.status(400).json({ error: 'leadId requerido' });
+
+    const lead = store.getLeadById(leadId);
+    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
+
+    const mensajes = store.getMessagesByLead(leadId) || [];
+    const history = mensajes.map(m => ({ role: m.direction === 'incoming' ? 'customer' : 'seller', text: m.body }));
+    const name = customerName || lead.nombre;
+
+    const suggestions = await nlp.suggestResponse(history, name);
+    res.json({ ok: true, suggestions, model: nlp.getModel() });
+  } catch (e) {
+    console.error('[NLP] suggest-response error:', e.message);
+    res.json({ ok: true, suggestions: [] });
+  }
+});
+
+app.post('/api/nlp/analyze-lead', auth.requireAuth, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    if (!nlp.isAIEnabled()) return res.json({ ok: true, analysis: null });
+    const { leadId, customerName } = req.body || {};
+    if (!leadId) return res.status(400).json({ error: 'leadId requerido' });
+
+    const lead = store.getLeadById(leadId);
+    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
+
+    const mensajes = store.getMessagesByLead(leadId) || [];
+    const history = mensajes.map(m => ({ role: m.direction === 'incoming' ? 'customer' : 'seller', text: m.body }));
+    const name = customerName || lead.nombre;
+
+    const analysis = await nlp.analyzeLead(history, name, lead.etiqueta);
+    res.json({ ok: true, analysis, model: nlp.getModel() });
+  } catch (e) {
+    console.error('[NLP] analyze-lead error:', e.message);
+    res.json({ ok: true, analysis: null });
+  }
+});
+
+app.post('/api/nlp/daily-briefing', auth.requireAuth, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    if (!nlp.isAIEnabled()) return res.json({ ok: true, briefing: null });
+    const user = req.user;
+    const vs = store.getVendedores().find(v => v.id === user.vendedorId);
+    const misLeads = store.getLeadsByVendedorId(user.vendedorId) || [];
+    const sinRespuesta = (store.getLeadsSinRespuesta() || []).filter(l => l.assigned_to_id === user.vendedorId);
+    const stats = {
+      activos: misLeads.length,
+      sinResponder: sinRespuesta.length,
+      ventas: misLeads.filter(l => l.etiqueta === 'vendido').length,
+    };
+    const briefing = await nlp.dailyBriefing(vs || { nombre: user.nombre }, stats);
+    res.json({ ok: true, briefing, stats, model: nlp.getModel() });
+  } catch (e) {
+    console.error('[NLP] daily-briefing error:', e.message);
+    res.json({ ok: true, briefing: null, stats: {} });
   }
 });
 
@@ -1370,6 +1436,7 @@ const CONFIG_KEYS = [
   'reengagement_template',
   'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
   'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
+  'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
 ];
 
 app.get('/api/config', auth.requireAdmin, (req, res) => {

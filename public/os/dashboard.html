@@ -142,13 +142,25 @@
             <div class="t-h3">Copiloto SP</div>
           </div>
           <p class="t-dim" style="font-size:13px;line-height:1.55">Tienes <b class="t-gold">${fmt.n(etq.negociacion||0)}</b> leads en negociación sin actividad reciente. ¿Quieres que prepare un mensaje de seguimiento para reactivarlos?</p>
-          <button class="btn btn--ghost btn--sm btn--block" style="margin-top:var(--s2)" onclick="SPOS.toast('El Copiloto SP se activará en la Fase IA','ok')">Generar seguimiento</button>
+          <button class="btn btn--ghost btn--sm btn--block" style="margin-top:var(--s2)" id="btnGenerarSeguimiento">Generar seguimiento</button>
         </div>
       </div>
     </div>
    </div>`;
 
   document.getElementById('newLead').addEventListener('click', () => location.href = '/os/crm.html');
+
+  document.getElementById('btnGenerarSeguimiento')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnGenerarSeguimiento');
+    btn.disabled = true; btn.textContent = 'Pensando...';
+    const briefing = await api('/api/nlp/daily-briefing', { method: 'POST' });
+    btn.disabled = false; btn.textContent = 'Generar seguimiento';
+    if (briefing?.briefing) {
+      SPOS.toast('💡 ' + briefing.briefing.priorityAction, 'ok');
+    } else {
+      SPOS.toast('Configura una API Key en Ajustes → IA Copiloto', 'err');
+    }
+  });
 
   function statRow(dot, title, sub) {
     return `<div class="u-row u-gap2">

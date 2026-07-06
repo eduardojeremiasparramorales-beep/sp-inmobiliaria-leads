@@ -891,8 +891,30 @@
           <div class="panel-row"><span>Actividad</span><strong>${timeago(c.updated_at)} atrás</strong></div>
         </div>
         <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Copiloto SP</div>
-        <button class="btn btn--ghost" style="width:100%;margin-bottom:8px" onclick="SPOS.toast('El Copiloto SP se activa en la Fase IA','ok')">${ICONS.spark}Sugerir respuesta</button>
+        <button class="btn btn--ghost btn-ai-suggest" style="width:100%;margin-bottom:8px" data-lead-id="${c.lead_id || ''}" data-name="${esc(c.customer_name || '')}">${ICONS.spark}Sugerir respuesta</button>
+        <div id="aiSuggestions" style="display:none;margin-bottom:8px"></div>
       </div>`;
+    // Wire AI suggest button
+    const aiBtn = ctx.panel.querySelector('.btn-ai-suggest');
+    if (aiBtn) aiBtn.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const leadId = btn.dataset.leadId;
+      const name = btn.dataset.name;
+      if (!leadId) { toast('Este lead no está vinculado al CRM legacy', 'err'); return; }
+      btn.disabled = true; btn.textContent = 'Pensando...';
+      const suggestions = await SPOS.sugerirRespuesta(leadId, name);
+      btn.disabled = false; btn.innerHTML = '${ICONS.spark}Sugerir respuesta';
+      const box = document.getElementById('aiSuggestions');
+      if (!box) return;
+      if (!suggestions.length) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      box.innerHTML = suggestions.map((s, i) =>
+        `<div style="padding:8px 10px;margin-bottom:4px;background:var(--bg-2);border-radius:var(--r-sm);font-size:12.5px;cursor:pointer;border:1px solid transparent;transition:all .12s"
+              onmouseenter="this.style.borderColor='var(--gold-line)'" onmouseleave="this.style.borderColor='transparent'"
+              onclick="document.getElementById('msgInput').value=SPOS.esc('${esc(s)}')">${esc(s)}</div>`
+      ).join('');
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
   }
 
   /* ── Wiring filtros ── */

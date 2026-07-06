@@ -75,6 +75,43 @@
       <button type="submit" class="cfg-save">Guardar integraciones</button>
     </form>
 
+    <form class="cfg-sec" id="fIA">
+      <h3>🤖 IA Copiloto</h3>
+      <p>El Copiloto SP usa modelos de OpenRouter (compatible con OpenAI). Configura tu API Key y el modelo que quieras usar.</p>
+      <div class="cfg-field">
+        <label>API Key de OpenRouter</label>
+        <input id="openrouter_api_key" type="password" autocomplete="off" value="${v('openrouter_api_key')}" placeholder="sk-or-v1-...">
+        <div class="cfg-hint">Consigue tu API Key gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--gold)">openrouter.ai/keys</a></div>
+      </div>
+      <div class="cfg-field">
+        <label>Modelo</label>
+        <input id="openrouter_model" value="${v('openrouter_model') || 'google/gemini-2.0-flash-001'}" placeholder="google/gemini-2.0-flash-001">
+        <div class="cfg-hint">Modelos gratis populares: <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='google/gemini-2.0-flash-001'">Gemini 2.0 Flash</strong> ·
+        <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='deepseek/deepseek-chat'">DeepSeek V3</strong> ·
+        <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='mistralai/mistral-7b-instruct'">Mistral 7B</strong> ·
+        <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='meta-llama/llama-3.2-3b-instruct'">Llama 3.2 3B</strong></div>
+      </div>
+      <div class="cfg-field" style="display:none">
+        <label>Site URL (para OpenRouter)</label>
+        <input id="openrouter_site_url" value="${v('openrouter_site_url') || 'https://spcrm.duckdns.org'}">
+      </div>
+      <div class="cfg-field" style="display:none">
+        <label>App Name</label>
+        <input id="openrouter_app_name" value="${v('openrouter_app_name') || 'SP CRM'}">
+      </div>
+      <div class="cfg-field" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <label style="margin:0;cursor:pointer">
+          <input type="checkbox" id="ai_enabled" ${cfg.ai_enabled !== 'false' ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--gold);margin-right:8px;vertical-align:middle">
+          Copiloto activado
+        </label>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button type="submit" class="cfg-save">Guardar configuración IA</button>
+        <button type="button" class="cfg-save" id="btnTestIA" style="background:var(--bg-3);color:var(--text);border:1px solid var(--border)">Probar conexión</button>
+      </div>
+      <div id="iaTestResult" style="margin-top:10px;font-size:12px;display:none"></div>
+    </form>
+
     <div class="cfg-sec">
       <h3>Canales y equipo</h3>
       <p>La conexión de WhatsApp/Messenger/Instagram se gestiona en <a href="/os/integraciones.html" style="color:var(--gold)">Integraciones</a>. Los vendedores, PIN y plantillas en <a href="/os/equipo.html" style="color:var(--gold)">Equipo</a>.</p>
@@ -123,6 +160,46 @@
     const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reengagement_template: sel.value }) });
     btn.disabled = false;
     if (r) toast('Template de reactivación guardado', 'ok'); else toast('Error al guardar', 'err');
+  });
+
+  // ===== IA Copiloto =====
+  document.getElementById('fIA')?.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const btn = ev.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const body = {
+      openrouter_api_key: document.getElementById('openrouter_api_key').value.trim(),
+      openrouter_model: document.getElementById('openrouter_model').value.trim() || 'google/gemini-2.0-flash-001',
+      openrouter_site_url: document.getElementById('openrouter_site_url').value.trim() || 'https://spcrm.duckdns.org',
+      openrouter_app_name: document.getElementById('openrouter_app_name').value.trim() || 'SP CRM',
+      ai_enabled: document.getElementById('ai_enabled').checked ? 'true' : 'false',
+    };
+    const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    btn.disabled = false;
+    if (r) toast('Configuración de IA guardada', 'ok'); else toast('Error al guardar', 'err');
+  });
+
+  document.getElementById('btnTestIA')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnTestIA');
+    const res = document.getElementById('iaTestResult');
+    res.style.display = 'block';
+    res.innerHTML = 'Probando conexión...';
+    res.style.color = 'var(--text-3)';
+    btn.disabled = true;
+    try {
+      const r = await api('/api/nlp/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: 'Hola, me interesan los lotes en Tocaima. ¿Cuánto cuestan?' }) });
+      if (r && r.ok) {
+        res.innerHTML = `✅ Conexión exitosa! Modelo: <strong>${r.model || '?'}</strong> · Sentimiento: ${r.sentiment?.label || '?'} · Intención: ${r.intent?.intent || '?'}`;
+        res.style.color = '#4E7B46';
+      } else {
+        res.innerHTML = `❌ Error: ${r?.error || 'Respuesta inválida'}`;
+        res.style.color = '#e74c3c';
+      }
+    } catch (e) {
+      res.innerHTML = `❌ Error de conexión: ${e.message}`;
+      res.style.color = '#e74c3c';
+    }
+    btn.disabled = false;
   });
 })();
 </script>

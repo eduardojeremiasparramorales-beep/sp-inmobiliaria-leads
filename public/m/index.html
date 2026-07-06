@@ -1465,19 +1465,37 @@ function abrirTimeline(){ const l=current;
   openSheet('Timeline', `<div class="tl">${ev.map(({ic,t,s})=>`<div class="tl-i"><div class="tl-dot">${I(SVG[ic]||SVG.chat,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join('')}</div>`);
 }
 
-function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Cliente'; const score=leadScore(l); const sug=`Hola ${nombre}, con gusto te resuelvo lo de la financiación: manejamos cuota inicial baja y plazos flexibles. ¿Agendamos una visita esta semana para que conozcas el lote?`;
-  const proyecto = l.proyecto || 'nuestros proyectos';
-  openSheet('Copiloto SP', `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><span class="cop-badge">${I(SVG.sparkles,11)} Fase IA</span></div>
-    <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(nombre)} — ${l.messages_count||0} mensajes. Interesa en ${proyecto}. Conviene reforzar confianza y proponer visita.</p></div>
-    <div class="cop-card"><h5>${I(SVG.target,14)} Sentimiento</h5><p class="cop-sent">${I(SVG.check,14)} Positivo · alta intención de compra</p></div>
-    <div class="cop-card"><h5>${I(SVG.zap,14)} Objeciones</h5><div class="cop-obj">Duda sobre formas de pago / financiación.</div><div class="cop-obj">Quiere confirmar ubicación y legalidad.</div></div>
-    <div class="cop-card"><h5>${I(SVG.checkSquare,14)} Probabilidad de cierre</h5><div style="display:flex;align-items:baseline;gap:10px"><span class="prob-num">${score}%</span><span style="font-size:12px;color:var(--text-3)">Mejor hora para responder: <b style="color:var(--gold)">6:00–8:00 PM</b></span></div><div class="prob-bar"><i style="width:${score}%"></i></div></div>
-    <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug">${esc(sug)}</p><button class="cop-use" id="copUse">${I(SVG.sparkles,16)} Usar esta respuesta</button></div>
+async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Cliente';
+  openSheet('Copiloto SP', `<div id="copilotLoading" style="text-align:center;padding:24px;color:var(--text-3)">Analizando lead...</div>`);
+  let analysis = null;
+  try {
+    const r = await fetch('/api/nlp/analyze-lead', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id, customerName: nombre }) });
+    const d = await r.json();
+    analysis = d.ok ? d.analysis : null;
+  } catch(e) {}
+  const isAI = analysis && analysis.summary;
+  const score = isAI ? Math.round(Math.max(0,Math.min(100,(analysis.closeProbability||50)))) : leadScore(l);
+  const sug = isAI && analysis.suggestedResponse ? analysis.suggestedResponse : `Hola ${nombre}, con gusto te resuelvo lo de la financiación: manejamos cuota inicial baja y plazos flexibles. ¿Agendamos una visita esta semana?`;
+  const sentIcon = analysis?.sentiment === 'positivo' ? SVG.check : analysis?.sentiment === 'negativo' ? SVG.zap : SVG.target;
+  const sentLabel = analysis?.sentiment ? (analysis.sentiment.charAt(0).toUpperCase()+analysis.sentiment.slice(1)) : '—';
+  const body = $('#sheetBody'); if(!body) return;
+  body.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">${isAI ? `<span style="font-size:10px;padding:3px 10px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">IA activa</span>` : `<span class="cop-badge">${I(SVG.sparkles,11)} Sin conexión IA</span>`}</div>
+    ${isAI ? `
+    <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(analysis.summary||'')}</p></div>
+    <div class="cop-card"><h5>${I(SVG.target,14)} Sentimiento</h5><p class="cop-sent">${I(sentIcon,14)} ${sentLabel} · score ${analysis.sentimentScore || 0}</p></div>
+    ${analysis.objections?.length ? `<div class="cop-card"><h5>${I(SVG.zap,14)} Objeciones</h5>${analysis.objections.map(o=>`<div class="cop-obj">${esc(o)}</div>`).join('')}</div>` : ''}
+    <div class="cop-card"><h5>${I(SVG.checkSquare,14)} Probabilidad de cierre</h5><div style="display:flex;align-items:baseline;gap:10px"><span class="prob-num">${score}%</span></div><div class="prob-bar"><i style="width:${score}%"></i></div></div>
+    <div class="cop-card"><h5>${I(SVG.chat,14)} Próxima acción</h5><p style="font-size:13px">${esc(analysis.nextAction||'')}</p></div>
+    ` : `
+    <div class="cop-card"><h5>${I(SVG.user,14)} ${esc(nombre)}</h5><p>${l.messages_count||0} mensajes. Conecta con el cliente para mantener la conversación activa.</p></div>
+    <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug">${esc(sug)}</p></div>
+    `}
+    <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug2">${esc(sug)}</p><button class="cop-use" id="copUse">${I(SVG.sparkles,16)} Usar esta respuesta</button></div>
     <div class="cop-card"><h5>${I(SVG.building,14)} Propiedades recomendadas</h5>
-      <div class="prop-scroll">${PROPS.map((p,i)=>`<div class="prop-c"><div class="ph">${p.emoji}</div><div class="in"><div class="nm">${p.nombre}</div><div class="lo">${I(SVG.mapPin,11)} ${p.ciudad} · ${p.m2} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt">${p.match}% IA</span><button class="snd" data-prop="${i}">Enviar</button></div></div></div>`).join('')}</div>
-    </div>`);
-  $('#copUse').onclick=()=>{ if($('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=$('#copSug').textContent.trim(); updateSend(); } closeSheet(); haptic([10,20,10]); toast('Respuesta lista'); };
+      <div class="prop-scroll">${PROPS.map((p,i)=>`<div class="prop-c"><div class="ph">${p.emoji}</div><div class="in"><div class="nm">${p.nombre}</div><div class="lo">${I(SVG.mapPin,11)} ${p.ciudad} · ${p.m2} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt">${p.match}% Similitud</span><button class="snd" data-prop="${i}">Enviar</button></div></div></div>`).join('')}</div>
+    </div>`;
+  $('#copUse').onclick=()=>{ if($('#scChat').classList.contains('show')){ const i=$('#cInput'); const sugText = ($('#copSug2')?.textContent || $('#copSug')?.textContent || '').trim(); if(sugText) i.value=sugText; updateSend(); } closeSheet(); haptic([10,20,10]); toast('Respuesta lista'); };
   $('#sheetBody').querySelectorAll('[data-prop]').forEach(b=>b.onclick=()=>{ const p=PROPS[b.dataset.prop]; if($('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=`Te recomiendo: ${p.nombre} — ${p.m2} m² por ${money(p.precio)}. ¿Más info o agendamos visita?`; updateSend(); } closeSheet(); haptic(10); toast('Propiedad lista para enviar'); });
 }
 const PROPS=[{emoji:'🏡',nombre:'Lote Campestre Tocaima',ciudad:'Tocaima',precio:48000000,m2:250,match:96},{emoji:'🏘️',nombre:'Parcelación Girardot',ciudad:'Girardot',precio:72000000,m2:320,match:88},{emoji:'🌄',nombre:'Lote Vista Valle',ciudad:'Melgar',precio:35000000,m2:180,match:79}];
@@ -1746,29 +1764,46 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
     </div>`;
     cargarTareas();
   } else if (t === 'copiloto') {
-    const n = current?.customer_name||me?.nombre||'';
     const act = leads.filter(l => l.status !== 'cerrado');
     const sinResp = leads.filter(l => Number(l.unread_count||0) > 0);
-    box.innerHTML = `<div style="padding:18px;width:100%;max-width:400px;margin:0 auto">
+    const hot = act.filter(l => l.etiqueta === 'negociacion' || l.etiqueta === 'cita').slice(0,5);
+    // Fetch briefing async and update
+    const briefBox = document.createElement('div');
+    briefBox.innerHTML = `<div style="padding:18px;width:100%;max-width:400px;margin:0 auto">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <div class="m-avatar" style="width:42px;height:42px;border-radius:14px;background:${avatarColor(me?.nombre||'')};font-size:16px">${initials(me?.nombre||'')}</div>
         <div><div style="font-size:16px;font-weight:600">Copiloto SP</div><div style="font-size:11px;color:var(--text-3)">Inteligencia de ventas</div></div>
-        <span class="cop-badge" style="margin-left:auto">${I(SVG.sparkles,11)} Fase IA</span>
+        <span id="copBadge" class="cop-badge" style="margin-left:auto">${I(SVG.sparkles,11)} Cargando...</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
         <div class="cop-card" style="margin:0;text-align:center;padding:14px"><div style="font-size:22px;font-weight:700">${act.length}</div><div style="font-size:10px;color:var(--text-3)">Activos</div></div>
         <div class="cop-card" style="margin:0;text-align:center;padding:14px"><div style="font-size:22px;font-weight:700">${sinResp.length}</div><div style="font-size:10px;color:var(--text-3)">Sin respuesta</div></div>
       </div>
       <div class="cop-card"><h5>${I(SVG.target,14)} Próxima acción recomendada</h5>
-        <p>${sinResp.length ? `Tienes <b>${sinResp.length}</b> leads sin responder. Prioriza responder a los más recientes para mantener la ventana de 24h abierta.` : '¡Todo al día! Revisa leads en negociación para avanzar a cierre.'}</p>
+        <p id="copAccion">${sinResp.length ? `Tienes <b>${sinResp.length}</b> leads sin responder. Prioriza responder a los más recientes.` : '¡Todo al día! Revisa leads en negociación.'}</p>
       </div>
       <div class="cop-card"><h5>${I(SVG.zap,14)} Leads calientes</h5>
-        ${act.filter(l => l.etiqueta === 'negociacion' || l.etiqueta === 'cita').slice(0,5).map(l => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft)"><div class="m-avatar" style="width:28px;height:28px;border-radius:8px;font-size:10px;background:${avatarColor(l.customer_name||'')}">${initials(l.customer_name)}</div><div style="flex:1;font-size:13px">${esc(l.customer_name||'Cliente')}</div><span class="m-tag t-${(l.etiqueta||'sin_clasificar')}">${etqLabel(l.etiqueta)}</span></div>`).join('')||'<p style="font-size:13px;color:var(--text-3)">Sin leads en negociación.</p>'}
+        <div id="copHot">${hot.length ? hot.map(l => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft)"><div class="m-avatar" style="width:28px;height:28px;border-radius:8px;font-size:10px;background:${avatarColor(l.customer_name||'')}">${initials(l.customer_name)}</div><div style="flex:1;font-size:13px">${esc(l.customer_name||'Cliente')}</div><span class="m-tag t-${(l.etiqueta||'sin_clasificar')}">${etqLabel(l.etiqueta)}</span></div>`).join('') : '<p style="font-size:13px;color:var(--text-3)">Sin leads en negociación.</p>'}
       </div>
       <div class="cop-card"><h5>${I(SVG.megaphone,14)} Frase del día</h5>
-        <p>"La confianza se construye con respuestas rápidas y claras. Cada mensaje es una oportunidad."</p>
+        <p id="copFrase">"La confianza se construye con respuestas rápidas y claras."</p>
       </div>
     </div>`;
+    box.innerHTML = briefBox.innerHTML;
+    // Fetch AI briefing async
+    fetch('/api/nlp/daily-briefing', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include' })
+      .then(r=>r.json()).then(d=>{
+        if(d.ok && d.briefing) {
+          const b = d.briefing;
+          const badge = document.getElementById('copBadge');
+          if(badge) { badge.textContent = 'IA activa'; badge.style.background = 'var(--gold-soft)'; badge.style.color = 'var(--gold)'; }
+          const accion = document.getElementById('copAccion');
+          if(accion) accion.textContent = b.priorityAction || accion.textContent;
+          const frase = document.getElementById('copFrase');
+          if(frase) frase.textContent = `"${b.fraseDelDia || frase.textContent.replace(/"/g,'')}"`;
+        }
+      }).catch(()=>{});
+    // Keep hot leads section as-is (already real data)
   }
   $('#scHome').insertBefore(box, $('#fab'));
 }

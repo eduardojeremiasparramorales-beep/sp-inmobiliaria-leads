@@ -117,9 +117,30 @@
         </div>
         <div class="u-col u-gap1" style="margin-top:var(--s3)">
           <button class="btn btn--ghost btn--block btn--sm" onclick="SPOS.toast('Recordatorio creado','ok')">${ICONS.clock}Agendar seguimiento</button>
-          <button class="btn btn--ghost btn--block btn--sm" onclick="SPOS.toast('El Copiloto SP se activará en la Fase IA','ok')">${ICONS.ai}Sugerir respuesta con IA</button>
+          <button class="btn btn--ghost btn--block btn--sm btn-crm-ai" data-lead-id="${l.id}" data-name="${esc(l.customer_name || '')}">${ICONS.ai}Sugerir respuesta con IA</button>
         </div>
+        <div id="crmAiSuggestions" style="display:none;margin-top:8px"></div>
       </div>`;
+    // Wire AI suggest button
+    const aiBtn = ctx.panel.querySelector('.btn-crm-ai');
+    if (aiBtn) aiBtn.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const leadId = Number(btn.dataset.leadId);
+      const name = btn.dataset.name;
+      btn.disabled = true; btn.textContent = 'Pensando...';
+      const suggestions = await SPOS.sugerirRespuesta(leadId, name);
+      btn.disabled = false; btn.innerHTML = '${ICONS.ai}Sugerir respuesta con IA';
+      const box = document.getElementById('crmAiSuggestions');
+      if (!box) return;
+      if (!suggestions.length) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      box.innerHTML = suggestions.map((s, i) =>
+        `<div style="padding:8px 10px;margin-bottom:4px;background:var(--bg-2);border-radius:var(--r-sm);font-size:12.5px;cursor:pointer;border:1px solid transparent;transition:all .12s"
+              onmouseenter="this.style.borderColor='var(--gold-line)'" onmouseleave="this.style.borderColor='transparent'"
+              onclick="var i=prompt('Editar antes de copiar:','${esc(s)}');if(i)prompt('Copiado al portapapeles','${esc(s)}')">${esc(s)}</div>`
+      ).join('');
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
   }
   const info = (k,v,gold) => `<div class="u-between" style="padding:7px 0"><span class="t-dim3" style="font-size:12.5px">${k}</span><span style="font-size:13px;font-weight:500${gold?';color:var(--gold)':''}">${v}</span></div>`;
   const tl = (ic,t,s) => `<div class="tl-item"><div class="tl-item__dot">${ICONS[ic].replace('<svg ','<svg style="width:13px;height:13px" ')}</div><div class="tl-item__body"><div class="tl-item__title">${t}</div><div class="tl-item__time">${s}</div></div></div>`;

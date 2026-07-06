@@ -180,7 +180,7 @@
     const dock = document.createElement('div');
     dock.className = 'ai-dock';
     dock.innerHTML = `<div class="ai-dock__spark">${ICONS.spark.replace('<svg ', '<svg style="width:16px;height:16px" ')}</div><span class="ai-dock__label">Copiloto SP</span><span class="ai-dock__hint">⌘J</span>`;
-    dock.addEventListener('click', () => toast('El Copiloto SP se activará en la Fase IA', 'ok'));
+    dock.addEventListener('click', abrirCopiloto);
     document.body.appendChild(dock);
 
     // Eventos
@@ -192,11 +192,120 @@
     const mb = document.getElementById('osMenuBtn');
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
     window.addEventListener('keydown', (e) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('osSearch').focus(); } });
+    window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
 
     return { me, content: document.getElementById('osContent'), panel: document.getElementById('osPanel') };
   }
 
-  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone,
+  /* ── Copiloto SP: panel flotante con IA ── */
+  let copilotoAbierto = false, copilotoModal = null;
+
+  async function abrirCopiloto() {
+    if (copilotoAbierto) { cerrarCopiloto(); return; }
+    copilotoAbierto = true;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'os-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9998;opacity:0;transition:opacity .2s';
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.style.opacity = '1');
+    overlay.addEventListener('click', cerrarCopiloto);
+
+    // Cargar briefing
+    const data = await api('/api/nlp/daily-briefing', { method: 'POST' });
+    const brief = data?.briefing || null;
+    const stats = data?.stats || {};
+
+    const modal = document.createElement('div');
+    modal.className = 'os-modal';
+    modal.style.cssText = 'position:fixed;bottom:90px;right:24px;width:380px;max-height:70vh;background:var(--bg-0);border:1px solid var(--border);border-radius:var(--r);z-index:9999;box-shadow:0 16px 64px rgba(0,0,0,.5);display:flex;flex-direction:column;opacity:0;transform:translateY(12px) scale(.97);transition:all .2s cubic-bezier(.16,1,.3,1)';
+    modal.id = 'copilotoModal';
+    modal.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-soft)">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${ICONS.spark.replace('<svg ', '<svg style="width:16px;height:16px;color:var(--gold)" ')}
+          <span style="font-weight:600;font-size:14px">Copiloto SP</span>
+          ${brief ? '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">' + (data?.model || 'IA') + '</span>' : '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--bg-3);color:var(--text-3)">Sin conección</span>'}
+        </div>
+        <button class="btn btn--icon btn--quiet" id="copilotoClose" style="width:28px;height:28px">${ICONS.menu.replace('<svg ', '<svg style="width:16px;height:16px" ')}</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:14px 18px">
+        ${brief ? `
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Consejo del día</div>
+          <p style="font-size:13px;color:var(--text);line-height:1.5">${esc(brief.tip || '')}</p>
+        </div>
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Prioridad</div>
+          <p style="font-size:13px;color:var(--gold);line-height:1.5">${esc(brief.priorityAction || '')}</p>
+        </div>
+        <div style="margin-bottom:14px;padding:12px;background:var(--bg-2);border-radius:var(--r-sm)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:center">
+            <div><div style="font-size:20px;font-weight:700;color:var(--gold)">${stats.activos || 0}</div><div style="font-size:10px;color:var(--text-3)">Leads activos</div></div>
+            <div><div style="font-size:20px;font-weight:700;color:${stats.sinResponder > 0 ? '#e74c3c' : 'var(--gold)'}">${stats.sinResponder || 0}</div><div style="font-size:10px;color:var(--text-3)">Sin responder</div></div>
+          </div>
+        </div>
+        ` : `
+        <div style="text-align:center;padding:24px 0;color:var(--text-3)">
+          <p style="font-size:13px">${data?.error || 'No hay conexión con la IA'}</p>
+          <p style="font-size:11px;margin-top:6px">Configura tu API Key en <a href="/os/configuracion.html" style="color:var(--gold)">Ajustes → IA Copiloto</a></p>
+        </div>
+        `}
+        ${brief ? `
+        <div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Frase del día</div>
+          <p style="font-size:12.5px;color:var(--text-2);font-style:italic;line-height:1.5">"${esc(brief.fraseDelDia || '')}"</p>
+        </div>
+        ` : ''}
+      </div>
+      <div style="padding:10px 18px;border-top:1px solid var(--border-soft);display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn--ghost btn--sm" onclick="SPOS.toast('Abrir Inbox','ok');location.href='/os/inbox.html'" style="font-size:11px">Ir a Inbox</button>
+        <button class="btn btn--ghost btn--sm" onclick="SPOS.toast('Abrir CRM','ok');location.href='/os/crm.html'" style="font-size:11px">Ir a CRM</button>
+        <button class="btn btn--ghost btn--sm" onclick="SPOS.toast('Configurar IA','ok');location.href='/os/configuracion.html'" style="font-size:11px">Configurar IA</button>
+      </div>`;
+
+    document.body.appendChild(modal);
+    copilotoModal = modal;
+    requestAnimationFrame(() => { modal.style.opacity = '1'; modal.style.transform = 'translateY(0) scale(1)'; });
+
+    document.getElementById('copilotoClose')?.addEventListener('click', cerrarCopiloto);
+    // Cerrar con Escape
+    const escHandler = (e) => { if (e.key === 'Escape') { cerrarCopiloto(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
+  }
+
+  function cerrarCopiloto() {
+    copilotoAbierto = false;
+    const modal = document.getElementById('copilotoModal');
+    if (modal) { modal.style.opacity = '0'; modal.style.transform = 'translateY(8px) scale(.97)'; setTimeout(() => modal.remove(), 200); }
+    document.querySelectorAll('.os-overlay').forEach(el => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); });
+  }
+
+  /* ── Helper para sugerir respuesta desde inbox/crm ── */
+  async function sugerirRespuesta(leadId, customerName) {
+    if (!leadId) { toast('No hay lead seleccionado', 'err'); return []; }
+    try {
+      const res = await fetch('/api/nlp/suggest-response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ leadId, customerName: customerName || '' })
+      });
+      const data = await res.json();
+      if (!data || !data.suggestions || !data.suggestions.length) {
+        toast('No se pudieron generar sugerencias. ¿API Key configurada?', 'err');
+        return [];
+      }
+      return data.suggestions;
+    } catch (e) {
+      toast('Error al conectar con IA', 'err');
+      return [];
+    }
+  }
+
+  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc,
     fmt: {
       n: (v) => (v == null ? '—' : Number(v).toLocaleString('es-CO')),
       money: (v) => (v == null ? '—' : '$' + Number(v).toLocaleString('es-CO')),
