@@ -815,7 +815,13 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
   const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); });
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(localStorage.getItem('sp_chat_enter_sends')!=='false')&&!e.shiftKey){ e.preventDefault(); enviar(); } });
-  $('#cSend').onclick=()=>{ try{ const t=($('#cInput').value||'').trim(); if(t.length>0) enviar(); else if(!_rec) startGrabacion(); else haptic(6); }catch(e){ console.error('cSend',e); haptic(12); toast('Error'); } };
+  $('#cSend').onclick=()=>{ try{
+    if(_recTouch) return; // en móvil el hold-to-record maneja todo; ignorar el click fantasma post-touch
+    const t=($('#cInput').value||'').trim();
+    if(t.length>0) enviar();
+    else if(_rec) enviarGrabacion(); // desktop: segundo click detiene y envía
+    else startGrabacion();           // desktop: primer click inicia grabación
+  }catch(e){ console.error('cSend',e); haptic(12); toast('Error'); } };
   wireHoldRecord($('#cSend'));
   $('#replyX').onclick=cancelarReply;
   // Chat search
@@ -850,7 +856,7 @@ function setReply(msgId){
 function cancelarReply(){ replyTo=null; const bar=document.getElementById('cReply'); if(bar) bar.classList.remove('show'); }
 
 /* ════════ Voice Recording — WhatsApp style (hold-to-record) ════════ */
-let _rec=null, _recChunks=[], _recTimer=null, _recSec=0, _recCancelling=false;
+let _rec=null, _recChunks=[], _recTimer=null, _recSec=0, _recCancelling=false, _recTouch=false, _recLocked=false;
 function startGrabacion(){
   if(_rec) return; window._sending=false;
   _recSec=0; _recChunks=[]; _recCancelling=false; _recLocked=false;
@@ -860,7 +866,7 @@ function startGrabacion(){
       _rec=new MediaRecorder(s, mt?{mimeType:mt}:{});
       _rec.ondataavailable=e=>{ if(e.data.size>0) _recChunks.push(e.data); };
       _rec.onstop=()=>{ s.getTracks().forEach(t=>t.stop()); };
-      _rec.start(); haptic(20);
+      _rec.start(200); haptic(20); // timeslice: los chunks llegan durante la grabación (sin esto quedan vacíos al soltar)
       $('#recBar').classList.add('show'); $('#cInput__row').classList.add('hidden');
       _recTimer=setInterval(()=>{ _recSec++; const m=Math.floor(_recSec/60); const seg=String(_recSec%60).padStart(2,'0'); const t=$('#recTime'); if(t) t.textContent=m+':'+seg; },1000);
     }).catch(()=>{ toast('Permiso de micrófono requerido'); console.error('getUserMedia fail'); });
@@ -868,13 +874,16 @@ function startGrabacion(){
 }
 function detenerGrabacion(){ if(!_rec) return; _rec.stop(); clearInterval(_recTimer); _rec=null; }
 function cancelarGrabacion(){ _recCancelling=true; detenerGrabacion(); _recChunks=[]; _recSec=0; limpiarRecUI(); }
-async function enviarGrabacion(){ if(!_rec||_recChunks.length===0) return; haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
+async function enviarGrabacion(){ if(!_rec) return; haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
   clearInterval(_recTimer); _recTimer=null;
-  const recMime=_rec.mimeType||'audio/webm'; _rec.stop();
-  await new Promise(r=>{ const orig=_rec.onstop; _rec.onstop=()=>{ if(orig) orig(); r(); }; });
+  const recMime=_rec.mimeType||'audio/webm';
+  // Esperar onstop ANTES de armar el blob: ahí llega el último chunk
+  await new Promise(r=>{ const orig=_rec.onstop; _rec.onstop=()=>{ if(orig) orig(); r(); }; _rec.stop(); });
+  const blob=new Blob(_recChunks,{type:recMime});
+  if(_recChunks.length===0||blob.size<100){ limpiarRecUI(); toast('Audio muy corto — mantén presionado para grabar'); return; }
   // Usar el formato REAL que grabó el navegador (Chrome: webm, Safari: mp4); el servidor lo convierte a OGG/Opus
   const ext=recMime.includes('ogg')?'ogg':recMime.includes('mp4')?'m4a':'webm';
-  const blob=new Blob(_recChunks,{type:recMime}); const toBase64=f=>new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(f); });
+  const toBase64=f=>new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(f); });
   const dataBase64=await toBase64(blob); const mediaBody={mime:recMime,filename:'nota-voz.'+ext,dataBase64,caption:''};
   if(replyTo) mediaBody.replyTo=replyTo.id;
   const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(mediaBody)});
@@ -888,6 +897,7 @@ function wireHoldRecord(btn){
   const isMic=()=>!($('#cInput').value||'').trim().length>0;
   function onTouchStart(e){
     if(!isMic()||_rec||window._sending) return;
+    _recTouch=true; // el hold-to-record toma el control: ignorar el click fantasma posterior
     moved=false; startY=e.touches[0].clientY;
     holdTimer=setTimeout(()=>{
       holdTimer=null; started=true;
@@ -911,7 +921,8 @@ function wireHoldRecord(btn){
     }
   }
   function onTouchEnd(){
-    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; started=false; return; }
+    setTimeout(()=>{ _recTouch=false; },500); // libera después del click fantasma del navegador
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; started=false; toast('Mantén presionado para grabar'); return; }
     if(!started||!_rec) return;
     started=false;
     if(_recCancelling){ _recCancelling=false; cancelarGrabacion(); toast('Grabación cancelada'); }
