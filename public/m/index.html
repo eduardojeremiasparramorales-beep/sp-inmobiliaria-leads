@@ -815,7 +815,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
   const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); });
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(localStorage.getItem('sp_chat_enter_sends')!=='false')&&!e.shiftKey){ e.preventDefault(); enviar(); } });
-  $('#cSend').onclick=()=>{ const t=($('#cInput').value||'').trim(); if(t.length>0) enviar(); else if(!_rec) startGrabacion(); };
+  $('#cSend').onclick=()=>{ try{ const t=($('#cInput').value||'').trim(); if(t.length>0) enviar(); else if(!_rec) startGrabacion(); else haptic(6); }catch(e){ console.error('cSend',e); haptic(12); toast('Error'); } };
   wireHoldRecord($('#cSend'));
   $('#replyX').onclick=cancelarReply;
   // Chat search
@@ -852,7 +852,7 @@ function cancelarReply(){ replyTo=null; const bar=document.getElementById('cRepl
 /* ════════ Voice Recording — WhatsApp style (hold-to-record) ════════ */
 let _rec=null, _recChunks=[], _recTimer=null, _recSec=0, _recCancelling=false;
 function startGrabacion(){
-  if(_rec||window._sending) return;
+  if(_rec) return; window._sending=false;
   _recSec=0; _recChunks=[]; _recCancelling=false; _recLocked=false;
   try{
     navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
@@ -862,8 +862,8 @@ function startGrabacion(){
       _rec.start(); haptic(20);
       $('#recBar').classList.add('show'); $('#cInput__row').classList.add('hidden');
       _recTimer=setInterval(()=>{ _recSec++; const m=Math.floor(_recSec/60); const seg=String(_recSec%60).padStart(2,'0'); const t=$('#recTime'); if(t) t.textContent=m+':'+seg; },1000);
-    }).catch(()=>toast('Permiso de micrófono requerido'));
-  }catch(e){ toast('Grabación no disponible'); }
+    }).catch(()=>{ toast('Permiso de micrófono requerido'); console.error('getUserMedia fail'); });
+  }catch(e){ console.error('startGrabacion',e); toast('Grabación no disponible'); }
 }
 function detenerGrabacion(){ if(!_rec) return; _rec.stop(); clearInterval(_recTimer); _rec=null; }
 function cancelarGrabacion(){ _recCancelling=true; detenerGrabacion(); _recChunks=[]; _recSec=0; limpiarRecUI(); }
@@ -907,11 +907,11 @@ function wireHoldRecord(btn){
     }
   }
   function onTouchEnd(){
-    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; return; }
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; started=false; return; }
     if(!started||!_rec) return;
-    if(_recCancelling){ cancelarGrabacion(); toast('Grabación cancelada'); }
+    started=false;
+    if(_recCancelling){ _recCancelling=false; cancelarGrabacion(); toast('Grabación cancelada'); }
     else enviarGrabacion();
-    started=false; _recCancelling=false;
   }
   btn.addEventListener('touchstart',onTouchStart,{passive:true});
   btn.addEventListener('touchmove',onTouchMove,{passive:true});
