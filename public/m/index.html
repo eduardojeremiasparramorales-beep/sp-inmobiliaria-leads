@@ -804,6 +804,9 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       </div>
     </div>`;
   const box=$('#cMsgs'); box.scrollTop=box.scrollHeight;
+  // MutationObserver: limpia _audioPlayers en cada re-render del chat automáticamente
+  if(window._audioObs) window._audioObs.disconnect();
+  if(box){ window._audioObs=new MutationObserver(()=>{ _audioPlayers={}; }); window._audioObs.observe(box,{childList:true}); }
   // Link preview: detect URLs and fetch previews
   setTimeout(()=>{ linkPreviews(); }, 300);
   // Wire message swipe (reply)

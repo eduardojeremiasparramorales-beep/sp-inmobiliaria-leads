@@ -76,6 +76,7 @@ async function initDB() {
   `);
 
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_customer_phone ON leads(customer_phone)`);
+  try { execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_active_phone ON leads(customer_phone) WHERE status != 'cerrado'`); } catch (e) { console.error('[DB] No se pudo crear UNIQUE INDEX (puede haber duplicados):', e.message); }
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_id ON leads(assigned_to_id)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_phone ON leads(assigned_to_phone)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)`);
@@ -223,20 +224,29 @@ async function initDB() {
 
 function getDB() { return adapter.getDB(); }
 
+function normalizePhone(phone) {
+  if (!phone) return phone;
+  const digits = String(phone).replace(/[^\d]/g, '');
+  if (digits.length === 12 && digits.startsWith('57')) return '+' + digits;
+  if (digits.length === 10) return '+57' + digits;
+  return String(phone).trim();
+}
+
 function saveLead(customerPhone, customerName, messageBody) {
   if (!customerPhone || !messageBody) {
     throw new Error('saveLead: customerPhone y messageBody son obligatorios');
   }
 
-  const existing = one('SELECT id, messages_count, status FROM leads WHERE customer_phone = ? AND status != ?', [customerPhone, 'cerrado']);
+  const phone = normalizePhone(customerPhone);
+  const existing = one('SELECT id, messages_count, status FROM leads WHERE customer_phone = ? AND status != ?', [phone, 'cerrado']);
   if (existing) {
     run('UPDATE leads SET messages_count = ?, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\') WHERE id = ?', [existing.messages_count + 1, messageBody, existing.id]);
     return { leadId: existing.id, isNew: false };
   }
 
-  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\'))', [customerPhone, customerName, messageBody, messageBody]);
+  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\'))', [phone, customerName, messageBody, messageBody]);
 
-  const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [customerPhone]);
+  const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [phone]);
   if (!r || !r.id) {
     throw new Error('No se pudo obtener ID del lead después de INSERT');
   }
@@ -415,7 +425,7 @@ function getLeadById(id) {
 }
 
 function getLeadByCustomerPhone(phone) {
-  return one('SELECT * FROM leads WHERE customer_phone = ? AND status != ?', [phone, 'cerrado']);
+  return one('SELECT * FROM leads WHERE customer_phone = ? AND status != ?', [normalizePhone(phone), 'cerrado']);
 }
 
 function updateLeadStatus(leadId, status) {
