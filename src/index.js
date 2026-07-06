@@ -235,6 +235,29 @@ app.post('/api/nlp/daily-briefing', auth.requireAuth, async (req, res) => {
   }
 });
 
+// ===================== CHAT IA (ChatGPT-style) =====================
+
+app.post('/api/nlp/chat', auth.requireAuth, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    if (!nlp.isAIEnabled()) return res.status(400).json({ error: 'IA desactivada. Configura una API Key en Ajustes → IA Copiloto.' });
+    const { message, history } = req.body || {};
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Mensaje requerido' });
+    const ctx = (history || []).map(m => `${m.role}: ${m.content}`).join('\n');
+    const reply = await nlp.chatText(
+      `Eres Copiloto SP, el asistente IA de SP Inmobiliaria, una firma colombiana de inversión en lotes.
+      Ayudas a los vendedores del equipo a mejorar sus ventas, redactar mensajes, analizar leads, y resolver dudas.
+      Responde de forma clara, profesional y en español.`,
+      `${ctx ? 'Contexto:\n' + ctx + '\n\n' : ''}Mensaje: ${message}`,
+      30000
+    );
+    res.json({ ok: true, reply, model: nlp.getModel() });
+  } catch (e) {
+    console.error('[NLP] chat error:', e.message);
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
 // ===================== API PÚBLICA v2 =====================
 app.use('/api/v2', require('./api/v2'));
 
@@ -1200,6 +1223,14 @@ app.post('/api/leads/:id/desarchivar', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Resetear un lead (dejarlo como nuevo, sin borrar historial)
+app.post('/api/leads/:id/reset', auth.requireAdmin, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  store.resetLead(lead.id);
+  res.json({ ok: true });
+});
+
 // Etiquetas válidas del pipeline
 const ETIQUETAS_VALIDAS = ['sin_clasificar', 'interesado', 'negociacion', 'cita', 'vendido', 'no_interesado'];
 
@@ -1335,7 +1366,7 @@ app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
   const vendedor = getVendedores().find(v => Number(v.id) === Number(vendedorId));
   if (!vendedor) return res.status(400).json({ error: 'vendedor_no_existe' });
   const anteriorId = lead.assigned_to_id;
-  store.reassignLead(lead.id, vendedor);
+  store.reassignLead(lead.id, vendedor, anteriorId);
   // Notificar a ambos vendedores y admins para refrescar sus listas
   events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
   if (anteriorId) events.emitToVendedor(anteriorId, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
@@ -1437,6 +1468,7 @@ const CONFIG_KEYS = [
   'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
   'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
   'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
+  'escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas',
 ];
 
 app.get('/api/config', auth.requireAdmin, (req, res) => {
@@ -1818,27 +1850,106 @@ app.get('/api/admin/export/leads', auth.requireAdmin, (req, res) => {
   res.send('﻿' + header + rows);
 });
 
-// Escalation check
+// Escalation check — sistema inteligente
+const ESC_ALERTA_MIN = Number(process.env.ESC_ALERTA_MIN || store.getConfig('escalation_alerta_min') || 15);
+const ESC_REASIGNAR_MIN = Number(process.env.ESC_REASIGNAR_MIN || store.getConfig('escalation_reasignar_min') || 30);
+const ESC_ADMIN_MIN = Number(process.env.ESC_ADMIN_MIN || store.getConfig('escalation_admin_min') || 60);
+const ESC_ASENTADO_HORAS = Number(process.env.ESC_ASENTADO_HORAS || store.getConfig('escalation_asentado_horas') || 24);
+
 async function checkEscalation() {
   try {
-    const treinta = getLeadsSinRespuesta(30);
-    for (const lead of treinta) {
-      if (lead.escalation_level < 1) {
+    const ahora = Date.now();
+    const leadsSinRespuesta = getLeadsSinRespuesta(0); // todos los sin respuesta
+
+    for (const lead of leadsSinRespuesta) {
+      // Determinar tipo de lead
+      const esNuevo = !lead.first_response_at;
+      const creadoEn = new Date(lead.created_at.replace(' ', 'T') + 'Z').getTime();
+      const minutosDesdeCreacion = (ahora - creadoEn) / 60000;
+      const horasDesdeCreacion = minutosDesdeCreacion / 60;
+      const esAsentado = horasDesdeCreacion >= ESC_ASENTADO_HORAS;
+
+      // Saltar leads asentados (más de 24h con el mismo vendedor) — no se reasignan
+      if (esAsentado && lead.escalation_level > 0) continue;
+
+      // ===== 15 min (o configurable) — ALERTA al vendedor =====
+      if (minutosDesdeCreacion >= ESC_ALERTA_MIN && lead.escalation_level < 1) {
         incrementEscalation(lead.id);
-        console.log(`Escalation 30min lead ${lead.id}`);
+        console.log(`[ESCALADO] Alerta ${ESC_ALERTA_MIN}min lead ${lead.id} (${lead.customer_name})`);
         if (lead.assigned_to_phone) {
           await sendMessage(lead.assigned_to_phone,
-            `Alerta SP Inmobiliaria\nLlevas 30 min sin responder al lead ${lead.customer_name} (${lead.customer_phone}).`
+            `⏰ Alerta SP Inmobiliaria\nLlevas ${ESC_ALERTA_MIN} min sin responder a ${lead.customer_name} (${lead.customer_phone}).\nPor favor responde lo antes posible.`
           ).catch(() => {});
         }
+        continue;
       }
-    }
-    const sesenta = getLeadsSinRespuesta(60);
-    for (const lead of sesenta) {
-      if (lead.escalation_level < 2) {
+
+      // ===== 30 min (o configurable) — REASIGNAR solo leads NUEVOS =====
+      if (minutosDesdeCreacion >= ESC_REASIGNAR_MIN && lead.escalation_level < 2) {
         incrementEscalation(lead.id);
-        console.log(`Escalation 60min lead ${lead.id} — sin respuesta, notificando admin`);
-        events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_sin_respuesta', ts: Date.now() });
+        if (esNuevo && !esAsentado) {
+          console.log(`[ESCALADO] Reasignando lead ${lead.id} (${lead.customer_name}) — ${ESC_REASIGNAR_MIN} min sin respuesta`);
+          const activos = getVendedoresActivos();
+          // Buscar un vendedor diferente al actual
+          const otroVendedor = activos.find(v => v.id !== lead.assigned_to_id);
+          if (otroVendedor && lead.assigned_to_id) {
+            const vendedorAnterior = lead.assigned_to_id;
+            store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
+            // Notificar a AMBOS vendedores
+            events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            // Notificar al vendedor anterior
+            if (lead.assigned_to_phone) {
+              await sendMessage(lead.assigned_to_phone,
+                `🔄 Reasignación automática\nEl lead ${lead.customer_name} (${lead.customer_phone}) ha sido reasignado a otro vendedor por falta de respuesta.`
+              ).catch(() => {});
+            }
+            // Notificar al nuevo vendedor
+            await sendMessage(otroVendedor.telefono,
+              `🆕 Lead reasignado automáticamente\nCliente: ${lead.customer_name}\nTel: ${lead.customer_phone}\nMensajes previos en el historial.\nPor favor responde lo antes posible.`
+            ).catch(() => {});
+          } else {
+            // No hay otro vendedor disponible — alerta fuerte
+            events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_sin_vendedores', ts: Date.now() });
+            if (lead.assigned_to_phone) {
+              await sendMessage(lead.assigned_to_phone,
+                `⚠️ ALERTA CRÍTICA\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min esperando.\nNo hay otros vendedores disponibles. RESPUESTA INMEDIATA REQUERIDA.`
+              ).catch(() => {});
+            }
+          }
+        } else {
+          // Lead recurrente — solo alerta más fuerte
+          if (lead.assigned_to_phone) {
+            await sendMessage(lead.assigned_to_phone,
+              `⚠️ ALERTA SP Inmobiliaria\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min sin respuesta.\nEs un cliente recurrente — prioriza su atención.`
+            ).catch(() => {});
+          }
+        }
+        continue;
+      }
+
+      // ===== 60 min (o configurable) — NOTIFICAR ADMIN =====
+      if (minutosDesdeCreacion >= ESC_ADMIN_MIN && lead.escalation_level < 3) {
+        incrementEscalation(lead.id);
+        console.log(`[ESCALADO] Admin notificado — lead ${lead.id} lleva ${ESC_ADMIN_MIN} min sin respuesta`);
+        events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_admin', minutos: Math.round(minutosDesdeCreacion), ts: Date.now() });
+        // Si es nuevo y no se reasignó antes, intentar reasignar ahora
+        if (esNuevo && !esAsentado) {
+          const activos = getVendedoresActivos();
+          const otroVendedor = activos.find(v => v.id !== lead.assigned_to_id);
+          if (otroVendedor && lead.assigned_to_id) {
+            const vendedorAnterior = lead.assigned_to_id;
+            store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
+            events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            await sendMessage(otroVendedor.telefono,
+              `🆕 Lead reasignado (urgente)\nCliente: ${lead.customer_name}\nTel: ${lead.customer_phone}\n⚠️ Ya pasaron ${ESC_ADMIN_MIN} min sin respuesta.\nTodo el historial está disponible.`
+            ).catch(() => {});
+          }
+        }
+        continue;
       }
     }
   } catch (e) {

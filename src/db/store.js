@@ -226,10 +226,19 @@ function getDB() { return adapter.getDB(); }
 
 function normalizePhone(phone) {
   if (!phone) return phone;
-  const digits = String(phone).replace(/[^\d]/g, '');
+  let s = String(phone).trim();
+  // Quitar +57 o 57 del inicio si ya viene con código de país
+  const digits = s.replace(/[^\d]/g, '');
   if (digits.length === 12 && digits.startsWith('57')) return '+' + digits;
+  if (digits.length === 11 && digits.startsWith('57')) return '+' + digits;
   if (digits.length === 10) return '+57' + digits;
-  return String(phone).trim();
+  // Si ya tiene + y formato raro, limpiar y normalizar
+  if (s.startsWith('+')) {
+    const d = s.replace(/[^\d]/g, '');
+    if (d.length >= 12) return '+' + d.slice(0, 13);
+    if (d.length === 10) return '+57' + d;
+  }
+  return s;
 }
 
 function saveLead(customerPhone, customerName, messageBody) {
@@ -430,6 +439,16 @@ function getLeadByCustomerPhone(phone) {
 
 function updateLeadStatus(leadId, status) {
   run('UPDATE leads SET status = ?, updated_at = datetime(\'now\') WHERE id = ?', [status, leadId]);
+}
+
+function resetLead(leadId) {
+  run(`UPDATE leads SET
+    status = 'nuevo',
+    first_response_at = NULL,
+    escalation_level = 0,
+    unread_count = 0,
+    updated_at = datetime('now')
+  WHERE id = ?`, [leadId]);
 }
 
 function setFirstResponse(leadId) {
@@ -727,10 +746,13 @@ function deleteNota(id) {
   run('DELETE FROM lead_notes WHERE id = ?', [id]);
 }
 
-// --- Reasignación manual de un lead ---
-function reassignLead(leadId, vendedor) {
+// --- Reasignación de un lead (admin o automática) ---
+function reassignLead(leadId, vendedor, vendedorAnteriorId) {
   run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
+  if (vendedorAnteriorId) {
+    run('UPDATE vendedores SET total_leads = MAX(0, total_leads - 1) WHERE id = ?', [vendedorAnteriorId]);
+  }
 }
 
 // --- Eliminar vendedor y reasignar sus leads ---
@@ -1206,7 +1228,7 @@ function getWorkflowLogs(workflowId) {
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
-  updateLeadStatus, setFirstResponse,
+  updateLeadStatus, setFirstResponse, resetLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setUnreadCount, setLeadNombre,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,

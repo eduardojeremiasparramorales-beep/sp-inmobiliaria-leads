@@ -118,6 +118,7 @@
         <div class="u-col u-gap1" style="margin-top:var(--s3)">
           <button class="btn btn--ghost btn--block btn--sm" onclick="SPOS.toast('Recordatorio creado','ok')">${ICONS.clock}Agendar seguimiento</button>
           <button class="btn btn--ghost btn--block btn--sm btn-crm-ai" data-lead-id="${l.id}" data-name="${esc(l.customer_name || '')}">${ICONS.ai}Sugerir respuesta con IA</button>
+          <button class="btn btn--ghost btn--block btn--sm btn-crm-reset" data-lead-id="${l.id}" style="color:var(--text-3);font-size:11px;border-color:var(--border-soft)">${ICONS.zap}Resetear lead (dejar como nuevo)</button>
         </div>
         <div id="crmAiSuggestions" style="display:none;margin-top:8px"></div>
       </div>`;
@@ -140,6 +141,17 @@
               onclick="var i=prompt('Editar antes de copiar:','${esc(s)}');if(i)prompt('Copiado al portapapeles','${esc(s)}')">${esc(s)}</div>`
       ).join('');
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    // Wire Reset lead button
+    const resetBtn = ctx.panel.querySelector('.btn-crm-reset');
+    if (resetBtn) resetBtn.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const leadId = Number(btn.dataset.leadId);
+      if (!confirm('¿Resetear este lead? Se marcará como nuevo (sin responder). El historial de mensajes se conserva.')) return;
+      btn.disabled = true; btn.textContent = 'Resetando...';
+      const r = await api('/api/leads/' + leadId + '/reset', { method: 'POST' });
+      btn.disabled = false; btn.innerHTML = '${ICONS.zap}Resetear lead (dejar como nuevo)';
+      if (r) { toast('Lead reseteado — aparece como nuevo', 'ok'); openLead(leadId); } else toast('Error al resetear', 'err');
     });
   }
   const info = (k,v,gold) => `<div class="u-between" style="padding:7px 0"><span class="t-dim3" style="font-size:12.5px">${k}</span><span style="font-size:13px;font-weight:500${gold?';color:var(--gold)':''}">${v}</span></div>`;

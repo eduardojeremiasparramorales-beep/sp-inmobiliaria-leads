@@ -75,6 +75,17 @@
       <button type="submit" class="cfg-save">Guardar integraciones</button>
     </form>
 
+    <form class="cfg-sec" id="fEscalation">
+      <h3>⏰ Escalado inteligente</h3>
+      <p>Tiempos para alertar y reasignar leads cuando un vendedor no responde. Los leads nuevos se reasignan automáticamente; los recurrentes solo reciben alertas.</p>
+      <div class="cfg-field"><label>Alerta al vendedor (minutos)</label><input id="escalation_alerta_min" value="${v('escalation_alerta_min') || '15'}" placeholder="15"></div>
+      <div class="cfg-field"><label>Reasignar lead nuevo (minutos)</label><input id="escalation_reasignar_min" value="${v('escalation_reasignar_min') || '30'}" placeholder="30"></div>
+      <div class="cfg-field"><label>Notificar admin (minutos)</label><input id="escalation_admin_min" value="${v('escalation_admin_min') || '60'}" placeholder="60"></div>
+      <div class="cfg-field"><label>Lead se considera "asentado" (horas)</label><input id="escalation_asentado_horas" value="${v('escalation_asentado_horas') || '24'}" placeholder="24">
+      <div class="cfg-hint">Después de este tiempo, el lead ya no se reasigna — solo recibe alertas el vendedor actual.</div></div>
+      <button type="submit" class="cfg-save">Guardar tiempos de escalado</button>
+    </form>
+
     <form class="cfg-sec" id="fIA">
       <h3>🤖 IA Copiloto</h3>
       <p>El Copiloto SP usa modelos de OpenRouter (compatible con OpenAI). Configura tu API Key y el modelo que quieras usar.</p>
@@ -160,6 +171,19 @@
     const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reengagement_template: sel.value }) });
     btn.disabled = false;
     if (r) toast('Template de reactivación guardado', 'ok'); else toast('Error al guardar', 'err');
+  });
+
+  // ===== Escalado inteligente =====
+  document.getElementById('fEscalation')?.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const btn = ev.target.querySelector('button');
+    btn.disabled = true;
+    const keys = ['escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas'];
+    const body = {};
+    keys.forEach(k => { body[k] = document.getElementById(k).value.trim() || ''; });
+    const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    btn.disabled = false;
+    if (r) toast('Tiempos de escalado guardados', 'ok'); else toast('Error al guardar', 'err');
   });
 
   // ===== IA Copiloto =====

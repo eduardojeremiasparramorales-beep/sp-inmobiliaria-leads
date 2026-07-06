@@ -42,6 +42,7 @@
     menu: P('<path d="M3 6h18M3 12h18M3 18h18"/>'),
     money: P('<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 2.5-5 1-5 3.5a2.5 2 0 0 0 5 0"/>'),
     target: P('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'),
+    zap: P('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
   };
 
   /* --- Navegación (una sola verdad) --- */
@@ -62,6 +63,7 @@
       { id: 'reportes', label: 'Reportes', icon: 'analytics', href: '/os/reportes.html' },
     ]},
     { title: 'Organización', items: [
+      { id: 'ia-chat', label: 'Chat IA', icon: 'ai', href: '/os/ia-chat.html', admin: true },
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
       { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: '/os/configuracion.html', admin: true },
