@@ -153,6 +153,9 @@
   .c-quick{ display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; }
   .c-quick button{ flex-shrink:0; height:30px; padding:0 13px; border-radius:999px; background:var(--bg-3); border:1px solid var(--border); color:var(--text-2); font-size:12px; }
   .c-input__row{ display:flex; align-items:flex-end; gap:8px; }
+  /* Durante grabación: ocultar + y campo de texto SIN ocultar #cSend (esconder el botón bajo el dedo cancela el touch) */
+  .c-input__row.recording .c-plus, .c-input__row.recording .c-pill{ display:none; }
+  .c-input__row.recording{ justify-content:flex-end; }
   .c-plus{ width:44px; height:44px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border); color:var(--gold); display:grid; place-items:center; flex-shrink:0; transition:transform .25s var(--spring); }
   .c-plus.open{ transform:rotate(45deg); }
   .c-plus svg{ width:22px; height:22px; }
@@ -756,8 +759,9 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       <div class="rec-bar" id="recBar">
         <span class="rec-dot" id="recDot"></span>
         <span class="rec-time" id="recTime">0:00</span>
-        <span class="rec-lock" id="recLock">${I(SVG.lock,13)}</span>
         <span class="rec-swipe" id="recSwipe">${I(SVG.arrowUp,14)} Desliza para cancelar</span>
+        <button class="rec-cancel" title="Cancelar">${I(SVG.x,17)}</button>
+        <button class="rec-send" title="Enviar audio">${I(SVG.send,16)}</button>
       </div>
       <div class="c-input__row" id="cInput__row">
         <button class="c-plus" id="cPlus">${I(SVG.plus,22)}</button>
@@ -823,6 +827,11 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
     else startGrabacion();           // desktop: primer click inicia grabación
   }catch(e){ console.error('cSend',e); haptic(12); toast('Error'); } };
   wireHoldRecord($('#cSend'));
+  // Botones de respaldo en la barra de grabación (delegación: sobrevive al innerHTML de wireHoldRecord)
+  $('#recBar').addEventListener('click',e=>{
+    if(e.target.closest('.rec-cancel')){ cancelarGrabacion(); toast('Grabación cancelada'); }
+    else if(e.target.closest('.rec-send')){ enviarGrabacion(); }
+  });
   $('#replyX').onclick=cancelarReply;
   // Chat search
   const cSearch=$('#cSearchInput'); const cSearchX=$('#cSearchX');
@@ -867,7 +876,7 @@ function startGrabacion(){
       _rec.ondataavailable=e=>{ if(e.data.size>0) _recChunks.push(e.data); };
       _rec.onstop=()=>{ s.getTracks().forEach(t=>t.stop()); };
       _rec.start(200); haptic(20); // timeslice: los chunks llegan durante la grabación (sin esto quedan vacíos al soltar)
-      $('#recBar').classList.add('show'); $('#cInput__row').classList.add('hidden');
+      $('#recBar').classList.add('show'); $('#cInput__row').classList.add('recording');
       _recTimer=setInterval(()=>{ _recSec++; const m=Math.floor(_recSec/60); const seg=String(_recSec%60).padStart(2,'0'); const t=$('#recTime'); if(t) t.textContent=m+':'+seg; },1000);
     }).catch(()=>{ toast('Permiso de micrófono requerido'); console.error('getUserMedia fail'); });
   }catch(e){ console.error('startGrabacion',e); toast('Grabación no disponible'); }
@@ -890,7 +899,7 @@ async function enviarGrabacion(){ if(!_rec) return; haptic([10,20]); const dot=$
   cancelarReply(); _recChunks=[]; _recSec=0; limpiarRecUI();
   if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Audio enviado'); } else toast('Error al enviar audio');
 }
-function limpiarRecUI(){ _rec=null; _recChunks=[]; _recSec=0; _recCancelling=false; _recLocked=false; $('#recBar').classList.remove('show'); $('#cInput__row').classList.remove('hidden'); if(_recTimer){ clearInterval(_recTimer); _recTimer=null; } }
+function limpiarRecUI(){ _rec=null; _recChunks=[]; _recSec=0; _recCancelling=false; _recLocked=false; $('#recBar').classList.remove('show'); $('#cInput__row').classList.remove('recording'); if(_recTimer){ clearInterval(_recTimer); _recTimer=null; } }
 // Hold-to-record en el botón de micrófono (solo cuando no hay texto)
 function wireHoldRecord(btn){
   let holdTimer=null, started=false, startY=0, moved=false;
@@ -903,7 +912,7 @@ function wireHoldRecord(btn){
       holdTimer=null; started=true;
       startGrabacion();
       const bar=$('#recBar');
-      if(bar){ bar.innerHTML=`<span class="rec-dot" id="recDot"></span><span class="rec-time" id="recTime">0:00</span><span class="rec-lock" id="recLock">${I(SVG.lock,13)}</span><span class="rec-swipe" id="recSwipe">${I(SVG.arrowUp,14)} Desliza para cancelar</span>`; }
+      if(bar){ bar.innerHTML=`<span class="rec-dot" id="recDot"></span><span class="rec-time" id="recTime">0:00</span><span class="rec-swipe" id="recSwipe">${I(SVG.arrowUp,14)} Desliza para cancelar</span><button class="rec-cancel" title="Cancelar">${I(SVG.x,17)}</button><button class="rec-send" title="Enviar audio">${I(SVG.send,16)}</button>`; }
     },200);
   }
   function onTouchMove(e){
@@ -928,9 +937,18 @@ function wireHoldRecord(btn){
     if(_recCancelling){ _recCancelling=false; cancelarGrabacion(); toast('Grabación cancelada'); }
     else enviarGrabacion();
   }
+  function onTouchCancel(){
+    setTimeout(()=>{ _recTouch=false; },500);
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; started=false; return; }
+    if(!started||!_rec) return;
+    started=false;
+    // El sistema interrumpió el touch (llamada, gesto, etc.) — enviar para no perder el audio
+    enviarGrabacion();
+  }
   btn.addEventListener('touchstart',onTouchStart,{passive:true});
   btn.addEventListener('touchmove',onTouchMove,{passive:true});
   btn.addEventListener('touchend',onTouchEnd);
+  btn.addEventListener('touchcancel',onTouchCancel);
 }
 
 let _editingMsg=null;
