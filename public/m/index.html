@@ -79,8 +79,17 @@
 
   .m-card{ position:relative; z-index:1; display:flex; gap:13px; padding:13px 18px; background:var(--bg-0); border-bottom:1px solid var(--border-soft); transition:transform .28s var(--spring), background .15s; will-change:transform; }
   .m-card:active{ background:var(--bg-1); }
-  .m-card.unread{ background:linear-gradient(135deg,rgba(200,164,90,.07),rgba(200,164,90,.02)); border-left:3px solid var(--gold); }
-  .m-card.flash-new{ animation:flash-gold .9s ease-out forwards; }
+  .m-card.unread{ background:linear-gradient(135deg,rgba(200,164,90,.07),rgba(200,164,90,.02)); border-left:3px solid var(--gold); box-shadow:inset 0 0 22px -14px rgba(200,164,90,.5); }
+  /* Borde dorado en movimiento alrededor de la tarjeta sin leer */
+  @property --spin{ syntax:'<angle>'; initial-value:0deg; inherits:false; }
+  .m-card.unread::after{
+    content:''; position:absolute; inset:3px; border-radius:14px; pointer-events:none; z-index:2; padding:1.5px;
+    background:conic-gradient(from var(--spin), transparent 0 68%, rgba(232,201,122,.55) 80%, #F2DA9C 88%, rgba(232,201,122,.55) 96%, transparent 100%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    animation:spin-border 2.8s linear infinite;
+  }
+  @keyframes spin-border{ to{ --spin:360deg; } }
   .m-card__prio{ position:absolute; left:0; top:9px; bottom:9px; width:3px; border-radius:0 3px 3px 0; }
   .m-avatar{ position:relative; width:52px; height:52px; border-radius:16px; display:grid; place-items:center; color:#fff; font-weight:600; font-size:18px; flex-shrink:0; overflow:hidden; }
   .m-avatar img{ width:100%; height:100%; object-fit:cover; }
@@ -256,7 +265,6 @@
   /* ── Green dot unread ── */
   .m-unread-dot{ position:absolute; top:-1px; right:-1px; width:13px; height:13px; border-radius:50%; background:#34C759; border:2.5px solid var(--bg-0); z-index:3; animation:pulse-dot 2s ease-in-out infinite; }
   @keyframes pulse-dot{ 0%,100%{opacity:1} 50%{opacity:.5} }
-  @keyframes flash-gold{ 0%{box-shadow:0 0 0 2px var(--gold),0 0 20px 3px rgba(200,164,90,.4);background:rgba(200,164,90,.12)} 50%{box-shadow:0 0 0 1px var(--gold),0 0 10px 2px rgba(200,164,90,.2);background:rgba(200,164,90,.05)} 100%{box-shadow:none;background:transparent} }
 
   /* ── Archivados toggle ── */
   .m-arch-btn{ display:flex; align-items:center; gap:8px; padding:8px 18px; font-size:13px; color:var(--text-3); cursor:pointer; border-bottom:1px solid var(--border-soft); background:var(--bg-1); transition:background .15s; }
@@ -285,7 +293,8 @@
   .chk{ vertical-align:middle; margin-left:3px; }
   .chk-sent{ color:var(--text-3); }
   .chk-delivered{ color:var(--text-2); }
-  .chk-read{ color:var(--gold); }
+  .chk-read{ color:#E8C97A; font-weight:800; filter:drop-shadow(0 0 3px rgba(200,164,90,.65)); }
+  .chk-read svg{ stroke-width:3; }
   .chk-visto{ font-size:9.5px; color:var(--text-3); vertical-align:middle; }
   .link-preview{ margin:6px 0 2px; border-radius:12px; overflow:hidden; background:var(--bg-3); border:1px solid var(--border); cursor:pointer; transition:opacity .15s; }
   .link-preview:active{ opacity:.7; }
@@ -354,6 +363,8 @@
   /* ── Deleted message placeholder ── */
   .bub-deleted{ font-style:italic; color:var(--text-3); font-size:13px; }
   .bub--out .bub-deleted{ color:rgba(255,255,255,.35); }
+  .bub-antidelete{ margin-top:4px; padding:6px 8px; border-left:2px solid var(--gold); background:rgba(200,164,90,.08); border-radius:6px; font-size:12px; color:var(--text-2); }
+  .bub-antidelete::before{ content:'Texto original conservado'; display:block; font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:var(--gold); margin-bottom:2px; }
   /* ── Pin badge on card ── */
   .m-card__pin{ position:absolute; top:-1px; right:12px; color:var(--gold); font-size:9px; display:flex; align-items:center; gap:2px; opacity:.7; }
   .m-card__pin svg{ width:11px; height:11px; }
@@ -636,10 +647,10 @@ function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div cl
     return;
   }
   box.innerHTML = ptr + archBtn + items.map((l,idx)=>cardHTML(l,idx)).join('');
-  box.querySelectorAll('.m-row').forEach(row=>wireSwipe(row));
+  box.querySelectorAll('.m-row').forEach(row=>wireCard(row));
   const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
 }
-function updateCardBadges(){ document.querySelectorAll('.m-row').forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); const was=card.classList.contains('unread'); card.classList.toggle('unread',unread>0); if(unread>0&&!was){ card.classList.remove('flash-new'); void card.offsetWidth; card.classList.add('flash-new'); } const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
+function updateCardBadges(){ document.querySelectorAll('.m-row').forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); card.classList.toggle('unread',unread>0); const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
 
 function toggleArchivados(){ haptic(8); showArchivados = !showArchivados; renderList(); }
 function cardHTML(l,idx){
@@ -647,14 +658,6 @@ function cardHTML(l,idx){
   const archived = showArchivados;
   const greenDot = unread && !archived ? '<span class="m-unread-dot"></span>' : '';
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
-    <div class="m-row__actions left">
-      <button class="swipe-act sa-call" data-a="call">${I(SVG.phone,19)}Llamar</button>
-      ${archived?`<button class="swipe-act sa-wa" data-a="unarch">${I(SVG.archive,19)}Volver</button>`:`<button class="swipe-act sa-note" data-a="note">${I(SVG.file,19)}Nota</button><button class="swipe-act sa-mute" data-a="mute" style="color:${l.muted_at?'var(--gold)':'var(--text-2)'}">${l.muted_at?I('<path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/>',15):I(SVG.bell,15)}</button><button class="swipe-act sa-pin" data-a="pin">${I(SVG.pin,17)}${l.pinned_at?'Quitar':'Fijar'}</button>`}
-    </div>
-    <div class="m-row__actions right">
-      ${archived?'':`<button class="swipe-act sa-tag" data-a="tag">${I(SVG.tag,19)}No leído</button>`}
-      <button class="swipe-act sa-arch" data-a="${archived?'unarch':'arch'}">${I(SVG.archive,19)}${archived?'Volver':'Archivar'}</button>
-    </div>
     <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
       ${l.pinned_at?`<span class="m-card__pin">${I(SVG.pin,11)} Fijado</span>`:''}
@@ -666,7 +669,6 @@ function cardHTML(l,idx){
         <div class="m-card__l3">
           <span class="m-tag t-${e.cls}">${e.t}</span>
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
-          ${l.assigned_to_nombre?`<span class="m-vendor">${I(SVG.user,10)} ${esc(l.assigned_to_nombre)}</span>`:''}
           <span class="m-meta">${I(SVG.facebook,11)} ${l.origen||'—'}</span>
           <span class="m-score">${score} ${'<span class="bar"><i style="width:'+score+'%"></i></span>'}</span>
         </div>
@@ -675,14 +677,35 @@ function cardHTML(l,idx){
   </div>`;
 }
 
-/* ════════ Swipe horizontal ════════ */
-function wireSwipe(row){
-  const card=row.querySelector('.m-card'); let x0=0,y0=0,dx=0,drag=false,locked=null; const L=192,R=128;
-  card.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; y0=e.touches[0].clientY; dx=0; drag=true; locked=null; card.style.transition='none'; },{passive:true});
-  card.addEventListener('touchmove',e=>{ if(!drag) return; const cx=e.touches[0].clientX, cy=e.touches[0].clientY; if(locked===null){ locked = Math.abs(cx-x0)>Math.abs(cy-y0)+4 ? 'x':'y'; } if(locked!=='x') return; dx=cx-x0; dx=Math.max(-R,Math.min(L,dx)); card.style.transform=`translateX(${dx}px)`; },{passive:true});
-  card.addEventListener('touchend',()=>{ if(!drag) return; drag=false; card.style.transition='transform .3s var(--spring)'; let to=0; if(dx>60){ to=L; haptic(8); } else if(dx<-50){ to=-R; haptic(8); } card.style.transform=`translateX(${to}px)`; });
-  row.querySelectorAll('.swipe-act').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); card.style.transform='translateX(0)'; swipeAction(b.dataset.a, row); }));
-  card.addEventListener('click',()=>{ if(Math.abs(dx)>6){ card.style.transform='translateX(0)'; dx=0; return; } abrirChat(Number(card.dataset.open)); });
+/* ════════ Tarjetas: long-press (estilo WhatsApp) — sin swipe lateral ════════ */
+function wireCard(row){
+  const card=row.querySelector('.m-card'); if(!card) return;
+  let lpTimer=null, lpFired=false, sx=0, sy=0;
+  const abrirMenu=()=>{ lpTimer=null; lpFired=true; setTimeout(()=>{ lpFired=false; },600); haptic(18); cardMenu(Number(row.dataset.id)); };
+  card.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; lpFired=false; lpTimer=setTimeout(abrirMenu,450); },{passive:true});
+  card.addEventListener('touchmove',e=>{ if(!lpTimer) return; const dx=Math.abs(e.touches[0].clientX-sx), dy=Math.abs(e.touches[0].clientY-sy); if(dx>10||dy>10){ clearTimeout(lpTimer); lpTimer=null; } },{passive:true});
+  const cancelar=()=>{ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } };
+  card.addEventListener('touchend',cancelar);
+  card.addEventListener('touchcancel',cancelar);
+  card.addEventListener('contextmenu',e=>{ e.preventDefault(); abrirMenu(); }); // desktop: click derecho
+  card.addEventListener('click',()=>{ if(lpFired){ lpFired=false; return; } abrirChat(Number(card.dataset.open)); });
+}
+function cardMenu(id){
+  const l=findLead(id); if(!l) return;
+  const archived=showArchivados;
+  const items=[
+    ['call','Llamar',SVG.phone,''],
+    ...(archived?[['unarch','Restaurar a bandeja',SVG.archive,'primary']]:[
+      ['note','Agregar nota',SVG.file,''],
+      ['tag','Cambiar etapa',SVG.tag,''],
+      ['unread','Marcar no leído',SVG.chat||SVG.tag,''],
+      ['pin',l.pinned_at?'Quitar fijado':'Fijar',SVG.pin,''],
+      ['mute',l.muted_at?'Activar notificaciones':'Silenciar',SVG.bell,''],
+      ['arch','Archivar',SVG.archive,'danger'],
+    ]),
+  ];
+  openSheet(esc(l.customer_name||'Cliente'), `<div style="padding:6px 0">${items.map(([a,label,ic,cls])=>`<div class="ctx-item ${cls}" data-cm="${a}"><div class="ctx-ic">${I(ic,18)}</div><div>${label}</div></div>`).join('')}</div>`);
+  document.querySelectorAll('[data-cm]').forEach(el=>el.onclick=()=>{ closeSheet(); swipeAction(el.dataset.cm, {dataset:{id:String(l.id), phone:l.customer_phone||''}}); });
 }
 function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.dataset.phone||'').replace(/[^\d+]/g,''); const l=findLead(id); haptic(12);
   if(a==='call'){ if(phone) location.href='tel:'+phone; else toast('Sin número'); }
@@ -817,7 +840,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   $('#scChat').querySelectorAll('.c-act').forEach(b=>b.onclick=()=>chatAccion(b.dataset.ca));
   $('#cPlus').onclick=()=>{ $('#cPlus').classList.toggle('open'); abrirAdjuntos(); };
   $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
-  const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); });
+  const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); notifyTyping(); });
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(localStorage.getItem('sp_chat_enter_sends')!=='false')&&!e.shiftKey){ e.preventDefault(); enviar(); } });
   $('#cSend').onclick=()=>{ try{
     if(_recTouch) return; // en móvil el hold-to-record maneja todo; ignorar el click fantasma post-touch
@@ -1224,6 +1247,16 @@ function renderReactions(reactions){
   return '<div class="bub-reactions">'+Object.entries(counts).map(([emoji,cnt])=>`<span class="bub-reaction${mineSet.has(emoji)?' mine':''}" data-emoji="${esc(emoji)}">${emoji}${cnt>1?`<span class="r-count">${cnt}</span>`:''}</span>`).join('')+'</div>';
 }
 function msgInner(m){
+  if(m.deleted_for_all){
+    const byClient=m.deleted_by==='cliente';
+    if(byClient){
+      // Anti-delete: el cliente lo borró pero el CRM conserva el texto
+      const original=m.body?`<div class="bub-antidelete">${esc(m.body)}</div>`:'';
+      return `<div class="bub-deleted">🚫 El cliente eliminó este mensaje</div>${original}`;
+    }
+    return `<div class="bub-deleted">🚫 Mensaje eliminado${m.deleted_by?' · '+esc(m.deleted_by):''}</div>`;
+  }
+  if(m.deleted_for_sender) return '<div class="bub-deleted">Eliminaste este mensaje</div>';
   let quoteHTML='';
   if(m.reply_to_id && m.reply_to_body){ const icon=m.reply_to_media_type?{'image':'🖼️','video':'🎬','audio':'🎙️','document':'📄'}[m.reply_to_media_type]||'📎':''; const preview=icon+(m.reply_to_body||'').slice(0,80); const label=m.reply_to_direction!=='incoming'?'Tú':'Cliente'; quoteHTML=`<div class="bub-quote"><span>${esc(label)}</span>${esc(preview)}</div>`; }
   if(m.media_type) return quoteHTML+renderMedia(m);
@@ -1258,6 +1291,16 @@ function chkHTML(st,readAt){
   return `<span class="chk chk-sent"><svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="10"><path d="M2 7l4 4L14 3"/></svg></span>`;
 }
 function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?`<div class="audio-wrap"><audio src="${src}" controls></audio></div>`:'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; }
+
+// El cliente ve "escribiendo…" en su WhatsApp (Meta lo muestra 25s; throttle de 20s)
+let _typingLast=0;
+function notifyTyping(){
+  if(!current) return;
+  const v=($('#cInput')&&$('#cInput').value||'').trim(); if(!v) return;
+  const now=Date.now(); if(now-_typingLast<20000) return;
+  _typingLast=now;
+  api(`/api/leads/${current.id}/typing`,{method:'POST'});
+}
 
 async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(); if(!msg||!current||window._sending) return; window._sending=true; haptic([10,20,10]);
   const sendBtn=$('#cSend'); if(sendBtn) sendBtn.disabled=true;
@@ -1861,6 +1904,12 @@ async function cargarTareas(){
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
   es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
   es.addEventListener('lead_actualizado',async ev=>{ const d=await api('/api/mis-leads'); if(d) leads=d; if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } });
+  // Checkmark en vivo cuando el cliente recibe/lee (sin re-render del chat)
+  es.addEventListener('status_update',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m) m.status=x.status; const wrap=document.getElementById('msg_'+x.messageId); if(wrap){ const t=wrap.querySelector('.bub__t'); if(t){ const old=t.querySelector('.chk'); if(old){ const tmp=document.createElement('span'); tmp.innerHTML=chkHTML(x.status,null); old.replaceWith(tmp.firstChild); } } } }catch(e){} });
+  // Mensaje eliminado (por un asesor o por el cliente — anti-delete)
+  es.addEventListener('mensaje_eliminado',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } if(x.byClient) toast('El cliente eliminó un mensaje — texto conservado'); } }catch(e){} });
+  // Reacción del cliente en vivo
+  es.addEventListener('reaccion',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } } }catch(e){} });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
 

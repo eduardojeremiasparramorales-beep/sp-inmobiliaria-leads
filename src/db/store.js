@@ -104,6 +104,8 @@ async function initDB() {
   ensureColumn('leads', 'muted_at', 'DATETIME');
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
+  ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
+  ensureColumn('messages', 'deleted_by', 'TEXT');
   ensureColumn('messages', 'read_at', 'DATETIME');
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
@@ -329,6 +331,21 @@ function softDeleteMessage(messageId, senderNumber) {
   } else {
     run("UPDATE messages SET body = '', deleted_for_sender = 1 WHERE id = ?", [messageId]);
   }
+}
+
+// --- Eliminar para todos (solo dentro del CRM; la API de WhatsApp no permite borrar en el teléfono del cliente) ---
+function markDeletedForAll(messageId, byName) {
+  run("UPDATE messages SET deleted_for_all = 1, deleted_by = ? WHERE id = ?", [byName || '', messageId]);
+}
+
+// El cliente eliminó un mensaje para todos: se marca pero se CONSERVA el body (anti-delete)
+function markDeletedByClientWamid(wamid) {
+  run("UPDATE messages SET deleted_for_all = 1, deleted_by = 'cliente' WHERE wamid = ?", [wamid]);
+  return one('SELECT * FROM messages WHERE wamid = ? LIMIT 1', [wamid]);
+}
+
+function getMessageByWamid(wamid) {
+  return one('SELECT * FROM messages WHERE wamid = ? LIMIT 1', [wamid]);
 }
 
 // --- Pin de lead ---
@@ -1212,4 +1229,5 @@ module.exports = {
   addReaction, removeReaction, getReactionsForMessage, getReactionsForMessages,
   editMessage, softDeleteMessage, pinLead, muteLead, clearLeadMessages,
   markMessageAsRead, markLeadMessagesAsRead,
+  markDeletedForAll, markDeletedByClientWamid, getMessageByWamid,
 };

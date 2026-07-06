@@ -54,9 +54,10 @@ function assignLead(customerPhone, customerName, messageBody) {
   return { leadId: result.leadId, vendedor, isNew: result.isNew };
 }
 
-function routeReply(fromPhone, messageBody, customerName, callback) {
-  // customerName es opcional; si no llega, se usa 'Cliente'
-  if (typeof customerName === 'function') { callback = customerName; customerName = undefined; }
+function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
+  // customerName y wamid son opcionales
+  if (typeof customerName === 'function') { callback = customerName; customerName = undefined; wamid = null; }
+  if (typeof wamid === 'function') { callback = wamid; wamid = null; }
   const { getLeadByCustomerPhone, getVendedores, saveLead, assignLeadToVendedor, getLeadById } = require('../db/store');
 
   const vendedores = getVendedores();
@@ -95,7 +96,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
       : null;
     if (!v) v = activos[0];
 
-    saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming');
+    saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming', null, null, wamid || null);
     updateCustomerMessageTimestamp(lead.id);
     syncMulticanal(lead.id, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: v.telefono });
     notificarPanel(v.id, lead.id, 'mensaje_cliente');
@@ -114,7 +115,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
   const { saveLead: saveL } = require('../db/store');
   const r = saveL(fromPhone, customerName || 'Cliente', messageBody);
   const a = getVendedoresActivos();
-  const { sendMessageSmart } = require('./whatsapp');
+  const { sendMessageSmart, sendMessage } = require('./whatsapp');
 
   // Enviar mensaje de bienvenida automático al nuevo lead
   const welcome = getWelcomeMsg();
@@ -129,7 +130,7 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
     } catch (e) {
       console.error('Error asignando lead:', e.message);
     }
-    saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming');
+    saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming', null, null, wamid || null);
     updateCustomerMessageTimestamp(r.leadId);
     syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
@@ -144,7 +145,8 @@ function routeReply(fromPhone, messageBody, customerName, callback) {
 
 // Enruta un mensaje multimedia entrante de un cliente: guarda el lead/mensaje con
 // la referencia del archivo, avisa al panel y notifica al vendedor asignado.
-function routeIncomingMedia(fromPhone, customerName, mediaData, callback) {
+function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback) {
+  if (typeof wamid === 'function') { callback = wamid; wamid = null; }
   const store = require('../db/store');
   const { sendMessage } = require('./whatsapp');
 
@@ -168,7 +170,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, callback) {
     try { store.assignLeadToVendedor(lead.id, vendedor); } catch (e) { console.error('Error asignando lead media:', e.message); }
   }
 
-  store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', body, 'incoming', mediaData);
+  store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', body, 'incoming', mediaData, null, wamid || null);
   updateCustomerMessageTimestamp(lead.id);
   syncMulticanal(lead.id, { direction: 'incoming', body, media: mediaData, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '' });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');

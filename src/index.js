@@ -174,7 +174,7 @@ app.get('/api/stats', auth.requireAuth, (req, res) => {
   });
 });
 
-app.get('/api/leads', auth.requireAuth, (req, res) => {
+app.get('/api/leads', auth.requireAdmin, (req, res) => {
   const { limite, offset, busqueda, etiqueta, vendedorId } = req.query;
   if (limite || offset || busqueda || etiqueta || vendedorId) {
     return res.json(store.getAdminInbox({ busqueda, etiqueta, vendedorId, limite, offset }));
@@ -856,6 +856,12 @@ app.post('/api/messages/:id/react', auth.requireAuth, (req, res) => {
   const found = existing.find(r => r.emoji === emoji && r.sender_number === sender);
   if (found) store.removeReaction(msgId, emoji, sender);
   else store.addReaction(msgId, emoji, sender, dir);
+  // Enviar la reacción real a WhatsApp (el cliente la ve sobre su mensaje)
+  if (row.wamid && lead && lead.customer_phone) {
+    const { sendReaction } = require('./services/whatsapp');
+    sendReaction(lead.customer_phone, row.wamid, found ? '' : emoji)
+      .catch(e => console.error('[REACT] Error enviando reacción a WhatsApp:', e.message));
+  }
   const reactions = store.getReactionsForMessage(msgId);
   res.json({ ok: true, reactions });
 });
@@ -901,23 +907,19 @@ app.post('/api/messages/:id/delete', auth.requireAuth, async (req, res) => {
     store.softDeleteMessage(msgId, req.session.telefono || 'self');
     return res.json({ ok: true, mode: 'me' });
   }
-  // mode === 'everyone'
-  // Si tiene media, eliminar archivo
+  // mode === 'everyone' — soft delete sincronizado en el CRM.
+  // La API de WhatsApp no permite borrar en el teléfono del cliente.
   if (row.media_filename) {
     try {
       const mediaPath = require('path').join(__dirname, '..', 'data', 'media', String(row.media_filename));
       if (require('fs').existsSync(mediaPath)) require('fs').unlinkSync(mediaPath);
     } catch (e) { /* ignorar */ }
   }
-  // Intentar revocar en WhatsApp
-  if (row.direction === 'outgoing' && row.wamid) {
-    try {
-      const { revokeMessage } = require('./services/whatsapp');
-      await revokeMessage(lead.customer_phone, row.wamid).catch(() => {});
-    } catch (e) { /* ignorar */ }
+  store.markDeletedForAll(msgId, req.session.nombre || 'Asesor');
+  if (lead) {
+    events.emitToVendedor(lead.assigned_to_id, 'mensaje_eliminado', { leadId: lead.id, messageId: Number(msgId), ts: Date.now() });
+    events.emitToAdmins('mensaje_eliminado', { leadId: lead.id, messageId: Number(msgId), ts: Date.now() });
   }
-  adapter.run('DELETE FROM messages WHERE id = ?', [Number(msgId)]);
-  store.getMessagesByLead(row.lead_id); // refresh cache
   res.json({ ok: true, mode: 'everyone' });
 });
 
@@ -1107,6 +1109,29 @@ app.post('/api/leads/:id/leido', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   store.marcarLeido(lead.id);
+  // Read receipt real: el cliente ve ✓✓ azul en su WhatsApp
+  const adapter = require('./db/adapter');
+  const last = adapter.one("SELECT wamid FROM messages WHERE lead_id = ? AND direction = 'incoming' AND wamid IS NOT NULL ORDER BY id DESC LIMIT 1", [lead.id]);
+  if (last && last.wamid) {
+    const { markAsRead } = require('./services/whatsapp');
+    markAsRead(last.wamid).catch(e => console.error('[LEIDO] markAsRead WhatsApp:', e.message));
+  }
+  res.json({ ok: true });
+});
+
+// Indicador "escribiendo…" en el WhatsApp del cliente (también marca leído)
+app.post('/api/leads/:id/typing', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const adapter = require('./db/adapter');
+  const last = adapter.one("SELECT wamid FROM messages WHERE lead_id = ? AND direction = 'incoming' AND wamid IS NOT NULL ORDER BY id DESC LIMIT 1", [lead.id]);
+  if (last && last.wamid) {
+    const { sendTyping } = require('./services/whatsapp');
+    sendTyping(last.wamid).catch(e => console.error('[TYPING]', e.message));
+  }
   res.json({ ok: true });
 });
 
@@ -1612,7 +1637,7 @@ app.post('/api/test-reply', auth.requireAdmin, (req, res) => {
 });
 
 // Logs
-app.get('/api/logs', auth.requireAuth, (req, res) => {
+app.get('/api/logs', auth.requireAdmin, (req, res) => {
   const d = getDB();
   if (!d) return res.json([]);
   const r = d.exec('SELECT * FROM messages ORDER BY timestamp DESC LIMIT 50');
@@ -1695,21 +1720,8 @@ async function checkEscalation() {
     for (const lead of sesenta) {
       if (lead.escalation_level < 2) {
         incrementEscalation(lead.id);
-        console.log(`Escalation 60min lead ${lead.id} — reasignar`);
-        // Reasignar al vendedor con menos leads activos
-        const siguientes = store.getVendedoresActivos();
-        if (siguientes.length > 0) {
-          const siguiente = siguientes[0];
-          const vendedorActual = getVendedores().find(v => Number(v.id) === Number(lead.assigned_to_id));
-          store.reassignLead(lead.id, siguiente);
-          // Notificar al vendedor original
-          if (vendedorActual && vendedorActual.telefono) {
-            await sendMessage(vendedorActual.telefono,
-              `Notificación SP Inmobiliaria\nEl lead ${lead.customer_name} (${lead.customer_phone}) ha sido reasignado por falta de respuesta.`
-            ).catch(() => {});
-          }
-          events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_escalation', ts: Date.now() });
-        }
+        console.log(`Escalation 60min lead ${lead.id} — sin respuesta, notificando admin`);
+        events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_sin_respuesta', ts: Date.now() });
       }
     }
   } catch (e) {

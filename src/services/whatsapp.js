@@ -84,6 +84,31 @@ async function markAsRead(messageId) {
   return res.data;
 }
 
+// Marca leído Y muestra "escribiendo…" en el WhatsApp del cliente (dura 25s o hasta responder)
+async function sendTyping(messageId) {
+  const { url, headers } = getApiConfig();
+  const res = await axios.post(url, {
+    messaging_product: 'whatsapp',
+    status: 'read',
+    message_id: messageId,
+    typing_indicator: { type: 'text' },
+  }, { headers });
+  return res.data;
+}
+
+// Envía (emoji) o quita (emoji='') una reacción sobre un mensaje del cliente
+async function sendReaction(to, wamid, emoji) {
+  const { url, headers } = getApiConfig();
+  const res = await axios.post(url, {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'reaction',
+    reaction: { message_id: wamid, emoji: emoji || '' },
+  }, { headers });
+  return res.data;
+}
+
 const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
 
 // Devuelve la URL temporal y el mime de un media entrante (por su id)
@@ -166,4 +191,4 @@ async function revokeMessage(to, wamid) {
   }
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, getMediaUrl, downloadMedia, uploadMedia, sendMedia, editMessage, revokeMessage };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, editMessage, revokeMessage };

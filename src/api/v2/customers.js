@@ -3,7 +3,7 @@ const router = express.Router();
 const auth = require('../../services/auth');
 const store = require('../../db/store');
 
-router.use(auth.requireAuth);
+router.use(auth.requireAdmin);
 
 // GET / → lista con búsqueda por nombre/teléfono
 router.get('/', (req, res) => {
