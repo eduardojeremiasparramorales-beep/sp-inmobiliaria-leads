@@ -711,9 +711,10 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
   }
 
   try {
-    const nombreVendedor = req.session.nombre || 'Asesor SP';
-    const mensajeConPrefijo = `*${nombreVendedor}:* ${String(mensaje)}`;
-    const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConPrefijo, lead.id);
+    const nombreVendedor = req.session.nombre || 'Asesor';
+    const compania = store.getConfig('company_name') || 'SP Inmobiliaria';
+    const mensajeConFirma = `${String(mensaje)}\n\n____________________\n*${nombreVendedor}*\n_Asesor · ${compania}_`;
+    const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
     const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
@@ -795,12 +796,10 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
   try {
     const buffer = Buffer.from(dataBase64, 'base64');
     if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
-    const nombreVendedor = req.session.nombre || 'Asesor SP';
-    const captionConPrefijo = caption ? `*${nombreVendedor}:* ${caption}` : '';
-    const displayBody = caption ? captionConPrefijo : `[${tipo}]`;
+    const displayBody = caption || `[${tipo}]`;
     const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
     const mediaId = await uploadMedia(buffer, mime, filename);
-    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, captionConPrefijo, filename);
+    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
     const wamid = mediaResult && mediaResult.messages && mediaResult.messages[0] ? mediaResult.messages[0].id : null;
 
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
@@ -1279,6 +1278,7 @@ app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
 
 const CONFIG_KEYS = [
   'welcome_message',
+  'company_name',
   'reengagement_template',
   'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
   'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',

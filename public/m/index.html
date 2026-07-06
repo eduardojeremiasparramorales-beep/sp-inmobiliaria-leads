@@ -80,6 +80,7 @@
   .m-card{ position:relative; z-index:1; display:flex; gap:13px; padding:13px 18px; background:var(--bg-0); border-bottom:1px solid var(--border-soft); transition:transform .28s var(--spring), background .15s; will-change:transform; }
   .m-card:active{ background:var(--bg-1); }
   .m-card.unread{ background:linear-gradient(135deg,rgba(200,164,90,.07),rgba(200,164,90,.02)); border-left:3px solid var(--gold); }
+  .m-card.flash-new{ animation:flash-gold .9s ease-out forwards; }
   .m-card__prio{ position:absolute; left:0; top:9px; bottom:9px; width:3px; border-radius:0 3px 3px 0; }
   .m-avatar{ position:relative; width:52px; height:52px; border-radius:16px; display:grid; place-items:center; color:#fff; font-weight:600; font-size:18px; flex-shrink:0; overflow:hidden; }
   .m-avatar img{ width:100%; height:100%; object-fit:cover; }
@@ -95,6 +96,7 @@
   .m-badge{ min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--gold); color:#0A0A0A; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0; }
   .m-card__l3{ display:flex; align-items:center; gap:6px; margin-top:7px; flex-wrap:wrap; }
   .m-tag{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px; letter-spacing:.03em; }
+  .m-vendor{ font-size:10px; font-weight:500; padding:2px 7px; border-radius:999px; background:rgba(200,164,90,.12); color:var(--gold); border:1px solid rgba(200,164,90,.25); display:inline-flex; align-items:center; gap:3px; letter-spacing:.02em; }
   .m-meta{ font-size:10.5px; color:var(--text-3); display:inline-flex; align-items:center; gap:3px; }
   .m-meta svg{ width:11px; height:11px; opacity:.7; }
   .m-score{ margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; color:var(--gold); }
@@ -251,6 +253,7 @@
   /* ── Green dot unread ── */
   .m-unread-dot{ position:absolute; top:-1px; right:-1px; width:13px; height:13px; border-radius:50%; background:#34C759; border:2.5px solid var(--bg-0); z-index:3; animation:pulse-dot 2s ease-in-out infinite; }
   @keyframes pulse-dot{ 0%,100%{opacity:1} 50%{opacity:.5} }
+  @keyframes flash-gold{ 0%{box-shadow:0 0 0 2px var(--gold),0 0 20px 3px rgba(200,164,90,.4);background:rgba(200,164,90,.12)} 50%{box-shadow:0 0 0 1px var(--gold),0 0 10px 2px rgba(200,164,90,.2);background:rgba(200,164,90,.05)} 100%{box-shadow:none;background:transparent} }
 
   /* ── Archivados toggle ── */
   .m-arch-btn{ display:flex; align-items:center; gap:8px; padding:8px 18px; font-size:13px; color:var(--text-3); cursor:pointer; border-bottom:1px solid var(--border-soft); background:var(--bg-1); transition:background .15s; }
@@ -633,7 +636,7 @@ function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div cl
   box.querySelectorAll('.m-row').forEach(row=>wireSwipe(row));
   const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
 }
-function updateCardBadges(){ const rows=document.querySelectorAll('.m-row'); rows.forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); card.classList.toggle('unread',unread>0); const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
+function updateCardBadges(){ document.querySelectorAll('.m-row').forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); const was=card.classList.contains('unread'); card.classList.toggle('unread',unread>0); if(unread>0&&!was){ card.classList.remove('flash-new'); void card.offsetWidth; card.classList.add('flash-new'); } const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
 
 function toggleArchivados(){ haptic(8); showArchivados = !showArchivados; renderList(); }
 function cardHTML(l,idx){
@@ -660,6 +663,7 @@ function cardHTML(l,idx){
         <div class="m-card__l3">
           <span class="m-tag t-${e.cls}">${e.t}</span>
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
+          ${l.assigned_to_nombre?`<span class="m-vendor">${I(SVG.user,10)} ${esc(l.assigned_to_nombre)}</span>`:''}
           <span class="m-meta">${I(SVG.facebook,11)} ${l.origen||'—'}</span>
           <span class="m-score">${score} ${'<span class="bar"><i style="width:'+score+'%"></i></span>'}</span>
         </div>
@@ -1705,6 +1709,8 @@ function wire(){
   sc.addEventListener('touchstart',e=>{ at=sc.scrollTop<=0; sy=e.touches[0].clientY; pull=0; },{passive:true});
   sc.addEventListener('touchmove',e=>{ if(!at) return; pull=Math.max(0,Math.min(70,e.touches[0].clientY-sy)); const p=$('#ptr'); if(p&&pull>0) p.style.height=pull+'px'; },{passive:true});
   sc.addEventListener('touchend',async()=>{ if(pull>50){ haptic(12); await (DEMO?Promise.resolve():cargar()); } const p=$('#ptr'); if(p) p.style.height='0'; pull=0; });
+  // Flash animation cleanup
+  document.addEventListener('animationend',e=>{ if(e.target.classList.contains('flash-new')) e.target.classList.remove('flash-new'); });
 }
 
 function abrirNotificaciones(){ haptic(8);
