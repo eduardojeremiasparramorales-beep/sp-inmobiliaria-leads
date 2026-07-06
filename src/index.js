@@ -11,7 +11,24 @@ const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
 const { sendMessage, sendMessageSmart, uploadMedia, sendMedia } = require('./services/whatsapp');
 const mediaStore = require('./services/media');
-const { convertToOggOpus } = require('./services/audio');
+const { convertToOggOpus, getPlayableAudioPath } = require('./services/audio');
+
+// Sirve un archivo de media. Para audio, lo transcodifica a m4a si hace falta
+// (iOS/Safari no reproduce OGG/Opus) y aprovecha el soporte de HTTP Range de sendFile.
+async function sendMediaFile(res, filePath, mime, mediaType) {
+  const esAudio = mediaType === 'audio' || String(mime || '').startsWith('audio/');
+  if (esAudio) {
+    try {
+      const p = await getPlayableAudioPath(filePath, mime);
+      res.setHeader('Content-Type', p.mime || mime || 'audio/mp4');
+      return res.sendFile(p.path);
+    } catch (e) {
+      console.error('[MEDIA] audio playable falló:', e.message);
+    }
+  }
+  if (mime) res.setHeader('Content-Type', mime);
+  res.sendFile(filePath);
+}
 const auth = require('./services/auth');
 const events = require('./services/events');
 const push = require('./services/push');
@@ -689,7 +706,7 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
 });
 
 // Servir media de un evento del timeline multicanal (valida permiso por conversación)
-app.get('/api/inbox/media/:timelineId', auth.requireAuth, (req, res) => {
+app.get('/api/inbox/media/:timelineId', auth.requireAuth, async (req, res) => {
   const adapter = require('./db/adapter');
   const ev = adapter.one('SELECT * FROM timeline WHERE id = ? LIMIT 1', [req.params.timelineId]);
   if (!ev || !ev.media_filename) return res.status(404).json({ error: 'media_no_existe' });
@@ -699,8 +716,7 @@ app.get('/api/inbox/media/:timelineId', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'sin_permiso' });
   const filePath = mediaStore.getMediaPath(ev.media_filename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
-  if (ev.media_mime) res.setHeader('Content-Type', ev.media_mime);
-  res.sendFile(filePath);
+  await sendMediaFile(res, filePath, ev.media_mime, ev.media_type);
 });
 
 // ===================== RESPONDER (OLD) =====================
@@ -742,7 +758,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
 });
 
 // Servir un archivo multimedia de un mensaje (validando propiedad del lead)
-app.get('/api/media/:messageId', auth.requireAuth, (req, res) => {
+app.get('/api/media/:messageId', auth.requireAuth, async (req, res) => {
   const msg = store.getMessageById(req.params.messageId);
   if (!msg || !msg.media_filename) return res.status(404).json({ error: 'media_no_existe' });
   const lead = store.getLeadById(msg.lead_id);
@@ -752,8 +768,7 @@ app.get('/api/media/:messageId', auth.requireAuth, (req, res) => {
   }
   const filePath = mediaStore.getMediaPath(msg.media_filename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
-  if (msg.media_mime) res.setHeader('Content-Type', msg.media_mime);
-  res.sendFile(filePath);
+  await sendMediaFile(res, filePath, msg.media_mime, msg.media_type);
 });
 
 // Link preview: fetch OG tags from a URL

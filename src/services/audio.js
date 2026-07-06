@@ -65,4 +65,40 @@ async function convertToOggOpus(buffer, inputMime) {
   }
 }
 
-module.exports = { convertToOggOpus, isFfmpegAvailable };
+// Formatos de audio que iOS Safari SÍ reproduce sin transcodificar
+function isIosFriendly(mime) {
+  const base = String(mime || '').split(';')[0].trim().toLowerCase();
+  return ['audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/x-m4a', 'audio/m4a'].includes(base);
+}
+
+// Devuelve una ruta de audio reproducible en cualquier dispositivo (incl. iPhone).
+// OGG/Opus/WebM no se reproducen en iOS → se transcodifican a AAC/m4a una sola vez y se cachean.
+// Devuelve { path, mime }. Si ya es compatible, o ffmpeg no está / falla, devuelve el original.
+async function getPlayableAudioPath(srcPath, mime) {
+  if (isIosFriendly(mime)) return { path: srcPath, mime: mime };
+  if (!isFfmpegAvailable()) return { path: srcPath, mime: mime };
+
+  const cachePath = srcPath + '.play.m4a';
+  try {
+    // Cache válido si existe y es más nuevo (o igual) que el original
+    if (fs.existsSync(cachePath)) {
+      const [cs, ss] = [fs.statSync(cachePath), fs.statSync(srcPath)];
+      if (cs.size > 0 && cs.mtimeMs >= ss.mtimeMs) return { path: cachePath, mime: 'audio/mp4' };
+    }
+    await new Promise((resolve, reject) => {
+      const args = ['-y', '-i', srcPath, '-vn', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', cachePath];
+      const p = spawn('ffmpeg', args);
+      let stderr = '';
+      p.stderr.on('data', d => { stderr += d; if (stderr.length > 8192) stderr = stderr.slice(-8192); });
+      p.on('error', reject);
+      p.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg salió con código ' + code + ': ' + stderr.slice(-400))));
+      setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} }, 60000).unref();
+    });
+    if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) return { path: cachePath, mime: 'audio/mp4' };
+  } catch (e) {
+    console.error('[AUDIO] Transcodificación a m4a falló, sirviendo original:', e.message);
+  }
+  return { path: srcPath, mime: mime };
+}
+
+module.exports = { convertToOggOpus, isFfmpegAvailable, getPlayableAudioPath };
