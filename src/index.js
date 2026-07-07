@@ -251,7 +251,7 @@ app.post('/api/nlp/chat', auth.requireAuth, async (req, res) => {
     const { message, history, providerId, model } = req.body || {};
     if (!message || !message.trim()) return res.status(400).json({ error: 'Mensaje requerido' });
     const ctx = (history || []).map(m => `${m.role}: ${m.content}`).join('\n');
-    const reply = await nlp.chatText(
+    const result = await nlp.chatText(
       `Eres Copiloto SP, el asistente IA de SP Inmobiliaria, una firma colombiana de inversión en lotes.
       Ayudas a los vendedores del equipo a mejorar sus ventas, redactar mensajes, analizar leads, y resolver dudas.
       Responde de forma clara, profesional y en español.`,
@@ -259,7 +259,7 @@ app.post('/api/nlp/chat', auth.requireAuth, async (req, res) => {
       45000,
       { providerId, model }
     );
-    res.json({ ok: true, reply, model: model || nlp.getModel() });
+    res.json({ ok: true, reply: result.text, model: result.model || model || nlp.getModel() });
   } catch (e) {
     console.error('[NLP] chat error:', e.message);
     res.status(502).json({ ok: false, error: e.message });

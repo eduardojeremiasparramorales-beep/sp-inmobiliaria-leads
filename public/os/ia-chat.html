@@ -151,6 +151,32 @@
   const emptyMsg = $('emptyMsg'), emptyAddBtn = $('emptyAddBtn');
   if (emptyAddBtn) emptyAddBtn.onclick = openModal;
 
+  // Aviso con campo rápido para pegar la API key de OpenRouter sin abrir el modal.
+  function quickKeyBanner(msg) {
+    iaWarn.style.display = 'block';
+    iaWarn.innerHTML = esc(msg) +
+      ' <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:6px">' +
+        '<input id="quickKey" type="password" autocomplete="off" placeholder="Pega tu API key de OpenRouter (sk-or-…)" ' +
+          'style="background:var(--bg-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:12px;min-width:260px">' +
+        '<button id="quickSave" class="ia-gear" style="padding:6px 12px">Guardar y activar</button>' +
+        '<a id="warnCfg" style="cursor:pointer">más opciones →</a>' +
+      '</span>';
+    const wc = $('warnCfg'); if (wc) wc.onclick = openModal;
+    const qs = $('quickSave'); if (qs) qs.onclick = saveQuickKey;
+    const qk = $('quickKey'); if (qk) qk.addEventListener('keydown', e => { if (e.key === 'Enter') saveQuickKey(); });
+  }
+  async function saveQuickKey() {
+    const k = (($('quickKey') && $('quickKey').value) || '').trim();
+    if (!k) { toast('Pega tu API key primero', 'err'); return; }
+    const orBase = (presets.openrouter && presets.openrouter.baseUrl) || 'https://openrouter.ai/api/v1';
+    const list = (providers || []).map(p => ({ id: p.id, name: p.name, baseUrl: p.baseUrl, apiKey: '', models: p.models || [] }));
+    let or = list.find(p => p.id === 'openrouter' || String(p.baseUrl).includes('openrouter'));
+    if (or) or.apiKey = k; else { or = { id: 'openrouter', name: 'OpenRouter', baseUrl: orBase, apiKey: k, models: [] }; list.push(or); }
+    const r = await api('/api/ai/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providers: list, defaultId: 'openrouter' }) });
+    if (r && r.ok) { toast('API key activada ✓', 'ok'); try { localStorage.setItem('sp_ai_provider', 'openrouter'); } catch (e) {} await loadProviders(); }
+    else toast('Error al guardar la key', 'err');
+  }
+
   async function loadProviders() {
     let r;
     try { r = await api('/api/ai/providers'); } catch (e) { r = null; }
@@ -165,17 +191,9 @@
     }
     providers = r.providers || []; presets = r.presets || {};
     defaultId = r.defaultId || (providers[0] && providers[0].id) || '';
-    if (!providers.length) {
-      iaWarn.style.display = 'block';
-      iaWarn.innerHTML = 'No hay proveedores configurados. <a id="warnCfg">Agregar proveedor →</a>';
-      const wc = $('warnCfg'); if (wc) wc.onclick = openModal;
-      if (emptyMsg) emptyMsg.textContent = 'Agrega un proveedor de IA para empezar a chatear.';
-      if (emptyAddBtn) emptyAddBtn.style.display = 'inline-block';
-    } else if (!providers.some(p => p.hasKey)) {
-      iaWarn.style.display = 'block';
-      iaWarn.innerHTML = 'Falta la API Key. <a id="warnCfg">Configurar proveedor →</a>';
-      const wc = $('warnCfg'); if (wc) wc.onclick = openModal;
-      if (emptyMsg) emptyMsg.textContent = 'Elige un proveedor y escribe un modelo, o configura tu API Key.';
+    if (!providers.length || !providers.some(p => p.hasKey)) {
+      quickKeyBanner('Activa la IA en segundos:');
+      if (emptyMsg) emptyMsg.textContent = 'Pega tu API key de OpenRouter arriba y podrás usar todos los modelos gratis.';
       if (emptyAddBtn) emptyAddBtn.style.display = 'none';
     } else {
       iaWarn.style.display = 'none';
@@ -193,15 +211,24 @@
   async function onProviderChange(resetModel) {
     const p = providers.find(x => x.id === provSel.value);
     try { localStorage.setItem('sp_ai_provider', provSel.value); } catch (e) {}
-    let models = (p && p.models) || [];
-    modelList.innerHTML = models.map(m => `<option value="${esc(m)}">`).join('');
+    const isOR = p && String(p.baseUrl || '').includes('openrouter.ai');
+    const suggested = (p && p.models) || [];
+    modelList.innerHTML = suggested.map(m => `<option value="${esc(m)}">`).join('');
     let savedModel = ''; try { savedModel = localStorage.getItem('sp_ai_model_' + provSel.value) || ''; } catch (e) {}
-    if (resetModel || !modelInp.value) modelInp.value = savedModel || models[0] || '';
+    if (resetModel || !modelInp.value) modelInp.value = savedModel || suggested[0] || '';
     if (p && p.hasKey) {
       const mr = await api('/api/ai/models?providerId=' + encodeURIComponent(provSel.value));
-      if (mr && mr.models && mr.models.length) {
-        modelList.innerHTML = mr.models.map(m => `<option value="${esc(m)}">`).join('');
-        if (!modelInp.value) modelInp.value = savedModel || mr.models[0] || '';
+      const list = (mr && mr.models) || [];
+      if (list.length) {
+        // list = [{ id, free }]. En OpenRouter mostramos primero los GRATIS (marcados).
+        const free = list.filter(m => m && m.free).map(m => m.id);
+        const all = list.map(m => (m && m.id) || m).filter(Boolean);
+        const ordered = isOR ? free.concat(all.filter(id => free.indexOf(id) === -1)) : all;
+        modelList.innerHTML = ordered.map(id =>
+          `<option value="${esc(id)}"${free.indexOf(id) !== -1 ? ' label="⚡ gratis"' : ''}>`).join('');
+        // Por defecto en OpenRouter, un modelo GRATIS que sí funcione.
+        const wantDefault = resetModel || !modelInp.value || (isOR && free.length && free.indexOf(modelInp.value) === -1 && !savedModel);
+        if (wantDefault) modelInp.value = savedModel || (isOR && free.length ? free[0] : ordered[0]) || modelInp.value;
       }
     }
   }

@@ -5,7 +5,6 @@ const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001';
 
 const cache = new Map();
-const cache = new Map();
 
 function getFromCache(key) {
   const entry = cache.get(key);
@@ -110,6 +109,9 @@ function buildClient(baseUrl, apiKey) {
   return new OpenAI({
     baseURL: baseUrl || OPENROUTER_BASE,
     apiKey,
+    // maxRetries: 0 → NO esperar el Retry-After (~16s) de un 429; nuestro respaldo
+    // salta de inmediato a otro modelo gratis, mucho más rápido para el chat.
+    maxRetries: 0,
     defaultHeaders: {
       'HTTP-Referer': getSiteUrl(),
       'X-Title': getAppName(),
@@ -131,19 +133,46 @@ function resolveClientAndModel(opts = {}) {
   return { client, model };
 }
 
-// Lista los modelos disponibles de un proveedor (endpoint /models compatible con OpenAI).
+// Lista los modelos de un proveedor con su bandera de "gratis".
+// Devuelve [{ id, free }]. Usa el endpoint /models (compatible OpenAI) que en
+// OpenRouter incluye pricing; free = prompt y completion en "0".
 async function fetchModels(providerId) {
   const p = getProviderById(providerId);
   if (!p || !p.apiKey) return [];
   try {
-    const client = buildClient(p.baseUrl, p.apiKey);
-    const res = await client.models.list();
-    const data = (res && (res.data || (res.body && res.body.data))) || [];
-    return data.map(m => m.id).filter(Boolean).sort();
+    const base = String(p.baseUrl || OPENROUTER_BASE).replace(/\/$/, '');
+    const r = await fetch(base + '/models', {
+      headers: { Authorization: 'Bearer ' + p.apiKey, 'HTTP-Referer': getSiteUrl(), 'X-Title': getAppName() },
+    });
+    if (!r.ok) return [];
+    const j = await r.json();
+    const data = j.data || [];
+    return data.map(m => ({
+      id: m.id,
+      free: !!(m.pricing && String(m.pricing.prompt) === '0' && String(m.pricing.completion) === '0'),
+    })).filter(m => m.id).sort((a, b) => a.id.localeCompare(b.id));
   } catch (e) {
     console.error('[NLP] fetchModels error:', e.message);
     return [];
   }
+}
+
+// Cache de modelos gratis de OpenRouter (para el respaldo automático).
+let _freeCache = { at: 0, ids: [] };
+async function getFreeModels(providerId) {
+  if (_freeCache.ids.length && Date.now() - _freeCache.at < CFG.NLP_CACHE_TTL) return _freeCache.ids;
+  const list = await fetchModels(providerId);
+  _freeCache = { at: Date.now(), ids: list.filter(m => m.free).map(m => m.id) };
+  return _freeCache.ids;
+}
+
+// ¿El error del modelo es recuperable probando con otro modelo gratis?
+function isRetriableModelError(e) {
+  const status = e && (e.status || e.statusCode || (e.response && e.response.status));
+  const msg = String((e && e.message) || '').toLowerCase();
+  return status === 429 || status === 404 ||
+    msg.includes('rate-limit') || msg.includes('rate limit') || msg.includes('temporarily') ||
+    msg.includes('unavailable for free') || msg.includes('no endpoints');
 }
 
 async function chatJSON(systemPrompt, userText, timeoutMs) {
@@ -169,24 +198,47 @@ async function chatJSON(systemPrompt, userText, timeoutMs) {
   }
 }
 
+// Chat interactivo con respaldo automático: si es OpenRouter y el modelo elegido
+// está saturado (429) o descontinuado (404), reintenta con otros modelos GRATIS
+// vigentes hasta obtener respuesta. Devuelve { text, model } (el modelo que respondió).
 async function chatText(systemPrompt, userText, timeoutMs, opts = {}) {
-  const { client, model } = resolveClientAndModel(opts);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs || CFG.NLP_TIMEOUT_DEFAULT);
-  try {
-    const completion = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userText },
-      ],
-    }, { signal: controller.signal });
-    clearTimeout(timer);
-    return completion.choices[0].message.content || '';
-  } catch (e) {
-    clearTimeout(timer);
-    throw e;
+  const provider = opts.providerId ? getProviderById(opts.providerId) : getProviderById(getDefaultProviderId());
+  const client = buildClient(provider && provider.baseUrl, (provider && provider.apiKey) || getApiKey());
+  const isOpenRouter = provider && String(provider.baseUrl || '').includes('openrouter.ai');
+  const primary = opts.model || (provider && provider.models && provider.models[0]) || getModel();
+
+  // Lista de intentos: el modelo pedido + (si es OpenRouter) modelos gratis de respaldo.
+  const candidates = [primary];
+  if (isOpenRouter && opts.fallback !== false) {
+    try {
+      const free = await getFreeModels(provider.id);
+      for (const m of free) if (!candidates.includes(m)) candidates.push(m);
+    } catch (e) { /* seguimos con el primario */ }
   }
+
+  let lastErr;
+  for (const model of candidates.slice(0, 6)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs || CFG.NLP_TIMEOUT_DEFAULT);
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userText },
+        ],
+      }, { signal: controller.signal });
+      clearTimeout(timer);
+      const text = (completion.choices[0] && completion.choices[0].message.content) || '';
+      return { text, model };
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+      // Solo probamos otro modelo si el error es de saturación/modelo no disponible.
+      if (!isRetriableModelError(e)) break;
+    }
+  }
+  throw lastErr || new Error('No se pudo obtener respuesta del modelo');
 }
 
 async function analyzeSentiment(text) {
