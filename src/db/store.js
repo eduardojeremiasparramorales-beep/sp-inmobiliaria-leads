@@ -432,11 +432,13 @@ function getWindowExpiresAt(leadId) {
 }
 
 function getVendedoresActivos() {
+  // El admin NO recibe clientes: se excluye a cualquier vendedor vinculado a un usuario con rol 'admin'.
   return all(`
     SELECT v.*, COUNT(l.id) as leads_activos
     FROM vendedores v
     LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != ?
     WHERE v.estado = ?
+      AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE rol = 'admin' AND vendedor_id IS NOT NULL)
     GROUP BY v.id
     ORDER BY leads_activos ASC
   `, ['cerrado', 'activo']);
@@ -848,7 +850,7 @@ function reassignLead(leadId, vendedor, vendedorAnteriorId) {
 
 // --- Eliminar vendedor y reasignar sus leads ---
 function deleteVendedor(id) {
-  const activos = all('SELECT * FROM vendedores WHERE estado = ? AND id != ? ORDER BY total_leads ASC LIMIT 1', ['activo', id]);
+  const activos = all("SELECT * FROM vendedores WHERE estado = ? AND id != ? AND id NOT IN (SELECT vendedor_id FROM usuarios WHERE rol = 'admin' AND vendedor_id IS NOT NULL) ORDER BY total_leads ASC LIMIT 1", ['activo', id]);
   const leadsReasignar = all('SELECT id FROM leads WHERE assigned_to_id = ? AND status != ?', [id, 'cerrado']);
 
   if (activos.length > 0) {
