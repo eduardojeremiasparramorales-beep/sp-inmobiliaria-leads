@@ -1373,6 +1373,194 @@ function deleteUbicacionGuardada(id) {
   run('DELETE FROM ubicaciones_guardadas WHERE id = ?', [id]);
 }
 
+// ===================== PROYECTOS / LOTES =====================
+
+// Devuelve proyectos con conteos agregados por estado de sus lotes.
+function getProyectos() {
+  return all(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id) AS total_lotes,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'disponible') AS disponibles,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'separado') AS separados,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'vendido') AS vendidos,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'reservado') AS reservados,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'bloqueado') AS bloqueados,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'negociacion') AS negociacion,
+      (SELECT MIN(l.precio) FROM lotes l WHERE l.proyecto_id = p.id AND l.precio > 0) AS precio_min,
+      (SELECT MAX(l.precio) FROM lotes l WHERE l.proyecto_id = p.id) AS precio_max,
+      (SELECT COUNT(DISTINCT l.asesor_id) FROM lotes l WHERE l.proyecto_id = p.id AND l.asesor_id IS NOT NULL) AS asesores_activos
+    FROM proyectos p
+    ORDER BY p.created_at DESC
+  `);
+}
+
+function getProyectoById(id) {
+  return one('SELECT * FROM proyectos WHERE id = ?', [id]);
+}
+
+function createProyecto(d = {}) {
+  run(`INSERT INTO proyectos (nombre, ciudad, departamento, descripcion, imagen_url, estado, fecha_inicio, plano_url, plano_bounds)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [d.nombre, d.ciudad || '', d.departamento || '', d.descripcion || '', d.imagen_url || '',
+     d.estado || 'en_venta', d.fecha_inicio || '', d.plano_url || '', d.plano_bounds || '']);
+  return one('SELECT * FROM proyectos WHERE id = (SELECT last_insert_rowid())');
+}
+
+function updateProyecto(id, d = {}) {
+  const p = getProyectoById(id);
+  if (!p) return null;
+  run(`UPDATE proyectos SET nombre=?, ciudad=?, departamento=?, descripcion=?, imagen_url=?, estado=?, fecha_inicio=?, plano_url=?, plano_bounds=?, updated_at=datetime('now') WHERE id=?`,
+    [d.nombre ?? p.nombre, d.ciudad ?? p.ciudad, d.departamento ?? p.departamento, d.descripcion ?? p.descripcion,
+     d.imagen_url ?? p.imagen_url, d.estado ?? p.estado, d.fecha_inicio ?? p.fecha_inicio,
+     d.plano_url ?? p.plano_url, d.plano_bounds ?? p.plano_bounds, id]);
+  return getProyectoById(id);
+}
+
+function deleteProyecto(id) {
+  run('DELETE FROM lote_historial WHERE lote_id IN (SELECT id FROM lotes WHERE proyecto_id = ?)', [id]);
+  run('DELETE FROM lotes WHERE proyecto_id = ?', [id]);
+  run('DELETE FROM proyectos WHERE id = ?', [id]);
+}
+
+function getLotesByProyecto(proyectoId) {
+  return all(`
+    SELECT l.*, v.nombre AS asesor_nombre, c.name AS cliente_nombre
+    FROM lotes l
+    LEFT JOIN vendedores v ON v.id = l.asesor_id
+    LEFT JOIN customers c ON c.id = l.cliente_id
+    WHERE l.proyecto_id = ?
+    ORDER BY l.id ASC
+  `, [proyectoId]);
+}
+
+function getLoteById(id) {
+  return one(`
+    SELECT l.*, v.nombre AS asesor_nombre, c.name AS cliente_nombre, c.phone AS cliente_telefono
+    FROM lotes l
+    LEFT JOIN vendedores v ON v.id = l.asesor_id
+    LEFT JOIN customers c ON c.id = l.cliente_id
+    WHERE l.id = ?
+  `, [id]);
+}
+
+function _loteInsert(proyectoId, d = {}) {
+  run(`INSERT INTO lotes (proyecto_id, numero, manzana, area, dimensiones, precio, estado, cliente_id, lead_id, asesor_id, poligono, observaciones)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [proyectoId, d.numero || '', d.manzana || '', d.area || 0, d.dimensiones || '', d.precio || 0,
+     d.estado || 'disponible', d.cliente_id || null, d.lead_id || null, d.asesor_id || null,
+     typeof d.poligono === 'string' ? d.poligono : JSON.stringify(d.poligono || []), d.observaciones || '']);
+}
+
+function createLote(proyectoId, d = {}) {
+  _loteInsert(proyectoId, d);
+  return getLoteById(one('SELECT last_insert_rowid() AS id').id);
+}
+
+function bulkCreateLotes(proyectoId, lotes = []) {
+  let n = 0;
+  for (const l of lotes) { _loteInsert(proyectoId, l); n++; }
+  return n;
+}
+
+function updateLote(id, d = {}) {
+  const l = getLoteById(id);
+  if (!l) return null;
+  run(`UPDATE lotes SET numero=?, manzana=?, area=?, dimensiones=?, precio=?, cliente_id=?, asesor_id=?, poligono=?, observaciones=?, updated_at=datetime('now') WHERE id=?`,
+    [d.numero ?? l.numero, d.manzana ?? l.manzana, d.area ?? l.area, d.dimensiones ?? l.dimensiones,
+     d.precio ?? l.precio, d.cliente_id ?? l.cliente_id, d.asesor_id ?? l.asesor_id,
+     d.poligono != null ? (typeof d.poligono === 'string' ? d.poligono : JSON.stringify(d.poligono)) : l.poligono,
+     d.observaciones ?? l.observaciones, id]);
+  return getLoteById(id);
+}
+
+function addLoteHistorial(loteId, evento, detalle, autor) {
+  run('INSERT INTO lote_historial (lote_id, evento, detalle, autor) VALUES (?, ?, ?, ?)',
+    [loteId, evento || '', detalle || '', autor || '']);
+}
+
+function getLoteHistorial(loteId) {
+  return all('SELECT * FROM lote_historial WHERE lote_id = ? ORDER BY created_at DESC, id DESC', [loteId]);
+}
+
+// Cambia el estado del lote, ajusta fechas de separación/venta y registra historial.
+function updateLoteEstado(id, estado, opts = {}) {
+  const l = getLoteById(id);
+  if (!l) return null;
+  const now = "datetime('now')";
+  let sets = ['estado = ?', "updated_at = datetime('now')"];
+  const params = [estado];
+  if (opts.cliente_id !== undefined) { sets.push('cliente_id = ?'); params.push(opts.cliente_id || null); }
+  if (opts.asesor_id !== undefined) { sets.push('asesor_id = ?'); params.push(opts.asesor_id || null); }
+  if (estado === 'separado' && !l.fecha_separacion) sets.push(`fecha_separacion = ${now}`);
+  if (estado === 'vendido') sets.push(`fecha_venta = ${now}`);
+  params.push(id);
+  run(`UPDATE lotes SET ${sets.join(', ')} WHERE id = ?`, params);
+  addLoteHistorial(id, 'estado', `${l.estado} → ${estado}`, opts.autor || '');
+  return getLoteById(id);
+}
+
+function setLoteObservacion(id, texto, autor) {
+  const l = getLoteById(id);
+  if (!l) return null;
+  run(`UPDATE lotes SET observaciones = ?, updated_at = datetime('now') WHERE id = ?`, [texto || '', id]);
+  addLoteHistorial(id, 'observacion', texto || '', autor || '');
+  return getLoteById(id);
+}
+
+function setLotePrecio(id, precio, autor) {
+  const l = getLoteById(id);
+  if (!l) return null;
+  run(`UPDATE lotes SET precio = ?, updated_at = datetime('now') WHERE id = ?`, [precio || 0, id]);
+  addLoteHistorial(id, 'precio', `$${l.precio} → $${precio}`, autor || '');
+  return getLoteById(id);
+}
+
+// Agrega un item (url/objeto) al array JSON de documentos o fotografias.
+function addLoteMedia(id, campo, item) {
+  const l = getLoteById(id);
+  if (!l || (campo !== 'documentos' && campo !== 'fotografias')) return null;
+  let arr = [];
+  try { arr = JSON.parse(l[campo] || '[]'); } catch (e) { arr = []; }
+  arr.push(item);
+  run(`UPDATE lotes SET ${campo} = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(arr), id]);
+  return getLoteById(id);
+}
+
+function deleteLote(id) {
+  run('DELETE FROM lote_historial WHERE lote_id = ?', [id]);
+  run('DELETE FROM lotes WHERE id = ?', [id]);
+}
+
+function getProyectoStats(proyectoId) {
+  const base = one(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN estado='disponible' THEN 1 ELSE 0 END) AS disponibles,
+      SUM(CASE WHEN estado='separado' THEN 1 ELSE 0 END) AS separados,
+      SUM(CASE WHEN estado='vendido' THEN 1 ELSE 0 END) AS vendidos,
+      SUM(CASE WHEN estado='reservado' THEN 1 ELSE 0 END) AS reservados,
+      SUM(CASE WHEN estado='bloqueado' THEN 1 ELSE 0 END) AS bloqueados,
+      SUM(CASE WHEN estado='negociacion' THEN 1 ELSE 0 END) AS negociacion,
+      SUM(CASE WHEN estado='vendido' THEN precio ELSE 0 END) AS ingresos,
+      MIN(CASE WHEN precio > 0 THEN precio END) AS precio_min,
+      MAX(precio) AS precio_max,
+      COUNT(DISTINCT asesor_id) AS asesores,
+      COUNT(DISTINCT cliente_id) AS clientes
+    FROM lotes WHERE proyecto_id = ?
+  `, [proyectoId]) || {};
+  const ventasHoy = (one(`SELECT COUNT(*) AS n FROM lotes WHERE proyecto_id = ? AND estado='vendido' AND date(fecha_venta) = date('now')`, [proyectoId]) || {}).n || 0;
+  const ventasMes = (one(`SELECT COUNT(*) AS n FROM lotes WHERE proyecto_id = ? AND estado='vendido' AND strftime('%Y-%m', fecha_venta) = strftime('%Y-%m','now')`, [proyectoId]) || {}).n || 0;
+  const sepMes = (one(`SELECT COUNT(*) AS n FROM lotes WHERE proyecto_id = ? AND fecha_separacion != '' AND strftime('%Y-%m', fecha_separacion) = strftime('%Y-%m','now')`, [proyectoId]) || {}).n || 0;
+  const tprom = (one(`SELECT AVG(julianday(fecha_venta) - julianday(created_at)) AS d FROM lotes WHERE proyecto_id = ? AND estado='vendido' AND fecha_venta != ''`, [proyectoId]) || {}).d || 0;
+  const total = base.total || 0;
+  const pct_vendido = total ? Math.round(((base.vendidos || 0) / total) * 100) : 0;
+  return {
+    ...base, total,
+    ventas_hoy: ventasHoy, ventas_mes: ventasMes, separaciones_mes: sepMes,
+    tiempo_promedio_dias: Math.round(tprom || 0), pct_vendido,
+  };
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -1402,7 +1590,7 @@ module.exports = {
   updateConversationPriority, getConversations, getConversationCount,
   addTimelineEvent, getTimelineByConversation, getLastMessageByConversation,
   syncLeadToConversation,
-  getOrCreateConversationForLead, getUnifiedConversations,
+  getUnlinkedLeads, getOrCreateConversationForLead, getUnifiedConversations,
   getCitas, getCitaById, createCita, updateCita, deleteCita,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
@@ -1413,4 +1601,8 @@ module.exports = {
   getDuplicateGroups, mergeLeads, closeOrphanConversations,
   getTareas, addTarea, toggleTarea, deleteTarea,
   getUbicacionesGuardadas, saveUbicacionGuardada, deleteUbicacionGuardada,
+  // Proyectos / Lotes
+  getProyectos, getProyectoById, createProyecto, updateProyecto, deleteProyecto, getProyectoStats,
+  getLotesByProyecto, getLoteById, createLote, bulkCreateLotes, updateLote, updateLoteEstado, deleteLote,
+  setLoteObservacion, setLotePrecio, addLoteMedia, addLoteHistorial, getLoteHistorial,
 };

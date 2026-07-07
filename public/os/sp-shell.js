@@ -56,7 +56,7 @@
       { id: 'clients', label: 'Clientes', icon: 'clients', href: '/os/clientes.html' },
     ]},
     { title: 'Negocio', items: [
-      { id: 'properties', label: 'Propiedades', icon: 'properties', href: '/os/propiedades.html' },
+      { id: 'proyectos', label: 'Proyectos', icon: 'properties', href: '/os/proyectos.html' },
       { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: M('campaigns') },
       { id: 'automations', label: 'Automatizaciones', icon: 'automations', href: '/os/automatizaciones.html' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar', href: '/os/calendario.html' },
