@@ -105,6 +105,7 @@ async function initDB() {
   ensureColumn('leads', 'presupuesto', 'TEXT');
   ensureColumn('leads', 'pinned_at', 'DATETIME');
   ensureColumn('leads', 'muted_at', 'DATETIME');
+  ensureColumn('leads', 'progress_pct', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
@@ -268,7 +269,7 @@ function saveLead(customerPhone, customerName, messageBody) {
   }
 
   // No existe ningún lead con este teléfono → insertar nuevo
-  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\'))', [phone, customerName || 'Cliente', messageBody, messageBody]);
+  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct) VALUES (?, ?, ?, ?, 1, datetime(\'now\'), \'sin_clasificar\', 5)', [phone, customerName || 'Cliente', messageBody, messageBody]);
 
   const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [phone]);
   if (!r || !r.id) {
@@ -827,9 +828,12 @@ function getVendedorMetricas(id) {
   };
 }
 
+const PROGRESS_MAP = { sin_clasificar: 5, interesado: 30, negociacion: 60, cita: 85, vendido: 100, no_interesado: 5 };
+
 // --- Etiqueta de pipeline del lead ---
 function setLeadEtiqueta(leadId, etiqueta) {
-  run('UPDATE leads SET etiqueta = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, leadId]);
+  const pct = PROGRESS_MAP[etiqueta] || 0;
+  run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, pct, leadId]);
 }
 
 // --- Notas internas por lead ---
@@ -1037,7 +1041,8 @@ function updateConversationStatus(id, status) {
 }
 
 function updateConversationTag(id, etiqueta) {
-  run('UPDATE conversations SET etiqueta = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, id]);
+  const pct = PROGRESS_MAP[etiqueta] || 0;
+  run('UPDATE conversations SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, pct, id]);
 }
 
 function updateConversationPriority(id, priority) {
@@ -1140,16 +1145,19 @@ function syncLeadToConversation(lead, data = {}) {
         customer = createCustomer(lead.customer_name || 'Cliente', phone);
         linkChannelToCustomer(customer.id, 'whatsapp', phone, lead.customer_name || '');
       }
-      run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null, lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'), lead.etiqueta || 'sin_clasificar']);
+      const pct = PROGRESS_MAP[lead.etiqueta || 'sin_clasificar'] || 5;
+      run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta, progress_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null, lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'), lead.etiqueta || 'sin_clasificar', pct]);
       conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
     }
     if (!conv) return null;
 
     // 3. Mantener asignación/etiqueta/estado en espejo con el lead
-    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [
+    const eta = lead.etiqueta || conv.etiqueta || 'sin_clasificar';
+    const convPct = PROGRESS_MAP[eta] || 5;
+    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, progress_pct = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [
       lead.assigned_to_id || null,
-      lead.etiqueta || conv.etiqueta || 'sin_clasificar',
+      eta, convPct,
       lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
       conv.id,
     ]);

@@ -38,6 +38,7 @@ function createNewTables(db) {
       last_message TEXT DEFAULT '',
       last_message_at DATETIME,
       etiqueta TEXT DEFAULT 'sin_clasificar',
+      progress_pct INTEGER DEFAULT 5,
       created_at DATETIME DEFAULT (datetime('now')),
       updated_at DATETIME DEFAULT (datetime('now')),
       FOREIGN KEY (customer_id) REFERENCES customers(id),

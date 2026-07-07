@@ -299,9 +299,15 @@
   .ai-card p { font-size: 12.5px; color: var(--text-2); line-height: 1.55; }
   .ai-obj { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; color: var(--text-2); margin-bottom: 6px; }
   .ai-obj::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-top: 6px; flex-shrink: 0; }
-  .prob-num { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--f-num); }
-  .prob-bar { height: 8px; border-radius: 999px; background: var(--bg-4); overflow: hidden; margin-top: 8px; }
-  .prob-bar > i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--green), var(--gold)); }
+  .sp-progress-lg{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:16px; padding:16px; margin-top:12px; }
+  .sp-progress-lg__top{ display:flex; justify-content:space-between; align-items:baseline; }
+  .sp-progress-lg__top span:first-child{ font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.1em; }
+  .sp-progress-lg__num{ font-family:var(--f-title); font-size:24px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
+  .sp-progress-lg__track{ display:block; height:6px; border-radius:999px; background:var(--bg-4); overflow:hidden; margin-top:10px; }
+  .sp-progress-lg__track i{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#B89840,var(--gold)); transition:width .8s var(--ease); }
+  .sp-progress-lg__stages{ display:flex; justify-content:space-between; margin-top:10px; padding:0 1px; }
+  .sp-progress-lg__stages span{ width:12px; height:12px; border-radius:50%; background:var(--bg-3); border:1.5px solid var(--border-strong); transition:all .4s var(--ease); }
+  .sp-progress-lg__stages span.done{ background:var(--gold); border-color:var(--gold); box-shadow:0 0 8px rgba(200,164,90,.35); }
   .ai-suggest { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px; font-size: 12.5px; color: var(--text); line-height: 1.5; }
   .ai-use { margin-top: 8px; width: 100%; height: 32px; background: var(--gold-soft); color: var(--gold); border: 1px solid var(--gold-line); border-radius: var(--r-sm); font-weight: 600; font-size: 12px; cursor: pointer; font-family: var(--f-ui); }
   .ai-use:hover { background: var(--gold); color: #000; }
