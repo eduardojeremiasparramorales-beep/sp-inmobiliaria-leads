@@ -20,14 +20,16 @@ async function sendMediaFile(res, filePath, mime, mediaType) {
   if (esAudio) {
     try {
       const p = await getPlayableAudioPath(filePath, mime);
-      res.setHeader('Content-Type', p.mime || mime || 'audio/mp4');
-      return res.sendFile(p.path);
+      const ct = p.mime || mime || 'audio/mp4';
+      // Forzar Content-Type ANTES de sendFile para evitar que Express lo infiera de la extensión
+      res.set('Content-Type', ct);
+      return res.sendFile(p.path, { headers: { 'Content-Type': ct, 'Accept-Ranges': 'bytes' } });
     } catch (e) {
       console.error('[MEDIA] audio playable falló:', e.message);
     }
   }
-  if (mime) res.setHeader('Content-Type', mime);
-  res.sendFile(filePath);
+  if (mime) res.set('Content-Type', mime);
+  res.sendFile(filePath, { headers: { 'Content-Type': mime || 'application/octet-stream' } });
 }
 const auth = require('./services/auth');
 const events = require('./services/events');

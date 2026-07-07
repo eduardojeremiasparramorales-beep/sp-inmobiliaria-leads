@@ -75,16 +75,25 @@ function isIosFriendly(mime) {
 // OGG/Opus/WebM no se reproducen en iOS → se transcodifican a AAC/m4a una sola vez y se cachean.
 // Devuelve { path, mime }. Si ya es compatible, o ffmpeg no está / falla, devuelve el original.
 async function getPlayableAudioPath(srcPath, mime) {
-  if (isIosFriendly(mime)) return { path: srcPath, mime: mime };
-  if (!isFfmpegAvailable()) return { path: srcPath, mime: mime };
+  if (isIosFriendly(mime)) {
+    console.log('[AUDIO] iOS-friendly, sirviendo original:', srcPath, mime);
+    return { path: srcPath, mime: mime };
+  }
+  if (!isFfmpegAvailable()) {
+    console.log('[AUDIO] ffmpeg no disponible, sirviendo original:', srcPath, mime);
+    return { path: srcPath, mime: mime };
+  }
 
   const cachePath = srcPath + '.play.m4a';
   try {
-    // Cache válido si existe y es más nuevo (o igual) que el original
     if (fs.existsSync(cachePath)) {
       const [cs, ss] = [fs.statSync(cachePath), fs.statSync(srcPath)];
-      if (cs.size > 0 && cs.mtimeMs >= ss.mtimeMs) return { path: cachePath, mime: 'audio/mp4' };
+      if (cs.size > 0 && cs.mtimeMs >= ss.mtimeMs) {
+        console.log('[AUDIO] Sirviendo cache m4a:', cachePath);
+        return { path: cachePath, mime: 'audio/mp4' };
+      }
     }
+    console.log('[AUDIO] Transcodificando con ffmpeg:', srcPath, '→', cachePath);
     await new Promise((resolve, reject) => {
       const args = ['-y', '-i', srcPath, '-vn', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', cachePath];
       const p = spawn('ffmpeg', args);
@@ -94,7 +103,10 @@ async function getPlayableAudioPath(srcPath, mime) {
       p.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg salió con código ' + code + ': ' + stderr.slice(-400))));
       setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} }, 60000).unref();
     });
-    if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) return { path: cachePath, mime: 'audio/mp4' };
+    if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
+      console.log('[AUDIO] Transcodificación exitosa:', cachePath);
+      return { path: cachePath, mime: 'audio/mp4' };
+    }
   } catch (e) {
     console.error('[AUDIO] Transcodificación a m4a falló, sirviendo original:', e.message);
   }

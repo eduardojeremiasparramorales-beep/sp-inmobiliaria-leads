@@ -12,7 +12,8 @@ function ensureDir() {
 const MIME_EXT = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
   'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/amr': 'amr', 'audio/aac': 'aac',
-  'video/mp4': 'mp4', 'video/3gpp': '3gp',
+  'audio/webm': 'webm', 'audio/3gpp': '3gp', 'audio/x-m4a': 'm4a',
+  'video/mp4': 'mp4', 'video/3gpp': '3gp', 'video/webm': 'webm',
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
