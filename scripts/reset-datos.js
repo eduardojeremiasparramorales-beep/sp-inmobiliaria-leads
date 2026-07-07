@@ -11,7 +11,9 @@
 // ⚠️ HAZ UN RESPALDO ANTES (copiar la carpeta data/). Esta acción no es reversible.
 
 require('dotenv').config();
+const fs = require('fs');
 const adapter = require('../src/db/adapter');
+const { MEDIA_DIR } = require('../src/services/media');
 
 // Tablas de datos transaccionales a vaciar (en orden hijo→padre por las FKs).
 const TABLAS_A_BORRAR = [
@@ -71,6 +73,21 @@ async function main() {
   try { adapter.run('UPDATE vendedores SET total_leads = 0'); } catch (e) {}
 
   adapter.saveDBIfNeeded(); // persistir si el motor es sql.js (better-sqlite3 ya persistió)
+
+  // Borrar archivos de media huérfanos (audios/imágenes ya sin mensaje que los referencie).
+  // Se corre dentro del contenedor (como root) para evitar problemas de permisos en el host.
+  try {
+    if (fs.existsSync(MEDIA_DIR)) {
+      const archivos = fs.readdirSync(MEDIA_DIR);
+      let borrados = 0;
+      for (const f of archivos) {
+        try { fs.unlinkSync(require('path').join(MEDIA_DIR, f)); borrados++; } catch (e) {}
+      }
+      console.log(`\n🗑️  Media borrada: ${borrados}/${archivos.length} archivos en ${MEDIA_DIR}`);
+    }
+  } catch (e) {
+    console.warn('  ⚠️  No se pudo limpiar la carpeta de media:', e.message);
+  }
 
   console.log('\n✅ Datos borrados. Estado DESPUÉS:');
   for (const t of TABLAS_A_BORRAR) {
