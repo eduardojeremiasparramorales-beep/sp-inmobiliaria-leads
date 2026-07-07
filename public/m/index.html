@@ -197,19 +197,30 @@
   .att-i .ic{ width:56px; height:56px; border-radius:18px; background:var(--bg-3); border:1px solid var(--border-soft); display:grid; place-items:center; color:var(--gold); transition:transform .18s var(--spring); }
   .att-i:active .ic{ transform:scale(.9); }
   .att-i .ic svg{ width:24px; height:24px; }
-  .loc-card{ display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-3); border-radius:12px; cursor:pointer; transition:background .15s; }
-  .loc-card:active{ background:var(--bg-4); }
-  .loc-pin{ font-size:22px; flex-shrink:0; }
-  .loc-info{ flex:1; min-width:0; }
-  .loc-name{ font-size:13px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .loc-coords{ font-size:10px; color:var(--text-3); margin-top:1px; }
+  .loc-card{ display:flex; flex-direction:column; background:var(--bg-3); border-radius:12px; overflow:hidden; cursor:pointer; max-width:280px; border:1px solid var(--border-soft); }
+  .loc-card:active{ opacity:.85; }
+  .loc-card .loc-map{ width:100%; height:120px; background:var(--bg-4); display:grid; place-items:center; font-size:32px; overflow:hidden; position:relative; }
+  .loc-card .loc-map img{ width:100%; height:100%; object-fit:cover; position:absolute; inset:0; }
+  .loc-card .loc-body{ display:flex; align-items:center; gap:8px; padding:8px 10px; }
+  .loc-card .loc-body .loc-ic{ font-size:16px; flex-shrink:0; }
+  .loc-card .loc-body .loc-info{ flex:1; min-width:0; }
+  .loc-card .loc-body .loc-tit{ font-size:12.5px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .loc-card .loc-body .loc-sub{ font-size:10px; color:var(--text-3); margin-top:1px; }
   .loc-form{ display:flex; flex-direction:column; gap:10px; }
   .loc-form input{ background:var(--bg-3); border:1px solid var(--border-soft); border-radius:10px; padding:10px 12px; font-size:14px; color:var(--text); outline:none; }
   .loc-form input:focus{ border-color:var(--gold); }
   .loc-preset{ display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
-  .loc-preset-btn{ display:flex; align-items:center; gap:8px; background:var(--bg-3); border:1px solid var(--border-soft); border-radius:12px; padding:10px 12px; color:var(--text-2); font-size:13px; cursor:pointer; transition:all .15s; }
+  .loc-preset-btn{ display:flex; align-items:center; gap:8px; background:var(--bg-3); border:1px solid var(--border-soft); border-radius:12px; padding:10px 12px; color:var(--text-2); font-size:13px; cursor:pointer; transition:all .15s; text-align:left; width:100%; }
   .loc-preset-btn:active{ background:var(--bg-4); transform:scale(.98); }
   .loc-preset-btn .loc-preset-icon{ font-size:18px; }
+  .loc-search-wrap{ position:relative; margin:8px 0; }
+  .loc-search-wrap input{ width:100%; background:var(--bg-3); border:1px solid var(--border-soft); border-radius:10px; padding:10px 12px; font-size:14px; color:var(--text); outline:none; box-sizing:border-box; }
+  .loc-search-wrap input:focus{ border-color:var(--gold); }
+  .loc-results{ position:absolute; top:100%; left:0; right:0; background:var(--bg-2); border:1px solid var(--border-soft); border-radius:10px; margin-top:4px; max-height:180px; overflow-y:auto; display:none; z-index:10; }
+  .loc-result{ display:flex; align-items:center; gap:8px; width:100%; padding:8px 10px; border:none; border-bottom:1px solid var(--border-soft); background:none; color:var(--text-2); font-size:12.5px; text-align:left; cursor:pointer; }
+  .loc-result:last-child{ border-bottom:none; }
+  .loc-result:active{ background:var(--bg-3); }
+  .loc-result .loc-r-icon{ font-size:14px; flex-shrink:0; }
 
   /* Perfil del lead */
   .lp-head{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:9px; padding-bottom:16px; }
@@ -1328,7 +1339,8 @@ function renderMedia(m){
     try{ const d=JSON.parse(m.body); lat=d.latitude; lng=d.longitude; name=d.name; address=d.address; }catch(e){ return '📍 Ubicación'; }
     const mapsUrl=`https://www.google.com/maps?q=${lat},${lng}`;
     const label=[name,address].filter(Boolean).join(' - ')||'Ubicación';
-    return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="loc-pin">📍</div><div class="loc-info"><div class="loc-name">${esc(label)}</div><div class="loc-coords">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div>`;
+    const staticUrl=`https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=15&size=280x120&maptype=mapnik&markers=${lat},${lng},red-pushpin`;
+    return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="loc-map"><img src="${staticUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.textContent='📍'"><span style="font-size:32px;opacity:.3">🗺️</span></div><div class="loc-body"><span class="loc-ic">📍</span><div class="loc-info"><div class="loc-tit">${esc(label)}</div><div class="loc-sub">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
   }
   const src=m.id?`/api/media/${m.id}`:'';
   if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen';
@@ -1426,6 +1438,8 @@ function abrirEnviarUbicacion(){
     `<button class="loc-preset-btn" data-idx="${i}"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.name)}</strong>${p.address ? ' — '+esc(p.address) : ''}</span></button>`
   ).join('');
   const formHtml = `
+    <button class="loc-preset-btn" id="locGpsBtn"><span class="loc-preset-icon">📡</span><span style="color:var(--gold)">Mi ubicación actual</span></button>
+    <div class="loc-search-wrap"><input id="locSearch" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="locResults"></div></div>
     <div class="loc-preset">${presetsHtml}<button class="loc-preset-btn" data-idx="-1"><span class="loc-preset-icon">✏️</span><span style="color:var(--gold)">Ubicación personalizada</span></button></div>
     <div class="loc-form" id="locCustom" style="display:none">
       <input id="locName" placeholder="Nombre del lugar (opcional)">
@@ -1435,7 +1449,58 @@ function abrirEnviarUbicacion(){
       <button class="lp-cell wide" id="locSendBtn" style="justify-content:center;color:var(--gold);font-weight:500">📍 Enviar ubicación</button>
     </div>`;
   openSheet('Enviar ubicación', formHtml);
-  $('#sheetBody').querySelectorAll('.loc-preset-btn').forEach(b=>b.onclick=()=>{
+
+  // --- GPS ---
+  const gpsBtn=$('#locGpsBtn');
+  if(gpsBtn) gpsBtn.onclick=()=>{
+    if(!navigator.geolocation){ toast('GPS no disponible en este dispositivo','err'); return; }
+    toast('Obteniendo ubicación…');
+    closeSheet();
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const {latitude,longitude}=pos.coords;
+      let name='',address='';
+      try{
+        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=es`);
+        const d=await r.json();
+        name=d.name||d.display_name?.split(',')[0]||'';
+        address=d.display_name||'';
+      }catch(e){}
+      enviarUbicacion(current.id, latitude, longitude, name, address);
+    }, err=>{ toast('Error GPS: '+err.message,'err'); }, {enableHighAccuracy:true,timeout:10000});
+  };
+
+  // --- Búsqueda de lugares ---
+  let searchTimer;
+  const searchInput=$('#locSearch');
+  const resultsEl=$('#locResults');
+  if(searchInput){
+    searchInput.oninput=()=>{
+      clearTimeout(searchTimer);
+      const q=searchInput.value.trim();
+      if(q.length<3){ resultsEl.style.display='none'; return; }
+      searchTimer=setTimeout(async()=>{
+        try{
+          const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);
+          const data=await r.json();
+          if(!resultsEl) return;
+          if(data&&data.length){
+            resultsEl.innerHTML=data.map((res,i)=>`<button class="loc-result" data-idx="${i}"><span class="loc-r-icon">📍</span><span>${esc(res.display_name)}</span></button>`).join('');
+            resultsEl.style.display='block';
+            resultsEl.querySelectorAll('.loc-result').forEach(btn=>btn.onclick=()=>{
+              const r2=data[parseInt(btn.dataset.idx)];
+              closeSheet();
+              enviarUbicacion(current.id, parseFloat(r2.lat), parseFloat(r2.lon), r2.name||'', r2.display_name||'');
+            });
+          } else resultsEl.style.display='none';
+        }catch(e){}
+      },400);
+    };
+    // Cerrar resultados al hacer click fuera
+    document.addEventListener('click',e=>{ if(resultsEl&&!resultsEl.contains(e.target)&&e.target!==searchInput) resultsEl.style.display='none'; });
+  }
+
+  // --- Predefinidas y personalizada ---
+  $('#sheetBody').querySelectorAll('.loc-preset-btn[data-idx]').forEach(b=>b.onclick=()=>{
     const idx=parseInt(b.dataset.idx);
     if(idx===-1){
       $('#locCustom').style.display='flex';
