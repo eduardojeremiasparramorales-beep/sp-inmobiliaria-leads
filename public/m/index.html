@@ -315,7 +315,7 @@
 
   /* ── Swipe en mensajes ── */
   .msg-wrap{ position:relative; overflow:hidden; flex-shrink:0; }
-  .msg-wrap .msg-reply-act{ position:absolute; top:0; bottom:0; right:0; width:36px; display:flex; align-items:center; justify-content:center; background:var(--bg-4); border:none; color:var(--gold); }
+  /* .msg-reply-act eliminado — swipe arrow solo aparece durante gesto */
   .chk{ vertical-align:middle; margin-left:3px; }
   .chk-sent{ color:var(--text-3); }
   .chk-delivered{ color:var(--text-2); }
@@ -910,12 +910,16 @@ function updateSend(){ const b=$('#cSend'); if(!b) return; const hay=($('#cInput
 /* ════════ Swipe to reply ──── */
 function wireMsgSwipe(wrap){ if(wrap._swipe) return; wrap._swipe=true;
   const bub=wrap.querySelector('.bub'); if(!bub) return;
-  const actBtn=wrap.querySelector('.msg-reply-act'); if(!actBtn) return;
-  let x0=0,dx=0,drag=false;
-  bub.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; dx=0; drag=true; bub.style.transition='none'; wrap.style.overflow='visible'; },{passive:true});
-  bub.addEventListener('touchmove',e=>{ if(!drag) return; dx=Math.min(0,e.touches[0].clientX-x0); if(dx<-50){ dx=-56; drag=false; bub.style.transition='transform .25s var(--spring)'; bub.style.transform='translateX(-56px)'; haptic(8); const t=setTimeout(()=>{ bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; clearTimeout(t); },600); setReply(wrap.dataset.msgid); return; } bub.style.transform='translateX('+dx+'px)'; },{passive:true});
-  bub.addEventListener('touchend',()=>{ if(!drag) return; drag=false; bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; });
-  actBtn.addEventListener('click',e=>{ e.stopPropagation(); setReply(wrap.dataset.msgid); });
+  let x0=0,dx=0,drag=false,arrow=null;
+  const mkArrow=()=>{
+    const a=document.createElement('div');
+    a.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h11a4 4 0 0 1 4 4v2M4 12l4-4M4 12l4 4"/></svg>';
+    a.style.cssText='position:absolute;left:0;top:0;bottom:0;width:40px;display:flex;align-items:center;justify-content:center;color:var(--gold);opacity:0;pointer-events:none;z-index:2;';
+    bub.insertAdjacentElement('beforebegin',a); return a;
+  };
+  bub.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; dx=0; drag=true; bub.style.transition='none'; wrap.style.overflow='visible'; if(!arrow) arrow=mkArrow(); },{passive:true});
+  bub.addEventListener('touchmove',e=>{ if(!drag) return; dx=Math.max(0,e.touches[0].clientX-x0); if(arrow) arrow.style.opacity=Math.min(1,dx/40); if(dx>50){ dx=56; drag=false; bub.style.transition='transform .25s var(--spring)'; bub.style.transform='translateX(56px)'; haptic(8); const t=setTimeout(()=>{ bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; if(arrow){ arrow.remove(); arrow=null; } clearTimeout(t); },600); setReply(wrap.dataset.msgid); return; } bub.style.transform='translateX('+dx+'px)'; },{passive:true});
+  bub.addEventListener('touchend',()=>{ if(!drag) return; drag=false; bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; if(arrow){ arrow.remove(); arrow=null; } });
 }
 function setReply(msgId){
   const m = currentMsgs.find(x=>String(x.id)===String(msgId)||String(x.id)===('temp_'+msgId));
@@ -1279,7 +1283,7 @@ async function enviarMensajeProgramado(body){
 }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st,m.read_at):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><button class="msg-reply-act" data-r="${m.id}">${I(SVG.reply,14)}</button><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${reacHTML}</div></div>`; }
+  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st,m.read_at):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><!-- msg-reply-act eliminado --><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${reacHTML}</div></div>`; }
   return h;
 }
 function renderReactions(reactions){
