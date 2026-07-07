@@ -173,6 +173,22 @@ async function sendMedia(to, mediaId, type, caption, filename) {
   return res.data;
 }
 
+// Envía una ubicación al cliente. latitude/longitude requeridos, name/address opcionales.
+async function sendLocation(to, latitude, longitude, name, address) {
+  const { url, headers } = getApiConfig();
+  const location = { longitude, latitude };
+  if (name) location.name = String(name);
+  if (address) location.address = String(address);
+  const res = await axios.post(url, {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'location',
+    location,
+  }, { headers });
+  return res.data;
+}
+
 // WhatsApp Business API no expone edición ni revocación directa.
 // editMessage: marca como editado en nuestro DB y opcionalmente envía un nuevo mensaje con la corrección.
 async function editMessage(to, wamid, newText) {
@@ -196,4 +212,4 @@ async function revokeMessage(to, wamid) {
   }
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, editMessage, revokeMessage };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage };

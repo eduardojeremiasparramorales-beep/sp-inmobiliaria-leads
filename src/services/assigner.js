@@ -150,7 +150,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
   const store = require('../db/store');
   const { sendMessage } = require('./whatsapp');
 
-  const etiquetas = { image: 'una imagen', audio: 'un audio', video: 'un video', document: 'un archivo', sticker: 'un sticker', voice: 'una nota de voz' };
+  const etiquetas = { image: 'una imagen', audio: 'un audio', video: 'un video', document: 'un archivo', sticker: 'un sticker', voice: 'una nota de voz', location: 'una ubicación' };
   const label = etiquetas[mediaData.media_type] || 'un archivo';
   const body = mediaData.caption || `[${mediaData.media_type}]`;
 
@@ -184,6 +184,49 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
   }
 }
 
+function routeIncomingLocation(fromPhone, customerName, locationData, wamid, callback) {
+  if (typeof wamid === 'function') { callback = wamid; wamid = null; }
+  const store = require('../db/store');
+  const { sendMessage } = require('./whatsapp');
+
+  const locBody = JSON.stringify(locationData);
+  const displayBody = `📍 [Ubicación]${locationData.name ? ' ' + locationData.name : ''}${locationData.address ? ' - ' + locationData.address : ''}`;
+
+  let lead = store.getLeadByCustomerPhone(fromPhone);
+  let vendedor;
+  const activos = store.getVendedoresActivos();
+
+  if (lead && lead.assigned_to_id) {
+    const vendedores = store.getVendedores();
+    vendedor = vendedores.find(v => v.id === lead.assigned_to_id) || activos[0];
+  } else {
+    const r = store.saveLead(fromPhone, customerName || 'Cliente', displayBody);
+    lead = store.getLeadById(r.leadId);
+    if (activos.length === 0) { callback(null, { message: 'no_hay_vendedores' }); return; }
+    vendedor = activos[0];
+    try { store.assignLeadToVendedor(lead.id, vendedor); } catch (e) { console.error('Error asignando lead location:', e.message); }
+  }
+
+  store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', locBody, 'incoming', {
+    media_type: 'location', media_id: null, media_mime: null, media_filename: null,
+  }, null, wamid || null);
+  updateCustomerMessageTimestamp(lead.id);
+  syncMulticanal(lead.id, {
+    direction: 'incoming', body: displayBody, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '',
+    media: { media_type: 'location' },
+  });
+  notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
+
+  if (vendedor) {
+    const locName = locationData.name ? ` (${locationData.name})` : '';
+    sendMessage(vendedor.telefono, `📍 ${customerName || 'Cliente'} te compartió una ubicación${locName}. Ábrelo en tu panel.`)
+      .then(() => callback(null, { forwarded: true, to: vendedor.telefono }))
+      .catch(() => callback(null, { forwarded: false }));
+  } else {
+    callback(null, { forwarded: false });
+  }
+}
+
 function getLeadCount() {
   return require('../db/store').getLeadCount();
 }
@@ -192,4 +235,4 @@ function getLeads() {
   return require('../db/store').getLeads();
 }
 
-module.exports = { assignLead, routeReply, routeIncomingMedia, getLeadCount, getLeads };
+module.exports = { assignLead, routeReply, routeIncomingMedia, routeIncomingLocation, getLeadCount, getLeads };

@@ -1,4 +1,4 @@
-const { routeReply, routeIncomingMedia } = require('../services/assigner');
+const { routeReply, routeIncomingMedia, routeIncomingLocation } = require('../services/assigner');
 const { sendMessage, downloadMedia } = require('../services/whatsapp');
 const { saveMessageMedia } = require('../services/media');
 const store = require('../db/store');
@@ -48,6 +48,17 @@ function handleMessage(req, res) {
                   'Te responderemos lo antes posible. ¡Gracias por tu paciencia!'
                 ).catch(e => console.error('Error enviando mensaje de espera:', e.message));
               }
+            });
+            continue;
+          }
+
+          // --- Ubicación entrante ---
+          if (msg.type === 'location') {
+            const loc = msg.location;
+            if (!loc) continue;
+            routeIncomingLocation(fromPhone, customerName, { latitude: loc.latitude, longitude: loc.longitude, name: loc.name || '', address: loc.address || '' }, msg.id || null, (err, result) => {
+              if (err) { console.error('Error routing location:', err.message); return; }
+              if (result && result.forwarded) console.log(`Ubicación reenviada a ${result.to}`);
             });
             continue;
           }

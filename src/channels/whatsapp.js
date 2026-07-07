@@ -136,6 +136,10 @@ class WhatsAppAdapter extends ChannelAdapter {
         if (msg.type === 'text') {
           type = 'text';
           text = msg.text && msg.text.body;
+        } else if (msg.type === 'location') {
+          type = 'location';
+          const loc = msg.location || {};
+          text = JSON.stringify({ latitude: loc.latitude, longitude: loc.longitude, name: loc.name || '', address: loc.address || '' });
         } else if (MEDIA_TYPES.includes(msg.type)) {
           type = msg.type;
           const mediaObj = msg[msg.type] || {};

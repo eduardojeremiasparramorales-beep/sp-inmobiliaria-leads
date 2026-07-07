@@ -9,7 +9,7 @@ const store = require('./db/store');
 const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
-const { sendMessage, sendMessageSmart, uploadMedia, sendMedia } = require('./services/whatsapp');
+const { sendMessage, sendMessageSmart, uploadMedia, sendMedia, sendLocation } = require('./services/whatsapp');
 const mediaStore = require('./services/media');
 const { convertToOggOpus, getPlayableAudioPath } = require('./services/audio');
 
@@ -1034,6 +1034,42 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
     res.json({ ok: true });
   } catch (e) {
     console.error('Error enviando media desde panel:', e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// Enviar ubicación a un cliente desde el panel
+app.post('/api/leads/:id/send-location', auth.requireAuth, async (req, res) => {
+  const { latitude, longitude, name, address } = req.body || {};
+  if (latitude == null || longitude == null) return res.status(400).json({ error: 'latitude_y_longitude_requeridos' });
+
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+
+  try {
+    const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
+    const locData = { latitude: Number(latitude), longitude: Number(longitude), name: String(name || ''), address: String(address || '') };
+    const locBody = JSON.stringify(locData);
+    const displayBody = `📍 [Ubicación]${name ? ' ' + name : ''}${address ? ' - ' + address : ''}`;
+
+    await sendLocation(lead.customer_phone, Number(latitude), Number(longitude), name, address);
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, locBody, 'outgoing', {
+      media_type: 'location', media_id: null, media_mime: null, media_filename: null,
+    }, null, null, 'sent');
+    store.setFirstResponse(lead.id);
+    if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
+    store.syncLeadToConversation(store.getLeadById(lead.id), {
+      direction: 'outgoing', body: displayBody, fromNumber, toNumber: lead.customer_phone,
+      media: { media_type: 'location' },
+    });
+    events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error enviando ubicación:', e.message);
     res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
   }
 });

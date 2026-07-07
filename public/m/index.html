@@ -103,14 +103,17 @@
   .m-card__msg{ flex:1; min-width:0; font-size:13.5px; color:var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .m-card.unread .m-card__msg{ color:var(--text-2); font-weight:500; }
   .m-badge{ min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--gold); color:#0A0A0A; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0; }
-  .m-card__l3{ display:flex; align-items:center; gap:6px; margin-top:7px; flex-wrap:wrap; }
-  .m-tag{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px; letter-spacing:.03em; }
+  .m-card__l3{ display:flex; align-items:center; gap:6px; margin-top:6px; }
+  .m-tag{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px; letter-spacing:.03em; flex-shrink:0; }
   .m-vendor{ font-size:10px; font-weight:500; padding:2px 7px; border-radius:999px; background:rgba(200,164,90,.12); color:var(--gold); border:1px solid rgba(200,164,90,.25); display:inline-flex; align-items:center; gap:3px; letter-spacing:.02em; }
   .m-meta{ font-size:10.5px; color:var(--text-3); display:inline-flex; align-items:center; gap:3px; }
   .m-meta svg{ width:11px; height:11px; opacity:.7; }
-  .m-score{ margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; color:var(--gold); }
-  .m-score .bar{ width:34px; height:4px; border-radius:2px; background:var(--bg-4); overflow:hidden; }
-  .m-score .bar i{ display:block; height:100%; background:linear-gradient(90deg,var(--green),var(--gold)); }
+
+  /* SP Progress bar — definitiva */
+  .m-card__progress{ margin-top:6px; padding-top:6px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+  .m-card__progress .sp-pbar{ flex:1; height:4px; border-radius:999px; background:var(--bg-4); overflow:hidden; }
+  .m-card__progress .sp-pbar i{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#B89840,var(--gold)); transition:width .6s var(--ease); }
+  .m-card__progress .sp-pct{ font-family:var(--f-title); font-size:11px; font-weight:700; color:var(--gold); letter-spacing:.04em; flex-shrink:0; }
 
   .t-interesado{ background:var(--blue-soft); color:var(--blue); } .t-negociacion{ background:var(--gold-soft); color:var(--gold); }
   .t-cita{ background:var(--amber-soft); color:var(--amber); } .t-vendido{ background:var(--green-soft); color:#83B778; }
@@ -194,6 +197,19 @@
   .att-i .ic{ width:56px; height:56px; border-radius:18px; background:var(--bg-3); border:1px solid var(--border-soft); display:grid; place-items:center; color:var(--gold); transition:transform .18s var(--spring); }
   .att-i:active .ic{ transform:scale(.9); }
   .att-i .ic svg{ width:24px; height:24px; }
+  .loc-card{ display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-3); border-radius:12px; cursor:pointer; transition:background .15s; }
+  .loc-card:active{ background:var(--bg-4); }
+  .loc-pin{ font-size:22px; flex-shrink:0; }
+  .loc-info{ flex:1; min-width:0; }
+  .loc-name{ font-size:13px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .loc-coords{ font-size:10px; color:var(--text-3); margin-top:1px; }
+  .loc-form{ display:flex; flex-direction:column; gap:10px; }
+  .loc-form input{ background:var(--bg-3); border:1px solid var(--border-soft); border-radius:10px; padding:10px 12px; font-size:14px; color:var(--text); outline:none; }
+  .loc-form input:focus{ border-color:var(--gold); }
+  .loc-preset{ display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .loc-preset-btn{ display:flex; align-items:center; gap:8px; background:var(--bg-3); border:1px solid var(--border-soft); border-radius:12px; padding:10px 12px; color:var(--text-2); font-size:13px; cursor:pointer; transition:all .15s; }
+  .loc-preset-btn:active{ background:var(--bg-4); transform:scale(.98); }
+  .loc-preset-btn .loc-preset-icon{ font-size:18px; }
 
   /* Perfil del lead */
   .lp-head{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:9px; padding-bottom:16px; }
@@ -208,11 +224,16 @@
   .lp-cell strong{ font-size:14px; font-weight:600; }
   .lp-cell.mock strong{ color:var(--text-3); font-weight:400; }
   .lp-cell.wide{ grid-column:1/3; }
-  .prob-wrap{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:16px; padding:14px; margin-top:12px; }
-  .prob-top{ display:flex; align-items:baseline; justify-content:space-between; }
-  .prob-num{ font-size:26px; font-weight:700; font-family:var(--f-num); }
-  .prob-bar{ height:8px; border-radius:999px; background:var(--bg-4); overflow:hidden; margin-top:9px; }
-  .prob-bar i{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--green),var(--gold)); }
+  /* SP Progress — versión grande (perfil + copiloto) */
+  .sp-progress-lg{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:16px; padding:16px; margin-top:12px; }
+  .sp-progress-lg__top{ display:flex; justify-content:space-between; align-items:baseline; }
+  .sp-progress-lg__top span:first-child{ font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.1em; }
+  .sp-progress-lg__num{ font-family:var(--f-title); font-size:26px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
+  .sp-progress-lg__track{ display:block; height:6px; border-radius:999px; background:var(--bg-4); overflow:hidden; margin-top:10px; }
+  .sp-progress-lg__track i{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#B89840,var(--gold)); transition:width .8s var(--ease); }
+  .sp-progress-lg__stages{ display:flex; justify-content:space-between; margin-top:10px; padding:0 1px; }
+  .sp-progress-lg__stages span{ width:12px; height:12px; border-radius:50%; background:var(--bg-3); border:1.5px solid var(--border-strong); transition:all .4s var(--ease); position:relative; }
+  .sp-progress-lg__stages span.done{ background:var(--gold); border-color:var(--gold); box-shadow:0 0 8px rgba(200,164,90,.35); }
 
   /* Timeline */
   .tl{ position:relative; padding-left:6px; }
@@ -660,23 +681,25 @@ function updateCardBadges(){ document.querySelectorAll('.m-row').forEach(row=>{ 
 
 function toggleArchivados(){ haptic(8); showArchivados = !showArchivados; renderList(); }
 function cardHTML(l,idx){
-  const nombre=l.customer_name||'Cliente'; const unread=Number(l.unread_count||0); const st=estado(l); const e=ETQ[l.etiqueta||'sin_clasificar']||ETQ.sin_clasificar; const score=leadScore(l);   const prio = unread?'var(--gold)':score>=80?'var(--red)':score>=60?'var(--gold)':'transparent';
-  const archived = showArchivados;
-  const greenDot = unread && !archived ? '<span class="m-unread-dot"></span>' : '';
+  const nombre=l.customer_name||'Cliente'; const unread=Number(l.unread_count||0); const st=estado(l); const e=ETQ[l.etiqueta||'sin_clasificar']||ETQ.sin_clasificar; const pct=l.progress_pct!=null?l.progress_pct:leadScore(l); const prio=unread?'var(--gold)':pct>=85?'var(--red)':pct>=60?'var(--gold)':'transparent';
+  const archived=showArchivados;
+  const greenDot=unread&&!archived?'<span class="m-unread-dot"></span>':'';
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
     <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
       ${l.pinned_at?`<span class="m-card__pin">${I(SVG.pin,11)} Fijado</span>`:''}
       ${l.muted_at?`<span class="m-card__mute"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/><path d="M14.5 6.5a2.5 2.5 0 0 0-3.26-1.12"/></svg> Silenciado</span>`:''}
-      <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread && !archived ? greenDot : ''}<span class="m-avatar__st ${st.cls}"></span></div>
+      <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread&&!archived?greenDot:''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
-        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
+        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-tag t-${e.cls}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
         <div class="m-card__l2"><span class="m-card__msg">${esc(l.last_message||l.first_message||'—')}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
         <div class="m-card__l3">
-          <span class="m-tag t-${e.cls}">${e.t}</span>
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
           <span class="m-meta">${I(SVG.facebook,11)} ${l.origen||'—'}</span>
-          <span class="m-score">${score} ${'<span class="bar"><i style="width:'+score+'%"></i></span>'}</span>
+        </div>
+        <div class="m-card__progress">
+          <span class="sp-pbar"><i style="width:${pct}%"></i></span>
+          <span class="sp-pct">${pct}%</span>
         </div>
       </div>
     </div>
@@ -1299,7 +1322,20 @@ function chkHTML(st,readAt){
   if(st==='delivered') return `<span class="chk chk-delivered"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>`;
   return `<span class="chk chk-sent"><svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="10"><path d="M2 7l4 4L14 3"/></svg></span>`;
 }
-function renderMedia(m){ const src=m.id?`/api/media/${m.id}`:''; if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen'; if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video'; if(m.media_type==='audio') return src?renderAudioPlayer(m.id,src):'🎙️ Audio'; return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`; }
+function renderMedia(m){
+  if(m.media_type==='location'){
+    let lat,lng,name,address;
+    try{ const d=JSON.parse(m.body); lat=d.latitude; lng=d.longitude; name=d.name; address=d.address; }catch(e){ return '📍 Ubicación'; }
+    const mapsUrl=`https://www.google.com/maps?q=${lat},${lng}`;
+    const label=[name,address].filter(Boolean).join(' - ')||'Ubicación';
+    return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="loc-pin">📍</div><div class="loc-info"><div class="loc-name">${esc(label)}</div><div class="loc-coords">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div>`;
+  }
+  const src=m.id?`/api/media/${m.id}`:'';
+  if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen';
+  if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video';
+  if(m.media_type==='audio') return src?renderAudioPlayer(m.id,src):'🎙️ Audio';
+  return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`;
+}
 function generateWaveform(id){ let h=0; const s=String(id); for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } const b=[]; for(let i=0;i<20;i++){ b.push(Math.round(Math.abs(Math.sin(h*(i+1)*137.5))*18+4)); } return b; }
 function formatDuration(s){ const m=Math.floor(s/60); const sec=Math.floor(s%60); return m+':'+(sec<10?'0':'')+sec; }
 function togglePlay(id){ const btn=document.getElementById(id+'_btn'); const wave=document.getElementById(id+'_wave'); const timeEl=document.getElementById(id+'_time'); const errEl=document.getElementById(id+'_err'); const dlEl=document.getElementById(id+'_dl'); if(!btn||!wave) return; const container=btn.closest('.audio-player'); if(!container) return; const src=container.dataset.src; if(!src) return; Object.keys(_audioPlayers).forEach(k=>{ if(k!==id&&_audioPlayers[k]&&!_audioPlayers[k].paused){ _audioPlayers[k].pause(); const ob=document.getElementById(k+'_btn'); if(ob) ob.classList.remove('playing'); } }); if(_audioPlayers[id]){ if(!_audioPlayers[id].paused){ _audioPlayers[id].pause(); btn.classList.remove('playing'); return; } _audioPlayers[id].play().then(()=>btn.classList.add('playing')).catch(()=>{}); return; } if(errEl) errEl.style.display='none'; if(dlEl) dlEl.style.display='none'; const a=new Audio(); a.preload='auto'; a.src=src; a.addEventListener('timeupdate',()=>{ if(a.duration){ const bars=wave.querySelectorAll('.audio-player__bar'); bars.forEach((bar,i)=>bar.classList.toggle('active',i<Math.floor((a.currentTime/a.duration)*bars.length))); } if(timeEl) timeEl.textContent=formatDuration(a.currentTime); }); a.addEventListener('ended',()=>{ btn.classList.remove('playing'); if(timeEl&&isFinite(a.duration)) timeEl.textContent=formatDuration(a.duration||0); wave.querySelectorAll('.audio-player__bar').forEach(b=>b.classList.remove('active')); }); a.addEventListener('loadedmetadata',()=>{ if(timeEl&&isFinite(a.duration)) timeEl.textContent=formatDuration(a.duration||0); }); a.addEventListener('error',()=>{ btn.classList.remove('playing'); delete _audioPlayers[id]; if(errEl) errEl.style.display='inline'; if(dlEl) dlEl.style.display='inline'; revealNativeAudio(id,false); if(typeof toast==='function') toast('No se pudo cargar el audio'); }); _audioPlayers[id]=a; a.play().then(()=>btn.classList.add('playing')).catch(()=>{ btn.classList.remove('playing'); delete _audioPlayers[id]; if(errEl) errEl.style.display='inline'; if(dlEl) dlEl.style.display='inline'; revealNativeAudio(id,true); if(typeof toast==='function') toast('Reproduciendo con el control nativo'); }); }
@@ -1375,10 +1411,64 @@ const QUICK=[
 ];
 
 function abrirAdjuntos(){
-  const items=[['image','Imagen',SVG.image],['file','Documento',SVG.file],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
+  const items=[['image','Imagen',SVG.image],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
-  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='image'){ const fi=$('#fileInput'); if(fi) fi.click(); } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else toast('Adjuntar '+b.textContent+' — próximamente'); });
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='image'){ const fi=$('#fileInput'); if(fi) fi.click(); } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
 }
+const UBICACIONES_PREDEFINIDAS = [
+  { name:'Proyecto Tocaima', address:'Tocaima, Cundinamarca', lat:4.4577, lng:-74.6329 },
+  { name:'Oficina SP Inmobiliaria', address:'Bogotá', lat:4.7110, lng:-74.0721 },
+];
+
+function abrirEnviarUbicacion(){
+  if(!current){ toast('Selecciona un lead primero'); return; }
+  const presetsHtml = UBICACIONES_PREDEFINIDAS.map((p,i) =>
+    `<button class="loc-preset-btn" data-idx="${i}"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.name)}</strong>${p.address ? ' — '+esc(p.address) : ''}</span></button>`
+  ).join('');
+  const formHtml = `
+    <div class="loc-preset">${presetsHtml}<button class="loc-preset-btn" data-idx="-1"><span class="loc-preset-icon">✏️</span><span style="color:var(--gold)">Ubicación personalizada</span></button></div>
+    <div class="loc-form" id="locCustom" style="display:none">
+      <input id="locName" placeholder="Nombre del lugar (opcional)">
+      <input id="locAddress" placeholder="Dirección (opcional)">
+      <input id="locLat" type="number" step="any" placeholder="Latitud (ej: 4.4577)">
+      <input id="locLng" type="number" step="any" placeholder="Longitud (ej: -74.6329)">
+      <button class="lp-cell wide" id="locSendBtn" style="justify-content:center;color:var(--gold);font-weight:500">📍 Enviar ubicación</button>
+    </div>`;
+  openSheet('Enviar ubicación', formHtml);
+  $('#sheetBody').querySelectorAll('.loc-preset-btn').forEach(b=>b.onclick=()=>{
+    const idx=parseInt(b.dataset.idx);
+    if(idx===-1){
+      $('#locCustom').style.display='flex';
+      $('#sheetBody').querySelectorAll('.loc-preset-btn').forEach(bb=>bb.style.display='none');
+      return;
+    }
+    const p=UBICACIONES_PREDEFINIDAS[idx];
+    closeSheet();
+    enviarUbicacion(current.id, p.lat, p.lng, p.name, p.address);
+  });
+  const sendBtn=$('#locSendBtn');
+  if(sendBtn) sendBtn.onclick=()=>{
+    const lat=parseFloat($('#locLat').value); const lng=parseFloat($('#locLng').value);
+    if(isNaN(lat)||isNaN(lng)){ toast('Ingresa latitud y longitud válidas','err'); return; }
+    const name=$('#locName').value.trim(); const address=$('#locAddress').value.trim();
+    closeSheet();
+    enviarUbicacion(current.id, lat, lng, name, address);
+  };
+}
+
+async function enviarUbicacion(leadId, lat, lng, name, address){
+  haptic(10);
+  try{
+    const r=await api(`/api/leads/${leadId}/send-location`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({latitude:lat,longitude:lng,name,address})});
+    if(r!==null){
+      const d=await api(`/api/leads/${leadId}/mensajes`);
+      if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; }
+      cargar();
+      toast('📍 Ubicación enviada');
+    } else toast('Error al enviar ubicación','err');
+  }catch(e){ toast('Error al enviar ubicación','err'); }
+}
+
 // File input for media uploads
 function initFileInput(){
   const fi=document.createElement('input'); fi.type='file'; fi.id='fileInput'; fi.style.display='none'; fi.accept='image/*,video/*,.pdf,.doc,.docx';
@@ -1420,7 +1510,7 @@ function abrirPlantillas(){
   $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.tpl; updateSend(); closeSheet(); haptic(8); i.focus(); });
 }
 
-function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'; const st=estado(l); const score=leadScore(l);
+function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'; const st=estado(l); const pct=l.progress_pct!=null?l.progress_pct:leadScore(l); const stageDots=[0,25,50,75,100].map(t=>`<span${pct>=t?' class="done"':''}></span>`).join('');
   openSheet('Perfil del lead', `
     <div class="lp-head">
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}</div>
@@ -1432,10 +1522,10 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
         <button data-lp="mute" style="color:${l.muted_at?'var(--gold)':'var(--text-3)'}">${l.muted_at?I('<path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/>',21):I(SVG.bell,21)}</button>
       </div>
     </div>
-    <div class="prob-wrap">
-      <div class="prob-top"><span style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em">Probabilidad de cierre</span></div>
-      <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px"><span class="prob-num">${score}%</span></div>
-      <div class="prob-bar"><i style="width:${score}%"></i></div>
+    <div class="sp-progress-lg">
+      <div class="sp-progress-lg__top"><span>Pipeline</span><span class="sp-progress-lg__num">${pct}%</span></div>
+      <span class="sp-progress-lg__track"><i style="width:${pct}%"></i></span>
+      <div class="sp-progress-lg__stages">${stageDots}</div>
     </div>
     <div class="lp-grid">
       <div class="lp-cell"><span>Estado</span><strong style="color:var(--gold)">${etqLabel(l.etiqueta||'sin_clasificar')}</strong></div>
@@ -1478,7 +1568,7 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
     if (dProp.ok && dProp.propiedades) propsRecom = dProp.propiedades;
   } catch(e) {}
   const isAI = analysis && analysis.summary;
-  const score = isAI ? Math.round(Math.max(0,Math.min(100,(analysis.closeProbability||50)))) : leadScore(l);
+  const score = isAI ? Math.round(Math.max(0,Math.min(100,(analysis.closeProbability||50)))) : (l.progress_pct!=null?l.progress_pct:leadScore(l));
   const sug = isAI && analysis.suggestedResponse ? analysis.suggestedResponse : `Hola ${nombre}, con gusto te resuelvo lo de la financiación: manejamos cuota inicial baja y plazos flexibles. ¿Agendamos una visita esta semana?`;
   const sentIcon = analysis?.sentiment === 'positivo' ? SVG.check : analysis?.sentiment === 'negativo' ? SVG.zap : SVG.target;
   const sentLabel = analysis?.sentiment ? (analysis.sentiment.charAt(0).toUpperCase()+analysis.sentiment.slice(1)) : '—';
@@ -1490,7 +1580,11 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
     <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(analysis.summary||'')}</p></div>
     <div class="cop-card"><h5>${I(SVG.target,14)} Sentimiento</h5><p class="cop-sent">${I(sentIcon,14)} ${sentLabel} · score ${analysis.sentimentScore || 0}</p></div>
     ${analysis.objections?.length ? `<div class="cop-card"><h5>${I(SVG.zap,14)} Objeciones</h5>${analysis.objections.map(o=>`<div class="cop-obj">${esc(o)}</div>`).join('')}</div>` : ''}
-    <div class="cop-card"><h5>${I(SVG.checkSquare,14)} Probabilidad de cierre</h5><div style="display:flex;align-items:baseline;gap:10px"><span class="prob-num">${score}%</span></div><div class="prob-bar"><i style="width:${score}%"></i></div></div>
+    <div class="sp-progress-lg" style="margin:12px 0">
+      <div class="sp-progress-lg__top"><span>Pipeline</span><span class="sp-progress-lg__num">${score}%</span></div>
+      <span class="sp-progress-lg__track"><i style="width:${score}%"></i></span>
+      <div class="sp-progress-lg__stages">${[0,25,50,75,100].map(t=>`<span${score>=t?' class="done"':''}></span>`).join('')}</div>
+    </div>
     <div class="cop-card"><h5>${I(SVG.chat,14)} Próxima acción</h5><p style="font-size:13px">${esc(analysis.nextAction||'')}</p></div>
     ` : `
     <div class="cop-card"><h5>${I(SVG.user,14)} ${esc(nombre)}</h5><p>${l.messages_count||0} mensajes. Conecta con el cliente para mantener la conversación activa.</p></div>
