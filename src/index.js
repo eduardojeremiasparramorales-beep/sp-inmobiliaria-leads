@@ -242,8 +242,8 @@ app.post('/api/nlp/daily-briefing', auth.requireAuth, async (req, res) => {
 app.post('/api/nlp/chat', auth.requireAuth, async (req, res) => {
   try {
     const nlp = require('./services/nlp');
-    if (!nlp.isAIEnabled()) return res.status(400).json({ error: 'IA desactivada. Configura una API Key en Ajustes → IA Copiloto.' });
-    const { message, history } = req.body || {};
+    if (!nlp.isAIEnabled()) return res.status(400).json({ error: 'IA desactivada. Configura una API Key en el panel de Chat IA → Proveedores.' });
+    const { message, history, providerId, model } = req.body || {};
     if (!message || !message.trim()) return res.status(400).json({ error: 'Mensaje requerido' });
     const ctx = (history || []).map(m => `${m.role}: ${m.content}`).join('\n');
     const reply = await nlp.chatText(
@@ -251,12 +251,69 @@ app.post('/api/nlp/chat', auth.requireAuth, async (req, res) => {
       Ayudas a los vendedores del equipo a mejorar sus ventas, redactar mensajes, analizar leads, y resolver dudas.
       Responde de forma clara, profesional y en español.`,
       `${ctx ? 'Contexto:\n' + ctx + '\n\n' : ''}Mensaje: ${message}`,
-      30000
+      45000,
+      { providerId, model }
     );
-    res.json({ ok: true, reply, model: nlp.getModel() });
+    res.json({ ok: true, reply, model: model || nlp.getModel() });
   } catch (e) {
     console.error('[NLP] chat error:', e.message);
     res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
+// ── Proveedores de IA (admin): multi-proveedor, cada uno con su base URL + API key ──
+const AI_PRESETS = {
+  openrouter: { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+  openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  groq: { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+};
+
+app.get('/api/ai/providers', auth.requireAdmin, (req, res) => {
+  const nlp = require('./services/nlp');
+  const providers = nlp.getProviders().map(p => ({
+    id: p.id,
+    name: p.name,
+    baseUrl: p.baseUrl,
+    hasKey: !!p.apiKey,
+    keyMask: p.apiKey ? '••••••' + String(p.apiKey).slice(-4) : '',
+    models: p.models || [],
+  }));
+  res.json({ providers, defaultId: nlp.getDefaultProviderId(), presets: AI_PRESETS });
+});
+
+app.post('/api/ai/providers', auth.requireAdmin, (req, res) => {
+  const nlp = require('./services/nlp');
+  const { providers, defaultId } = req.body || {};
+  if (!Array.isArray(providers)) return res.status(400).json({ error: 'providers debe ser un arreglo' });
+  const existing = nlp.getProviders();
+  const clean = providers.map(p => {
+    let apiKey = String(p.apiKey || '').trim();
+    // Si la key viene vacía o enmascarada, conservar la existente de ese proveedor.
+    if (!apiKey || apiKey.startsWith('••••')) {
+      const prev = existing.find(x => x.id === p.id);
+      apiKey = prev ? prev.apiKey : '';
+    }
+    const id = String(p.id || p.name || 'prov').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'prov';
+    return {
+      id,
+      name: String(p.name || p.id || 'Proveedor').slice(0, 60),
+      baseUrl: String(p.baseUrl || '').trim(),
+      apiKey,
+      models: Array.isArray(p.models) ? p.models.map(m => String(m).trim()).filter(Boolean).slice(0, 100) : [],
+    };
+  }).filter(p => p.baseUrl);
+  nlp.saveProviders(clean, defaultId);
+  res.json({ ok: true });
+});
+
+app.get('/api/ai/models', auth.requireAdmin, async (req, res) => {
+  const nlp = require('./services/nlp');
+  try {
+    const models = await nlp.fetchModels(req.query.providerId);
+    res.json({ ok: true, models });
+  } catch (e) {
+    res.json({ ok: false, models: [], error: e.message });
   }
 });
 

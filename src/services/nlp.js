@@ -25,13 +25,6 @@ function getConfig(key, fallback = '') {
   return store.getConfig(key) || process.env[`OPENROUTER_${key}`] || process.env[`OPENAI_${key}`] || fallback;
 }
 
-function isAIEnabled() {
-  const enabled = store.getConfig('ai_enabled');
-  if (enabled === 'false' || enabled === '0') return false;
-  const apiKey = getApiKey();
-  return !!apiKey;
-}
-
 function getApiKey() {
   return store.getConfig('openrouter_api_key') || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || '';
 }
@@ -48,18 +41,106 @@ function getAppName() {
   return store.getConfig('openrouter_app_name') || process.env.OPENROUTER_APP_NAME || 'SP CRM';
 }
 
-function getClient() {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('No hay API key configurada para IA. Ve a Configuración → IA Copiloto.');
+// ─────────────────────────────────────────────────────────────────────────
+// Proveedores de IA: multi-proveedor, cada uno con su base URL + su API key.
+// Se guardan como JSON en config('ai_providers'). Todos deben ser compatibles
+// con la API de OpenAI (OpenRouter, OpenAI, DeepSeek, Groq, Together, etc.).
+// ─────────────────────────────────────────────────────────────────────────
+
+// Presets rápidos para que el admin solo pegue su API key.
+const PRESET_PROVIDERS = {
+  openrouter: { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+  openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  groq: { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+};
+
+function getProviders() {
+  let list = [];
+  try { list = JSON.parse(store.getConfig('ai_providers') || '[]'); } catch (e) { list = []; }
+  if (!Array.isArray(list)) list = [];
+  // Compatibilidad: si no hay proveedores configurados, sintetizar uno de
+  // OpenRouter a partir de la config antigua (openrouter_api_key).
+  if (list.length === 0) {
+    list = [{
+      id: 'openrouter',
+      name: 'OpenRouter',
+      baseUrl: OPENROUTER_BASE,
+      apiKey: getApiKey(),
+      models: [],
+    }];
+  }
+  return list;
+}
+
+function getDefaultProviderId() {
+  const saved = store.getConfig('ai_default_provider');
+  const list = getProviders();
+  if (saved && list.some(p => p.id === saved)) return saved;
+  return list[0] ? list[0].id : 'openrouter';
+}
+
+function getProviderById(id) {
+  const list = getProviders();
+  return list.find(p => p.id === id) || list.find(p => p.id === getDefaultProviderId()) || list[0] || null;
+}
+
+function saveProviders(list, defaultId) {
+  const clean = Array.isArray(list) ? list : [];
+  store.setConfig('ai_providers', JSON.stringify(clean));
+  if (defaultId) store.setConfig('ai_default_provider', String(defaultId));
+  // Mantener sincronizada la config antigua con el proveedor por defecto
+  // para que las funciones internas del Copiloto (analizar lead, etc.) sigan funcionando.
+  const def = clean.find(p => p.id === (defaultId || getDefaultProviderId())) || clean[0];
+  if (def) store.setConfig('openrouter_api_key', def.apiKey || '');
+}
+
+function isAIEnabled() {
+  const enabled = store.getConfig('ai_enabled');
+  if (enabled === 'false' || enabled === '0') return false;
+  return getProviders().some(p => p.apiKey);
+}
+
+function buildClient(baseUrl, apiKey) {
+  if (!apiKey) throw new Error('No hay API key configurada para este proveedor. Ve al panel de Chat IA → Proveedores.');
   const OpenAI = require('openai');
   return new OpenAI({
-    baseURL: OPENROUTER_BASE,
+    baseURL: baseUrl || OPENROUTER_BASE,
     apiKey,
     defaultHeaders: {
       'HTTP-Referer': getSiteUrl(),
       'X-Title': getAppName(),
     },
   });
+}
+
+// Cliente del proveedor por defecto (usado por las funciones internas del Copiloto).
+function getClient() {
+  const p = getProviderById(getDefaultProviderId());
+  return buildClient(p && p.baseUrl, (p && p.apiKey) || getApiKey());
+}
+
+// Cliente + modelo resueltos para un proveedor/modelo específico (chat interactivo).
+function resolveClientAndModel(opts = {}) {
+  const provider = opts.providerId ? getProviderById(opts.providerId) : getProviderById(getDefaultProviderId());
+  const client = buildClient(provider && provider.baseUrl, (provider && provider.apiKey) || getApiKey());
+  const model = opts.model || (provider && provider.models && provider.models[0]) || getModel();
+  return { client, model };
+}
+
+// Lista los modelos disponibles de un proveedor (endpoint /models compatible con OpenAI).
+async function fetchModels(providerId) {
+  const p = getProviderById(providerId);
+  if (!p || !p.apiKey) return [];
+  try {
+    const client = buildClient(p.baseUrl, p.apiKey);
+    const res = await client.models.list();
+    const data = (res && (res.data || (res.body && res.body.data))) || [];
+    return data.map(m => m.id).filter(Boolean).sort();
+  } catch (e) {
+    console.error('[NLP] fetchModels error:', e.message);
+    return [];
+  }
 }
 
 async function chatJSON(systemPrompt, userText, timeoutMs) {
@@ -85,13 +166,13 @@ async function chatJSON(systemPrompt, userText, timeoutMs) {
   }
 }
 
-async function chatText(systemPrompt, userText, timeoutMs) {
-  const client = getClient();
+async function chatText(systemPrompt, userText, timeoutMs, opts = {}) {
+  const { client, model } = resolveClientAndModel(opts);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_DEFAULT);
   try {
     const completion = await client.chat.completions.create({
-      model: getModel(),
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userText },
@@ -243,4 +324,5 @@ async function dailyBriefing(vendedor, stats) {
 module.exports = {
   analyzeSentiment, classifyIntent, suggestResponse, extractEntities, shouldAutoRespond,
   analyzeLead, dailyBriefing, chatText, chatJSON, isAIEnabled, getModel, getApiKey,
+  getProviders, getProviderById, getDefaultProviderId, saveProviders, fetchModels, PRESET_PROVIDERS,
 };

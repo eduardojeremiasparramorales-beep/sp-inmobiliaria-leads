@@ -19,7 +19,7 @@
   const ctx = await SPOS.mount({
     active: 'dashboard', title: 'Centro de Control', crumb: 'SP Inmobiliaria · Vista general',
     padded: true,
-    action: `<button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
+    action: `<a class="btn btn--sm" href="/os/ia-chat.html" style="margin-right:8px">${(ICONS.spark||'').replace('<svg ','<svg style="width:15px;height:15px" ')}Chat IA</a><button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
   });
 
   // --- Datos reales ---
