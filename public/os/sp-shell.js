@@ -167,7 +167,6 @@
           <button class="btn btn--icon btn--quiet u-hide" id="osMenuBtn" style="margin-left:-8px">${ICONS.menu}</button>
           <div><div class="os-topbar__title">${opts.title || 'Dashboard'}</div>${opts.crumb ? `<div class="os-topbar__crumb">${opts.crumb}</div>` : ''}</div>
           <div class="u-grow"></div>
-          <label class="os-search">${ICONS.search}<input placeholder="Buscar en SP OS…" id="osSearch"><kbd>⌘K</kbd></label>
           <button class="btn btn--icon btn--ghost" title="Notificaciones">${ICONS.notifications}</button>
           <div class="avatar avatar--sm" style="background:${avatarColor(me.nombre)}" title="${me.nombre}">${initials(me.nombre)}</div>
           ${opts.action || ''}
@@ -194,7 +193,6 @@
     const nav = document.getElementById('osNav');
     const mb = document.getElementById('osMenuBtn');
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
-    window.addEventListener('keydown', (e) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('osSearch').focus(); } });
     window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
 
     return { me, content: document.getElementById('osContent'), panel: document.getElementById('osPanel') };

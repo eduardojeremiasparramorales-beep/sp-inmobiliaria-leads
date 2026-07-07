@@ -234,17 +234,11 @@
   .cop-obj::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--amber); margin-top:6px; flex-shrink:0; }
   .cop-use{ margin-top:9px; width:100%; height:40px; border-radius:13px; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; font-weight:700; font-size:13px; }
 
-  /* Propiedades */
-  .prop-scroll{ display:flex; gap:12px; overflow-x:auto; padding:2px 2px 8px; margin:0 -4px; }
-  .prop-c{ flex-shrink:0; width:220px; background:var(--bg-2); border:1px solid var(--border-soft); border-radius:18px; overflow:hidden; }
-  .prop-c .ph{ height:120px; background:linear-gradient(135deg,#1a1a1a,#242424); display:grid; place-items:center; font-size:38px; }
-  .prop-c .in{ padding:12px; }
-  .prop-c .nm{ font-size:14px; font-weight:600; }
-  .prop-c .lo{ font-size:11.5px; color:var(--text-3); margin-top:2px; display:flex; align-items:center; gap:4px; }
-  .prop-c .pr{ font-size:15px; font-weight:700; color:var(--gold); margin-top:6px; }
-  .prop-c .ft{ display:flex; align-items:center; justify-content:space-between; margin-top:9px; }
-  .prop-c .mt{ font-size:10.5px; font-weight:700; color:#83B778; background:var(--green-soft); padding:3px 8px; border-radius:999px; }
-  .prop-c .snd{ height:30px; padding:0 13px; border-radius:10px; background:var(--gold-soft); border:1px solid var(--gold-line); color:var(--gold); font-size:11.5px; font-weight:600; }
+  /* Calendario */
+  .cal-nav{ background:var(--bg-3);border:1px solid var(--border);color:var(--text-2);width:32px;height:32px;border-radius:10px;font-size:16px;cursor:pointer;display:grid;place-items:center }
+  .cal-nav:active{ color:var(--gold) }
+  .cal-day{ min-height:46px;padding:4px;border-radius:8px;background:var(--bg-1);border:1px solid var(--border-soft);cursor:pointer;transition:border-color .15s }
+  .cal-day:active{ border-color:var(--gold-line) }
 
   /* Empty / placeholder tabs */
   .m-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:40px; color:var(--text-3); }
@@ -1606,7 +1600,7 @@ function abrirEditarPerfil(){
 }
 
 /* ════════ Bottom Nav / tabs ════════ */
-const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
+const TABS=[['chats','Chats',SVG.chat],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
 function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
   $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
 async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
@@ -1756,12 +1750,21 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       // Estadísticas semanales
       cargarStats();
     }, 50);
-  } else if (t === 'propiedades') {
-    box.innerHTML = `<div style="padding:18px;width:100%;max-width:400px;margin:0 auto">
-      <div style="margin-bottom:16px"><input id="propQ" placeholder="Buscar propiedades..." style="width:100%;height:40px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);padding:0 14px;font-size:14px;outline:none"></div>
-      <div id="propList"><div style="text-align:center;color:var(--text-3);padding:30px">Cargando...</div></div>
+  } else if (t === 'calendario') {
+    box.innerHTML = `<div style="padding:14px 14px 0;width:100%;max-width:400px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <button class="cal-nav" id="calPrev" style="background:var(--bg-3);border:1px solid var(--border);color:var(--text-2);width:32px;height:32px;border-radius:10px;font-size:16px;cursor:pointer">‹</button>
+        <h3 id="calMes" style="flex:1;font-family:var(--f-title);font-size:16px;font-weight:600;text-align:center;text-transform:capitalize"></h3>
+        <button class="cal-nav" id="calNext" style="background:var(--bg-3);border:1px solid var(--border);color:var(--text-2);width:32px;height:32px;border-radius:10px;font-size:16px;cursor:pointer">›</button>
+      </div>
+      <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px"></div>
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button id="calHoy" style="flex:1;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);font-size:12px;cursor:pointer;font-family:inherit">Hoy</button>
+        <button id="calNueva" style="flex:2;height:36px;border-radius:10px;background:var(--gold);color:#0A0A0A;border:none;font-weight:600;font-size:12px;cursor:pointer;font-family:inherit">+ Nueva cita</button>
+      </div>
+      <div style="margin-top:18px"><div class="t-label" style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Próximas</div><div id="calProx"></div></div>
     </div>`;
-    cargarPropiedades();
+    cargarCalendario();
   } else if (t === 'tareas') {
     const ec = estadoColores[me?.estado||'activo']||estadoColores.activo;
     box.innerHTML = `<div style="padding:18px;width:100%;max-width:400px;margin:0 auto">
@@ -1926,20 +1929,88 @@ async function cargarStats(){
     </div>`;
 }
 
-/* ════════ Propiedades tab ════════ */
-let _props = [];
-async function cargarPropiedades(){
-  const box=document.getElementById('propList'); if(!box) return;
-  const d=await api('/api/propiedades'); _props = d||[];
-  renderPropiedades();
-  const q=document.getElementById('propQ');
-  if(q) q.addEventListener('input', function(){ renderPropiedades(this.value); });
+/* ════════ Calendario tab ════════ */
+let _citasCal = [], _vistaCal = new Date();
+const DIAS_CAL = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const MESES_CAL = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function fechaLocalCal(ts){ const d=new Date(String(ts).replace(' ','T')); return isNaN(d)?null:d; }
+function mismoDiaCal(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+function fmtFechaCal(d){ return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short'})+' · '+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
+async function cargarCalendario(){
+  _vistaCal.setDate(1);
+  const d=await api('/api/citas'); _citasCal=Array.isArray(d)?d:[];
+  renderCalendario();
+  document.getElementById('calPrev').onclick=()=>{ _vistaCal.setMonth(_vistaCal.getMonth()-1); renderCalendario(); };
+  document.getElementById('calNext').onclick=()=>{ _vistaCal.setMonth(_vistaCal.getMonth()+1); renderCalendario(); };
+  document.getElementById('calHoy').onclick=()=>{ _vistaCal=new Date(); _vistaCal.setDate(1); renderCalendario(); };
+  document.getElementById('calNueva').onclick=()=>abrirModalCita();
 }
-function renderPropiedades(q){
-  const box=document.getElementById('propList'); if(!box) return;
-  let items=_props; if(q){ const t=q.toLowerCase(); items=items.filter(p=>p.nombre.toLowerCase().includes(t)||(p.ciudad||'').toLowerCase().includes(t)); }
-  if(!items.length){ box.innerHTML='<div class="m-empty"><div class="ic">'+I(SVG.building,28)+'</div><h3>Sin propiedades</h3><p>No hay propiedades disponibles aún.</p></div>'; return; }
-  box.innerHTML='<div class="prop-scroll" style="flex-wrap:wrap;overflow-x:hidden;gap:12px;justify-content:center">'+items.map(p=>`<div class="prop-c" style="flex:none;width:100%;max-width:340px"><div class="ph" style="${p.imagen_url?`background-image:url(${esc(p.imagen_url)});background-size:cover;background-position:center`:'background:linear-gradient(135deg,#1a1a1a,#242424)'}">${p.imagen_url?'':p.tipo==='lote'?'🏡':p.tipo==='casa'?'🏠':'🏢'}</div><div class="in"><div class="nm">${esc(p.nombre)}</div><div class="lo">${I(SVG.mapPin,11)} ${esc(p.ciudad||'—')} · ${p.m2} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt" style="${p.estado==='disponible'?'background:var(--green-soft);color:#83B778':p.estado==='reservado'?'background:var(--gold-soft);color:var(--gold)':'background:var(--red-soft);color:#FF8A8E'}">${p.estado}</span></div></div></div>`).join('')+'</div>';
+function renderCalendario(){
+  document.getElementById('calMes').textContent=MESES_CAL[_vistaCal.getMonth()]+' '+_vistaCal.getFullYear();
+  const grid=document.getElementById('calGrid'); const hoy=new Date();
+  const pd=new Date(_vistaCal); const off=(pd.getDay()+6)%7;
+  const inicio=new Date(pd); inicio.setDate(1-off); const dia=new Date(inicio);
+  let html=DIAS_CAL.map(d=>`<div style="font-size:9px;color:var(--text-3);text-align:center;padding:3px 0;text-transform:uppercase;letter-spacing:.08em">${d}</div>`).join('');
+  for(let i=0;i<42;i++){
+    const esMes=dia.getMonth()===_vistaCal.getMonth();
+    const esHoy=mismoDiaCal(dia,hoy);
+    const delDia=_citasCal.filter(c=>{const f=fechaLocalCal(c.fecha); return f&&mismoDiaCal(f,dia);});
+    const pend=delDia.filter(c=>c.estado==='pendiente').length;
+    html+=`<div class="cal-day" style="${esMes?'':'opacity:.25'};min-height:46px;padding:4px;border-radius:8px;background:${esHoy?'var(--gold-soft)':'var(--bg-1)'};border:1px solid ${esHoy?'var(--gold-line)':'var(--border-soft)'}" data-fecha="${dia.getFullYear()}-${String(dia.getMonth()+1).padStart(2,'0')}-${String(dia.getDate()).padStart(2,'0')}">
+      <div style="font-size:10px;font-weight:600;color:${esHoy?'var(--gold)':'var(--text-3)'};text-align:center">${dia.getDate()}</div>
+      ${pend?`<div style="font-size:8px;color:var(--gold);text-align:center;background:rgba(200,164,90,.12);border-radius:4px;padding:1px 0;margin-top:2px">${pend} cita${pend>1?'s':''}</div>`:''}
+    </div>`;
+    dia.setDate(dia.getDate()+1);
+  }
+  grid.innerHTML=html;
+  grid.querySelectorAll('.cal-day').forEach(el=>el.onclick=()=>{
+    const f=el.dataset.fecha; abrirModalCita(f);
+  });
+  // Próximas
+  const ahora=new Date(); const prox=_citasCal.filter(c=>{ if(c.estado!=='pendiente') return false; const f=fechaLocalCal(c.fecha); return f&&f>=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate()); }).slice(0,10);
+  const px=document.getElementById('calProx');
+  if(!prox.length){ px.innerHTML='<div style="font-size:12px;color:var(--text-3);text-align:center;padding:8px">Sin citas pendientes</div>'; return; }
+  px.innerHTML=prox.map(c=>{
+    const f=fechaLocalCal(c.fecha);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-soft)">
+      <div style="width:4px;height:4px;border-radius:50%;background:var(--gold);flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:500">${esc(c.titulo)}</div>
+        <div style="font-size:10px;color:var(--text-3);margin-top:1px">${f?fmtFechaCal(f):'—'}${c.customer_name?' · '+esc(c.customer_name):''}</div>
+      </div>
+      <button class="cal-hecha" data-id="${c.id}" style="width:26px;height:26px;border-radius:6px;background:none;border:1.5px solid var(--border-strong);color:var(--green);display:grid;place-items:center">${I(SVG.check,12)}</button>
+      <button class="cal-cancel" data-id="${c.id}" style="width:26px;height:26px;border-radius:6px;background:none;border:none;color:var(--text-3);display:grid;place-items:center">${I(SVG.x,12)}</button>
+    </div>`;
+  }).join('');
+  px.querySelectorAll('.cal-hecha').forEach(b=>b.onclick=async()=>{
+    await api('/api/citas/'+b.dataset.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'hecha'})});
+    toast('Cita completada'); cargarCalendario();
+  });
+  px.querySelectorAll('.cal-cancel').forEach(b=>b.onclick=async()=>{
+    await api('/api/citas/'+b.dataset.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'cancelada'})});
+    toast('Cita cancelada'); cargarCalendario();
+  });
+}
+function abrirModalCita(fechaPref){
+  const d=fechaPref?new Date(fechaPref+'T'+(new Date().toTimeString().slice(0,5))):new Date();
+  d.setHours(d.getHours()+1,0,0,0);
+  const iso=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  openSheet('Nueva cita',`<div style="display:flex;flex-direction:column;gap:10px">
+    <input id="calTitulo" placeholder="Título de la cita" value="" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
+    <input id="calFecha" type="datetime-local" value="${iso}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
+    <input id="calNotas" placeholder="Notas (opcional)" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
+    <button class="cop-use" id="calGuardar" style="margin-top:4px">Agendar</button>
+  </div>`);
+  setTimeout(()=>document.getElementById('calTitulo').focus(),100);
+  document.getElementById('calGuardar').onclick=async()=>{
+    const titulo=document.getElementById('calTitulo').value.trim();
+    const fecha=document.getElementById('calFecha').value;
+    const notas=document.getElementById('calNotas').value.trim();
+    if(!titulo||!fecha){ toast('Completa título y fecha','err'); return; }
+    const r=await api('/api/citas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,fecha:fecha.replace('T',' ')+':00',notas})});
+    if(r&&r.ok){ toast('Cita agendada'); closeSheet(); cargarCalendario(); }
+    else toast('Error al agendar','err');
+  };
 }
 
 /* ════════ Tareas tab ════════ */
