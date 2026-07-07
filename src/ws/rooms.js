@@ -29,4 +29,4 @@ function getPresence(convId) {
   return set ? Array.from(set) : [];
 }
 
-module.exports = { joinConversation, leaveConversation, leaveAllConversations, getPresence };
+module.exports = { joinConversation, leaveConversation, leaveAllConversations };

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const CFG = require('../config');
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
 const WINDOW_CLOSED_CODE = 131047;
@@ -52,7 +53,7 @@ async function sendMessageSmart(to, text, leadId) {
     await sendTemplate(to, templateName);
 
     // Esperar 3 segundos para que Meta procese el template
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, CFG.TEMPLATE_REENGAGEMENT_DELAY));
 
     const result = await sendMessage(to, text);
     return { data: result, templateSent: true, reopenedWindow: true };

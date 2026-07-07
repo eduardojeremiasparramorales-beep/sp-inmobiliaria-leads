@@ -22,7 +22,8 @@ function verifyPassword(plain, stored) {
 }
 
 // --- Sesiones persistentes en DB (30 días) ---
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 días
+const CFG = require('../config');
+const SESSION_TTL_MS = CFG.SESSION_TTL_MS;
 
 function createSession(data) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -80,6 +81,15 @@ function requireAuth(req, res, next) {
   const token = getTokenFromReq(req);
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: 'no_autenticado' });
+  // Sliding expiration: si la sesión tiene más de la mitad de su vida (15 días),
+  // renueva created_at para mantenerla activa
+  if (token) {
+    const store = require('../db/store');
+    const raw = store.getDBSession(token);
+    if (raw && Date.now() - raw.created_at > SESSION_TTL_MS / 2) {
+      store.refreshSession(token);
+    }
+  }
   req.session = session;
   req.token = token;
   next();

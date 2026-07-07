@@ -33,7 +33,7 @@ function notificarPanel(vendedorId, leadId, tipo) {
         body: lead ? `${lead.customer_name || 'Cliente'}: ${(lead.last_message || '').slice(0, 80)}` : 'Tienes un nuevo mensaje de un cliente.',
         leadId,
         tag: 'lead-' + leadId,
-      }).catch(() => {});
+      }).catch(e => console.error('Error enviando push notification:', e.message));
     } catch (e) { /* push opcional */ }
   }
 }

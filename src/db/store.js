@@ -101,6 +101,8 @@ async function initDB() {
   ensureColumn('leads', 'last_customer_message_at', 'DATETIME');
   ensureColumn('leads', 'proyecto', 'TEXT');
   ensureColumn('leads', 'origen', 'TEXT');
+  ensureColumn('leads', 'ciudad', 'TEXT');
+  ensureColumn('leads', 'presupuesto', 'TEXT');
   ensureColumn('leads', 'pinned_at', 'DATETIME');
   ensureColumn('leads', 'muted_at', 'DATETIME');
   ensureColumn('messages', 'edited_at', 'DATETIME');
@@ -762,6 +764,10 @@ function deleteDBSession(token) {
   run('DELETE FROM sessions WHERE token = ?', [token]);
 }
 
+function refreshSession(token) {
+  run('UPDATE sessions SET created_at = ? WHERE token = ?', [Date.now(), token]);
+}
+
 function cleanExpiredSessions(ttlMs) {
   run('DELETE FROM sessions WHERE created_at < ?', [Date.now() - ttlMs]);
 }
@@ -1318,6 +1324,27 @@ function getWorkflowLogs(workflowId) {
   return all('SELECT * FROM workflow_logs WHERE workflow_id = ? ORDER BY created_at DESC, id DESC', [workflowId]);
 }
 
+// --- Tareas por lead ---
+function getTareas(leadId) {
+  return all('SELECT * FROM tareas WHERE lead_id = ? ORDER BY completada ASC, created_at DESC', [leadId]);
+}
+
+function addTarea(leadId, texto, fechaVencimiento) {
+  run('INSERT INTO tareas (lead_id, texto, fecha_vencimiento) VALUES (?, ?, ?)', [leadId, texto, fechaVencimiento || '']);
+  return one('SELECT * FROM tareas WHERE id = last_insert_rowid()');
+}
+
+function toggleTarea(id) {
+  const t = one('SELECT completada FROM tareas WHERE id = ?', [id]);
+  if (!t) return null;
+  run('UPDATE tareas SET completada = ? WHERE id = ?', [t.completada ? 0 : 1, id]);
+  return one('SELECT * FROM tareas WHERE id = ?', [id]);
+}
+
+function deleteTarea(id) {
+  run('DELETE FROM tareas WHERE id = ?', [id]);
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -1332,7 +1359,7 @@ module.exports = {
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
-  createDBSession, getDBSession, deleteDBSession, cleanExpiredSessions,
+  createDBSession, getDBSession, deleteDBSession, refreshSession, cleanExpiredSessions,
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate,
   setLeadEtiqueta, getNotasByLead, addNota, deleteNota, reassignLead,
@@ -1356,4 +1383,5 @@ module.exports = {
   markMessageAsRead, markLeadMessagesAsRead,
   markDeletedForAll, markDeletedByClientWamid, getMessageByWamid,
   getDuplicateGroups, mergeLeads, closeOrphanConversations,
+  getTareas, addTarea, toggleTarea, deleteTarea,
 };

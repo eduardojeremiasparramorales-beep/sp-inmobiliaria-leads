@@ -247,7 +247,6 @@
   .pnl-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 13px; color: var(--text-2); border-bottom: 1px solid var(--border-soft); }
   .pnl-row > span { flex-shrink: 0; }
   .pnl-row strong { color: var(--text); font-weight: 500; text-align: right; min-width: 0; word-break: break-word; }
-  .pnl-row.is-mock strong { color: var(--text-3); font-weight: 400; }
   .pnl-search { width: 100%; height: 36px; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 0 12px; font-family: var(--f-ui); font-size: 13px; outline: none; }
   .pnl-search:focus { border-color: var(--gold-line); }
   .pnl-hint { color: var(--text-3); font-size: 11.5px; margin-top: 5px; }
@@ -395,17 +394,8 @@
     } catch (e) { badge.style.display = 'none'; }
   }
 
-  /* ── v2.0 · Tareas (memoria de sesión) y propiedades desde BD ── */
-  const tareasMock = {};
-  function tareasDe(id) {
-    if (!tareasMock[id]) tareasMock[id] = [
-      { txt: 'Llamar mañana', due: '', done: false },
-      { txt: 'Enviar cotización', due: '', done: false },
-      { txt: 'Agendar visita', due: '', done: false },
-      { txt: 'Enviar contrato', due: '', done: false },
-    ];
-    return tareasMock[id];
-  }
+  /* ── v2.0 · Tareas (API persistente) y propiedades desde BD ── */
+  let cacheTareas = [];
   let cachePropiedades = [];
   async function cargarPropiedades() {
     try { const r = await api('/api/propiedades'); if (r && Array.isArray(r)) cachePropiedades = r.filter(p => p.estado === 'disponible'); else cachePropiedades = []; } catch (e) { cachePropiedades = []; }
@@ -783,7 +773,7 @@
       const tel = (lead.customer_phone || '').replace(/[^\d+]/g, '');
       if (tel) location.href = 'tel:' + tel; else toast('Sin número disponible', 'err');
     });
-    document.getElementById('actVideo')?.addEventListener('click', () => toast('Videollamada — se activa en la Fase IA', 'ok'));
+    document.getElementById('actVideo')?.addEventListener('click', () => toast('Videollamada disponible próximamente', 'ok'));
     document.getElementById('actUbicacion')?.addEventListener('click', () => insertarEnInput(QUICK.find(q => q.t === 'Ubicación')?.body || 'Te comparto la ubicación del proyecto.'));
     document.getElementById('actAdjuntar')?.addEventListener('click', () => fileInputEl()?.click());
     document.getElementById('actImagen')?.addEventListener('click', () => {
@@ -799,14 +789,22 @@
     });
     document.getElementById('actCopiloto')?.addEventListener('click', () => { setPanelTab('ia'); abrirPanel(); });
 
-    /* Recordatorio (mock) */
+    /* Recordatorio → crea tarea */
     const rmdPop = document.getElementById('rmdPop');
     document.getElementById('actRecordar')?.addEventListener('click', (e) => { e.stopPropagation(); rmdPop?.classList.toggle('show'); });
-    rmdPop?.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    rmdPop?.querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
       const r = b.dataset.r;
       rmdPop.classList.remove('show');
-      if (r === 'fecha') { const f = prompt('¿Para qué fecha y hora quieres el recordatorio?'); if (f) toast('Recordatorio programado: ' + f, 'ok'); }
-      else toast('Recordatorio programado — ' + r, 'ok');
+      const hoy = new Date();
+      let fecha = '', texto = '';
+      if (r === 'En 30 minutos') { fecha = new Date(hoy.getTime() + 30*60000).toISOString().slice(0,10); texto = 'Dar seguimiento a ' + (lead.customer_name || 'lead'); }
+      else if (r === 'En 1 hora') { fecha = new Date(hoy.getTime() + 3600000).toISOString().slice(0,10); texto = 'Dar seguimiento a ' + (lead.customer_name || 'lead'); }
+      else if (r === 'Mañana') { const m = new Date(hoy); m.setDate(m.getDate()+1); fecha = m.toISOString().slice(0,10); texto = 'Seguimiento pendiente: ' + (lead.customer_name || 'lead'); }
+      else if (r === 'fecha') { const f = prompt('¿Para qué fecha? (YYYY-MM-DD)'); if (f) { fecha = f; texto = 'Recordatorio: ' + (lead.customer_name || 'lead'); } else return; }
+      if (!texto) return;
+      const res = await api(`/api/leads/${lead.id}/tareas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, fecha_vencimiento: fecha }) });
+      if (res) { toast('Recordatorio creado', 'ok'); await cargarTareas(lead.id); }
+      else toast('Error al crear recordatorio', 'err');
     }));
 
     const etqSel = document.getElementById('etqSelect');
@@ -1195,6 +1193,7 @@
     wirePanelProps(lead);
     wirePanelIA(lead);
     cargarNotas(lead.id);
+    cargarTareas(lead.id);
   }
 
   /* Pestaña · Información */
@@ -1215,10 +1214,10 @@
       <div class="pnl-sec">
         <h4>Datos del lead</h4>
         <div class="pnl-row"><span>Estado del lead</span><strong style="color:var(--gold)">${etqLabel(lead.etiqueta || 'sin_clasificar')}</strong></div>
-        <div class="pnl-row is-mock"><span>Ciudad</span><strong>—</strong></div>
-        <div class="pnl-row is-mock"><span>Proyecto interesado</span><strong>—</strong></div>
-        <div class="pnl-row is-mock"><span>Presupuesto</span><strong>—</strong></div>
-        <div class="pnl-row is-mock"><span>Origen del lead</span><strong>Meta Ads</strong></div>
+        ${lead.ciudad ? `<div class="pnl-row"><span>Ciudad</span><strong>${escapeHtml(lead.ciudad)}</strong></div>` : ''}
+        ${lead.proyecto ? `<div class="pnl-row"><span>Proyecto interesado</span><strong>${escapeHtml(lead.proyecto)}</strong></div>` : ''}
+        ${lead.presupuesto ? `<div class="pnl-row"><span>Presupuesto</span><strong>${escapeHtml(lead.presupuesto)}</strong></div>` : ''}
+        <div class="pnl-row"><span>Origen del lead</span><strong>${escapeHtml(lead.origen || '—')}</strong></div>
         <div class="pnl-row"><span>Asesor asignado</span><strong>${escapeHtml(vend)}</strong></div>
         <div class="pnl-row"><span>Mensajes</span><strong>${lead.messages_count || 0}</strong></div>
         <div class="pnl-row"><span>Creado</span><strong>${soloHora(lead.created_at)}</strong></div>
@@ -1262,39 +1261,48 @@
     document.getElementById('buscarConv')?.addEventListener('input', ev => buscarEnConversacion(ev.target.value));
   }
 
-  /* Pestaña · Tareas (MOCK — Fase IA) */
-  function taskItemHTML(t, i) {
-    const due = t.due ? `<div class="task-due">${I(SVG.calendar, 12)} ${fmtDue(t.due)}</div>` : '';
-    return `<div class="task-item ${t.done ? 'done' : ''}" data-i="${i}">
-      <button class="task-check" data-i="${i}" aria-label="Completar tarea">${I(SVG.check, 12)}</button>
-      <div class="task-body"><div class="task-txt">${escapeHtml(t.txt)}</div>${due}</div>
+  /* Pestaña · Tareas (API persistente) */
+  function taskItemHTML(t) {
+    const due = t.fecha_vencimiento ? `<div class="task-due">${I(SVG.calendar, 12)} ${fmtDue(t.fecha_vencimiento)}</div>` : '';
+    return `<div class="task-item ${t.completada ? 'done' : ''}" data-id="${t.id}">
+      <button class="task-check" data-id="${t.id}" aria-label="Completar tarea">${I(SVG.check, 12)}</button>
+      <div class="task-body"><div class="task-txt">${escapeHtml(t.texto)}</div>${due}</div>
     </div>`;
   }
   function paneTareas(lead) {
-    const items = tareasDe(lead.id);
+    const items = cacheTareas;
     return `
-      <div id="taskList">${items.map((t, i) => taskItemHTML(t, i)).join('')}</div>
+      <div id="taskList">${items.length ? items.map(t => taskItemHTML(t)).join('') : '<div class="pnl-hint" style="text-align:center;padding:22px 0">Sin tareas pendientes.</div>'}</div>
       <form class="task-add" id="taskAdd">
         <input type="text" id="taskTxt" placeholder="Nueva tarea…" maxlength="120">
         <input type="date" id="taskDue" aria-label="Fecha de vencimiento">
         <button type="submit" aria-label="Añadir tarea">${I(SVG.plus, 16)}</button>
       </form>`;
   }
+  async function cargarTareas(leadId) {
+    const r = await api(`/api/leads/${leadId}/tareas`);
+    cacheTareas = Array.isArray(r) ? r : [];
+    const pane = document.querySelector('#vndPanel [data-pane="tareas"]');
+    if (pane && currentLead && String(currentLead.id) === String(leadId)) {
+      pane.innerHTML = paneTareas(currentLead);
+      wirePanelTareas(currentLead);
+    }
+  }
   function wirePanelTareas(lead) {
-    const items = tareasDe(lead.id);
-    document.querySelectorAll('#vndPanel .task-check').forEach(b => b.addEventListener('click', () => {
-      const i = Number(b.dataset.i); if (!items[i]) return;
-      items[i].done = !items[i].done;
-      const pane = document.querySelector('#vndPanel [data-pane="tareas"]');
-      if (pane) { pane.innerHTML = paneTareas(lead); wirePanelTareas(lead); }
+    document.querySelectorAll('#vndPanel .task-check').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id;
+      await api(`/api/leads/${lead.id}/tareas/${id}`, { method: 'PUT' });
+      await cargarTareas(lead.id);
     }));
-    document.getElementById('taskAdd')?.addEventListener('submit', ev => {
+    document.getElementById('taskAdd')?.addEventListener('submit', async ev => {
       ev.preventDefault();
       const txt = document.getElementById('taskTxt').value.trim();
       if (!txt) return;
-      items.push({ txt, due: document.getElementById('taskDue').value || '', done: false });
-      const pane = document.querySelector('#vndPanel [data-pane="tareas"]');
-      if (pane) { pane.innerHTML = paneTareas(lead); wirePanelTareas(lead); }
+      const fecha = document.getElementById('taskDue').value || '';
+      await api(`/api/leads/${lead.id}/tareas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: txt, fecha_vencimiento: fecha }) });
+      document.getElementById('taskTxt').value = '';
+      document.getElementById('taskDue').value = '';
+      await cargarTareas(lead.id);
     });
   }
 
@@ -1342,31 +1350,15 @@
     }).join('');
   }
 
-  /* Pestaña · IA Copiloto (placeholder — Fase IA) */
+  /* Pestaña · IA Copiloto (próximamente) */
   function paneIA(lead) {
-    const nombre = lead.customer_name || 'Cliente';
-    const est = estadoCliente(lead);
-    const prob = est === ESTADOS.caliente ? 78 : est === ESTADOS.esperando ? 52 : est === ESTADOS.inactivo ? 21 : 44;
-    const sugerida = `Hola ${nombre}, con gusto te resuelvo lo de la financiación: manejamos cuota inicial baja y plazos flexibles. ¿Te gustaría que agendemos una visita esta semana para que conozcas el lote?`;
     return `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><span class="ai-badge">${I(SVG.sparkles, 11)} Fase IA</span></div>
-      <div class="ai-card"><h5>${I(SVG.info, 13)} Resumen del cliente</h5><p>${escapeHtml(nombre)} llegó por una campaña de Meta Ads e interesa en lotes de inversión. Ha intercambiado ${lead.messages_count || 0} mensajes. Conviene reforzar confianza y proponer una visita al proyecto.</p></div>
-      <div class="ai-card"><h5>${I(SVG.zap, 13)} Objeciones detectadas</h5>
-        <div class="ai-obj">Duda sobre formas de pago / financiación.</div>
-        <div class="ai-obj">Quiere confirmar ubicación y legalidad del lote.</div>
-      </div>
-      <div class="ai-card"><h5>${I(SVG.checkSquare, 13)} Probabilidad de cierre</h5><div class="prob-num">${prob}%</div><div class="prob-bar"><i style="width:${prob}%"></i></div></div>
-      <div class="ai-card"><h5>${I(SVG.chat, 13)} Respuesta sugerida</h5><div class="ai-suggest" id="aiSuggest">${escapeHtml(sugerida)}</div><button class="ai-use" id="aiUsar">Usar esta respuesta</button></div>
-      <div class="ai-card"><h5>${I(SVG.sparkles, 13)} Siguiente acción recomendada</h5><p>Agendar una visita en las próximas 48 horas y enviar el catálogo con 3 lotes dentro de su presupuesto.</p></div>
-      <div class="pnl-hint" style="text-align:center">Contenido de demostración — el Copiloto SP se activa en la Fase IA.</div>`;
+      <div style="display:flex;justify-content:center;flex-direction:column;align-items:center;gap:14px;padding:40px 20px;text-align:center;color:var(--text-3)">
+        <span class="ai-badge">${I(SVG.sparkles, 14)} Próximamente</span>
+        <div style="font-size:15px;line-height:1.6">El Copiloto SP analizará conversaciones, detectará objeciones y sugerirá respuestas en tiempo real cuando se active en una próxima actualización.</div>
+      </div>`;
   }
-  function wirePanelIA(lead) {
-    document.getElementById('aiUsar')?.addEventListener('click', () => {
-      const s = document.getElementById('aiSuggest');
-      if (s) insertarEnInput(s.textContent.trim());
-      if (window.innerWidth <= 1200) cerrarPanel();
-    });
-  }
+  function wirePanelIA(lead) {}
   function buscarEnConversacion(term) {
     const msgs = document.querySelectorAll('#msgs .bubble');
     const info = document.getElementById('buscarInfo');

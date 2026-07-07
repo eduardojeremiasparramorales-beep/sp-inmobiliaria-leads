@@ -51,4 +51,4 @@ function emitPresence() {
   } catch (e) { /* server aún no inicializado */ }
 }
 
-module.exports = { vendedorConectado, vendedorDesconectado, setEstado, getEstado, getConectados };
+module.exports = { vendedorConectado, vendedorDesconectado, getEstado, getConectados };

@@ -31,6 +31,9 @@
 
   let cat='todos';
   ctx.content.innerHTML = `<div class="os-content__max">
+    <div class="u-row" style="margin-bottom:var(--s3);padding:12px 16px;background:rgba(200,164,90,.08);border:1px solid var(--gold-line);border-radius:12px;gap:10px;align-items:center">
+      ${ICONS.info}<span style="font-size:13px;color:var(--text-2)">Vista previa — La instalación de módulos estará disponible en una próxima actualización.</span>
+    </div>
     <div class="u-row u-gap1 u-wrap rise rise-1" id="cats" style="margin-bottom:var(--s3)">${CATS.map(([k,l],i)=>`<button class="chip${i===0?' active':''}" data-c="${k}">${l}</button>`).join('')}</div>
     <div class="grid grid--4 rise rise-2" id="grid"></div>
   </div>`;

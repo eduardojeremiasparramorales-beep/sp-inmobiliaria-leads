@@ -116,12 +116,25 @@
           ${tl('spark', 'Lead creado', 'origen: campaña Meta')}
         </div>
         <div class="u-col u-gap1" style="margin-top:var(--s3)">
-          <button class="btn btn--ghost btn--block btn--sm" onclick="SPOS.toast('Recordatorio creado','ok')">${ICONS.clock}Agendar seguimiento</button>
+          <button class="btn btn--ghost btn--block btn--sm btn-crm-task" data-lead-id="${l.id}" data-name="${esc(l.customer_name || '')}">${ICONS.clock}Agendar seguimiento</button>
           <button class="btn btn--ghost btn--block btn--sm btn-crm-ai" data-lead-id="${l.id}" data-name="${esc(l.customer_name || '')}">${ICONS.ai}Sugerir respuesta con IA</button>
           <button class="btn btn--ghost btn--block btn--sm btn-crm-reset" data-lead-id="${l.id}" style="color:var(--text-3);font-size:11px;border-color:var(--border-soft)">${ICONS.zap}Resetear lead (dejar como nuevo)</button>
         </div>
         <div id="crmAiSuggestions" style="display:none;margin-top:8px"></div>
       </div>`;
+    // Wire Agendar seguimiento button
+    const taskBtn = ctx.panel.querySelector('.btn-crm-task');
+    if (taskBtn) taskBtn.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const leadId = Number(btn.dataset.leadId);
+      const name = btn.dataset.name;
+      const hoy = new Date();
+      const fecha = new Date(hoy.getTime() + 86400000).toISOString().slice(0,10);
+      const texto = 'Seguimiento: ' + name;
+      const r = await fetch('/api/leads/' + leadId + '/tareas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, fecha_vencimiento: fecha }) });
+      if (r.ok) SPOS.toast('Seguimiento agendado para mañana', 'ok');
+      else SPOS.toast('Error al agendar', 'err');
+    });
     // Wire AI suggest button
     const aiBtn = ctx.panel.querySelector('.btn-crm-ai');
     if (aiBtn) aiBtn.addEventListener('click', async (e) => {

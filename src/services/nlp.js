@@ -1,10 +1,10 @@
 const store = require('../db/store');
+const CFG = require('../config');
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001';
-const TIMEOUT_DEFAULT = 15000;
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const cache = new Map();
 const cache = new Map();
 
 function getFromCache(key) {
@@ -18,7 +18,7 @@ function getFromCache(key) {
 }
 
 function setCache(key, value) {
-  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+  cache.set(key, { value, expiresAt: Date.now() + CFG.NLP_CACHE_TTL });
 }
 
 function getConfig(key, fallback = '') {
@@ -149,7 +149,7 @@ async function fetchModels(providerId) {
 async function chatJSON(systemPrompt, userText, timeoutMs) {
   const client = getClient();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_DEFAULT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs || CFG.NLP_TIMEOUT_DEFAULT);
   try {
     const completion = await client.chat.completions.create({
       model: getModel(),
@@ -172,7 +172,7 @@ async function chatJSON(systemPrompt, userText, timeoutMs) {
 async function chatText(systemPrompt, userText, timeoutMs, opts = {}) {
   const { client, model } = resolveClientAndModel(opts);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_DEFAULT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs || CFG.NLP_TIMEOUT_DEFAULT);
   try {
     const completion = await client.chat.completions.create({
       model,

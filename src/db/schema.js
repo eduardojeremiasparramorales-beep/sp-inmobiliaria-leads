@@ -82,6 +82,16 @@ function createNewTables(db) {
       FOREIGN KEY (workflow_id) REFERENCES workflows(id),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     );
+
+    CREATE TABLE IF NOT EXISTS tareas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      texto TEXT NOT NULL,
+      fecha_vencimiento TEXT DEFAULT '',
+      completada INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lead_id) REFERENCES leads(id)
+    );
   `);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_channels_channel_userid ON customer_channels(channel, channel_user_id)`);
@@ -91,6 +101,7 @@ function createNewTables(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_channel_status ON conversations(channel, status)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_timeline_conversation_id ON timeline(conversation_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_timeline_created_at ON timeline(created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tareas_lead_id ON tareas(lead_id)`);
 }
 
 function dropNewTables(db) {

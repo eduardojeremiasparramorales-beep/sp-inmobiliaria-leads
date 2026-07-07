@@ -37,6 +37,7 @@ const push = require('./services/push');
 
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const CFG = require('./config');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -57,6 +58,9 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");
+  if (req.headers['x-forwarded-proto'] === 'https' || req.secure) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   next();
 });
 
@@ -86,9 +90,10 @@ function verifyWebhookSignature(req, res, next) {
 }
 
 // Rate limiting: protección básica anti-DoS
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos' } });
-const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
-const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: false, legacyHeaders: false });
+const loginLimiter = rateLimit({ windowMs: CFG.LOGIN_WINDOW_MS, max: CFG.LOGIN_MAX_ATTEMPTS, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos' } });
+const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MEDIA_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.WEBHOOK_MAX_PER_MIN, standardHeaders: false, legacyHeaders: false });
+const messageLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MESSAGE_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_mensajes_espera' } });
 
 // SW con versión dinámica (se invalida el caché en cada reinicio del servidor)
 const SW_VERSION = `sp-panel-${Date.now()}`;
@@ -220,16 +225,16 @@ app.post('/api/nlp/daily-briefing', auth.requireAuth, async (req, res) => {
   try {
     const nlp = require('./services/nlp');
     if (!nlp.isAIEnabled()) return res.json({ ok: true, briefing: null });
-    const user = req.user;
-    const vs = store.getVendedores().find(v => v.id === user.vendedorId);
-    const misLeads = store.getLeadsByVendedorId(user.vendedorId) || [];
-    const sinRespuesta = (store.getLeadsSinRespuesta() || []).filter(l => l.assigned_to_id === user.vendedorId);
+    const session = req.session;
+    const vs = store.getVendedores().find(v => v.id === session.vendedorId);
+    const misLeads = store.getLeadsByVendedorId(session.vendedorId) || [];
+    const sinRespuesta = (store.getLeadsSinRespuesta() || []).filter(l => l.assigned_to_id === session.vendedorId);
     const stats = {
       activos: misLeads.length,
       sinResponder: sinRespuesta.length,
       ventas: misLeads.filter(l => l.etiqueta === 'vendido').length,
     };
-    const briefing = await nlp.dailyBriefing(vs || { nombre: user.nombre }, stats);
+    const briefing = await nlp.dailyBriefing(vs || { nombre: session.nombre }, stats);
     res.json({ ok: true, briefing, stats, model: nlp.getModel() });
   } catch (e) {
     console.error('[NLP] daily-briefing error:', e.message);
@@ -541,7 +546,7 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 app.post('/api/login', loginLimiter, (req, res) => {
   const { email, password, telefono, pin } = req.body || {};
   const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
-  const MAX_AGE = 60 * 60 * 24 * 30; // 30 días en segundos
+  const MAX_AGE = CFG.SESSION_TTL_MS / 1000; // 30 días en segundos
 
   // Destruir sesión anterior si existe (session fixation prevention)
   const oldToken = auth.getTokenFromReq(req);
@@ -817,7 +822,7 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
 
   try {
     let buffer = Buffer.from(dataBase64, 'base64');
-    if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
+    if (buffer.length > CFG.MAX_FILE_SIZE) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     let sendMime = mime, sendFilename = filename;
     if (tipo === 'audio' && conv.channel === 'whatsapp') {
       const conv2 = await convertToOggOpus(buffer, mime);
@@ -896,10 +901,10 @@ app.get('/api/public/media/:filename', async (req, res) => {
 // ===================== RESPONDER (OLD) =====================
 
 // Responder a un cliente DESDE EL PANEL → se envía por el número oficial
-app.post('/api/leads/:id/responder', auth.requireAuth, async (req, res) => {
+app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (req, res) => {
   const { mensaje, replyTo } = req.body || {};
   if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_vacio' });
-  if (String(mensaje).length > 4096) return res.status(400).json({ error: 'mensaje_muy_largo' });
+  if (String(mensaje).length > CFG.MAX_MESSAGE_LENGTH) return res.status(400).json({ error: 'mensaje_muy_largo' });
 
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
@@ -974,7 +979,7 @@ app.post('/api/preview', auth.requireAuth, (req, res) => {
 
 // Responder a un cliente con un archivo (imagen/audio/video/documento) desde el panel.
 // Body JSON: { mime, filename, dataBase64, caption }
-app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async (req, res) => {
+app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messageLimiter, async (req, res) => {
   const { mime, filename, dataBase64, caption, replyTo } = req.body || {};
   if (!mime || !dataBase64) return res.status(400).json({ error: 'mime y dataBase64 requeridos' });
 
@@ -991,7 +996,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
 
   try {
     let buffer = Buffer.from(dataBase64, 'base64');
-    if (buffer.length > 18 * 1024 * 1024) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
+    if (buffer.length > CFG.MAX_FILE_SIZE) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     let displayMime = mime, displayFilename = filename, sendMime = mime, sendFilename = filename;
     if (tipo === 'audio') {
       // Guardar el formato ORIGINAL del navegador (webm/mp4) para reproducción en el CRM
@@ -1005,7 +1010,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, async
     const storedFilename = tipo === 'audio' ? displayFilename : mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
     const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
     if (!mediaId) return res.status(502).json({ error: 'error_upload', detalle: 'WhatsApp no retornó media ID' });
-    await new Promise(r => setTimeout(r, 150)); // Pausa para propagación en servidores de Meta
+    await new Promise(r => setTimeout(r, CFG.MEDIA_PROPAGATION_DELAY));
     const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, sendFilename);
     if (!mediaResult || !mediaResult.messages || !mediaResult.messages[0]) {
       console.error('sendMedia no retornó wamid:', JSON.stringify(mediaResult));
@@ -1081,7 +1086,7 @@ app.put('/api/messages/:id', auth.requireAuth, (req, res) => {
   // Intentar editar en WhatsApp si hay wamid y ventana abierta
   const { editMessage: editWA } = require('./services/whatsapp');
   if (row.wamid && store.isWindowOpen(row.lead_id)) {
-    editWA(lead.customer_phone, row.wamid, newBody.trim()).catch(() => {});
+    editWA(lead.customer_phone, row.wamid, newBody.trim()).catch(e => console.error('Error editando mensaje en WhatsApp:', e.message));
   }
   const updated = store.getMessageById(msgId);
   res.json({ ok: true, message: { ...updated, reactions: store.getReactionsForMessage(msgId) } });
@@ -1508,6 +1513,39 @@ app.delete('/api/leads/:leadId/notas/:notaId', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ===================== TAREAS =====================
+app.get('/api/leads/:id/tareas', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  res.json(store.getTareas(lead.id));
+});
+
+app.post('/api/leads/:id/tareas', auth.requireAuth, (req, res) => {
+  const { texto, fecha_vencimiento } = req.body || {};
+  if (!texto || !String(texto).trim()) return res.status(400).json({ error: 'texto_requerido' });
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const tarea = store.addTarea(lead.id, String(texto).trim(), fecha_vencimiento || '');
+  res.json({ ok: true, tarea });
+});
+
+app.put('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
+  const tarea = store.toggleTarea(req.params.taskId);
+  if (!tarea) return res.status(404).json({ error: 'tarea_no_existe' });
+  res.json({ ok: true, tarea });
+});
+
+app.delete('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
+  store.deleteTarea(req.params.taskId);
+  res.json({ ok: true });
+});
+
 // Reasignar un lead a otro vendedor (solo admin)
 app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
   const { vendedorId } = req.body || {};
@@ -1590,7 +1628,7 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
   // Heartbeat para mantener viva la conexión
   const hb = setInterval(() => {
     try { res.write(': hb\n\n'); } catch (e) { clearInterval(hb); events.removeClient(canal, res); }
-  }, 25000);
+  }, CFG.SSE_HEARTBEAT);
   res.on('close', () => { clearInterval(hb); events.removeClient(canal, res); });
 });
 
@@ -1732,8 +1770,22 @@ app.post('/api/calls/initiate', auth.requireAuth, async (req, res) => {
   }
 });
 
-// Webhook de Twilio (sin auth, validado por firma de Twilio en el propio Twilio)
-app.post('/webhook/twilio/status', async (req, res) => {
+// Webhook de Twilio (con validación de firma + rate limiting)
+function verifyTwilioSignature(req, res, next) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken) { return next(); }
+  const signature = req.headers['x-twilio-signature'];
+  if (!signature) { console.warn('[TWILIO] Sin firma — rechazado'); return res.sendStatus(401); }
+  try {
+    const twilio = require('twilio');
+    const url = (req.headers['x-forwarded-proto'] || 'http') + '://' + req.headers.host + req.originalUrl;
+    const valid = twilio.validateRequest(authToken, signature, url, req.body);
+    if (!valid) { console.warn('[TWILIO] Firma inválida — rechazado'); return res.sendStatus(401); }
+  } catch (e) { console.error('[TWILIO] Error validando firma:', e.message); return res.sendStatus(401); }
+  next();
+}
+const twilioWebhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: false, legacyHeaders: false });
+app.post('/webhook/twilio/status', twilioWebhookLimiter, verifyTwilioSignature, async (req, res) => {
   try {
     const voice = require('./services/voice');
     await voice.handleStatusWebhook(req);
@@ -1800,14 +1852,14 @@ app.delete('/api/templates/:id', auth.requireAdmin, (req, res) => {
 
 // ===================== TEMPLATES DEL VENDEDOR (mis respuestas) =====================
 app.get('/api/mis-templates', auth.requireAuth, (req, res) => {
-  const vendedorId = req.user.vendedorId;
+  const vendedorId = req.session.vendedorId;
   if (!vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
   res.json(store.getVendedorTemplates(vendedorId));
 });
 app.post('/api/mis-templates', auth.requireAuth, (req, res) => {
   const { titulo, cuerpo } = req.body || {};
   if (!titulo || !cuerpo) return res.status(400).json({ error: 'titulo y cuerpo requeridos' });
-  const vendedorId = req.user.vendedorId;
+  const vendedorId = req.session.vendedorId;
   if (!vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
   store.addVendedorTemplate(vendedorId, titulo, cuerpo);
   res.json({ ok: true });
@@ -1819,7 +1871,7 @@ app.delete('/api/mis-templates/:id', auth.requireAuth, (req, res) => {
 
 // ===================== ESTADÍSTICAS SEMANALES =====================
 app.get('/api/me/stats-semanales', auth.requireAuth, (req, res) => {
-  const vendedorId = req.user.vendedorId;
+  const vendedorId = req.session.vendedorId;
   if (!vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
   res.json(store.getStatsSemanales(vendedorId));
 });
@@ -1862,8 +1914,9 @@ app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
   res.json({ ok: true, vendedorId });
 });
 
-// Seed vendedores de prueba
+// Seed vendedores de prueba (solo en desarrollo)
 app.post('/api/seed', auth.requireAdmin, (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'no_disponible' });
   const demo = [
     ['Carlos Méndez', '+573001234561'],
     ['María Fernanda López', '+573001234562'],
@@ -1909,8 +1962,9 @@ app.post('/api/admin/cleanup-orphans', auth.requireAdmin, (req, res) => {
   }
 });
 
-// Test webhook simulator
+// Test webhook simulator (solo en desarrollo)
 app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'no_disponible' });
   const { phone, name, message } = req.body;
   const customerPhone = phone || '+573001234500';
   const customerName = name || 'Cliente Prueba';
@@ -1940,9 +1994,9 @@ app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
   handleMessage(req, res);
 });
 
-// Test vendedor reply simulator
+// Test vendedor reply simulator (solo en desarrollo)
 app.post('/api/test-reply', auth.requireAdmin, (req, res) => {
-  const { vendedorPhone, message } = req.body;
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'no_disponible' });
   if (!vendedorPhone) return res.status(400).json({ error: 'vendedorPhone requerido' });
 
   const fakePayload = {
@@ -2063,7 +2117,7 @@ async function checkEscalation() {
         if (lead.assigned_to_phone) {
           await sendMessage(lead.assigned_to_phone,
             `⏰ Alerta SP Inmobiliaria\nLlevas ${ESC_ALERTA_MIN} min sin responder a ${lead.customer_name} (${lead.customer_phone}).\nPor favor responde lo antes posible.`
-          ).catch(() => {});
+          ).catch(e => console.error('[ESCALADO] Error al enviar alerta 15min:', e.message));
         }
         continue;
       }
@@ -2087,19 +2141,19 @@ async function checkEscalation() {
             if (lead.assigned_to_phone) {
               await sendMessage(lead.assigned_to_phone,
                 `🔄 Reasignación automática\nEl lead ${lead.customer_name} (${lead.customer_phone}) ha sido reasignado a otro vendedor por falta de respuesta.`
-              ).catch(() => {});
+              ).catch(e => console.error('[ESCALADO] Error notificando vendedor anterior:', e.message));
             }
             // Notificar al nuevo vendedor
             await sendMessage(otroVendedor.telefono,
               `🆕 Lead reasignado automáticamente\nCliente: ${lead.customer_name}\nTel: ${lead.customer_phone}\nMensajes previos en el historial.\nPor favor responde lo antes posible.`
-            ).catch(() => {});
+            ).catch(e => console.error('[ESCALADO] Error notificando nuevo vendedor:', e.message));
           } else {
             // No hay otro vendedor disponible — alerta fuerte
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_sin_vendedores', ts: Date.now() });
             if (lead.assigned_to_phone) {
               await sendMessage(lead.assigned_to_phone,
                 `⚠️ ALERTA CRÍTICA\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min esperando.\nNo hay otros vendedores disponibles. RESPUESTA INMEDIATA REQUERIDA.`
-              ).catch(() => {});
+              ).catch(e => console.error('[ESCALADO] Error enviando alerta crítica:', e.message));
             }
           }
         } else {
@@ -2107,7 +2161,7 @@ async function checkEscalation() {
           if (lead.assigned_to_phone) {
             await sendMessage(lead.assigned_to_phone,
               `⚠️ ALERTA SP Inmobiliaria\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min sin respuesta.\nEs un cliente recurrente — prioriza su atención.`
-            ).catch(() => {});
+            ).catch(e => console.error('[ESCALADO] Error enviando alerta recurrente:', e.message));
           }
         }
         continue;
@@ -2130,7 +2184,7 @@ async function checkEscalation() {
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             await sendMessage(otroVendedor.telefono,
               `🆕 Lead reasignado (urgente)\nCliente: ${lead.customer_name}\nTel: ${lead.customer_phone}\n⚠️ Ya pasaron ${ESC_ADMIN_MIN} min sin respuesta.\nTodo el historial está disponible.`
-            ).catch(() => {});
+            ).catch(e => console.error('[ESCALADO] Error enviando reasignación urgente:', e.message));
           }
         }
         continue;
@@ -2141,10 +2195,10 @@ async function checkEscalation() {
   }
 }
 
-// Crea el usuario administrador inicial + vendedor admin con teléfono oficial y PIN 0000
+// Crea el usuario administrador inicial + vendedor admin
 function ensureAdminUser() {
-  const ADMIN_PHONE = '+573214625618';
-  const ADMIN_PIN = '0000';
+  const ADMIN_PHONE = process.env.ADMIN_PHONE || '+573214625618';
+  const ADMIN_PIN = process.env.ADMIN_PIN || '0000';
   const email = (process.env.ADMIN_EMAIL || process.env.ADMIN_USERNAME || 'admin@spinmobiliaria.com').toLowerCase();
   const password = process.env.ADMIN_PASSWORD || 'changeme123';
 
@@ -2203,7 +2257,6 @@ function ensureAdminUser() {
   httpServer.listen(PORT, () => {
     console.log(`SP Inmobiliaria CRM corriendo en puerto ${PORT}`);
   });
-  setInterval(checkEscalation, 60000);
-  // Limpiar sesiones expiradas (>30 días) cada 24 horas
-  setInterval(() => store.cleanExpiredSessions(1000 * 60 * 60 * 24 * 30), 1000 * 60 * 60 * 24);
+  setInterval(checkEscalation, CFG.ESCALATION_CHECK_INTERVAL);
+  setInterval(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS), CFG.SESSION_CLEANUP_INTERVAL);
 })();
