@@ -104,6 +104,56 @@ function createNewTables(db) {
       created_at DATETIME DEFAULT (datetime('now')),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
     );
+
+    CREATE TABLE IF NOT EXISTS proyectos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL,
+      ciudad TEXT DEFAULT '',
+      departamento TEXT DEFAULT '',
+      descripcion TEXT DEFAULT '',
+      imagen_url TEXT DEFAULT '',
+      estado TEXT DEFAULT 'en_venta' CHECK (estado IN ('planeacion','preventa','en_venta','entregado','pausado')),
+      fecha_inicio TEXT DEFAULT '',
+      plano_url TEXT DEFAULT '',
+      plano_bounds TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS lotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proyecto_id INTEGER NOT NULL,
+      numero TEXT DEFAULT '',
+      manzana TEXT DEFAULT '',
+      area REAL DEFAULT 0,
+      dimensiones TEXT DEFAULT '',
+      precio REAL DEFAULT 0,
+      estado TEXT DEFAULT 'disponible' CHECK (estado IN ('disponible','separado','vendido','reservado','bloqueado','negociacion')),
+      cliente_id INTEGER,
+      lead_id INTEGER,
+      asesor_id INTEGER,
+      poligono TEXT DEFAULT '[]',
+      observaciones TEXT DEFAULT '',
+      documentos TEXT DEFAULT '[]',
+      fotografias TEXT DEFAULT '[]',
+      fecha_separacion TEXT DEFAULT '',
+      fecha_venta TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
+      FOREIGN KEY (cliente_id) REFERENCES customers(id),
+      FOREIGN KEY (asesor_id) REFERENCES vendedores(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS lote_historial (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lote_id INTEGER NOT NULL,
+      evento TEXT DEFAULT '',
+      detalle TEXT DEFAULT '',
+      autor TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lote_id) REFERENCES lotes(id)
+    );
   `);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_channels_channel_userid ON customer_channels(channel, channel_user_id)`);
@@ -115,6 +165,9 @@ function createNewTables(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_timeline_created_at ON timeline(created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tareas_lead_id ON tareas(lead_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ubicaciones_guardadas_vendedor ON ubicaciones_guardadas(vendedor_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_lotes_proyecto ON lotes(proyecto_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_lotes_estado ON lotes(estado)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_lote_hist_lote ON lote_historial(lote_id)`);
 }
 
 function dropNewTables(db) {
