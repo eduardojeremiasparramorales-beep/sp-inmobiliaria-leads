@@ -915,7 +915,11 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
   try {
     const nombreVendedor = req.session.nombre || 'Asesor';
     const compania = store.getConfig('company_name') || 'Sp Leons Group';
-    const mensajeConFirma = `${String(mensaje)}\n\n____________________\n*${nombreVendedor}*\n_Asesor · ${compania}_`;
+    const separator = '_____________________________';
+    const nameVisualLen = nombreVendedor.length;
+    const padding = Math.floor((separator.length - nameVisualLen) / 2);
+    const centrado = padding > 0 ? ' '.repeat(padding) : ' ';
+    const mensajeConFirma = `${String(mensaje)}\n\n${separator}\n${centrado}*_${nombreVendedor}_*\n\`Asesor · ${compania}\``;
     const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
@@ -1579,6 +1583,29 @@ app.put('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
 
 app.delete('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
   store.deleteTarea(req.params.taskId);
+  res.json({ ok: true });
+});
+
+// ===================== UBICACIONES GUARDADAS =====================
+
+app.get('/api/ubicaciones-guardadas', auth.requireAuth, (req, res) => {
+  const vId = req.session.vendedorId;
+  if (!vId) return res.status(401).json({ error: 'no_autenticado' });
+  const ubicaciones = store.getUbicacionesGuardadas(vId);
+  res.json(ubicaciones);
+});
+
+app.post('/api/ubicaciones-guardadas', auth.requireAuth, (req, res) => {
+  const vId = req.session.vendedorId;
+  if (!vId) return res.status(401).json({ error: 'no_autenticado' });
+  const { nombre, direccion, lat, lng } = req.body || {};
+  if (!nombre || lat == null || lng == null) return res.status(400).json({ error: 'nombre_lat_lng_requeridos' });
+  const ubicacion = store.saveUbicacionGuardada(vId, nombre, direccion, Number(lat), Number(lng));
+  res.json({ ok: true, ubicacion });
+});
+
+app.delete('/api/ubicaciones-guardadas/:id', auth.requireAuth, (req, res) => {
+  store.deleteUbicacionGuardada(req.params.id);
   res.json({ ok: true });
 });
 

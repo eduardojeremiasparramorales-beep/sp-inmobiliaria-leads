@@ -93,6 +93,17 @@ function createNewTables(db) {
       created_at DATETIME DEFAULT (datetime('now')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
+
+    CREATE TABLE IF NOT EXISTS ubicaciones_guardadas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      nombre TEXT NOT NULL,
+      direccion TEXT DEFAULT '',
+      lat REAL NOT NULL,
+      lng REAL NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
   `);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_channels_channel_userid ON customer_channels(channel, channel_user_id)`);
@@ -103,6 +114,7 @@ function createNewTables(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_timeline_conversation_id ON timeline(conversation_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_timeline_created_at ON timeline(created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tareas_lead_id ON tareas(lead_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ubicaciones_guardadas_vendedor ON ubicaciones_guardadas(vendedor_id)`);
 }
 
 function dropNewTables(db) {

@@ -257,10 +257,13 @@
     .btn-back { display: flex !important; }
   }
   .btn-back { display: none; }
+  .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (async function () {
   'use strict';
@@ -818,9 +821,11 @@
     const conv = convs.find(x => x.id === convId);
     const leadId = conv ? conv.lead_id : null;
     if (!leadId) { toast('Esta conversación no tiene lead vinculado', 'err'); return; }
-    const presets = UBICACIONES_PREDEFINIDAS_INBOX.map((p,i) =>
-      `<button class="loc-preset-btn" data-idx="${i}"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.name)}</strong>${p.address ? ' — '+esc(p.address) : ''}</span></button>`
-    ).join('');
+    const saved = await api('/api/ubicaciones-guardadas') || [];
+    const savedList = saved.length ? saved.map(p =>
+      `<div style="display:flex;align-items:center;gap:6px"><button class="loc-preset-btn loc-preset-saved" data-sid="${p.id}" style="flex:1"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.nombre)}</strong>${p.direccion ? ' — '+esc(p.direccion) : ''}</span></button><button class="loc-del-saved" data-sid="${p.id}" style="background:none;border:none;color:var(--text-3);font-size:16px;cursor:pointer;padding:4px">✕</button></div>`
+    ).join('') : '<div style="color:var(--text-3);font-size:12.5px;text-align:center;padding:6px 0">Aún no tienes ubicaciones guardadas</div>';
+
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
     overlay.innerHTML = `
@@ -828,14 +833,8 @@
         <h4 style="margin:0 0 14px;font-size:15px;color:var(--gold)">📍 Enviar ubicación</h4>
         <button class="loc-preset-btn" id="locGpsInbox"><span class="loc-preset-icon">📡</span><span style="color:var(--gold)">Mi ubicación actual</span></button>
         <div class="loc-search-wrap"><input id="locSearchInbox" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="locResultsInbox"></div></div>
-        <div class="loc-preset">${presets}<button class="loc-preset-btn" data-idx="-1"><span class="loc-preset-icon">✏️</span><span style="color:var(--gold)">Ubicación personalizada</span></button></div>
-        <div class="loc-form" id="locCustomInbox" style="display:none">
-          <input id="locNameInbox" placeholder="Nombre del lugar (opcional)">
-          <input id="locAddressInbox" placeholder="Dirección (opcional)">
-          <input id="locLatInbox" type="number" step="any" placeholder="Latitud (ej: 4.4577)">
-          <input id="locLngInbox" type="number" step="any" placeholder="Longitud (ej: -74.6329)">
-          <button class="btn btn--gold" id="locSendInbox" style="margin-top:4px">📍 Enviar ubicación</button>
-        </div>
+        <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin:10px 0 6px">Guardadas</div>
+        <div class="loc-preset" id="locSavedInbox">${savedList}</div>
         <button id="locCancelInbox" style="margin-top:10px;background:none;border:none;color:var(--text-3);font-size:12.5px;cursor:pointer;width:100%;text-align:center">Cancelar</button>
       </div>`;
     document.body.appendChild(overlay);
@@ -855,7 +854,11 @@
           name = d.name || d.display_name?.split(',')[0] || '';
           address = d.display_name || '';
         } catch (e) { }
-        enviarUbicacionInbox(leadId, convId, latitude, longitude, name, address);
+        const ok = await enviarUbicacionInbox(leadId, convId, latitude, longitude, name, address);
+        if (ok && name && confirm(`¿Guardar "${name}" en tus ubicaciones?`)) {
+          await api('/api/ubicaciones-guardadas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: name, direccion: address, lat: latitude, lng: longitude }) });
+          toast('📍 Ubicación guardada', 'ok');
+        }
       }, err => { toast('Error GPS: ' + err.message, 'err'); }, { enableHighAccuracy: true, timeout: 10000 });
     };
 
@@ -879,7 +882,13 @@
               resultsEl.querySelectorAll('.loc-result').forEach(btn => btn.onclick = () => {
                 const r2 = data[parseInt(btn.dataset.idx)];
                 overlay.remove();
-                enviarUbicacionInbox(leadId, convId, parseFloat(r2.lat), parseFloat(r2.lon), r2.name || '', r2.display_name || '');
+                const n = r2.name || ''; const a = r2.display_name || ''; const lt = parseFloat(r2.lat); const ln = parseFloat(r2.lon);
+                enviarUbicacionInbox(leadId, convId, lt, ln, n, a).then(ok => {
+                  if (ok && n && confirm(`¿Guardar "${n}" en tus ubicaciones?`)) {
+                    api('/api/ubicaciones-guardadas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: n, direccion: a, lat: lt, lng: ln }) });
+                    toast('📍 Ubicación guardada', 'ok');
+                  }
+                });
               });
             } else resultsEl.style.display = 'none';
           } catch (e) { }
@@ -888,27 +897,22 @@
       document.addEventListener('click', e => { if (resultsEl && !resultsEl.contains(e.target) && e.target !== searchInput) resultsEl.style.display = 'none'; });
     }
 
-    // --- Predefinidas ---
-    overlay.querySelectorAll('.loc-preset-btn[data-idx]').forEach(b => b.onclick = () => {
-      const idx = parseInt(b.dataset.idx);
-      if (idx === -1) {
-        document.getElementById('locCustomInbox').style.display = 'flex';
-        overlay.querySelectorAll('.loc-preset-btn').forEach(bb => bb.style.display = 'none');
-        return;
-      }
-      const p = UBICACIONES_PREDEFINIDAS_INBOX[idx];
+    // --- Guardadas: enviar ---
+    overlay.querySelectorAll('.loc-preset-saved').forEach(b => b.onclick = () => {
+      const s = saved.find(x => String(x.id) === b.dataset.sid);
+      if (!s) return;
       overlay.remove();
-      enviarUbicacionInbox(leadId, convId, p.lat, p.lng, p.name, p.address);
+      enviarUbicacionInbox(leadId, convId, s.lat, s.lng, s.nombre, s.direccion);
     });
-    document.getElementById('locSendInbox').onclick = () => {
-      const lat = parseFloat(document.getElementById('locLatInbox').value);
-      const lng = parseFloat(document.getElementById('locLngInbox').value);
-      if (isNaN(lat) || isNaN(lng)) { toast('Ingresa latitud y longitud válidas', 'err'); return; }
-      const name = document.getElementById('locNameInbox').value.trim();
-      const address = document.getElementById('locAddressInbox').value.trim();
-      overlay.remove();
-      enviarUbicacionInbox(leadId, convId, lat, lng, name, address);
-    };
+
+    // --- Guardadas: eliminar ---
+    overlay.querySelectorAll('.loc-del-saved').forEach(b => b.onclick = async () => {
+      if (!confirm('¿Eliminar esta ubicación guardada?')) return;
+      await api('/api/ubicaciones-guardadas/' + b.dataset.sid, { method: 'DELETE' });
+      b.closest('div').remove();
+      toast('Ubicación eliminada');
+    });
+
     document.getElementById('locCancelInbox').onclick = () => overlay.remove();
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   }
@@ -923,7 +927,8 @@
       if (!r) throw new Error('Error al enviar ubicación');
       toast('📍 Ubicación enviada', 'ok');
       await recargarMensajes(convId);
-    } catch (e) { toast('Error: ' + e.message, 'err'); }
+      return true;
+    } catch (e) { toast('Error: ' + e.message, 'err'); return false; }
   }
 
   /* ── Reload mensajes ── */
@@ -931,6 +936,13 @@
     const data = await api('/api/inbox/conversations/' + id + '/timeline');
     if (data?.messages) renderMsgs(data.messages);
   }
+
+  // Autoinicializar mapas Leaflet en mensajes
+  const _inboxObserver = new MutationObserver(() => initLocationMaps());
+  setTimeout(() => {
+    const box = document.getElementById('ibxMsgs');
+    if (box) _inboxObserver.observe(box, { childList: true, subtree: false });
+  }, 500);
 
   /* ── Render mensajes ── */
   function renderMsgs(msgs) {
@@ -954,8 +966,8 @@
       try { const d = JSON.parse(m.body); lat = d.latitude; lng = d.longitude; name = d.name; address = d.address; } catch (e) { return '📍 Ubicación'; }
       const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
       const label = [name, address].filter(Boolean).join(' - ') || 'Ubicación';
-      const staticUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=15&size=280x120&maptype=mapnik&markers=${lat},${lng},red-pushpin`;
-      return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="loc-map"><img src="${staticUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.textContent='📍'"><span style="font-size:32px;opacity:.3">🗺️</span></div><div class="loc-body"><span class="loc-ic">📍</span><div class="loc-info"><div class="loc-tit">${esc(label)}</div><div class="loc-sub">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
+      const mapId = 'lm_' + (m.id || Math.random().toString(36).slice(2, 8));
+      return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="leaflet-map" id="${mapId}" data-lat="${lat}" data-lng="${lng}"></div><div class="loc-body"><span class="loc-ic">📍</span><div class="loc-info"><div class="loc-tit">${esc(label)}</div><div class="loc-sub">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
     }
     if (!m.id) return null;
     const src = '/api/inbox/media/' + m.id;
@@ -964,6 +976,19 @@
     if (m.media_type === 'audio') return renderAudioPlayer(m.id, src) + cap;
     if (m.media_type === 'video') return `<video class="media-video" controls src="${src}"></video>${cap}`;
     return `<a class="media-file" href="${src}" target="_blank">📄 ${esc(m.media_filename || 'archivo')}</a>${cap}`;
+  }
+
+  function initLocationMaps() {
+    document.querySelectorAll('.leaflet-map:not(.leaflet-container)').forEach(el => {
+      const lat = parseFloat(el.dataset.lat); const lng = parseFloat(el.dataset.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
+      try {
+        const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false }).setView([lat, lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(map);
+        L.marker([lat, lng]).addTo(map);
+        setTimeout(() => map.invalidateSize(), 100);
+      } catch (e) { console.error('Leaflet error:', e.message); }
+    });
   }
 
   /* ── Lightbox ── */

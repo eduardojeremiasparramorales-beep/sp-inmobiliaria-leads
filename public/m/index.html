@@ -444,7 +444,9 @@
 
   .hidden{ display:none !important; }
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
+  .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
 <div id="app">
@@ -483,6 +485,7 @@
 </div>
 
 <script src="/sw-reg.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
 'use strict';
@@ -1343,14 +1346,26 @@ function renderMedia(m){
     try{ const d=JSON.parse(m.body); lat=d.latitude; lng=d.longitude; name=d.name; address=d.address; }catch(e){ return '📍 Ubicación'; }
     const mapsUrl=`https://www.google.com/maps?q=${lat},${lng}`;
     const label=[name,address].filter(Boolean).join(' - ')||'Ubicación';
-    const staticUrl=`https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=15&size=280x120&maptype=mapnik&markers=${lat},${lng},red-pushpin`;
-    return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="loc-map"><img src="${staticUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.textContent='📍'"><span style="font-size:32px;opacity:.3">🗺️</span></div><div class="loc-body"><span class="loc-ic">📍</span><div class="loc-info"><div class="loc-tit">${esc(label)}</div><div class="loc-sub">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
+    const mapId='lm_'+((m.id||Math.random().toString(36).slice(2,8)));
+    return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="leaflet-map" id="${mapId}" data-lat="${lat}" data-lng="${lng}"></div><div class="loc-body"><span class="loc-ic">📍</span><div class="loc-info"><div class="loc-tit">${esc(label)}</div><div class="loc-sub">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
   }
   const src=m.id?`/api/media/${m.id}`:'';
   if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen';
   if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video';
   if(m.media_type==='audio') return src?renderAudioPlayer(m.id,src):'🎙️ Audio';
   return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`;
+}
+function initLocationMaps(){
+  document.querySelectorAll('.leaflet-map:not(.leaflet-container)').forEach(el=>{
+    const lat=parseFloat(el.dataset.lat); const lng=parseFloat(el.dataset.lng);
+    if(isNaN(lat)||isNaN(lng)) return;
+    try{
+      const map=L.map(el,{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false,touchZoom:false,doubleClickZoom:false,boxZoom:false,keyboard:false}).setView([lat,lng],15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(map);
+      L.marker([lat,lng]).addTo(map);
+      setTimeout(()=>map.invalidateSize(),100);
+    }catch(e){ console.error('Leaflet error:',e.message); }
+  });
 }
 function generateWaveform(id){ let h=0; const s=String(id); for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } const b=[]; for(let i=0;i<20;i++){ b.push(Math.round(Math.abs(Math.sin(h*(i+1)*137.5))*18+4)); } return b; }
 function formatDuration(s){ const m=Math.floor(s/60); const sec=Math.floor(s%60); return m+':'+(sec<10?'0':'')+sec; }
@@ -1438,91 +1453,94 @@ const UBICACIONES_PREDEFINIDAS = [
 
 function abrirEnviarUbicacion(){
   if(!current){ toast('Selecciona un lead primero'); return; }
-  const presetsHtml = UBICACIONES_PREDEFINIDAS.map((p,i) =>
-    `<button class="loc-preset-btn" data-idx="${i}"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.name)}</strong>${p.address ? ' — '+esc(p.address) : ''}</span></button>`
-  ).join('');
-  const formHtml = `
-    <button class="loc-preset-btn" id="locGpsBtn"><span class="loc-preset-icon">📡</span><span style="color:var(--gold)">Mi ubicación actual</span></button>
-    <div class="loc-search-wrap"><input id="locSearch" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="locResults"></div></div>
-    <div class="loc-preset">${presetsHtml}<button class="loc-preset-btn" data-idx="-1"><span class="loc-preset-icon">✏️</span><span style="color:var(--gold)">Ubicación personalizada</span></button></div>
-    <div class="loc-form" id="locCustom" style="display:none">
-      <input id="locName" placeholder="Nombre del lugar (opcional)">
-      <input id="locAddress" placeholder="Dirección (opcional)">
-      <input id="locLat" type="number" step="any" placeholder="Latitud (ej: 4.4577)">
-      <input id="locLng" type="number" step="any" placeholder="Longitud (ej: -74.6329)">
-      <button class="lp-cell wide" id="locSendBtn" style="justify-content:center;color:var(--gold);font-weight:500">📍 Enviar ubicación</button>
-    </div>`;
-  openSheet('Enviar ubicación', formHtml);
+  // Cargar ubicaciones guardadas
+  api('/api/ubicaciones-guardadas').then(saved=>{
+    const savedList = (saved&&saved.length) ? saved.map(p=>
+      `<div style="display:flex;align-items:center;gap:6px"><button class="loc-preset-btn loc-preset-saved" data-sid="${p.id}" style="flex:1"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.nombre)}</strong>${p.direccion ? ' — '+esc(p.direccion) : ''}</span></button><button class="loc-del-saved" data-sid="${p.id}" style="background:none;border:none;color:var(--text-3);font-size:16px;cursor:pointer;padding:4px">✕</button></div>`
+    ).join('') : '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:8px 0">Aún no tienes ubicaciones guardadas</div>';
 
-  // --- GPS ---
-  const gpsBtn=$('#locGpsBtn');
-  if(gpsBtn) gpsBtn.onclick=()=>{
-    if(!navigator.geolocation){ toast('GPS no disponible en este dispositivo','err'); return; }
-    toast('Obteniendo ubicación…');
-    closeSheet();
-    navigator.geolocation.getCurrentPosition(async pos=>{
-      const {latitude,longitude}=pos.coords;
-      let name='',address='';
-      try{
-        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=es`);
-        const d=await r.json();
-        name=d.name||d.display_name?.split(',')[0]||'';
-        address=d.display_name||'';
-      }catch(e){}
-      enviarUbicacion(current.id, latitude, longitude, name, address);
-    }, err=>{ toast('Error GPS: '+err.message,'err'); }, {enableHighAccuracy:true,timeout:10000});
-  };
+    const formHtml = `
+      <button class="loc-preset-btn" id="locGpsBtn"><span class="loc-preset-icon">📡</span><span style="color:var(--gold)">Mi ubicación actual</span></button>
+      <div class="loc-search-wrap"><input id="locSearch" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="locResults"></div></div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin:10px 0 6px">Guardadas</div>
+      <div class="loc-preset" id="locSavedList">${savedList}</div>`;
+    openSheet('Enviar ubicación', formHtml);
 
-  // --- Búsqueda de lugares ---
-  let searchTimer;
-  const searchInput=$('#locSearch');
-  const resultsEl=$('#locResults');
-  if(searchInput){
-    searchInput.oninput=()=>{
-      clearTimeout(searchTimer);
-      const q=searchInput.value.trim();
-      if(q.length<3){ resultsEl.style.display='none'; return; }
-      searchTimer=setTimeout(async()=>{
+    // --- GPS ---
+    const gpsBtn=$('#locGpsBtn');
+    if(gpsBtn) gpsBtn.onclick=()=>{
+      if(!navigator.geolocation){ toast('GPS no disponible','err'); return; }
+      toast('Obteniendo ubicación…');
+      closeSheet();
+      navigator.geolocation.getCurrentPosition(async pos=>{
+        const {latitude,longitude}=pos.coords;
+        let name='',address='';
         try{
-          const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);
-          const data=await r.json();
-          if(!resultsEl) return;
-          if(data&&data.length){
-            resultsEl.innerHTML=data.map((res,i)=>`<button class="loc-result" data-idx="${i}"><span class="loc-r-icon">📍</span><span>${esc(res.display_name)}</span></button>`).join('');
-            resultsEl.style.display='block';
-            resultsEl.querySelectorAll('.loc-result').forEach(btn=>btn.onclick=()=>{
-              const r2=data[parseInt(btn.dataset.idx)];
-              closeSheet();
-              enviarUbicacion(current.id, parseFloat(r2.lat), parseFloat(r2.lon), r2.name||'', r2.display_name||'');
-            });
-          } else resultsEl.style.display='none';
+          const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=es`);
+          const d=await r.json();
+          name=d.name||d.display_name?.split(',')[0]||'';
+          address=d.display_name||'';
         }catch(e){}
-      },400);
+        const ok=await enviarUbicacion(current.id, latitude, longitude, name, address);
+        if(ok&&name&&confirm(`¿Guardar "${name}" en tus ubicaciones?`)){
+          await api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:name,direccion:address,lat:latitude,lng:longitude})});
+          toast('📍 Ubicación guardada','ok');
+        }
+      }, err=>{ toast('Error GPS: '+err.message,'err'); }, {enableHighAccuracy:true,timeout:10000});
     };
-    // Cerrar resultados al hacer click fuera
-    document.addEventListener('click',e=>{ if(resultsEl&&!resultsEl.contains(e.target)&&e.target!==searchInput) resultsEl.style.display='none'; });
-  }
 
-  // --- Predefinidas y personalizada ---
-  $('#sheetBody').querySelectorAll('.loc-preset-btn[data-idx]').forEach(b=>b.onclick=()=>{
-    const idx=parseInt(b.dataset.idx);
-    if(idx===-1){
-      $('#locCustom').style.display='flex';
-      $('#sheetBody').querySelectorAll('.loc-preset-btn').forEach(bb=>bb.style.display='none');
-      return;
+    // --- Búsqueda ---
+    let searchTimer;
+    const searchInput=$('#locSearch');
+    const resultsEl=$('#locResults');
+    if(searchInput){
+      searchInput.oninput=()=>{
+        clearTimeout(searchTimer);
+        const q=searchInput.value.trim();
+        if(q.length<3){ resultsEl.style.display='none'; return; }
+        searchTimer=setTimeout(async()=>{
+          try{
+            const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);
+            const data=await r.json();
+            if(!resultsEl) return;
+            if(data&&data.length){
+              resultsEl.innerHTML=data.map((res,i)=>`<button class="loc-result" data-idx="${i}"><span class="loc-r-icon">📍</span><span>${esc(res.display_name)}</span></button>`).join('');
+              resultsEl.style.display='block';
+              resultsEl.querySelectorAll('.loc-result').forEach(btn=>btn.onclick=()=>{
+                const r2=data[parseInt(btn.dataset.idx)];
+                closeSheet();
+                const n=r2.name||''; const a=r2.display_name||''; const lt=parseFloat(r2.lat); const ln=parseFloat(r2.lon);
+                enviarUbicacion(current.id, lt, ln, n, a).then(ok=>{
+                  if(ok&&n&&confirm(`¿Guardar "${n}" en tus ubicaciones?`)){
+                    api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:n,direccion:a,lat:lt,lng:ln})});
+                    toast('📍 Ubicación guardada','ok');
+                  }
+                });
+              });
+            } else resultsEl.style.display='none';
+          }catch(e){}
+        },400);
+      };
+      document.addEventListener('click',e=>{ if(resultsEl&&!resultsEl.contains(e.target)&&e.target!==searchInput) resultsEl.style.display='none'; });
     }
-    const p=UBICACIONES_PREDEFINIDAS[idx];
-    closeSheet();
-    enviarUbicacion(current.id, p.lat, p.lng, p.name, p.address);
+
+    // --- Guardadas: enviar ---
+    $('#sheetBody').querySelectorAll('.loc-preset-saved').forEach(b=>b.onclick=()=>{
+      const s=saved.find(x=>String(x.id)===b.dataset.sid);
+      if(!s) return;
+      closeSheet();
+      enviarUbicacion(current.id, s.lat, s.lng, s.nombre, s.direccion);
+    });
+
+    // --- Guardadas: eliminar ---
+    $('#sheetBody').querySelectorAll('.loc-del-saved').forEach(b=>b.onclick=async()=>{
+      const sid=b.dataset.sid;
+      if(!confirm('¿Eliminar esta ubicación guardada?')) return;
+      await api('/api/ubicaciones-guardadas/'+sid,{method:'DELETE'});
+      b.closest('div').remove();
+      toast('Ubicación eliminada');
+    });
   });
-  const sendBtn=$('#locSendBtn');
-  if(sendBtn) sendBtn.onclick=()=>{
-    const lat=parseFloat($('#locLat').value); const lng=parseFloat($('#locLng').value);
-    if(isNaN(lat)||isNaN(lng)){ toast('Ingresa latitud y longitud válidas','err'); return; }
-    const name=$('#locName').value.trim(); const address=$('#locAddress').value.trim();
-    closeSheet();
-    enviarUbicacion(current.id, lat, lng, name, address);
-  };
 }
 
 async function enviarUbicacion(leadId, lat, lng, name, address){
@@ -1534,8 +1552,9 @@ async function enviarUbicacion(leadId, lat, lng, name, address){
       if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; }
       cargar();
       toast('📍 Ubicación enviada');
-    } else toast('Error al enviar ubicación','err');
-  }catch(e){ toast('Error al enviar ubicación','err'); }
+      return true;
+    } else { toast('Error al enviar ubicación','err'); return false; }
+  }catch(e){ toast('Error al enviar ubicación','err'); return false; }
 }
 
 // File input for media uploads
@@ -2211,6 +2230,10 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
 
 /* ════════ Arranque (tras declarar todas las const) ════════ */
 init();
+// Autoinicializar mapas Leaflet cuando cambian los mensajes
+const _chatObs=new MutationObserver(()=>initLocationMaps());
+const _chatEl=$('#cMsgs');
+if(_chatEl) _chatObs.observe(_chatEl,{childList:true,subtree:false});
 
 })();
 </script>

@@ -1358,6 +1358,21 @@ function deleteTarea(id) {
   run('DELETE FROM tareas WHERE id = ?', [id]);
 }
 
+// --- Ubicaciones guardadas ---
+function getUbicacionesGuardadas(vendedorId) {
+  return all('SELECT * FROM ubicaciones_guardadas WHERE vendedor_id = ? ORDER BY created_at DESC', [vendedorId]);
+}
+
+function saveUbicacionGuardada(vendedorId, nombre, direccion, lat, lng) {
+  run('INSERT INTO ubicaciones_guardadas (vendedor_id, nombre, direccion, lat, lng) VALUES (?, ?, ?, ?, ?)',
+    [vendedorId, nombre, direccion || '', lat, lng]);
+  return one('SELECT * FROM ubicaciones_guardadas WHERE id = last_insert_rowid()');
+}
+
+function deleteUbicacionGuardada(id) {
+  run('DELETE FROM ubicaciones_guardadas WHERE id = ?', [id]);
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -1397,4 +1412,5 @@ module.exports = {
   markDeletedForAll, markDeletedByClientWamid, getMessageByWamid,
   getDuplicateGroups, mergeLeads, closeOrphanConversations,
   getTareas, addTarea, toggleTarea, deleteTarea,
+  getUbicacionesGuardadas, saveUbicacionGuardada, deleteUbicacionGuardada,
 };
