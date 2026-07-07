@@ -510,12 +510,12 @@ function mergeLeads(keepLeadId, removeLeadId) {
     }
   } catch(e) {}
 
-  // Mover conversaciones
+  // Mover conversaciones al lead conservado y cerrar las del lead eliminado
   try {
     const convs = all('SELECT id FROM conversations WHERE lead_id = ?', [removeLeadId]);
     if (convs.length > 0) {
       const ids = convs.map(c => c.id).join(',');
-      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ? WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
+      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ?, status = 'cerrado', updated_at = datetime('now') WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
     }
   } catch(e) {}
 
@@ -525,11 +525,32 @@ function mergeLeads(keepLeadId, removeLeadId) {
   return { keepId: keepLeadId, removedId: removeLeadId, messagesMoved: msgs.length };
 }
 
-function getLeads() {
+function closeOrphanConversations() {
+  const orphans = all(`
+    SELECT conv.id FROM conversations conv
+    LEFT JOIN leads l ON l.id = conv.lead_id
+    WHERE l.id IS NULL OR l.status = 'cerrado'
+  `);
+  orphans.forEach(o => {
+    run("UPDATE conversations SET status = 'cerrado', updated_at = datetime('now') WHERE id = ?", [o.id]);
+  });
+  return { closed: orphans.length };
+}
+
+function getLeads(includeCerrado) {
+  if (includeCerrado) {
+    return all(`
+      SELECT l.*, v.nombre AS assigned_to_nombre
+      FROM leads l
+      LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+      ORDER BY l.updated_at DESC, l.created_at DESC
+    `);
+  }
   return all(`
     SELECT l.*, v.nombre AS assigned_to_nombre
     FROM leads l
     LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+    WHERE l.status != 'cerrado'
     ORDER BY l.updated_at DESC, l.created_at DESC
   `);
 }
@@ -549,7 +570,7 @@ function setLeadNombre(leadId, nombre) {
 }
 
 function getLeadCount() {
-  const r = one('SELECT COUNT(*) as c FROM leads');
+  const r = one("SELECT COUNT(*) as c FROM leads WHERE status != 'cerrado'");
   return r ? r.c : 0;
 }
 
@@ -1332,5 +1353,5 @@ module.exports = {
   editMessage, softDeleteMessage, pinLead, muteLead, clearLeadMessages,
   markMessageAsRead, markLeadMessagesAsRead,
   markDeletedForAll, markDeletedByClientWamid, getMessageByWamid,
-  getDuplicateGroups, mergeLeads,
+  getDuplicateGroups, mergeLeads, closeOrphanConversations,
 };

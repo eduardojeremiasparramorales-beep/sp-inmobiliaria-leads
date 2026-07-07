@@ -357,7 +357,7 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
 app.get('/api/reportes', auth.requireAdmin, (req, res) => {
   try {
     const dbx = getDB();
-    const all = getLeads();
+    const all = getLeads(true);
     const vendedores = getVendedores();
 
     // Leads por día (últimos 30)
@@ -1309,7 +1309,7 @@ app.post('/api/leads/:id/nombre', auth.requireAuth, (req, res) => {
 
 // Exportar leads a CSV (solo admin)
 app.get('/api/leads/export.csv', auth.requireAdmin, (req, res) => {
-  const leads = getLeads();
+  const leads = getLeads(true);
   const cab = ['id', 'nombre', 'telefono', 'estado', 'etiqueta', 'vendedor', 'mensajes', 'creado', 'actualizado'];
   const csvCell = (v) => {
     const s = String(v == null ? '' : v);
@@ -1748,6 +1748,17 @@ app.post('/api/admin/duplicates/merge', auth.requireAdmin, (req, res) => {
   }
 });
 
+// Limpiar conversaciones huérfanas (conversaciones de leads cerrados)
+app.post('/api/admin/cleanup-orphans', auth.requireAdmin, (req, res) => {
+  try {
+    const result = store.closeOrphanConversations();
+    console.log(`[CLEANUP] Cerradas ${result.closed} conversaciones huérfanas`);
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Test webhook simulator
 app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
   const { phone, name, message } = req.body;
@@ -1853,7 +1864,7 @@ app.delete('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
 // ===================== EXPORTAR LEADS (CSV) =====================
 
 app.get('/api/admin/export/leads', auth.requireAdmin, (req, res) => {
-  const leads = getLeads();
+  const leads = getLeads(true);
   const vendedores = getVendedores();
   const vMap = {};
   vendedores.forEach(v => { vMap[v.id] = v.nombre; });
