@@ -137,11 +137,15 @@ async function uploadMedia(buffer, mime, filename) {
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
 
+  // WhatsApp exige el MIME base en 'type' (p. ej. "audio/ogg"), SIN parámetros como "; codecs=opus".
+  // Un type mal formado deja el media inaccesible para el cliente en iOS ("Este audio ya no está disponible").
+  const baseMime = String(mime || 'application/octet-stream').split(';')[0].trim();
+
   const FormData = require('form-data');
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
-  form.append('type', mime);
-  form.append('file', buffer, { filename: filename || 'archivo', contentType: mime });
+  form.append('type', baseMime);
+  form.append('file', buffer, { filename: filename || 'archivo', contentType: baseMime });
 
   const res = await axios.post(`${GRAPH}/${phoneNumberId}/media`, form, {
     headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() },
