@@ -1231,6 +1231,97 @@ app.delete('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Recomendar propiedades para un lead (match scoring)
+app.post('/api/propiedades/recomendar', auth.requireAuth, async (req, res) => {
+  try {
+    const { leadId } = req.body || {};
+    if (!leadId) return res.status(400).json({ error: 'leadId requerido' });
+
+    const lead = store.getLeadById(leadId);
+    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
+
+    const mensajes = store.getMessagesByLead(leadId) || [];
+    const textoCompleto = mensajes.map(m => m.body).filter(Boolean).join(' ').toLowerCase();
+
+    // Extraer entidades: vía IA si está disponible, si no con regex local
+    let entidades = { locations: [], prices: [], propertyTypes: [] };
+    try {
+      const nlp = require('./services/nlp');
+      if (nlp.isAIEnabled()) {
+        entidades = await nlp.extractEntities(textoCompleto);
+      }
+    } catch (e) { /* fallback a regex */ }
+
+    if (!entidades.locations.length) {
+      const ciudades = ['tocaima', 'girardot', 'melgar', 'bogotá', 'bogota', 'cundinamarca', 'tolima', 'ica', 'huila', 'meta', 'anapoima', 'la mesa', 'villeta', 'facatativá', 'facatativa', 'mosquera', 'madrid', 'funza'];
+      entidades.locations = ciudades.filter(c => textoCompleto.includes(c));
+    }
+    if (!entidades.prices.length) {
+      const nums = textoCompleto.match(/\b(\d{5,})\b/g);
+      if (nums) entidades.prices = nums.map(Number);
+    }
+    if (!entidades.propertyTypes.length) {
+      if (/lote|terreno|parcela/i.test(textoCompleto)) entidades.propertyTypes.push('lote');
+      if (/casa|vivienda/i.test(textoCompleto)) entidades.propertyTypes.push('casa');
+      if (/apartamento|apto/i.test(textoCompleto)) entidades.propertyTypes.push('apartamento');
+    }
+
+    const propiedades = store.getPropiedades();
+    const precioRef = entidades.prices.length ? Math.min(...entidades.prices) : 0;
+    const ciudadRef = entidades.locations[0] || '';
+
+    const recomendadas = propiedades.filter(p => p.estado === 'disponible').map(p => {
+      let match = 50;
+
+      // Ciudad (50%)
+      const pCiudad = (p.ciudad || '').toLowerCase();
+      if (ciudadRef && pCiudad.includes(ciudadRef) || ciudadRef && entidades.locations.some(l => pCiudad.includes(l))) {
+        match += 30;
+      } else if (ciudadRef && entidades.locations.some(l => pCiudad.includes(l))) {
+        match += 25;
+      }
+
+      // Precio (25%)
+      if (precioRef > 0 && p.precio > 0) {
+        const diff = Math.abs(p.precio - precioRef) / Math.max(p.precio, precioRef);
+        match += Math.round(25 * Math.max(0, 1 - diff));
+      }
+
+      // Tipo (15%)
+      if (entidades.propertyTypes.length && entidades.propertyTypes.includes(p.tipo || 'lote')) {
+        match += 15;
+      } else if (entidades.propertyTypes.length) {
+        match += 5;
+      } else {
+        match += 8;
+      }
+
+      // m² (10%)
+      if (p.m2 > 0) {
+        const m2Ratio = Math.min(p.m2 / 500, 1);
+        match += Math.round(10 * m2Ratio);
+      }
+
+      return {
+        id: p.id,
+        nombre: p.nombre,
+        ciudad: p.ciudad || '',
+        precio: p.precio || 0,
+        m2: p.m2 || 0,
+        tipo: p.tipo || 'lote',
+        estado: p.estado || 'disponible',
+        imagen_url: p.imagen_url || '',
+        match: Math.min(99, match),
+      };
+    }).sort((a, b) => b.match - a.match);
+
+    res.json({ ok: true, propiedades: recomendadas, entidades });
+  } catch (e) {
+    console.error('[PROPS] recomendar error:', e.message);
+    res.json({ ok: false, propiedades: [], error: e.message });
+  }
+});
+
 // Marcar mensaje(s) como leídos
 app.post('/api/messages/:id/read-receipt', auth.requireAuth, (req, res) => {
   const msgId = req.params.id;

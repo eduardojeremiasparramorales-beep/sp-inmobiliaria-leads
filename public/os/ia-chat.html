@@ -87,7 +87,8 @@
       '<div class="ia-warn" id="iaWarn"></div>' +
       '<div id="chatBox"><div class="empty-chat">' +
         '<h3>✦ Copiloto SP</h3>' +
-        '<p style="font-size:13px;max-width:340px">Elige un proveedor y un modelo arriba, y pregúntame lo que necesites: redactar mensajes, analizar leads, estrategias de venta o cualquier duda.</p>' +
+        '<p style="font-size:13px;max-width:340px" id="emptyMsg">Elige un proveedor y un modelo arriba, y pregúntame lo que necesites: redactar mensajes, analizar leads, estrategias de venta o cualquier duda.</p>' +
+        '<button id="emptyAddBtn" style="display:none;margin-top:8px;background:var(--gold);color:#000;border:none;border-radius:10px;padding:10px 22px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--f-ui)">+ Agregar proveedor</button>' +
       '</div></div>' +
       '<div class="ia-composer">' +
         '<textarea id="chatInput" rows="1" placeholder="Escribe un mensaje…" ' +
@@ -99,7 +100,7 @@
     '</div>' +
     '<div class="pm-ov" id="pmOv"><div class="pm">' +
       '<h3>Proveedores de IA</h3>' +
-      '<div class="pm-sub">Agrega cualquier proveedor compatible con OpenAI (OpenRouter, OpenAI, DeepSeek, Groq…) con su propia API key.</div>' +
+      '<div class="pm-sub">Agrega cualquier proveedor compatible con OpenAI. Haz clic en un preset para añadirlo y pega tu API Key.</div>' +
       '<div class="pm-presets" id="pmPresets"></div>' +
       '<div id="pmList"></div>' +
       '<div class="pm-actions"><button class="pm-btn ghost" id="pmCancel">Cancelar</button><button class="pm-btn save" id="pmSave">Guardar</button></div>' +
@@ -147,23 +148,40 @@
   });
 
   /* ── Proveedores / modelos ── */
+  const emptyMsg = $('emptyMsg'), emptyAddBtn = $('emptyAddBtn');
+  if (emptyAddBtn) emptyAddBtn.onclick = openModal;
+
   async function loadProviders() {
     let r;
     try { r = await api('/api/ai/providers'); } catch (e) { r = null; }
     if (!r || !r.providers) {
       iaWarn.style.display = 'block';
-      iaWarn.innerHTML = 'No se pudieron cargar los proveedores. Puedes escribir un modelo a mano, o <a id="warnCfg">configurar uno</a>.';
+      iaWarn.innerHTML = 'No se pudieron cargar los proveedores. <a id="warnCfg">Configurar ahora →</a>';
       const wc = $('warnCfg'); if (wc) wc.onclick = openModal;
       provSel.innerHTML = '<option value="">(sin proveedores)</option>';
+      if (emptyMsg) emptyMsg.textContent = 'No hay conexión con el servidor. Haz clic en "Configurar" para agregar un proveedor manualmente.';
+      if (emptyAddBtn) emptyAddBtn.style.display = 'none';
       return;
     }
     providers = r.providers || []; presets = r.presets || {};
     defaultId = r.defaultId || (providers[0] && providers[0].id) || '';
-    if (!providers.length || !providers.some(p => p.hasKey)) {
+    if (!providers.length) {
       iaWarn.style.display = 'block';
-      iaWarn.innerHTML = 'Aún no hay una API key configurada. <a id="warnCfg">Agregar proveedor →</a>';
+      iaWarn.innerHTML = 'No hay proveedores configurados. <a id="warnCfg">Agregar proveedor →</a>';
       const wc = $('warnCfg'); if (wc) wc.onclick = openModal;
-    } else { iaWarn.style.display = 'none'; }
+      if (emptyMsg) emptyMsg.textContent = 'Agrega un proveedor de IA para empezar a chatear.';
+      if (emptyAddBtn) emptyAddBtn.style.display = 'inline-block';
+    } else if (!providers.some(p => p.hasKey)) {
+      iaWarn.style.display = 'block';
+      iaWarn.innerHTML = 'Falta la API Key. <a id="warnCfg">Configurar proveedor →</a>';
+      const wc = $('warnCfg'); if (wc) wc.onclick = openModal;
+      if (emptyMsg) emptyMsg.textContent = 'Elige un proveedor y escribe un modelo, o configura tu API Key.';
+      if (emptyAddBtn) emptyAddBtn.style.display = 'none';
+    } else {
+      iaWarn.style.display = 'none';
+      if (emptyMsg) emptyMsg.textContent = 'Elige un proveedor y modelo arriba, o escribe un modelo personalizado.';
+      if (emptyAddBtn) emptyAddBtn.style.display = 'none';
+    }
     provSel.innerHTML = providers.length
       ? providers.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.hasKey ? '' : ' (sin key)'}</option>`).join('')
       : '<option value="">(sin proveedores)</option>';

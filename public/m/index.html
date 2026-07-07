@@ -1471,11 +1471,16 @@ function abrirTimeline(){ const l=current;
 
 async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Cliente';
   openSheet('Copiloto SP', `<div id="copilotLoading" style="text-align:center;padding:24px;color:var(--text-3)">Analizando lead...</div>`);
-  let analysis = null;
+  let analysis = null; let propsRecom = [];
   try {
-    const r = await fetch('/api/nlp/analyze-lead', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id, customerName: nombre }) });
-    const d = await r.json();
-    analysis = d.ok ? d.analysis : null;
+    const [rAna, rProp] = await Promise.all([
+      fetch('/api/nlp/analyze-lead', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id, customerName: nombre }) }),
+      fetch('/api/propiedades/recomendar', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id }) })
+    ]);
+    const dAna = await rAna.json();
+    analysis = dAna.ok ? dAna.analysis : null;
+    const dProp = await rProp.json();
+    if (dProp.ok && dProp.propiedades) propsRecom = dProp.propiedades;
   } catch(e) {}
   const isAI = analysis && analysis.summary;
   const score = isAI ? Math.round(Math.max(0,Math.min(100,(analysis.closeProbability||50)))) : leadScore(l);
@@ -1483,6 +1488,7 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
   const sentIcon = analysis?.sentiment === 'positivo' ? SVG.check : analysis?.sentiment === 'negativo' ? SVG.zap : SVG.target;
   const sentLabel = analysis?.sentiment ? (analysis.sentiment.charAt(0).toUpperCase()+analysis.sentiment.slice(1)) : '—';
   const body = $('#sheetBody'); if(!body) return;
+  const propsHtml = propsRecom.length ? propsRecom.slice(0,6).map((p,i)=>`<div class="prop-c"><div class="ph">${I(SVG.building,22)}</div><div class="in"><div class="nm">${esc(p.nombre)}</div><div class="lo">${I(SVG.mapPin,11)} ${esc(p.ciudad||'')} · ${p.m2||0} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt">${p.match}% Similitud</span><button class="snd" data-prop="${i}">Enviar</button></div></div></div>`).join('') : '<div style="color:var(--text-3);font-size:12px;padding:4px 0">Sin propiedades disponibles</div>';
   body.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:10px">${isAI ? `<span style="font-size:10px;padding:3px 10px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">IA activa</span>` : `<span class="cop-badge">${I(SVG.sparkles,11)} Sin conexión IA</span>`}</div>
     ${isAI ? `
@@ -1497,13 +1503,11 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
     `}
     <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug2">${esc(sug)}</p><button class="cop-use" id="copUse">${I(SVG.sparkles,16)} Usar esta respuesta</button></div>
     <div class="cop-card"><h5>${I(SVG.building,14)} Propiedades recomendadas</h5>
-      <div class="prop-scroll">${PROPS.map((p,i)=>`<div class="prop-c"><div class="ph">${p.emoji}</div><div class="in"><div class="nm">${p.nombre}</div><div class="lo">${I(SVG.mapPin,11)} ${p.ciudad} · ${p.m2} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt">${p.match}% Similitud</span><button class="snd" data-prop="${i}">Enviar</button></div></div></div>`).join('')}</div>
+      <div class="prop-scroll">${propsHtml}</div>
     </div>`;
   $('#copUse').onclick=()=>{ if($('#scChat').classList.contains('show')){ const i=$('#cInput'); const sugText = ($('#copSug2')?.textContent || $('#copSug')?.textContent || '').trim(); if(sugText) i.value=sugText; updateSend(); } closeSheet(); haptic([10,20,10]); toast('Respuesta lista'); };
-  $('#sheetBody').querySelectorAll('[data-prop]').forEach(b=>b.onclick=()=>{ const p=PROPS[b.dataset.prop]; if($('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=`Te recomiendo: ${p.nombre} — ${p.m2} m² por ${money(p.precio)}. ¿Más info o agendamos visita?`; updateSend(); } closeSheet(); haptic(10); toast('Propiedad lista para enviar'); });
+  body.querySelectorAll('[data-prop]').forEach(b=>b.onclick=()=>{ const p=propsRecom[Number(b.dataset.prop)]; if(p&&$('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=`Te recomiendo: ${p.nombre} — ${p.m2||0} m² por ${money(p.precio)}. ¿Más info o agendamos visita?`; updateSend(); } closeSheet(); haptic(10); toast('Propiedad lista para enviar'); });
 }
-const PROPS=[{emoji:'🏡',nombre:'Lote Campestre Tocaima',ciudad:'Tocaima',precio:48000000,m2:250,match:96},{emoji:'🏘️',nombre:'Parcelación Girardot',ciudad:'Girardot',precio:72000000,m2:320,match:88},{emoji:'🌄',nombre:'Lote Vista Valle',ciudad:'Melgar',precio:35000000,m2:180,match:79}];
-
 function exportarConversacion(){
   if(!current||!currentMsgs||!currentMsgs.length){ toast('Sin mensajes'); return; }
   const nombre=current.customer_name||'Cliente';

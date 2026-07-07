@@ -395,8 +395,8 @@
     } catch (e) { badge.style.display = 'none'; }
   }
 
-  /* ── v2.0 · MOCK — Fase IA: tareas y propiedades por lead (memoria de sesión) ── */
-  const tareasMock = {};            // { [leadId]: [{txt, due, done}] }
+  /* ── v2.0 · Tareas (memoria de sesión) y propiedades desde BD ── */
+  const tareasMock = {};
   function tareasDe(id) {
     if (!tareasMock[id]) tareasMock[id] = [
       { txt: 'Llamar mañana', due: '', done: false },
@@ -406,11 +406,10 @@
     ];
     return tareasMock[id];
   }
-  const PROPIEDADES_MOCK = [
-    { emoji: '🏡', nombre: 'Lote Campestre Tocaima', precio: 48000000, m2: 250, match: 96 },
-    { emoji: '🏘️', nombre: 'Parcelación Girardot', precio: 72000000, m2: 320, match: 88 },
-    { emoji: '🌄', nombre: 'Lote Vista Valle', precio: 35000000, m2: 180, match: 79 },
-  ];
+  let cachePropiedades = [];
+  async function cargarPropiedades() {
+    try { const r = await api('/api/propiedades'); if (r && Array.isArray(r)) cachePropiedades = r.filter(p => p.estado === 'disponible'); else cachePropiedades = []; } catch (e) { cachePropiedades = []; }
+  }
 
   function I(d, size) {
     size = size || 20;
@@ -487,6 +486,8 @@
   const { me } = ctx;
 
   ctx.content.style.cssText = 'flex:1;min-height:0;overflow:hidden;padding:0;display:flex';
+
+  await cargarPropiedades();
 
   let leads = [], templates = [], waTemplates = [], vendedores = [];
   let currentLead = null, filtroActivo = 'todos', termBusqueda = '';
@@ -1297,23 +1298,25 @@
     });
   }
 
-  /* Pestaña · Propiedades recomendadas (MOCK — Fase IA) */
+  /* Pestaña · Propiedades recomendadas (desde BD) */
   function paneProps() {
-    return PROPIEDADES_MOCK.map((p, i) => `
+    const lista = cachePropiedades.length ? cachePropiedades : [];
+    if (!lista.length) return `<div class="pnl-hint" style="text-align:center;padding:22px 0">No hay propiedades disponibles. El administrador puede agregarlas desde Propiedades.</div>`;
+    return lista.slice(0, 6).map((p, i) => `
       <div class="prop-card">
-        <div class="prop-thumb">${p.emoji}</div>
+        <div class="prop-thumb">${I(SVG.home, 22)}</div>
         <div class="prop-info">
           <div class="prop-name">${escapeHtml(p.nombre)}</div>
-          <div class="prop-meta">${p.m2} m² · lote</div>
+          <div class="prop-meta">${p.m2 || 0} m² · ${escapeHtml(p.ciudad || '')}</div>
           <div class="prop-price">${SPOS.fmt.money(p.precio)}</div>
-          <div class="prop-foot"><span class="badge badge--gold">${p.match}% match</span><button class="prop-send" data-i="${i}">Enviar</button></div>
+          <div class="prop-foot"><span class="badge badge--gold">${p.estado === 'disponible' ? 'Disponible' : p.estado}</span><button class="prop-send" data-i="${i}">Enviar</button></div>
         </div>
-      </div>`).join('') + `<div class="pnl-hint" style="text-align:center;margin-top:6px">Sugerencias automáticas — se activan en la Fase IA.</div>`;
+      </div>`).join('') + (lista.length > 6 ? `<div class="pnl-hint" style="text-align:center;margin-top:6px">${lista.length} propiedades disponibles</div>` : '');
   }
   function wirePanelProps(lead) {
     document.querySelectorAll('#vndPanel .prop-send').forEach(b => b.addEventListener('click', () => {
-      const p = PROPIEDADES_MOCK[Number(b.dataset.i)]; if (!p) return;
-      insertarEnInput(`Te recomiendo esta opción: ${p.nombre} — ${p.m2} m² por ${SPOS.fmt.money(p.precio)}. ¿Te gustaría más información o agendar una visita?`);
+      const p = cachePropiedades[Number(b.dataset.i)]; if (!p) return;
+      insertarEnInput(`Te recomiendo esta opción: ${p.nombre} — ${p.m2 || 0} m² por ${SPOS.fmt.money(p.precio)}. ¿Te gustaría más información o agendar una visita?`);
       if (window.innerWidth <= 1200) cerrarPanel();
       toast('Propiedad lista para enviar', 'ok');
     }));

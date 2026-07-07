@@ -34,6 +34,7 @@
 
   const cfg = await api('/api/config') || {};
   const v = k => String(cfg[k] || '').replace(/"/g, '&quot;');
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   // Cargar templates de WhatsApp para el selector de reactivación
   let waTemplates = [];
@@ -88,35 +89,20 @@
 
     <form class="cfg-sec" id="fIA">
       <h3>🤖 IA Copiloto</h3>
-      <p>El Copiloto SP usa modelos de OpenRouter (compatible con OpenAI). Configura tu API Key y el modelo que quieras usar.</p>
-      <div class="cfg-field">
-        <label>API Key de OpenRouter</label>
-        <input id="openrouter_api_key" type="password" autocomplete="off" value="${v('openrouter_api_key')}" placeholder="sk-or-v1-...">
-        <div class="cfg-hint">Consigue tu API Key gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--gold)">openrouter.ai/keys</a></div>
-      </div>
-      <div class="cfg-field">
-        <label>Modelo</label>
-        <input id="openrouter_model" value="${v('openrouter_model') || 'google/gemini-2.0-flash-001'}" placeholder="google/gemini-2.0-flash-001">
-        <div class="cfg-hint">Modelos gratis populares: <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='google/gemini-2.0-flash-001'">Gemini 2.0 Flash</strong> ·
-        <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='deepseek/deepseek-chat'">DeepSeek V3</strong> ·
-        <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='mistralai/mistral-7b-instruct'">Mistral 7B</strong> ·
-        <strong style="color:var(--gold);cursor:pointer" onclick="document.getElementById('openrouter_model').value='meta-llama/llama-3.2-3b-instruct'">Llama 3.2 3B</strong></div>
-      </div>
-      <div class="cfg-field" style="display:none">
-        <label>Site URL (para OpenRouter)</label>
-        <input id="openrouter_site_url" value="${v('openrouter_site_url') || 'https://spcrm.duckdns.org'}">
-      </div>
-      <div class="cfg-field" style="display:none">
-        <label>App Name</label>
-        <input id="openrouter_app_name" value="${v('openrouter_app_name') || 'SP CRM'}">
-      </div>
-      <div class="cfg-field" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <p>El Copiloto SP usa modelos de IA para analizar leads, sugerir respuestas y ayudarte a vender más. Agrega uno o más proveedores abajo — para empezar, elige un preset y pega tu API Key.</p>
+      <div class="cfg-field" style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
         <label style="margin:0;cursor:pointer">
           <input type="checkbox" id="ai_enabled" ${cfg.ai_enabled !== 'false' ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--gold);margin-right:8px;vertical-align:middle">
           Copiloto activado
         </label>
       </div>
-      <div style="display:flex;gap:10px">
+      <div style="margin-bottom:14px">
+        <label style="font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;display:block">Agregar proveedor con un clic:</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="presetBtns"></div>
+      </div>
+      <div id="providerList"></div>
+      <div id="noProviders" style="display:none;padding:14px;text-align:center;color:var(--text-3);font-size:13px;border:1px dashed var(--border);border-radius:12px">Aún no hay proveedores. Haz clic en uno de los presets de arriba para empezar.</div>
+      <div style="display:flex;gap:10px;margin-top:14px">
         <button type="submit" class="cfg-save">Guardar configuración IA</button>
         <button type="button" class="cfg-save" id="btnTestIA" style="background:var(--bg-3);color:var(--text);border:1px solid var(--border)">Probar conexión</button>
       </div>
@@ -186,45 +172,102 @@
     if (r) toast('Tiempos de escalado guardados', 'ok'); else toast('Error al guardar', 'err');
   });
 
-  // ===== IA Copiloto =====
-  document.getElementById('fIA')?.addEventListener('submit', async ev => {
+  // ===== IA Copiloto — Multi-proveedor inline =====
+  const PRESETS = {
+    openrouter: { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/keys', models: ['google/gemini-2.0-flash-001', 'deepseek/deepseek-chat', 'mistralai/mistral-7b-instruct', 'meta-llama/llama-3.2-3b-instruct'] },
+    openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'] },
+    deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', keyUrl: 'https://platform.deepseek.com/api_keys', models: ['deepseek-chat', 'deepseek-reasoner'] },
+    groq: { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', keyUrl: 'https://console.groq.com/keys', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] },
+  };
+  let iaProviders = [], iaDefaultId = '';
+  const $pL = document.getElementById('providerList'), $noP = document.getElementById('noProviders'), $pB = document.getElementById('presetBtns');
+
+  function renderProviderList() {
+    if (!iaProviders.length) { $pL.innerHTML = ''; $noP.style.display = 'block'; return; }
+    $noP.style.display = 'none';
+    $pL.innerHTML = iaProviders.map((p, i) =>
+      '<div class="pm-card" style="border:1px solid var(--border-soft);border-radius:12px;padding:14px;margin-bottom:10px;background:var(--bg-2)">' +
+        '<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">' +
+          '<div style="flex:1"><label style="font-size:10.5px;color:var(--text-3);display:block;margin-bottom:3px">Nombre</label>' +
+          '<input data-idx="' + i + '" data-fld="name" value="' + esc(p.name || '') + '" style="width:100%;background:var(--bg-0);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:12.5px;outline:none"></div>' +
+          '<button data-rm="' + i + '" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:4px 8px;align-self:flex-end">Quitar</button></div>' +
+        '<div style="display:flex;gap:10px;margin-bottom:8px">' +
+          '<div style="flex:1"><label style="font-size:10.5px;color:var(--text-3);display:block;margin-bottom:3px">Base URL</label>' +
+          '<input data-idx="' + i + '" data-fld="baseUrl" value="' + esc(p.baseUrl || '') + '" style="width:100%;background:var(--bg-0);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:12.5px;outline:none"></div>' +
+          '<div style="flex:1"><label style="font-size:10.5px;color:var(--text-3);display:block;margin-bottom:3px">API Key</label>' +
+          '<input data-idx="' + i + '" data-fld="apiKey" type="password" autocomplete="off" value="" placeholder="' + (p.hasKey ? esc(p.keyMask) + ' (deja vacío para conservar)' : 'sk-...') + '" style="width:100%;background:var(--bg-0);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:12.5px;outline:none"></div></div>' +
+        '<div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">' +
+          '<div style="flex:1"><label style="font-size:10.5px;color:var(--text-3);display:block;margin-bottom:3px">Modelos (separados por coma)</label>' +
+          '<input data-idx="' + i + '" data-fld="models" value="' + esc((p.models || []).join(', ')) + '" placeholder="google/gemini-2.0-flash-001, deepseek/deepseek-chat" style="width:100%;background:var(--bg-0);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:12.5px;outline:none"></div>' +
+          '<label style="font-size:11.5px;color:var(--text-2);cursor:pointer;white-space:nowrap"><input type="radio" name="defprov" data-def="' + esc(p.id) + '" ' + (p.id === iaDefaultId ? 'checked' : '') + ' style="accent-color:var(--gold);margin-right:4px">Default</label></div>' +
+      '</div>').join('');
+    $pL.querySelectorAll('input[data-fld]').forEach(inp => inp.oninput = () => {
+      const i = +inp.dataset.idx, f = inp.dataset.fld;
+      if (f === 'models') iaProviders[i][f] = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+      else iaProviders[i][f] = inp.value;
+    });
+    $pL.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { iaProviders.splice(+b.dataset.rm, 1); renderProviderList(); });
+    $pL.querySelectorAll('[data-def]').forEach(rb => rb.onchange = () => { iaDefaultId = rb.dataset.def; });
+  }
+
+  async function loadIaConfig() {
+    const r = await api('/api/ai/providers');
+    if (r && r.providers) {
+      iaProviders = r.providers.map(p => ({ ...p, apiKey: '' }));
+      iaDefaultId = r.defaultId || (iaProviders[0] && iaProviders[0].id) || '';
+    }
+    renderProviderList();
+    $pB.innerHTML = Object.entries(PRESETS).map(([k, v]) =>
+      '<button type="button" data-preset="' + k + '" style="background:var(--bg-3);border:1px solid var(--border);border-radius:9px;color:var(--text-2);padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap">+ ' + v.name + '</button>'
+    ).join('');
+    $pB.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+      const k = b.dataset.preset, pr = PRESETS[k];
+      if (iaProviders.some(p => p.id === k)) { toast(pr.name + ' ya está agregado', 'err'); return; }
+      iaProviders.push({ id: k, name: pr.name, baseUrl: pr.baseUrl, apiKey: '', models: pr.models || [], keyMask: '', hasKey: false });
+      renderProviderList();
+      toast(pr.name + ' agregado. Pega tu API Key y guarda.', 'ok');
+    });
+  }
+
+  document.getElementById('fIA').addEventListener('submit', async ev => {
     ev.preventDefault();
     const btn = ev.target.querySelector('button[type="submit"]');
     btn.disabled = true;
-    const body = {
-      openrouter_api_key: document.getElementById('openrouter_api_key').value.trim(),
-      openrouter_model: document.getElementById('openrouter_model').value.trim() || 'google/gemini-2.0-flash-001',
-      openrouter_site_url: document.getElementById('openrouter_site_url').value.trim() || 'https://spcrm.duckdns.org',
-      openrouter_app_name: document.getElementById('openrouter_app_name').value.trim() || 'SP CRM',
-      ai_enabled: document.getElementById('ai_enabled').checked ? 'true' : 'false',
-    };
-    const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const payload = iaProviders.map(p => ({ id: p.id, name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, models: p.models }));
+    await api('/api/ai/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providers: payload, defaultId: iaDefaultId }) });
+    const enabled = document.getElementById('ai_enabled').checked;
+    if (enabled) await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ai_enabled: 'true' }) });
+    else await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ai_enabled: 'false' }) });
     btn.disabled = false;
-    if (r) toast('Configuración de IA guardada', 'ok'); else toast('Error al guardar', 'err');
+    toast('Configuración de IA guardada', 'ok');
+    await loadIaConfig();
   });
 
-  document.getElementById('btnTestIA')?.addEventListener('click', async () => {
+  document.getElementById('btnTestIA').addEventListener('click', async () => {
     const btn = document.getElementById('btnTestIA');
     const res = document.getElementById('iaTestResult');
+    const def = iaProviders.find(p => p.id === iaDefaultId) || iaProviders[0];
     res.style.display = 'block';
-    res.innerHTML = 'Probando conexión...';
+    res.innerHTML = 'Probando conexión con ' + (def ? def.name : 'proveedor por defecto') + '...';
     res.style.color = 'var(--text-3)';
     btn.disabled = true;
     try {
       const r = await api('/api/nlp/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: 'Hola, me interesan los lotes en Tocaima. ¿Cuánto cuestan?' }) });
       if (r && r.ok) {
-        res.innerHTML = `✅ Conexión exitosa! Modelo: <strong>${r.model || '?'}</strong> · Sentimiento: ${r.sentiment?.label || '?'} · Intención: ${r.intent?.intent || '?'}`;
+        res.innerHTML = '✅ Conexión exitosa! Modelo: <strong>' + esc(r.model || '?') + '</strong> · ' + esc(r.sentiment?.label || '?') + ' · ' + esc(r.intent?.intent || '?');
         res.style.color = '#4E7B46';
       } else {
-        res.innerHTML = `❌ Error: ${r?.error || 'Respuesta inválida'}`;
+        res.innerHTML = '❌ ' + esc(r?.error || 'Respuesta inválida. ¿API Key correcta?');
         res.style.color = '#e74c3c';
       }
     } catch (e) {
-      res.innerHTML = `❌ Error de conexión: ${e.message}`;
+      res.innerHTML = '❌ Error de conexión: ' + esc(e.message);
       res.style.color = '#e74c3c';
     }
     btn.disabled = false;
   });
+
+  await loadIaConfig();
 })();
 </script>
 </body>

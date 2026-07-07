@@ -92,7 +92,10 @@ function saveProviders(list, defaultId) {
   // Mantener sincronizada la config antigua con el proveedor por defecto
   // para que las funciones internas del Copiloto (analizar lead, etc.) sigan funcionando.
   const def = clean.find(p => p.id === (defaultId || getDefaultProviderId())) || clean[0];
-  if (def) store.setConfig('openrouter_api_key', def.apiKey || '');
+  if (def) {
+    store.setConfig('openrouter_api_key', def.apiKey || '');
+    if (def.models && def.models.length) store.setConfig('openrouter_model', def.models[0]);
+  }
 }
 
 function isAIEnabled() {
