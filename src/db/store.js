@@ -836,6 +836,11 @@ function setLeadEtiqueta(leadId, etiqueta) {
   run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, pct, leadId]);
 }
 
+function updateLeadProgress(leadId, pct) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  run('UPDATE leads SET progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [clamped, leadId]);
+}
+
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
   return all('SELECT * FROM lead_notes WHERE lead_id = ? ORDER BY created_at DESC, id DESC', [leadId]);
@@ -1370,7 +1375,7 @@ module.exports = {
   createDBSession, getDBSession, deleteDBSession, refreshSession, cleanExpiredSessions,
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate,
-  setLeadEtiqueta, getNotasByLead, addNota, deleteNota, reassignLead,
+  setLeadEtiqueta, updateLeadProgress, getNotasByLead, addNota, deleteNota, reassignLead,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   // Nuevo schema multicanal

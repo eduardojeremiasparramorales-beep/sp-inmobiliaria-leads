@@ -111,6 +111,7 @@ function handleMessage(req, res) {
         for (const st of statuses) {
           if (!st || !st.id || !st.status) continue;
           console.log(`[Webhook] Status update: ${st.id} → ${st.status}`);
+          const wasRead = st.status === 'read';
           store.updateMessageStatus(st.id, st.status);
           // Notificar al panel para actualizar el checkmark en vivo
           const m = store.getMessageByWamid(st.id);
@@ -119,6 +120,9 @@ function handleMessage(req, res) {
             if (lead) {
               events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: m.id, status: st.status, ts: Date.now() });
               events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, ts: Date.now() });
+              if (wasRead && m.direction === 'outgoing') {
+                try { require('../services/progress').evaluateRead(lead.id).catch(()=>{}); } catch(e){}
+              }
             }
           }
         }

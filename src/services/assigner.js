@@ -100,6 +100,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     updateCustomerMessageTimestamp(lead.id);
     syncMulticanal(lead.id, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: v.telefono });
     notificarPanel(v.id, lead.id, 'mensaje_cliente');
+    try { require('./progress').evaluateFromMessage(lead.id, messageBody, {}).catch(()=>{}); } catch(e){};
 
     const { sendMessage } = require('./whatsapp');
     const prefix = lead.messages_count <= 1
@@ -134,6 +135,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     updateCustomerMessageTimestamp(r.leadId);
     syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
+    try { require('./progress').evaluateFromMessage(r.leadId, messageBody, {}).catch(()=>{}); } catch(e){};
     sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nCliente: ${customerName || 'Cliente'}\nTel: ${fromPhone}\n\n${messageBody}`)
       .then(() => callback(null, { forwarded: true, to: vendedorAsignado.telefono }))
       .catch(callback);
@@ -174,6 +176,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
   updateCustomerMessageTimestamp(lead.id);
   syncMulticanal(lead.id, { direction: 'incoming', body, media: mediaData, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '' });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
+  try { require('./progress').evaluateFromMessage(lead.id, body, { hasMedia: true }).catch(()=>{}); } catch(e){};
 
   if (vendedor) {
     sendMessage(vendedor.telefono, `📎 ${customerName || 'Cliente'} te envió ${label}. Ábrelo en tu panel.`)
@@ -216,6 +219,7 @@ function routeIncomingLocation(fromPhone, customerName, locationData, wamid, cal
     media: { media_type: 'location' },
   });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
+  try { require('./progress').evaluateFromMessage(lead.id, displayBody, { sentLocation: true }).catch(()=>{}); } catch(e){};
 
   if (vendedor) {
     const locName = locationData.name ? ` (${locationData.name})` : '';
