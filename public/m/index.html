@@ -1620,7 +1620,7 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
       <div class="lp-cell"><span>Proyecto</span><strong>${l.proyecto || '—'}</strong></div>
       <div class="lp-cell"><span>Origen</span><strong>${l.origen || '—'}</strong></div>
       <div class="lp-cell"><span>Asesor</span><strong>${esc(l.assigned_to_nombre||me.nombre||'—')}</strong></div>
-      <div class="lp-cell"><span>Mensajes</span><strong>${l.messages_count||0}</strong></div>
+      <div class="lp-cell"><span>Mensajes</span><strong>${(currentMsgs||[]).filter(m=>m.direction==='incoming').length}</strong></div>
       <div class="lp-cell"><span>Creado</span><strong>${horaCorta(l.created_at)}</strong></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:14px">
@@ -1632,7 +1632,7 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--red)" data-lp="clear">${I(SVG.trash,16)} Vaciar</button>
     </div>`);
   $('#sheetBody').querySelectorAll('[data-lp]').forEach(b=>b.onclick=()=>{ const k=b.dataset.lp; const p=(l.customer_phone||'').replace(/[^\d+]/g,''); haptic(10);
-    if(k==='call'&&p) location.href='tel:'+p; else if(k==='cal') toast('Agendar — próximamente'); else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion(); });
+    if(k==='call'&&p) location.href='tel:'+p; else if(k==='cal'){ closeSheet(); abrirModalCita(null, current); } else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion(); });
 }
 
 function abrirTimeline(){ const l=current;
@@ -1782,7 +1782,7 @@ function abrirEditarPerfil(){
 }
 
 /* ════════ Bottom Nav / tabs ════════ */
-const TABS=[['chats','Chats',SVG.chat],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
+const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
 function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
   $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
 async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
@@ -1932,6 +1932,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       // Estadísticas semanales
       cargarStats();
     }, 50);
+  } else if (t === 'propiedades') {
+    box.innerHTML=`<div style="padding:40px 18px;text-align:center;width:100%;max-width:400px;margin:0 auto"><div style="font-size:48px;color:var(--text-3);margin-bottom:16px">${I(SVG.building,48)}</div><div style="font-size:18px;font-weight:600;color:var(--text-2);margin-bottom:6px">Propiedades</div><p style="font-size:13px;color:var(--text-3)">Próximamente podrás gestionar propiedades desde aquí.</p></div>`;
   } else if (t === 'calendario') {
     box.innerHTML = `<div style="padding:14px 14px 0;width:100%;max-width:400px;margin:0 auto">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -1987,16 +1989,16 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
     // Fetch AI briefing async
     fetch('/api/nlp/daily-briefing', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include' })
       .then(r=>r.json()).then(d=>{
+        const badge = document.getElementById('copBadge');
         if(d.ok && d.briefing) {
           const b = d.briefing;
-          const badge = document.getElementById('copBadge');
           if(badge) { badge.textContent = 'IA activa'; badge.style.background = 'var(--gold-soft)'; badge.style.color = 'var(--gold)'; }
           const accion = document.getElementById('copAccion');
           if(accion) accion.textContent = b.priorityAction || accion.textContent;
           const frase = document.getElementById('copFrase');
           if(frase) frase.textContent = `"${b.fraseDelDia || frase.textContent.replace(/"/g,'')}"`;
-        }
-      }).catch(()=>{});
+        } else if(badge) { badge.textContent = 'Sin conexión IA'; badge.style.background = 'var(--bg-3)'; badge.style.color = 'var(--text-3)'; }
+      }).catch(()=>{ const badge=document.getElementById('copBadge'); if(badge) { badge.textContent='Sin conexión IA'; badge.style.background='var(--bg-3)'; badge.style.color='var(--text-3)'; } });
     // Keep hot leads section as-is (already real data)
   }
   $('#scHome').insertBefore(box, $('#fab'));
@@ -2173,12 +2175,13 @@ function renderCalendario(){
     toast('Cita cancelada'); cargarCalendario();
   });
 }
-function abrirModalCita(fechaPref){
+function abrirModalCita(fechaPref, lead){
   const d=fechaPref?new Date(fechaPref+'T'+(new Date().toTimeString().slice(0,5))):new Date();
   d.setHours(d.getHours()+1,0,0,0);
   const iso=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const tituloPref = lead ? 'Cita: '+(lead.customer_name||'Cliente') : '';
   openSheet('Nueva cita',`<div style="display:flex;flex-direction:column;gap:10px">
-    <input id="calTitulo" placeholder="Título de la cita" value="" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
+    <input id="calTitulo" placeholder="Título de la cita" value="${tituloPref}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
     <input id="calFecha" type="datetime-local" value="${iso}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
     <input id="calNotas" placeholder="Notas (opcional)" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
     <button class="cop-use" id="calGuardar" style="margin-top:4px">Agendar</button>
@@ -2189,7 +2192,7 @@ function abrirModalCita(fechaPref){
     const fecha=document.getElementById('calFecha').value;
     const notas=document.getElementById('calNotas').value.trim();
     if(!titulo||!fecha){ toast('Completa título y fecha','err'); return; }
-    const r=await api('/api/citas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,fecha:fecha.replace('T',' ')+':00',notas})});
+    const r=await api('/api/citas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,fecha:fecha.replace('T',' ')+':00',notas,leadId:lead?.id||null})});
     if(r&&r.ok){ toast('Cita agendada'); closeSheet(); cargarCalendario(); }
     else toast('Error al agendar','err');
   };
@@ -2217,7 +2220,7 @@ async function cargarTareas(){
 
 /* ════════ Tiempo real ════════ */
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); if(dot) dot.style.display=''; const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
+  es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); if(dot) dot.style.display=totalUnread>0?'':'none'; try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
   es.addEventListener('lead_actualizado',async ev=>{ const d=await api('/api/mis-leads'); if(d) leads=d; if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } });
   // Checkmark en vivo cuando el cliente recibe/lee (sin re-render del chat)
   es.addEventListener('status_update',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m) m.status=x.status; const wrap=document.getElementById('msg_'+x.messageId); if(wrap){ const t=wrap.querySelector('.bub__t'); if(t){ const old=t.querySelector('.chk'); if(old){ const tmp=document.createElement('span'); tmp.innerHTML=chkHTML(x.status,null); old.replaceWith(tmp.firstChild); } } } }catch(e){} });
