@@ -3,7 +3,8 @@
    - NUNCA cachea /api/* (datos siempre frescos desde la red).
    - Maneja notificaciones push (Fase 4).
 */
-const CACHE = 'sp-os-v3';
+// El servidor reemplaza __SW_VERSION__ en cada reinicio → invalida caché en cada deploy
+const CACHE = '__SW_VERSION__';
 const SHELL = [
   '/login.html',
   '/index.html',
@@ -40,8 +41,10 @@ self.addEventListener('fetch', (event) => {
   // API y streams: siempre red, nunca caché
   if (url.pathname.startsWith('/api/')) return;
 
-  // Navegación / HTML: red primero, caché de respaldo
-  if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
+  // Navegación / HTML / JS / CSS: red primero, caché de respaldo
+  // (JS/CSS red-primero evita que el shell viejo quede pegado tras un deploy)
+  if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')
+      || url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
     event.respondWith(
       fetch(req).then((res) => {
         const copy = res.clone();
