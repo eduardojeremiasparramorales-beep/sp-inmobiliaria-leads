@@ -73,7 +73,16 @@ try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
+        // Reporte de crashes nativo (Firebase Crashlytics) — solo se activa junto
+        // con google-services.json. Sin esto, un crash nativo (como el de FCM sin
+        // Firebase, ver commit d1bced1) no deja rastro visible para el equipo.
+        apply plugin: 'com.google.firebase.crashlytics'
+        dependencies {
+            implementation platform('com.google.firebase:firebase-bom:33.7.0')
+            implementation 'com.google.firebase:firebase-crashlytics'
+            implementation 'com.google.firebase:firebase-analytics'
+        }
     }
 } catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+    logger.info("google-services.json not found, google-services/crashlytics plugin not applied. Push notifications y reporte de crashes no funcionarán")
 }
