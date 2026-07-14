@@ -9,6 +9,8 @@ data/media/
 *.ps1
 *.sh
 *.exe
+*.apk
+*.aab
 *.png
 *.jpg
 *.jpeg

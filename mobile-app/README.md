@@ -74,17 +74,46 @@ cp android/app/key.properties.example android/app/key.properties
 Edita `android/app/key.properties` con las contraseñas reales. Este archivo (y el
 `.keystore`) están en `.gitignore` — nunca deben subirse a git ni compartirse.
 
-### 5. Actualizar assetlinks.json con tu huella real
+### 5. Instalar directamente en los teléfonos — SIN Play Store (recomendado para empezar)
+
+Esto es un APK normal que se instala como cualquier app: **ícono propio, sin barra de
+direcciones, sin navegador visible, cero rastro de que es una web por dentro**. La
+diferencia con Play Store es solo *cómo llega al teléfono* — aquí lo repartes tú
+directamente, sin cuenta de $25, sin revisión de Google, sin política de privacidad
+pública obligatoria. Ideal para una app interna de equipo (3 vendedores).
+
+Genera el APK firmado (usa el mismo `key.properties` del paso 4):
+```bash
+cd android
+./gradlew assembleRelease
+```
+El archivo queda en `android/app/build/outputs/apk/release/app-release.apk`.
+
+Para repartirlo, elige lo que te resulte más simple:
+- **Más fácil:** súbelo a `public/` en el servidor (ej. `public/sp-vendedores.apk`) y
+  comparte el link `https://spcrm.duckdns.org/sp-vendedores.apk` por WhatsApp — cada
+  vendedor lo abre desde el celular y Android ofrece instalarlo.
+- O súbelo a Google Drive / Telegram / lo que uses para mandar archivos al equipo.
+
+En el teléfono, al abrir el `.apk` por primera vez Android pedirá activar **"Instalar
+apps desconocidas"** para esa fuente (Chrome, Drive, WhatsApp, la que sea) — es el
+único paso extra comparado con Play Store, se activa una sola vez.
+
+**Actualizaciones:** cuando cambies algo *nativo* (no el contenido web, eso se
+actualiza solo), subes el `versionCode` en `build.gradle`, generas un `.apk` nuevo y
+lo vuelves a compartir — cada vendedor lo reinstala encima (misma firma = conserva
+datos y sesión).
+
+### 5b. (Opcional, solo si luego publicas en Play Store) Actualizar assetlinks.json
 El archivo `public/.well-known/assetlinks.json` (en el proyecto del servidor) tiene
 una huella de un intento anterior — hay que reemplazarla por la real de TU keystore:
 ```bash
 keytool -list -v -keystore android/app/release.keystore -alias spcrm
 ```
 Copia el valor `SHA256` que imprime (formato `AA:BB:CC:...`) y reemplaza
-`sha256_cert_fingerprints` en `public/.well-known/assetlinks.json`. Sin esto, Android
-no confía en que tu app y el dominio son la misma entidad — la app funciona igual,
-pero pierdes la posibilidad de "Digital Asset Links" (abrir enlaces del dominio
-directamente en la app).
+`sha256_cert_fingerprints` en `public/.well-known/assetlinks.json`. Esto **no afecta
+la instalación directa del paso 5** — solo importa si algún día publicas en Play
+Store y quieres que los links del dominio abran la app (Digital Asset Links).
 
 ### 6. Configurar Firebase para las notificaciones push nativas
 1. Crea un proyecto en https://console.firebase.google.com (gratis).
@@ -100,18 +129,19 @@ directamente en la app).
 6. Reinicia el servidor. Sin este paso, la app funciona igual pero no llegan push
    nativos (el vendedor solo ve mensajes al abrir la app).
 
-### 7. Generar el .aab para Play Store
-Con Android Studio: **Build → Generate Signed Bundle / APK → Android App Bundle**,
-selecciona tu keystore y sigue el asistente.
+### 7. (Opcional) Publicar en Play Store más adelante
+Si más adelante quieres distribución más amplia (fuera del equipo) o actualizaciones
+automáticas sin reenviar el archivo a mano, Play Store usa un `.aab` en vez de `.apk`:
 
-O por terminal:
+Con Android Studio: **Build → Generate Signed Bundle / APK → Android App Bundle**,
+selecciona tu keystore y sigue el asistente. O por terminal:
 ```bash
 cd android
 ./gradlew bundleRelease
 ```
 El archivo queda en `android/app/build/outputs/bundle/release/app-release.aab`.
 
-### 8. Cuenta de Google Play Console
+### 8. (Opcional) Cuenta de Google Play Console
 - Regístrate en https://play.google.com/console (pago único de $25 USD).
 - Crea la app, completa la ficha (nombre, descripción, categoría "Negocios").
 - Sube capturas de pantalla del panel `/m/` (mínimo 2, formato teléfono).
@@ -125,8 +155,8 @@ El archivo queda en `android/app/build/outputs/bundle/release/app-release.aab`.
 - **Cambios de código web** (cualquier página, incluida `/m/`): no requieren nada
   aquí, se ven solos en el próximo deploy del servidor.
 - **Cambios nativos** (nuevo permiso, nuevo plugin, cambio de icono): subir
-  `versionCode` en `android/app/build.gradle`, repetir el paso 7, subir el nuevo
-  `.aab` a Play Console.
+  `versionCode` en `android/app/build.gradle` y volver a generar el instalable —
+  `.apk` (paso 5, distribución directa) o `.aab` (paso 7, si usas Play Store).
 
 ## Variables de entorno relevantes (servidor)
 
