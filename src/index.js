@@ -6,7 +6,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const store = require('./db/store');
-const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
+const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, getVendedoresActivos, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
 const { sendMessage, sendMessageSmart, uploadMedia, sendMedia, sendLocation } = require('./services/whatsapp');
@@ -690,6 +690,14 @@ app.get('/api/inbox/conversations', auth.requireAuth, (req, res) => {
   res.json(store.getConversationsByVendedorId(req.session.vendedorId));
 });
 
+// Devuelve true si la sesión puede operar sobre esta conversación (admin o vendedor asignado).
+// Si no puede, ya envía el 403 y el caller debe hacer `return`.
+function assertConvAccess(req, res, conv) {
+  if (req.session.rol === 'admin' || Number(conv.assigned_to_id) === Number(req.session.vendedorId)) return true;
+  res.status(403).json({ error: 'sin_permiso' });
+  return false;
+}
+
 app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) => {
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
@@ -727,9 +735,10 @@ app.post('/api/inbox/conversations/:id/send', auth.requireAuth, async (req, res)
   }
 });
 
-app.get('/api/inbox/conversations/:id/leido', auth.requireAuth, async (req, res) => {
+app.post('/api/inbox/conversations/:id/leido', auth.requireAuth, async (req, res) => {
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (!assertConvAccess(req, res, conv)) return;
   const adapter = require('./db/adapter'); adapter.run('UPDATE conversations SET unread_count = 0 WHERE id = ?', [conv.id]);
   res.json({ ok: true });
 });
@@ -754,6 +763,7 @@ app.post('/api/inbox/conversations/:id/etiqueta', auth.requireAuth, (req, res) =
   const { etiqueta } = req.body || {};
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (!assertConvAccess(req, res, conv)) return;
   if (etiqueta) {
     store.updateConversationTag(conv.id, etiqueta);
     if (conv.lead_id) { try { store.setLeadEtiqueta(conv.lead_id, etiqueta); } catch (e) { } }
@@ -766,6 +776,7 @@ app.post('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
   if (!nota || !nota.trim()) return res.status(400).json({ error: 'nota_vacia' });
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (!assertConvAccess(req, res, conv)) return;
   store.addTimelineEvent(conv.id, 'note', {
     body: nota.trim(),
     direction: 'system',
@@ -777,6 +788,7 @@ app.post('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
 app.get('/api/inbox/conversations/:id/notas', auth.requireAuth, (req, res) => {
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
+  if (!assertConvAccess(req, res, conv)) return;
   const notas = store.getTimelineByConversation(conv.id)
     .filter(m => m.event_type === 'note')
     .map(m => ({ id: m.id, nota: m.body, created_at: m.created_at }));
@@ -840,7 +852,8 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
       if (!chAdapter || typeof chAdapter.sendMedia !== 'function') {
         return res.status(400).json({ error: 'canal_no_soporta_media' });
       }
-      const publicUrl = `${req.protocol}://${req.get('host')}/api/public/media/${storedFilename}`;
+      const mediaToken = mediaStore.signMediaToken(storedFilename);
+      const publicUrl = `${req.protocol}://${req.get('host')}/api/public/media/${storedFilename}?token=${mediaToken}`;
       const result = await chAdapter.sendMedia(to, publicUrl, tipo, caption || '');
       mediaId = (result && result.message_id) || publicUrl;
     }
@@ -882,11 +895,16 @@ app.get('/api/inbox/media/:timelineId', auth.requireAuth, async (req, res) => {
   await sendMediaFile(res, filePath, ev.media_mime, ev.media_type);
 });
 
-// Ruta pública para servir media a canales externos (Messenger, Instagram)
+// Ruta pública para servir media a canales externos (Messenger, Instagram).
+// Meta debe poder descargarla sin sesión, así que la protección es un token firmado
+// (HMAC + expiración) atado al filename exacto, generado solo al construir la URL de envío.
 app.get('/api/public/media/:filename', async (req, res) => {
   const filename = req.params.filename;
   if (!filename || filename.includes('..') || filename.includes('/')) {
     return res.status(400).json({ error: 'filename_invalido' });
+  }
+  if (!mediaStore.verifyMediaToken(filename, req.query.token)) {
+    return res.status(403).json({ error: 'token_invalido_o_expirado' });
   }
   const filePath = mediaStore.getMediaPath(filename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
@@ -1440,6 +1458,14 @@ app.post('/api/leads/:id/etiqueta', auth.requireAuth, (req, res) => {
   }
   store.setLeadEtiqueta(lead.id, etiqueta);
   events.emitToAdmins('lead_actualizado', { leadId: lead.id, etiqueta, ts: Date.now() });
+  // Dispara automatizaciones con trigger 'lead:tag_changed' (p. ej. mover a "cita" → notificar admin)
+  try {
+    const conversation = store.getOrCreateConversationForLead(lead.id);
+    if (conversation) {
+      require('./services/workflow').evaluate('lead:tag_changed', { conversation, customer: conversation.customer_id ? store.getCustomerById(conversation.customer_id) : null })
+        .catch(e => console.error('WorkflowEngine.evaluate error:', e.message));
+    }
+  } catch (e) { /* workflow engine opcional */ }
   res.json({ ok: true });
 });
 
@@ -1628,7 +1654,7 @@ app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
 // ===================== LEAD PROACTIVO (iniciar chat sin que el cliente escriba) =====================
 
 app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
-  const { phone, name, message, templateName } = req.body || {};
+  const { phone, name, message, templateName, templateId, templateVars } = req.body || {};
   if (!phone || !String(phone).trim()) return res.status(400).json({ error: 'telefono_requerido' });
   if (!message || !String(message).trim()) return res.status(400).json({ error: 'mensaje_requerido' });
 
@@ -1646,14 +1672,38 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
       store.assignLeadToVendedor(lead.id, activos[0]);
     }
 
-    // 3. Enviar template si se especificó, luego el mensaje
-    const { sendTemplate: sendT, sendMessageSmart } = require('./services/whatsapp');
-    const tpl = templateName || store.getConfig('reengagement_template');
-    if (tpl) {
-      await sendT(cleanPhone, tpl);
-      await new Promise(r => setTimeout(r, 3000));
+    // 3. Un número que nunca escribió antes tiene la ventana de 24h cerrada por
+    // definición: Meta exige que el PRIMER contacto sea con una plantilla aprobada.
+    // Se resuelve una sola plantilla (templateId > templateName > la de reactivación
+    // configurada) y se envía UNA sola vez — antes se enviaba aquí y otra vez dentro
+    // de sendMessageSmart si fallaba el free-form, llegándole dos plantillas distintas
+    // al mismo cliente.
+    const { sendMessageSmart } = require('./services/whatsapp');
+    let tplSent = false;
+    if (templateId) {
+      const tpl = store.getWATemplateById(templateId);
+      if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
+      const vendedor = activos.length > 0 ? activos[0] : null;
+      const { sendResolvedTemplate } = require('./services/wa-templates');
+      await sendResolvedTemplate(cleanPhone, tpl, lead, vendedor, templateVars || {});
+      tplSent = true;
+    } else {
+      const tplName = templateName || store.getConfig('reengagement_template');
+      if (tplName) {
+        const { sendTemplate: sendT } = require('./services/whatsapp');
+        await sendT(cleanPhone, tplName);
+        tplSent = true;
+      }
     }
-    await sendMessageSmart(cleanPhone, String(message).trim(), lead.id);
+
+    if (tplSent) {
+      // La plantilla no abre la ventana de inmediato (solo lo hace la respuesta del
+      // cliente) — el mensaje real se encola y se envía cuando el webhook detecte esa
+      // respuesta (mismo mecanismo que sendMessageSmart usa para leads existentes).
+      store.queuePendingOutbound(lead.id, cleanPhone, String(message).trim());
+    } else {
+      await sendMessageSmart(cleanPhone, String(message).trim(), lead.id);
+    }
 
     // 4. Guardar mensaje outgoing
     store.saveMessage(lead.id, 'sistema', cleanPhone, String(message).trim(), 'outgoing');
@@ -1667,7 +1717,7 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
     }
     events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'lead_proactivo', ts: Date.now() });
 
-    res.json({ ok: true, leadId: lead.id });
+    res.json({ ok: true, leadId: lead.id, queued: tplSent });
   } catch (e) {
     console.error('Error creando lead proactivo:', e.message);
     res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
@@ -1698,7 +1748,7 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
 // ===================== NOTIFICACIONES PUSH =====================
 
 app.get('/api/push/clave', auth.requireAuth, (req, res) => {
-  res.json({ publicKey: push.getPublicKey(), enabled: push.isEnabled() });
+  res.json({ publicKey: push.getPublicKey(), enabled: push.isEnabled(), fcmEnabled: push.isFcmEnabled() });
 });
 
 app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
@@ -1707,6 +1757,16 @@ app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
   const vendedorId = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
   if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
   store.savePushSubscription(vendedorId, sub);
+  res.json({ ok: true });
+});
+
+// Registro de token FCM desde la app nativa (Capacitor) — canal separado de Web Push.
+app.post('/api/push/suscribir-fcm', auth.requireAuth, (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'token requerido' });
+  const vendedorId = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
+  if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
+  store.saveFcmToken(vendedorId, token);
   res.json({ ok: true });
 });
 
@@ -1720,6 +1780,7 @@ const CONFIG_KEYS = [
   'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
   'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
   'escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas',
+  'campaign_mps', 'campaign_daily_limit',
 ];
 
 app.get('/api/config', auth.requireAdmin, (req, res) => {
@@ -1740,6 +1801,18 @@ app.post('/api/config', auth.requireAdmin, (req, res) => {
 
 app.get('/api/wa-templates', auth.requireAuth, (req, res) => res.json(store.getWATemplates()));
 
+// Detalle de una plantilla con variables/componentes ya parseados, para construir el
+// formulario de variables en el panel (evita repetir JSON.parse en cada cliente).
+app.get('/api/wa-templates/:id', auth.requireAuth, (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  let variables = [], componentes = [], mapping = {};
+  try { variables = JSON.parse(t.variables || '[]'); } catch (e) {}
+  try { componentes = JSON.parse(t.componentes || '[]'); } catch (e) {}
+  try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+  res.json({ ...t, variables, componentes, mapping });
+});
+
 app.post('/api/wa-templates', auth.requireAdmin, (req, res) => {
   const { nombre, idioma, params } = req.body || {};
   if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
@@ -1752,22 +1825,166 @@ app.delete('/api/wa-templates/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Enviar template aprobado de Meta a un lead
+// Sincroniza el catálogo real de plantillas aprobadas desde Meta (Graph API), en vez de
+// depender de que el admin escriba nombres/idiomas a mano y se equivoque.
+app.post('/api/wa-templates/sync', auth.requireAdmin, async (req, res) => {
+  try {
+    const { syncTemplatesFromMeta } = require('./services/wa-templates');
+    const result = await syncTemplatesFromMeta();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('Error sincronizando plantillas de Meta:', e.message);
+    res.status(502).json({ error: 'error_sync', detalle: e.message });
+  }
+});
+
+// Guarda qué variable del CRM (ver /api/template-vars) llena cada placeholder de la plantilla.
+app.put('/api/wa-templates/:id/mapping', auth.requireAdmin, (req, res) => {
+  const { mapping } = req.body || {};
+  if (!mapping || typeof mapping !== 'object') return res.status(400).json({ error: 'mapping_invalido' });
+  store.setWATemplateMapping(req.params.id, JSON.stringify(mapping));
+  res.json({ ok: true });
+});
+
+// Catálogo de variables disponibles para mapear/editar en plantillas (1-a-1 y campañas).
+app.get('/api/template-vars', auth.requireAuth, (req, res) => {
+  res.json(require('./services/template-vars').CATALOG);
+});
+
+// Enviar template aprobado de Meta a un lead. Soporta dos formas:
+// - templateId: usa el motor de variables (mapeo + valores del lead + overrides editados a mano).
+// - nombre + params (legacy): array de strings posicionales, retrocompatible.
 app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) => {
-  const { nombre, idioma, params } = req.body || {};
-  if (!nombre) return res.status(400).json({ error: 'nombre de template requerido' });
+  const { nombre, templateId, params, overrides } = req.body || {};
+  if (!nombre && !templateId) return res.status(400).json({ error: 'nombre o templateId requerido' });
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   try {
-    const { sendTemplate } = require('./services/whatsapp');
-    await sendTemplate(lead.customer_phone, nombre, params || null);
-    store.saveMessage(lead.id, 'sistema', lead.customer_phone, `[Template: ${nombre}]`, 'outgoing');
+    let tplNombre = nombre;
+    if (templateId) {
+      const tpl = store.getWATemplateById(templateId);
+      if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
+      const vendedor = lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+      const { sendResolvedTemplate } = require('./services/wa-templates');
+      await sendResolvedTemplate(lead.customer_phone, tpl, lead, vendedor, overrides || {});
+      tplNombre = tpl.nombre;
+    } else {
+      const { sendTemplate } = require('./services/whatsapp');
+      await sendTemplate(lead.customer_phone, nombre, params || null);
+    }
+    store.saveMessage(lead.id, 'sistema', lead.customer_phone, `[Template: ${tplNombre}]`, 'outgoing');
     res.json({ ok: true });
   } catch (e) {
     res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// ===================== CAMPAÑAS MASIVAS (broadcast) =====================
+
+app.get('/api/campaigns', auth.requireAdmin, (req, res) => {
+  res.json(store.getCampaigns());
+});
+
+// Valores reales (proyecto/ciudad) para poblar los filtros del segmento.
+app.get('/api/campaigns/segment-options', auth.requireAdmin, (req, res) => {
+  res.json(store.getSegmentOptions());
+});
+
+// Conteo en vivo de cuántos leads caen en un segmento, sin crear nada — para que el
+// admin vea el tamaño de la audiencia mientras ajusta los filtros.
+app.get('/api/campaigns/segment-preview', auth.requireAdmin, (req, res) => {
+  const { etiqueta, proyecto, ciudad, vendedorId } = req.query;
+  const count = store.countSegment({ etiqueta, proyecto, ciudad, vendedorId });
+  res.json({ count });
+});
+
+app.get('/api/campaigns/:id', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  res.json(c);
+});
+
+app.get('/api/campaigns/:id/recipients', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  res.json(store.getCampaignRecipients(req.params.id, req.query.estado || null));
+});
+
+// Crea la campaña en borrador y materializa sus destinatarios a partir del segmento —
+// una vez creados quedan fijos (si el segmento cambia después, no afecta esta campaña).
+app.post('/api/campaigns', auth.requireAdmin, (req, res) => {
+  const { nombre, templateId, segmento, overrides } = req.body || {};
+  if (!nombre || !templateId) return res.status(400).json({ error: 'nombre_y_templateId_requeridos' });
+  const tpl = store.getWATemplateById(templateId);
+  if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
+  try {
+    const campaign = store.createCampaign({ nombre, templateId, segmento, overrides, creadoPor: req.session.userId });
+    const leads = store.segmentLeads(segmento || {});
+    store.addCampaignRecipients(campaign.id, leads.map(l => ({ leadId: l.id, phone: l.customer_phone, variables: {} })));
+    res.json({ ok: true, campaign: store.getCampaignById(campaign.id) });
+  } catch (e) {
+    res.status(500).json({ error: 'error_creando_campana', detalle: e.message });
+  }
+});
+
+// Muestra cómo se vería el mensaje para hasta 3 destinatarios reales del segmento,
+// sin enviar nada — para revisar antes de comprometerse a un envío masivo.
+app.get('/api/campaigns/:id/preview', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  const tpl = store.getWATemplateById(c.template_id);
+  if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
+  const { resolveTemplateValues } = require('./services/wa-templates');
+  let overrides = {}; try { overrides = JSON.parse(c.overrides || '{}'); } catch (e) {}
+  const sample = store.getCampaignRecipients(c.id).slice(0, 3).map(rec => {
+    const lead = rec.lead_id ? store.getLeadById(rec.lead_id) : null;
+    const vendedor = lead && lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+    return { phone: rec.phone, nombre: lead ? lead.customer_name : '', valores: resolveTemplateValues(tpl, lead, vendedor, overrides) };
+  });
+  res.json({ template: tpl.nombre, sample });
+});
+
+app.post('/api/campaigns/:id/start', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  if (!['draft', 'paused'].includes(c.estado)) return res.status(400).json({ error: 'estado_invalido', detalle: `La campaña está en estado "${c.estado}"` });
+  const { runCampaign } = require('./services/campaign-runner');
+  runCampaign(c.id).catch(e => console.error(`[Campaign ${c.id}] error:`, e.message));
+  res.json({ ok: true, estado: 'running' });
+});
+
+app.post('/api/campaigns/:id/pause', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  // El runner relee el estado antes de cada envío y se detiene solo — no hace falta
+  // matar ningún proceso ni interval, solo cambiar el estado que él mismo vigila.
+  store.updateCampaignEstado(c.id, 'paused');
+  res.json({ ok: true });
+});
+
+app.delete('/api/campaigns/:id', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  if (c.estado === 'running') return res.status(400).json({ error: 'no_se_puede_borrar_en_ejecucion' });
+  store.deleteCampaign(c.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/optouts', auth.requireAdmin, (req, res) => {
+  res.json(store.getOptouts());
+});
+
+// Calidad y tier del número — el admin lo revisa antes de lanzar campañas grandes.
+app.get('/api/campaigns/meta/quality', auth.requireAdmin, async (req, res) => {
+  try {
+    const { getPhoneQuality } = require('./services/whatsapp');
+    const data = await getPhoneQuality();
+    res.json({ ok: true, ...data, dailyLimitConfigurado: require('./services/campaign-runner').getDailyLimit() });
+  } catch (e) {
+    res.status(502).json({ error: 'error_meta', detalle: e.message });
   }
 });
 
@@ -2152,13 +2369,12 @@ app.get('/api/admin/export/leads', auth.requireAdmin, (req, res) => {
 });
 
 // Escalation check — sistema inteligente
-const ESC_ALERTA_MIN = Number(process.env.ESC_ALERTA_MIN || store.getConfig('escalation_alerta_min') || 15);
-const ESC_REASIGNAR_MIN = Number(process.env.ESC_REASIGNAR_MIN || store.getConfig('escalation_reasignar_min') || 30);
-const ESC_ADMIN_MIN = Number(process.env.ESC_ADMIN_MIN || store.getConfig('escalation_admin_min') || 60);
-const ESC_ASENTADO_HORAS = Number(process.env.ESC_ASENTADO_HORAS || store.getConfig('escalation_asentado_horas') || 24);
-
 async function checkEscalation() {
   try {
+    const ESC_ALERTA_MIN = Number(process.env.ESC_ALERTA_MIN || store.getConfig('escalation_alerta_min') || 15);
+    const ESC_REASIGNAR_MIN = Number(process.env.ESC_REASIGNAR_MIN || store.getConfig('escalation_reasignar_min') || 30);
+    const ESC_ADMIN_MIN = Number(process.env.ESC_ADMIN_MIN || store.getConfig('escalation_admin_min') || 60);
+    const ESC_ASENTADO_HORAS = Number(process.env.ESC_ASENTADO_HORAS || store.getConfig('escalation_asentado_horas') || 24);
     const ahora = Date.now();
     const leadsSinRespuesta = getLeadsSinRespuesta(0); // todos los sin respuesta
 
@@ -2190,9 +2406,10 @@ async function checkEscalation() {
         incrementEscalation(lead.id);
         if (esNuevo && !esAsentado) {
           console.log(`[ESCALADO] Reasignando lead ${lead.id} (${lead.customer_name}) — ${ESC_REASIGNAR_MIN} min sin respuesta`);
-          const activos = getVendedoresActivos();
-          // Buscar un vendedor diferente al actual
-          const otroVendedor = activos.find(v => v.id !== lead.assigned_to_id);
+          const activos = getVendedoresActivos().filter(v => v.id !== lead.assigned_to_id);
+          // Prefiere un vendedor que ya atienda el mismo proyecto/ciudad/origen (si la
+          // carga está casi empatada) en vez de repartir estrictamente por menor carga.
+          const otroVendedor = require('./services/assigner').pickVendedorInteligente(activos, { proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
           if (otroVendedor && lead.assigned_to_id) {
             const vendedorAnterior = lead.assigned_to_id;
             store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
@@ -2237,8 +2454,8 @@ async function checkEscalation() {
         events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_admin', minutos: Math.round(minutosDesdeCreacion), ts: Date.now() });
         // Si es nuevo y no se reasignó antes, intentar reasignar ahora
         if (esNuevo && !esAsentado) {
-          const activos = getVendedoresActivos();
-          const otroVendedor = activos.find(v => v.id !== lead.assigned_to_id);
+          const activos = getVendedoresActivos().filter(v => v.id !== lead.assigned_to_id);
+          const otroVendedor = require('./services/assigner').pickVendedorInteligente(activos, { proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
           if (otroVendedor && lead.assigned_to_id) {
             const vendedorAnterior = lead.assigned_to_id;
             store.reassignLead(lead.id, otroVendedor, vendedorAnterior);

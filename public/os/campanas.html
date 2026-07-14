@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>SP OS · Campañas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .cp-page { max-width: 960px; margin: 0 auto; }
+  .cp-sec { background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); padding: var(--s3); margin-bottom: var(--s3); }
+  .cp-sec h3 { font-family: var(--f-title); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .cp-sec p { font-size: 12.5px; color: var(--text-3); margin-bottom: var(--s2); }
+  .cp-field { margin-bottom: 14px; }
+  .cp-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
+  .cp-field input, .cp-field select, .cp-field textarea { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 10px 12px; font-family: var(--f-ui); font-size: 13.5px; outline: none; }
+  .cp-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .cp-row > .cp-field { flex: 1; min-width: 160px; }
+  .cp-btn { height: 38px; padding: 0 20px; background: var(--gold); color: #000; border: none; border-radius: var(--r-sm); font-weight: 600; font-size: 13px; cursor: pointer; font-family: var(--f-ui); }
+  .cp-btn--ghost { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
+  .cp-btn:disabled { opacity: .4; cursor: default; }
+  .cp-count { font-size: 13px; color: var(--gold); font-weight: 600; margin: 8px 0; }
+  .cp-card { border: 1px solid var(--border-soft); border-radius: 12px; padding: 16px; margin-bottom: 10px; background: var(--bg-2); }
+  .cp-card__top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .cp-badge { font-size: 10.5px; padding: 2px 9px; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .cp-badge--draft { background: rgba(150,150,150,.15); color: var(--text-3); }
+  .cp-badge--running { background: rgba(200,164,90,.18); color: var(--gold); }
+  .cp-badge--paused { background: rgba(255,170,0,.15); color: #ffaa00; }
+  .cp-badge--done { background: rgba(78,123,70,.18); color: var(--green); }
+  .cp-badge--failed { background: rgba(255,80,80,.15); color: #ff5050; }
+  .cp-stats { display: flex; gap: 18px; font-size: 12px; color: var(--text-3); margin-top: 8px; flex-wrap: wrap; }
+  .cp-stats b { color: var(--text); font-weight: 600; }
+  .cp-empty { text-align: center; padding: 40px 20px; color: var(--text-3); background: var(--bg-2); border-radius: 16px; border: 1px dashed var(--border); }
+  .cp-quality { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; }
+  .cp-quality b { color: var(--gold); }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  'use strict';
+  const { api, toast } = SPOS;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const ctx = await SPOS.mount({
+    active: 'campaigns', title: 'Campañas', crumb: 'Envíos masivos por WhatsApp', padded: true, adminOnly: true,
+    action: `<button class="btn btn--gold btn--sm" id="btnNew">Nueva campaña</button>`
+  });
+  if (!ctx) return;
+
+  let campaigns = [], templates = [], segmentOptions = { proyectos: [], ciudades: [] }, vendedores = [];
+
+  async function cargarTodo() {
+    const [c, t, so, v] = await Promise.all([
+      api('/api/campaigns'), api('/api/wa-templates'), api('/api/campaigns/segment-options'), api('/api/vendedores'),
+    ]);
+    campaigns = c || []; templates = t || []; segmentOptions = so || { proyectos: [], ciudades: [] }; vendedores = v || [];
+  }
+
+  function badgeClass(estado) { return 'cp-badge cp-badge--' + (estado || 'draft'); }
+  function estadoLabel(estado) {
+    return { draft: 'Borrador', running: 'Enviando', paused: 'Pausada', done: 'Completada', failed: 'Falló' }[estado] || estado;
+  }
+
+  function render() {
+    ctx.content.innerHTML = `
+      <div class="cp-page">
+        <div class="cp-sec">
+          <h3>Calidad y límite de envío</h3>
+          <p>WhatsApp limita cuántos destinatarios únicos puedes contactar por día según la calidad y verificación del número. El límite sube automáticamente con volumen + buena calidad — no se puede pagar para subirlo.</p>
+          <div id="qualityBox" class="cp-quality">Consultando con Meta…</div>
+          <div class="cp-row" style="margin-top:14px">
+            <div class="cp-field"><label>Mensajes por segundo (rate limit)</label><input id="cfgMps" type="number" min="1" placeholder="5"></div>
+            <div class="cp-field"><label>Límite diario configurado</label><input id="cfgDaily" type="number" min="1" placeholder="250"></div>
+          </div>
+          <button class="cp-btn cp-btn--ghost" id="btnSaveCfg">Guardar límites</button>
+        </div>
+
+        <div class="cp-sec">
+          <h3>Campañas</h3>
+          <p>Cada campaña envía UNA plantilla aprobada a un segmento de leads, respetando el límite diario y el opt-out.</p>
+          <div id="campList"></div>
+        </div>
+      </div>`;
+    renderCampaignList();
+    cargarQuality();
+    document.getElementById('cfgMps').value = '';
+    document.getElementById('cfgDaily').value = '';
+    api('/api/config').then(cfg => {
+      if (!cfg) return;
+      document.getElementById('cfgMps').value = cfg.campaign_mps || '';
+      document.getElementById('cfgDaily').value = cfg.campaign_daily_limit || '';
+    });
+    document.getElementById('btnSaveCfg').addEventListener('click', async () => {
+      const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        campaign_mps: document.getElementById('cfgMps').value.trim(),
+        campaign_daily_limit: document.getElementById('cfgDaily').value.trim(),
+      }) });
+      if (r) toast('Límites guardados', 'ok'); else toast('Error al guardar', 'err');
+    });
+    document.getElementById('btnNew').addEventListener('click', openNewCampaignModal);
+  }
+
+  async function cargarQuality() {
+    const box = document.getElementById('qualityBox');
+    const q = await api('/api/campaigns/meta/quality');
+    if (!q || !q.ok) { box.innerHTML = '<span style="color:var(--text-3)">No se pudo consultar Meta (revisa WHATSAPP_TOKEN / PHONE_NUMBER_ID).</span>'; return; }
+    box.innerHTML = `
+      <span>Calidad: <b>${esc(q.quality_rating || '—')}</b></span>
+      <span>Tier de mensajería: <b>${esc(q.messaging_limit_tier || '—')}</b></span>
+      <span>Número: <b>${esc(q.display_phone_number || '—')}</b></span>
+      <span>Límite diario configurado: <b>${esc(String(q.dailyLimitConfigurado || 250))}</b></span>`;
+  }
+
+  function renderCampaignList() {
+    const box = document.getElementById('campList');
+    if (!campaigns.length) { box.innerHTML = '<div class="cp-empty">Aún no hay campañas. Crea la primera con "Nueva campaña".</div>'; return; }
+    box.innerHTML = campaigns.map(c => {
+      const tpl = templates.find(t => String(t.id) === String(c.template_id));
+      return `<div class="cp-card" data-id="${c.id}">
+        <div class="cp-card__top">
+          <div><strong style="font-size:14px">${esc(c.nombre)}</strong> <span class="${badgeClass(c.estado)}">${estadoLabel(c.estado)}</span></div>
+          <div style="display:flex;gap:6px">
+            ${c.estado === 'draft' || c.estado === 'paused' ? `<button class="cp-btn" style="height:30px;padding:0 14px;font-size:12px" data-start="${c.id}">${c.estado === 'paused' ? 'Reanudar' : 'Iniciar'}</button>` : ''}
+            ${c.estado === 'running' ? `<button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-pause="${c.id}">Pausar</button>` : ''}
+            ${c.estado === 'draft' ? `<button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-del="${c.id}">Eliminar</button>` : ''}
+            <button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-view="${c.id}">Ver</button>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-3)">Plantilla: ${esc(tpl ? tpl.nombre : '?')}</div>
+        <div class="cp-stats">
+          <span>Destinatarios: <b>${c.total_destinatarios}</b></span>
+          <span>Enviados: <b>${c.total_enviados}</b></span>
+          <span>Entregados: <b>${c.total_entregados}</b></span>
+          <span>Leídos: <b>${c.total_leidos}</b></span>
+          <span>Fallidos: <b style="color:${c.total_fallidos > 0 ? '#ff5050' : 'inherit'}">${c.total_fallidos}</b></span>
+        </div>
+        <div id="detail-${c.id}"></div>
+      </div>`;
+    }).join('');
+
+    box.querySelectorAll('[data-start]').forEach(b => b.addEventListener('click', async () => {
+      const r = await api('/api/campaigns/' + b.dataset.start + '/start', { method: 'POST' });
+      if (r && r.ok) { toast('Campaña iniciada', 'ok'); await cargarTodo(); renderCampaignList(); }
+      else toast('Error: ' + ((r && r.detalle) || 'no se pudo iniciar'), 'err');
+    }));
+    box.querySelectorAll('[data-pause]').forEach(b => b.addEventListener('click', async () => {
+      const r = await api('/api/campaigns/' + b.dataset.pause + '/pause', { method: 'POST' });
+      if (r && r.ok) { toast('Campaña pausada', 'ok'); await cargarTodo(); renderCampaignList(); }
+    }));
+    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar esta campaña?')) return;
+      const r = await api('/api/campaigns/' + b.dataset.del, { method: 'DELETE' });
+      if (r && r.ok) { toast('Campaña eliminada', 'ok'); await cargarTodo(); renderCampaignList(); }
+    }));
+    box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => toggleDetail(b.dataset.view)));
+  }
+
+  async function toggleDetail(id) {
+    const box = document.getElementById('detail-' + id);
+    if (!box) return;
+    if (box.dataset.open === '1') { box.innerHTML = ''; box.dataset.open = '0'; return; }
+    box.innerHTML = '<div style="font-size:12px;color:var(--text-3);margin-top:8px">Cargando…</div>';
+    const [recipients, preview] = await Promise.all([
+      api('/api/campaigns/' + id + '/recipients'), api('/api/campaigns/' + id + '/preview'),
+    ]);
+    box.dataset.open = '1';
+    const previewHtml = preview && preview.sample && preview.sample.length
+      ? `<div style="margin-top:10px;font-size:11.5px;color:var(--text-3)"><strong style="color:var(--text-2)">Vista previa (${esc(preview.template)}):</strong><br>` +
+        preview.sample.map(s => `${esc(s.nombre || s.phone)}: ${esc(JSON.stringify(s.valores))}`).join('<br>') + '</div>'
+      : '';
+    const rows = (recipients || []).slice(0, 50).map(r =>
+      `<tr><td>${esc(r.phone)}</td><td><span class="${badgeClass(r.estado === 'sent' || r.estado === 'delivered' || r.estado === 'read' ? 'done' : r.estado === 'failed' ? 'failed' : 'draft')}">${esc(r.estado)}</span></td><td style="font-size:11px;color:var(--text-3)">${esc(r.error_detail || '')}</td></tr>`
+    ).join('');
+    box.innerHTML = `${previewHtml}
+      <table class="table" style="margin-top:10px">
+        <thead><tr><th>Teléfono</th><th>Estado</th><th>Detalle</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="t-dim3" style="text-align:center;padding:12px">Sin destinatarios</td></tr>'}</tbody>
+      </table>
+      ${recipients && recipients.length > 50 ? `<div style="font-size:11px;color:var(--text-3);margin-top:6px">Mostrando 50 de ${recipients.length}.</div>` : ''}`;
+  }
+
+  // ===== Nueva campaña =====
+  function openNewCampaignModal() {
+    const existing = document.getElementById('newCampModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'newCampModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55)';
+    modal.innerHTML = `
+      <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:92%;max-width:520px;max-height:88vh;overflow:auto;border:1px solid var(--border-soft)">
+        <h3 style="margin:0 0 16px;color:var(--text-1)">Nueva campaña</h3>
+        <form id="ncForm">
+          <div class="cp-field"><label>Nombre de la campaña</label><input id="ncNombre" required placeholder="Ej: Lanzamiento Lotes Tocaima Julio"></div>
+          <div class="cp-field"><label>Plantilla (solo aprobadas)</label>
+            <select id="ncTpl" required>
+              <option value="">Elegir plantilla…</option>
+              ${templates.map(t => `<option value="${t.id}">${esc(t.nombre)} (${esc(t.categoria || '')})</option>`).join('')}
+            </select>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px">Segmento (deja vacío = todos los leads activos)</div>
+          <div class="cp-row">
+            <div class="cp-field"><label>Etapa</label>
+              <select id="segEtiqueta"><option value="">Cualquiera</option>
+                <option value="sin_clasificar">Nuevo</option><option value="interesado">Interesado</option>
+                <option value="negociacion">Negociación</option><option value="cita">Cita</option><option value="vendido">Vendido</option>
+              </select>
+            </div>
+            <div class="cp-field"><label>Proyecto</label>
+              <select id="segProyecto"><option value="">Cualquiera</option>${segmentOptions.proyectos.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>
+            </div>
+          </div>
+          <div class="cp-row">
+            <div class="cp-field"><label>Ciudad</label>
+              <select id="segCiudad"><option value="">Cualquiera</option>${segmentOptions.ciudades.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
+            </div>
+            <div class="cp-field"><label>Vendedor</label>
+              <select id="segVendedor"><option value="">Cualquiera</option>${vendedores.map(v => `<option value="${v.id}">${esc(v.nombre)}</option>`).join('')}</select>
+            </div>
+          </div>
+          <div class="cp-count" id="segCount">Selecciona filtros para ver el tamaño de la audiencia…</div>
+          <div id="ncVarFields"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+            <button type="button" class="cp-btn cp-btn--ghost" id="ncCancel">Cancelar</button>
+            <button type="submit" class="cp-btn">Crear campaña (borrador)</button>
+          </div>
+        </form>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    modal.querySelector('#ncCancel').addEventListener('click', () => modal.remove());
+
+    const tplSel = document.getElementById('ncTpl');
+    function renderVarFields() {
+      const box = document.getElementById('ncVarFields');
+      const tpl = templates.find(t => String(t.id) === tplSel.value);
+      if (!tpl) { box.innerHTML = ''; return; }
+      let vars = []; try { vars = JSON.parse(tpl.variables || '[]'); } catch (e) {}
+      let mapping = {}; try { mapping = JSON.parse(tpl.var_mapping || '{}'); } catch (e) {}
+      const sinMapear = vars.filter(v => !mapping[v]);
+      if (!sinMapear.length) { box.innerHTML = vars.length ? '<div style="font-size:11.5px;color:var(--text-3);margin:8px 0">Todas las variables ya están mapeadas en Configuración — se resuelven por lead automáticamente.</div>' : ''; return; }
+      box.innerHTML = '<div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px">Variables sin mapear — mismo valor para toda la campaña</div>' +
+        sinMapear.map(v => `<input type="text" data-ov="${esc(v)}" placeholder="{{${esc(v)}}}" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:8px;font-size:13px">`).join('');
+    }
+    tplSel.addEventListener('change', renderVarFields);
+
+    async function actualizarConteo() {
+      const params = new URLSearchParams({
+        etiqueta: document.getElementById('segEtiqueta').value,
+        proyecto: document.getElementById('segProyecto').value,
+        ciudad: document.getElementById('segCiudad').value,
+        vendedorId: document.getElementById('segVendedor').value,
+      });
+      const r = await api('/api/campaigns/segment-preview?' + params.toString());
+      document.getElementById('segCount').textContent = r ? `${r.count} lead(s) recibirán esta campaña` : 'Error al calcular';
+    }
+    ['segEtiqueta', 'segProyecto', 'segCiudad', 'segVendedor'].forEach(id => document.getElementById(id).addEventListener('change', actualizarConteo));
+    actualizarConteo();
+
+    modal.querySelector('#ncForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const nombre = document.getElementById('ncNombre').value.trim();
+      const templateId = tplSel.value;
+      if (!nombre || !templateId) return;
+      const segmento = {
+        etiqueta: document.getElementById('segEtiqueta').value || undefined,
+        proyecto: document.getElementById('segProyecto').value || undefined,
+        ciudad: document.getElementById('segCiudad').value || undefined,
+        vendedorId: document.getElementById('segVendedor').value || undefined,
+      };
+      const overrides = {};
+      document.querySelectorAll('#ncVarFields [data-ov]').forEach(inp => { if (inp.value.trim()) overrides[inp.dataset.ov] = inp.value.trim(); });
+      const submitBtn = modal.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      const r = await api('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, templateId, segmento, overrides }) });
+      submitBtn.disabled = false;
+      if (r && r.ok) {
+        modal.remove();
+        toast('Campaña creada como borrador — revisa la vista previa antes de iniciar', 'ok');
+        await cargarTodo(); renderCampaignList();
+      } else {
+        toast('Error: ' + ((r && r.error) || 'no se pudo crear'), 'err');
+      }
+    });
+  }
+
+  await cargarTodo();
+  render();
+})();
+</script>
+</body>
+</html>

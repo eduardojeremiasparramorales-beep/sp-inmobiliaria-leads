@@ -4,6 +4,9 @@ import { html, render } from 'https://unpkg.com/lit-html@3?module';
 const SPOS = window.SPOS;
 if (!SPOS) location.href = '/';
 
+const ctx = await SPOS.mount({ active: 'dedup', title: 'Depuración', crumb: 'Depuración de leads duplicados', padded: true, adminOnly: true });
+if (ctx) {
+
 let state = {
   groups: [],
   loading: true,
@@ -48,7 +51,7 @@ async function mergeDuplicates(keepId, removeId) {
 }
 
 function renderView() {
-  const ctx = render(html`<div class="dedup-page">
+  render(html`<div class="dedup-page">
     <div class="dedup-header">
       <h2 style="margin:0;font-size:18px">${SPOS.ICONS.zap} Depuración de leads</h2>
       <p style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Busca y fusiona leads duplicados por teléfono</p>
@@ -104,10 +107,11 @@ function renderView() {
         </div>
       </div>
     `)}
-  </div>`, SPOS.mount({ active: 'dedup', title: 'Depuración', crumb: 'Depuración de leads duplicados', padded: true, adminOnly: true }));
+  </div>`, ctx.content);
 }
 
 loadGroups();
+}
 </script>
 <style>
   .dedup-page { max-width: 800px; margin: 0 auto; }

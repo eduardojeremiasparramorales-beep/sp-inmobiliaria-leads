@@ -7,6 +7,37 @@ function getWelcomeMsg() {
   return getConfig('welcome_message') || WELCOME_DEFAULT;
 }
 
+// Distribución inteligente: además de repartir por menor carga (ya lo hace
+// getVendedoresActivos con ORDER BY leads_activos ASC), entre los vendedores casi
+// empatados en carga se prefiere al que YA atiende leads del mismo proyecto/ciudad/
+// campaña de origen — un especialista cierra mejor que un reparto perfectamente parejo.
+// `activos` debe venir ya ordenado por leads_activos ASC (getVendedoresActivos lo hace).
+function pickVendedorInteligente(activos, hints) {
+  if (!activos || !activos.length) return null;
+  if (activos.length === 1) return activos[0];
+  const { ciudad, proyecto, origen } = hints || {};
+  if (!ciudad && !proyecto && !origen) return activos[0];
+
+  const TOLERANCIA_CARGA = 2; // leads de diferencia que se toleran a cambio de especialización
+  const minCarga = activos[0].leads_activos ?? 0;
+  const candidatos = activos.filter(v => (v.leads_activos ?? 0) - minCarga <= TOLERANCIA_CARGA);
+  if (candidatos.length <= 1) return activos[0];
+
+  const store = require('../db/store');
+  let mejor = activos[0], mejorScore = 0;
+  for (const v of candidatos) {
+    const leadsDelVendedor = store.getLeadsByVendedorId(v.id);
+    let score = 0;
+    for (const l of leadsDelVendedor) {
+      if (proyecto && l.proyecto === proyecto) score += 3;
+      if (ciudad && l.ciudad === ciudad) score += 2;
+      if (origen && l.origen === origen) score += 1;
+    }
+    if (score > mejorScore) { mejorScore = score; mejor = v; }
+  }
+  return mejor;
+}
+
 // Espeja el movimiento del lead legacy en el inbox multicanal (conversations/timeline)
 function syncMulticanal(leadId, data) {
   try {
@@ -14,6 +45,21 @@ function syncMulticanal(leadId, data) {
     const lead = store.getLeadById(leadId);
     if (lead) store.syncLeadToConversation(lead, data);
   } catch (e) { console.error('syncMulticanal:', e.message); }
+}
+
+// Dispara el WorkflowEngine para el lead. El motor de automatizaciones (equipo →
+// Automatizaciones) ya existía y funcionaba, pero solo se conectaba desde el canal
+// multicanal (Messenger/Instagram) — el canal dominante, WhatsApp vía assigner.js,
+// nunca lo llamaba, así que ningún flujo IF/THEN se ejecutaba nunca en la práctica.
+function triggerWorkflow(triggerEvent, leadId, messageBody) {
+  try {
+    const store = require('../db/store');
+    const conversation = store.getOrCreateConversationForLead(leadId);
+    if (!conversation) return;
+    const customer = conversation.customer_id ? store.getCustomerById(conversation.customer_id) : null;
+    require('./workflow').evaluate(triggerEvent, { conversation, message: { body: messageBody }, customer })
+      .catch(e => console.error('WorkflowEngine.evaluate error:', e.message));
+  } catch (e) { /* workflow engine opcional */ }
 }
 
 // Notifica al panel del vendedor (y a admins) que hubo movimiento en un lead
@@ -73,6 +119,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
       updateLeadStatus(activeLead.id, 'contactado');
       syncMulticanal(activeLead.id, { direction: 'outgoing', body: messageBody, fromNumber: fromPhone, toNumber: activeLead.customer_phone });
       notificarPanel(vendedor.id, activeLead.id, 'respuesta_vendedor');
+      triggerWorkflow('message:outgoing', activeLead.id, messageBody);
 
       const { sendMessage } = require('./whatsapp');
       sendMessage(activeLead.customer_phone, messageBody)
@@ -100,6 +147,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     updateCustomerMessageTimestamp(lead.id);
     syncMulticanal(lead.id, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: v.telefono });
     notificarPanel(v.id, lead.id, 'mensaje_cliente');
+    triggerWorkflow('message:incoming', lead.id, messageBody);
     try { require('./progress').evaluateFromMessage(lead.id, messageBody, {}).catch(()=>{}); } catch(e){};
 
     const { sendMessage } = require('./whatsapp');
@@ -135,6 +183,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     updateCustomerMessageTimestamp(r.leadId);
     syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
+    triggerWorkflow('message:incoming', r.leadId, messageBody);
     try { require('./progress').evaluateFromMessage(r.leadId, messageBody, {}).catch(()=>{}); } catch(e){};
     sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nCliente: ${customerName || 'Cliente'}\nTel: ${fromPhone}\n\n${messageBody}`)
       .then(() => callback(null, { forwarded: true, to: vendedorAsignado.telefono }))
@@ -176,6 +225,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
   updateCustomerMessageTimestamp(lead.id);
   syncMulticanal(lead.id, { direction: 'incoming', body, media: mediaData, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '' });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
+  triggerWorkflow('message:incoming', lead.id, body);
   try { require('./progress').evaluateFromMessage(lead.id, body, { hasMedia: true }).catch(()=>{}); } catch(e){};
 
   if (vendedor) {
@@ -219,6 +269,7 @@ function routeIncomingLocation(fromPhone, customerName, locationData, wamid, cal
     media: { media_type: 'location' },
   });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
+  triggerWorkflow('message:incoming', lead.id, displayBody);
   try { require('./progress').evaluateFromMessage(lead.id, displayBody, { sentLocation: true }).catch(()=>{}); } catch(e){};
 
   if (vendedor) {
@@ -239,4 +290,4 @@ function getLeads() {
   return require('../db/store').getLeads();
 }
 
-module.exports = { assignLead, routeReply, routeIncomingMedia, routeIncomingLocation, getLeadCount, getLeads };
+module.exports = { assignLead, routeReply, routeIncomingMedia, routeIncomingLocation, getLeadCount, getLeads, pickVendedorInteligente };

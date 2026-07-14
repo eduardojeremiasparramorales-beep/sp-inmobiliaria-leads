@@ -72,7 +72,15 @@
   function render() {
     ctx.content.innerHTML = `<div class="kb">${ETAPAS.map(col).join('')}</div>`;
     ctx.content.querySelectorAll('.kb-move').forEach(btn =>
-      btn.addEventListener('click', () => mover(Number(btn.dataset.id), btn.dataset.dir)));
+      btn.addEventListener('click', () => mover(Number(btn.dataset.id), etapaPorDir(btn))));
+    wireDragAndDrop();
+  }
+
+  function etapaPorDir(btn) {
+    const lead = leads.find(l => l.id === Number(btn.dataset.id));
+    const idx = ORDEN.indexOf(lead.etiqueta || 'sin_clasificar');
+    const nuevoIdx = btn.dataset.dir === 'next' ? idx + 1 : idx - 1;
+    return ORDEN[nuevoIdx];
   }
 
   function col(etapa) {
@@ -84,8 +92,8 @@
           <span class="kb-col__title">${etapa.t}</span>
           <span class="kb-col__count">${items.length}</span>
         </div>
-        <div class="kb-col__body">
-          ${items.length ? items.map(card).join('') : '<div class="kb-empty">Sin leads aquí</div>'}
+        <div class="kb-col__body" data-etapa="${etapa.k}">
+          ${items.length ? items.map(card).join('') : '<div class="kb-empty">Sin leads aquí — arrastra una tarjeta</div>'}
         </div>
       </div>`;
   }
@@ -93,10 +101,11 @@
   function card(l) {
     const idx = ORDEN.indexOf(l.etiqueta || 'sin_clasificar');
     return `
-      <div class="kb-card">
+      <div class="kb-card" draggable="true" data-id="${l.id}">
         <div class="kb-card__top">
           <div class="avatar avatar--sm" style="background:${avatarColor(l.customer_name)};width:30px;height:30px;font-size:11px">${initials(l.customer_name)}</div>
           <span class="kb-card__name">${esc(l.customer_name || 'Sin nombre')}</span>
+          ${l.score >= 70 ? '<span title="Lead prioritario" style="font-size:12px">🔥</span>' : ''}
         </div>
         <div class="kb-card__meta">
           <span>${esc(fmtPhone(l.customer_phone))}</span>
@@ -113,17 +122,42 @@
       </div>`;
   }
 
-  async function mover(id, dir) {
-    const lead = leads.find(l => l.id === id); if (!lead) return;
-    const idx = ORDEN.indexOf(lead.etiqueta || 'sin_clasificar');
-    const nuevoIdx = dir === 'next' ? idx + 1 : idx - 1;
-    if (nuevoIdx < 0 || nuevoIdx >= ORDEN.length) return;
-    const nueva = ORDEN[nuevoIdx];
+  // Drag-and-drop nativo HTML5: arrastrar una tarjeta a otra columna mueve el lead
+  // a esa etapa directamente (sin pasar por las etapas intermedias, a diferencia de
+  // los botones ‹ › que solo avanzan/retroceden un paso).
+  function wireDragAndDrop() {
+    ctx.content.querySelectorAll('.kb-card').forEach(cardEl => {
+      cardEl.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', cardEl.dataset.id);
+        e.dataTransfer.effectAllowed = 'move';
+        cardEl.style.opacity = '.4';
+      });
+      cardEl.addEventListener('dragend', () => { cardEl.style.opacity = ''; });
+    });
+    ctx.content.querySelectorAll('.kb-col__body').forEach(colEl => {
+      colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.style.background = 'var(--bg-2)'; });
+      colEl.addEventListener('dragleave', () => { colEl.style.background = ''; });
+      colEl.addEventListener('drop', e => {
+        e.preventDefault(); colEl.style.background = '';
+        const id = Number(e.dataTransfer.getData('text/plain'));
+        if (id) mover(id, colEl.dataset.etapa);
+      });
+    });
+  }
+
+  async function mover(id, nueva) {
+    const lead = leads.find(l => l.id === id); if (!lead || !nueva) return;
+    if ((lead.etiqueta || 'sin_clasificar') === nueva) return;
+    const nuevoIdx = ORDEN.indexOf(nueva);
+    const anterior = lead.etiqueta;
+    lead.etiqueta = nueva; render(); // optimista: se ve el movimiento de inmediato
     const r = await api('/api/leads/' + id + '/etiqueta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etiqueta: nueva }) });
     if (r !== null) {
-      lead.etiqueta = nueva; render();
       toast(`${lead.customer_name || 'Lead'} → ${ETAPAS[nuevoIdx].t}`, 'ok');
-    } else toast('Error al mover el lead', 'err');
+    } else {
+      lead.etiqueta = anterior; render(); // revertir si falló
+      toast('Error al mover el lead', 'err');
+    }
   }
 
   await cargar();

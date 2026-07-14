@@ -1,8 +1,8 @@
 const axios = require('axios');
-const CFG = require('../config');
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
 const WINDOW_CLOSED_CODE = 131047;
+const TOKEN_INVALID_CODE = 190;
 
 function getApiConfig() {
   const token = process.env.WHATSAPP_TOKEN;
@@ -14,16 +14,41 @@ function getApiConfig() {
   };
 }
 
+// Con un token expirado/revocado (código 190), TODOS los envíos fallan pero el CRM
+// aparenta funcionar (los errores solo quedaban en console.error). Se detecta y se
+// alerta al admin, con un debounce para no inundar de notificaciones idénticas.
+let lastTokenAlertAt = 0;
+function reportGraphError(err) {
+  const errData = err.response && err.response.data && err.response.data.error;
+  if (errData && errData.code === TOKEN_INVALID_CODE) {
+    const now = Date.now();
+    if (now - lastTokenAlertAt > 10 * 60 * 1000) {
+      lastTokenAlertAt = now;
+      console.error('[WhatsApp] TOKEN INVÁLIDO O EXPIRADO (error 190) — todos los envíos están fallando. Renueva WHATSAPP_TOKEN.');
+      try {
+        require('./events').emitToAdmins('sistema_alerta', {
+          tipo: 'token_expirado',
+          mensaje: 'El token de WhatsApp expiró o es inválido. Los mensajes NO se están enviando. Renueva WHATSAPP_TOKEN en el servidor.',
+          ts: now,
+        });
+      } catch (e) { /* events no disponible en este contexto */ }
+    }
+  }
+  return err;
+}
+
 async function sendMessage(to, text) {
   const { url, headers } = getApiConfig();
-  const res = await axios.post(url, {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
-    type: 'text',
-    text: { preview_url: false, body: text },
-  }, { headers });
-  return res.data;
+  try {
+    const res = await axios.post(url, {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: { preview_url: false, body: text },
+    }, { headers });
+    return res.data;
+  } catch (err) { throw reportGraphError(err); }
 }
 
 // Envío inteligente: si la ventana de 24h está cerrada, envía template automáticamente
@@ -49,30 +74,39 @@ async function sendMessageSmart(to, text, leadId) {
       throw e2;
     }
 
-    console.log(`[WhatsApp] Ventana cerrada para ${to} — enviando template "${templateName}" para reabrir`);
-    await sendTemplate(to, templateName);
+    console.log(`[WhatsApp] Ventana cerrada para ${to} — enviando template "${templateName}" y encolando el mensaje`);
+    const tplResult = await sendTemplate(to, templateName);
 
-    // Esperar 3 segundos para que Meta procese el template
-    await new Promise(r => setTimeout(r, CFG.TEMPLATE_REENGAGEMENT_DELAY));
-
-    const result = await sendMessage(to, text);
-    return { data: result, templateSent: true, reopenedWindow: true };
+    // Un template ENTREGADO no reabre la ventana de 24h — solo lo hace una respuesta del
+    // cliente. Reintentar el free-form aquí siempre fallaba con el mismo 131047 y el mensaje
+    // original se perdía. En vez de eso, se encola y se envía cuando el webhook detecte
+    // la respuesta del cliente (ver flushPendingOutbound en webhook/messages.js).
+    store.queuePendingOutbound(leadId || null, to, text);
+    return { data: tplResult, templateSent: true, reopenedWindow: false, queued: true };
   }
 }
 
-async function sendTemplate(to, templateName, params) {
+// `params` acepta dos formas:
+// - array de strings: retrocompatible, se arma un único componente 'body' posicional.
+// - array de componentes ya armados (Graph API shape, ver wa-templates.js buildTemplateComponents):
+//   permite header (texto o media) y botones además del body, con variables nombradas.
+async function sendTemplate(to, templateName, params, languageCode) {
   const { url, headers } = getApiConfig();
-  const components = params ? [{
-    type: 'body',
-    parameters: params.map(p => ({ type: 'text', text: String(p) })),
-  }] : [];
-  const res = await axios.post(url, {
-    messaging_product: 'whatsapp',
-    to,
-    type: 'template',
-    template: { name: templateName, language: { code: 'es' }, components },
-  }, { headers });
-  return res.data;
+  let components = [];
+  if (Array.isArray(params) && params.length && typeof params[0] === 'object' && params[0] !== null && params[0].type) {
+    components = params;
+  } else if (Array.isArray(params) && params.length) {
+    components = [{ type: 'body', parameters: params.map(p => ({ type: 'text', text: String(p) })) }];
+  }
+  try {
+    const res = await axios.post(url, {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: { name: templateName, language: { code: languageCode || 'es' }, components },
+    }, { headers });
+    return res.data;
+  } catch (err) { throw reportGraphError(err); }
 }
 
 async function markAsRead(messageId) {
@@ -112,6 +146,19 @@ async function sendReaction(to, wamid, emoji) {
 
 const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
 
+// Calidad y tier de mensajería del número — determina cuántos destinatarios únicos
+// se pueden alcanzar por día en campañas (250 → 1k → 10k... sube con volumen+calidad).
+async function getPhoneQuality() {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+  if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
+  const res = await axios.get(`${GRAPH}/${phoneNumberId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { fields: 'quality_rating,messaging_limit_tier,verified_name,display_phone_number' },
+  });
+  return res.data;
+}
+
 // Devuelve la URL temporal y el mime de un media entrante (por su id)
 async function getMediaUrl(mediaId) {
   const token = process.env.WHATSAPP_TOKEN;
@@ -148,12 +195,14 @@ async function uploadMedia(buffer, mime, filename) {
   form.append('type', baseMime);
   form.append('file', buffer, { filename: filename || 'archivo', contentType: baseMime });
 
-  const res = await axios.post(`${GRAPH}/${phoneNumberId}/media`, form, {
-    headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() },
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity,
-  });
-  return res.data.id;
+  try {
+    const res = await axios.post(`${GRAPH}/${phoneNumberId}/media`, form, {
+      headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+    return res.data.id;
+  } catch (err) { throw reportGraphError(err); }
 }
 
 // Envía un media (por id) al cliente. type: image|audio|video|document|sticker
@@ -163,14 +212,16 @@ async function sendMedia(to, mediaId, type, caption, filename) {
   // audio y sticker no admiten caption
   if (caption && type !== 'audio' && type !== 'sticker') media.caption = caption;
   if (type === 'document' && filename) media.filename = filename;
-  const res = await axios.post(url, {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
-    type,
-    [type]: media,
-  }, { headers });
-  return res.data;
+  try {
+    const res = await axios.post(url, {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type,
+      [type]: media,
+    }, { headers });
+    return res.data;
+  } catch (err) { throw reportGraphError(err); }
 }
 
 // Envía una ubicación al cliente. latitude/longitude requeridos, name/address opcionales.
@@ -179,14 +230,16 @@ async function sendLocation(to, latitude, longitude, name, address) {
   const location = { longitude, latitude };
   if (name) location.name = String(name);
   if (address) location.address = String(address);
-  const res = await axios.post(url, {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
-    type: 'location',
-    location,
-  }, { headers });
-  return res.data;
+  try {
+    const res = await axios.post(url, {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'location',
+      location,
+    }, { headers });
+    return res.data;
+  } catch (err) { throw reportGraphError(err); }
 }
 
 // WhatsApp Business API no expone edición ni revocación directa.
@@ -212,4 +265,4 @@ async function revokeMessage(to, wamid) {
   }
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality };

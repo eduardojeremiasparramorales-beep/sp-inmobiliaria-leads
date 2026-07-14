@@ -183,6 +183,7 @@ class MessageRouter {
     const updated = store.getConversationById(conversationId);
     emit('vendedor', siguiente.id, 'conversation:assigned', { conversationId, ts: Date.now() });
     emit('admins', null, 'conversation:assigned', { conversationId, vendedorId: siguiente.id, ts: Date.now() });
+    evaluateWorkflow('conversation:assigned', { conversation: updated });
 
     return updated;
   }

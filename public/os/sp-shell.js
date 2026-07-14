@@ -57,7 +57,7 @@
     ]},
     { title: 'Negocio', items: [
       { id: 'properties', label: 'Propiedades', icon: 'properties', href: '/os/propiedades.html' },
-      { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: M('campaigns') },
+      { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: '/os/campanas.html' },
       { id: 'automations', label: 'Automatizaciones', icon: 'automations', href: '/os/automatizaciones.html' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar', href: '/os/calendario.html' },
       { id: 'reportes', label: 'Reportes', icon: 'analytics', href: '/os/reportes.html' },
@@ -78,7 +78,7 @@
       const res = await fetch(path, Object.assign({
         headers: { 'Accept': 'application/json' }, credentials: 'include'
       }, opts || {}));
-      if (res.status === 401) return null;
+      if (res.status === 401) { if (!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
       if (!res.ok) throw new Error('http_' + res.status);
       return await res.json();
     } catch (e) {

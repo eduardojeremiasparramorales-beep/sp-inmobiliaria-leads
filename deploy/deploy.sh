@@ -31,6 +31,7 @@ if [ "$(id -u)" -ne 0 ]; then fail "Ejecutar con sudo o como root"; fi
 command -v docker     >/dev/null 2>&1 || { warn "Docker no instalado. Instalando..."; apt-get update -qq && apt-get install -y -qq ca-certificates curl && install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && chmod a+r /etc/apt/keyrings/docker.asc && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin; ok "Docker instalado"; }
 command -v docker compose >/dev/null 2>&1 || fail "docker compose no disponible"
 command -v caddy >/dev/null 2>&1 || { warn "Caddy no instalado. Instalando..."; apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null && apt-get update -qq && apt-get install -y -qq caddy; ok "Caddy instalado"; }
+command -v sqlite3   >/dev/null 2>&1 || { warn "sqlite3 no instalado (necesario para checkpoint de backup). Instalando..."; apt-get install -y -qq sqlite3; ok "sqlite3 instalado"; }
 
 ok "Requisitos OK"
 
@@ -146,12 +147,18 @@ cat > "/etc/cron.daily/sp-crm-backup" <<'CRONEOF'
 APP_DIR="/home/ubuntu/sp-crm/app"
 BACKUP_DIR="/home/ubuntu/backups"
 DB_PATH="$APP_DIR/data/sp-leads.db"
+MEDIA_DIR="$APP_DIR/data/media"
 [ ! -f "$DB_PATH" ] && exit 0
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+command -v sqlite3 >/dev/null 2>&1 && sqlite3 "$DB_PATH" "PRAGMA wal_checkpoint(TRUNCATE);" || true
 cp "$DB_PATH" "$BACKUP_DIR/sp-leads-$TIMESTAMP.db"
 gzip -f "$BACKUP_DIR/sp-leads-$TIMESTAMP.db"
+if [ -d "$MEDIA_DIR" ] && [ "$(ls -A "$MEDIA_DIR" 2>/dev/null)" ]; then
+  tar -czf "$BACKUP_DIR/sp-media-$TIMESTAMP.tar.gz" -C "$APP_DIR/data" media
+fi
 find "$BACKUP_DIR" -name "sp-leads-*.db.gz" -mtime +30 -delete
-echo "[$(date)] Backup: sp-leads-$TIMESTAMP.db.gz" >> "$BACKUP_DIR/backup.log"
+find "$BACKUP_DIR" -name "sp-media-*.tar.gz" -mtime +30 -delete
+echo "[$(date)] Backup: sp-leads-$TIMESTAMP.db.gz + sp-media-$TIMESTAMP.tar.gz" >> "$BACKUP_DIR/backup.log"
 CRONEOF
 chmod +x "/etc/cron.daily/sp-crm-backup"
 ok "Backup diario configurado"

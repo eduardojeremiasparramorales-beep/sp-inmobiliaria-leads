@@ -68,7 +68,7 @@
   async function crearFlujo() {
     const nombre = prompt('Nombre del flujo (ej: "Alerta lead sin respuesta"):');
     if (!nombre || !nombre.trim()) return;
-    const trigger = prompt('Disparador — escribe uno de:\nmessage:incoming · message:outgoing · conversation:assigned · conversation:closed', 'message:incoming');
+    const trigger = prompt('Disparador — escribe uno de:\nmessage:incoming · message:outgoing · conversation:assigned · conversation:closed · lead:tag_changed', 'message:incoming');
     if (!trigger || !trigger.trim()) return;
     const r = await api('/api/workflows', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ nombre: nombre.trim(), trigger_event: trigger.trim(), conditions: [], actions: [] }) });
     if (r) { toast('Flujo creado (configura condiciones y acciones vía API)','ok'); await cargar(); }

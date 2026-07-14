@@ -54,10 +54,10 @@
    <div class="os-content__max">
     <!-- Métricas núcleo -->
     <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
-      ${metric('leads', 'Leads totales', fmt.n(m.total), '+12%', 'up')}
-      ${metric('money', 'Cierres del mes', fmt.n(m.vendidos), '+' + (m.vendidos>40?'8':'3') + '%', 'up')}
+      ${metric('leads', 'Leads totales', fmt.n(m.total), null, 'flat')}
+      ${metric('money', 'Cierres del mes', fmt.n(m.vendidos), null, 'flat')}
       ${metric('target', 'Conversión global', fmt.pct(m.conversionGlobal), respRate>60?'estable':'', 'flat')}
-      ${metric('clock', 'Resp. promedio', (m.tiempoRespuestaPromedio!=null?m.tiempoRespuestaPromedio+' min':'—'), m.tiempoRespuestaPromedio<15?'ágil':'', 'up')}
+      ${metric('clock', 'Resp. promedio', (m.tiempoRespuestaPromedio!=null?m.tiempoRespuestaPromedio+' min':'—'), m.tiempoRespuestaPromedio!=null&&m.tiempoRespuestaPromedio<15?'ágil':'', 'flat')}
     </div>
 
     <div class="grid grid--main">
@@ -129,9 +129,8 @@
           <div class="t-label" style="margin-bottom:var(--s2)">Acciones rápidas</div>
           <div class="u-col u-gap1">
             ${quick('inbox', 'Abrir Inbox', '/os/inbox.html')}
-            ${quick('inbox', 'Nueva campaña Meta', '/os/inbox.html')}
             ${quick('automations', 'Crear automatización', '/os/automatizaciones.html')}
-            ${quick('analytics', 'Ver reportes', '/os/analytics.html')}
+            ${quick('analytics', 'Ver reportes', '/os/reportes.html')}
           </div>
         </div>
 

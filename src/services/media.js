@@ -1,6 +1,7 @@
 // Almacenamiento de archivos multimedia en disco (data/media/).
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const MEDIA_DIR = path.join(__dirname, '..', '..', 'data', 'media');
 
@@ -52,4 +53,35 @@ function getMediaPath(filename) {
   return path.join(MEDIA_DIR, safe);
 }
 
-module.exports = { saveMessageMedia, saveOutgoingMedia, getMediaPath, MEDIA_DIR };
+// --- Token firmado para exponer temporalmente un archivo a canales externos (Meta) ---
+// El filename por sí solo no es un secreto suficiente: sin esto, /api/public/media
+// serviría cualquier archivo a quien adivine/filtre el nombre. El token expira y está
+// atado al filename exacto, así que no sirve para listar ni acceder a otros archivos.
+function getSigningSecret() {
+  const store = require('../db/store');
+  let secret = store.getConfig('media_signing_secret');
+  if (!secret) {
+    secret = crypto.randomBytes(32).toString('hex');
+    store.setConfig('media_signing_secret', secret);
+  }
+  return secret;
+}
+
+function signMediaToken(filename, ttlMs = 24 * 60 * 60 * 1000) {
+  const expiresAt = Date.now() + ttlMs;
+  const sig = crypto.createHmac('sha256', getSigningSecret()).update(`${filename}.${expiresAt}`).digest('hex');
+  return `${expiresAt}.${sig}`;
+}
+
+function verifyMediaToken(filename, token) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return false;
+  const [expiresAtStr, sig] = token.split('.');
+  const expiresAt = Number(expiresAtStr);
+  if (!expiresAt || !sig || Date.now() > expiresAt) return false;
+  const expected = crypto.createHmac('sha256', getSigningSecret()).update(`${filename}.${expiresAt}`).digest('hex');
+  const a = Buffer.from(sig, 'hex'), b = Buffer.from(expected, 'hex');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+module.exports = { saveMessageMedia, saveOutgoingMedia, getMediaPath, MEDIA_DIR, signMediaToken, verifyMediaToken };

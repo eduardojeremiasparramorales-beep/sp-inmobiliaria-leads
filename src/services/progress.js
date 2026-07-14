@@ -1,10 +1,13 @@
 const PROGRESS_MAP = { sin_clasificar: 5, interesado: 30, negociacion: 60, cita: 85, vendido: 100, no_interesado: 5 };
 
 const KEYWORD_RULES = [
+  // La regla de negación va PRIMERO: sin esto, "no quiero cuotas" matchea la palabra
+  // "cuota" de la regla 'interesado' antes de llegar a la de 'no_interesado', y el lead
+  // avanza en el embudo cuando el cliente en realidad está rechazando.
+  { keywords: ['no me interesa', 'no gracias', 'gracias pero no', 'ya compré', 'no quiero', 'ya no', 'no vuelvas a escribir', 'no molestar', 'no estoy interesado'], etiqueta: 'no_interesado', minConfidence: 1 },
   { keywords: ['visita', 'agendar', 'cita', 'conocer', 'ir a ver', 'recorrer', 'mostrar', 'ver el lote', 'visitar'], etiqueta: 'cita', minConfidence: 1 },
   { keywords: ['precio', 'cuánto', 'cuesta', 'valor', 'financiación', 'cuota inicial', 'crédito', 'mensualidad', 'cuota', 'cuotas', 'abono', 'separar'], etiqueta: 'interesado', minConfidence: 1 },
   { keywords: ['negociar', 'descuento', 'oferta', 'propuesta', 'mejor precio', 'regatear', 'rebaja'], etiqueta: 'negociacion', minConfidence: 1 },
-  { keywords: ['no me interesa', 'no gracias', 'gracias pero', 'ya compré', 'no quiero', 'no gracias', 'ya no'], etiqueta: 'no_interesado', minConfidence: 1 },
 ];
 
 const ORDER = ['sin_clasificar', 'interesado', 'negociacion', 'cita', 'vendido'];
@@ -30,8 +33,12 @@ function calcActivityBonus(lead, flags) {
 }
 
 function shouldUpgrade(currentEtq, newEtq) {
-  if (newEtq === 'no_interesado') return true;
+  // Vendido es un estado final: solo el vendedor lo cambia manualmente, nunca el NLP.
   if (currentEtq === 'vendido') return false;
+  // Una cita ya agendada no se cancela automáticamente por una palabra suelta del NLP;
+  // cancelar una cita es una decisión que requiere acción explícita del vendedor.
+  if (currentEtq === 'cita' && newEtq === 'no_interesado') return false;
+  if (newEtq === 'no_interesado') return true;
   if (currentEtq === 'no_interesado' && newEtq !== 'no_interesado') return true;
   const ci = ORDER.indexOf(currentEtq);
   const ni = ORDER.indexOf(newEtq);
@@ -76,6 +83,30 @@ async function evaluateFromMessage(leadId, messageBody, flags) {
   }
 }
 
+// Lead scoring: qué tan prometedor/urgente es un lead, independiente de en qué etapa
+// del embudo esté. Se calcula EN VIVO (no se persiste) porque su factor más importante
+// —la recencia— cambia con el simple paso del tiempo, no solo con eventos del lead;
+// guardarlo en una columna se desactualizaría sin un cron que lo recalculara.
+function computeLeadScore(lead) {
+  if (!lead) return 0;
+  let score = 0;
+  // La etapa del embudo ya refleja compromiso comercial (5-100)
+  score += PROGRESS_MAP[lead.etiqueta || 'sin_clasificar'] || 5;
+  // Volumen de conversación: más ida y vuelta = más interés real
+  score += Math.min((lead.messages_count || 0) * 2, 20);
+  // Recencia: un lead que escribió hace una hora vale mucho más que uno frío de semanas
+  if (lead.last_customer_message_at) {
+    const horas = (Date.now() - new Date(String(lead.last_customer_message_at).replace(' ', 'T') + 'Z').getTime()) / 3600000;
+    if (horas < 1) score += 15;
+    else if (horas < 24) score += 10;
+    else if (horas < 72) score += 5;
+    else if (horas > 24 * 14) score -= 10;
+  }
+  // Ya hubo respuesta del vendedor (conversación bidireccional, no solo el cliente hablando solo)
+  if (lead.first_response_at) score += 5;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 async function evaluateRead(leadId) {
   const store = require('../db/store');
   const lead = store.getLeadById(leadId);
@@ -83,4 +114,4 @@ async function evaluateRead(leadId) {
   store.updateLeadProgress(leadId, Math.min((lead.progress_pct || 5) + 5, 80));
 }
 
-module.exports = { evaluateFromMessage, evaluateRead, PROGRESS_MAP, KEYWORD_RULES, ORDER };
+module.exports = { evaluateFromMessage, evaluateRead, computeLeadScore, PROGRESS_MAP, KEYWORD_RULES, ORDER };

@@ -87,7 +87,7 @@ class MessengerAdapter extends ChannelAdapter {
 
   verifySignature(req) {
     const secret = process.env.APP_SECRET || process.env.META_APP_SECRET;
-    if (!secret) return true;
+    if (!secret) return process.env.NODE_ENV !== 'production';
     const sig = req.headers['x-hub-signature-256'];
     if (!sig || !req.rawBody) return false;
     const esperado = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');

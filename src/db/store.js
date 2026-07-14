@@ -76,7 +76,34 @@ async function initDB() {
   `);
 
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_customer_phone ON leads(customer_phone)`);
-  try { execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_active_phone ON leads(customer_phone) WHERE status != 'cerrado'`); } catch (e) { console.error('[DB] No se pudo crear UNIQUE INDEX (puede haber duplicados):', e.message); }
+  try {
+    execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_active_phone ON leads(customer_phone) WHERE status != 'cerrado'`);
+  } catch (e) {
+    // Ya hay 2+ leads activos con el mismo teléfono (datos legacy) — el índice no puede
+    // crearse hasta fusionarlos. Se auto-fusiona con la misma lógica de scripts/deduplicar.js
+    // para que la regla de negocio (1 número = 1 lead activo) quede protegida sin intervención manual.
+    console.error('[DB] UNIQUE INDEX de leads activos falló (hay duplicados) — fusionando automáticamente...', e.message);
+    try {
+      const groups = getDuplicateGroups();
+      for (const g of groups) {
+        const sorted = [...g.leads].sort((a, b) => {
+          if (a.vendedorId && !b.vendedorId) return -1;
+          if (!a.vendedorId && b.vendedorId) return 1;
+          if (a.status !== 'cerrado' && b.status === 'cerrado') return -1;
+          if (a.status === 'cerrado' && b.status !== 'cerrado') return 1;
+          return (b.mensajes || 0) - (a.mensajes || 0);
+        });
+        const primary = sorted[0];
+        for (const dup of sorted.slice(1)) {
+          try { mergeLeads(primary.id, dup.id); } catch (e2) { console.error('[DB] Auto-merge falló para lead', dup.id, e2.message); }
+        }
+      }
+      execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_active_phone ON leads(customer_phone) WHERE status != 'cerrado'`);
+      console.log('[DB] Duplicados fusionados automáticamente y UNIQUE INDEX creado.');
+    } catch (e2) {
+      console.error('[DB] No se pudo auto-fusionar ni crear el UNIQUE INDEX — revisar manualmente en /os/deduplicar.html:', e2.message);
+    }
+  }
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_id ON leads(assigned_to_id)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_assigned_to_phone ON leads(assigned_to_phone)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)`);
@@ -93,6 +120,7 @@ async function initDB() {
   ensureColumn('messages', 'media_filename', 'TEXT');
   ensureColumn('messages', 'reply_to_id', 'INTEGER');
   ensureColumn('messages', 'wamid', 'TEXT');
+  try { execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wamid ON messages(wamid) WHERE wamid IS NOT NULL`); } catch (e) { console.error('[DB] No se pudo crear UNIQUE INDEX en messages.wamid (puede haber duplicados):', e.message); }
   ensureColumn('messages', 'status', 'TEXT DEFAULT \'sent\'');
   ensureColumn('vendedores', 'pin', 'TEXT');
   ensureColumn('vendedores', 'foto', 'TEXT');
@@ -111,6 +139,7 @@ async function initDB() {
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_by', 'TEXT');
   ensureColumn('messages', 'read_at', 'DATETIME');
+  ensureColumn('messages', 'error_detail', 'TEXT');
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
   execSQL(`
@@ -165,6 +194,72 @@ async function initDB() {
       created_at DATETIME DEFAULT (datetime('now'))
     );
   `);
+  // Columnas del catálogo real de plantillas de Meta (sincronizado, no escrito a mano):
+  // categoria/estado como los reporta Graph API, componentes = estructura completa
+  // (header/body/botones), variables = placeholders detectados, var_mapping = qué
+  // variable del CRM (template-vars.js) llena cada placeholder.
+  ensureColumn('wa_templates', 'categoria', 'TEXT');
+  ensureColumn('wa_templates', 'estado', "TEXT DEFAULT 'APPROVED'");
+  ensureColumn('wa_templates', 'componentes', 'TEXT');
+  ensureColumn('wa_templates', 'variables', 'TEXT');
+  ensureColumn('wa_templates', 'var_mapping', 'TEXT');
+
+  // --- Campañas masivas (broadcast) ---
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL,
+      template_id INTEGER NOT NULL,
+      segmento TEXT DEFAULT '{}',
+      overrides TEXT DEFAULT '{}',
+      estado TEXT DEFAULT 'draft',
+      programado_para DATETIME,
+      creado_por INTEGER,
+      total_destinatarios INTEGER DEFAULT 0,
+      total_enviados INTEGER DEFAULT 0,
+      total_entregados INTEGER DEFAULT 0,
+      total_leidos INTEGER DEFAULT 0,
+      total_fallidos INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now')),
+      started_at DATETIME,
+      finished_at DATETIME
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_campaigns_estado ON campaigns(estado)`);
+
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS campaign_recipients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL,
+      lead_id INTEGER,
+      phone TEXT NOT NULL,
+      variables TEXT DEFAULT '{}',
+      estado TEXT DEFAULT 'queued',
+      error_detail TEXT,
+      wamid TEXT,
+      created_at DATETIME DEFAULT (datetime('now')),
+      sent_at DATETIME,
+      delivered_at DATETIME,
+      read_at DATETIME,
+      failed_at DATETIME,
+      FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_camprec_campaign ON campaign_recipients(campaign_id)`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_camprec_estado ON campaign_recipients(campaign_id, estado)`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_camprec_wamid ON campaign_recipients(wamid)`);
+
+  // Opt-out: quien pide no recibir más mensajes queda excluido de TODAS las campañas
+  // futuras, sin importar el segmento — se comprueba en cada envío, no solo al crear.
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS optout (
+      phone TEXT PRIMARY KEY,
+      canal TEXT DEFAULT 'whatsapp',
+      motivo TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -177,6 +272,8 @@ async function initDB() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_push_vendedor ON push_subscriptions(vendedor_id)`);
+  // 'webpush' (VAPID, navegador/PWA) o 'fcm' (app nativa Android vía Capacitor)
+  ensureColumn('push_subscriptions', 'tipo', "TEXT DEFAULT 'webpush'");
 
   execSQL(`CREATE TABLE IF NOT EXISTS vendedor_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,6 +319,17 @@ async function initDB() {
   execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_fecha ON citas(fecha)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_vendedor ON citas(vendedor_id)`);
 
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS pending_outbound (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER,
+      phone TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_pending_outbound_phone ON pending_outbound(phone)`);
+
   return adapter.getDB();
 }
 
@@ -251,31 +359,45 @@ function saveLead(customerPhone, customerName, messageBody) {
 
   const phone = normalizePhone(customerPhone);
 
-  // Buscar en TODOS los leads (incluso cerrados) para NUNCA crear duplicados del mismo teléfono
-  const allMatches = all('SELECT id, messages_count, status, assigned_to_id FROM leads WHERE customer_phone = ? ORDER BY id ASC LIMIT 2', [phone]);
+  // Buscar en TODOS los leads (incluso cerrados) para NUNCA crear duplicados del mismo teléfono.
+  // Prioriza un lead ACTIVO sobre uno cerrado: si por datos legacy coexisten ambos, reabrir el
+  // cerrado dejaría dos leads activos con el mismo número (viola la regla de negocio y el índice único).
+  const allMatches = all("SELECT id, messages_count, status, assigned_to_id FROM leads WHERE customer_phone = ? ORDER BY (status != 'cerrado') DESC, id DESC", [phone]);
 
   if (allMatches.length > 0) {
     const existing = allMatches[0];
     const wasClosed = existing.status === 'cerrado';
-
-    // Si estaba cerrado, lo reabrimos como 'asignado' para que entre al flujo de nuevo
-    if (wasClosed) {
-      run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', ['asignado', messageBody, existing.id]);
-    } else {
-      run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', [messageBody, existing.id]);
-    }
-
+    reopenOrUpdateLead(existing.id, wasClosed, messageBody);
     return { leadId: existing.id, isNew: false, wasClosed };
   }
 
   // No existe ningún lead con este teléfono → insertar nuevo
-  run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct) VALUES (?, ?, ?, ?, 1, datetime(\'now\'), \'sin_clasificar\', 5)', [phone, customerName || 'Cliente', messageBody, messageBody]);
+  try {
+    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct) VALUES (?, ?, ?, ?, 1, datetime(\'now\'), \'sin_clasificar\', 5)', [phone, customerName || 'Cliente', messageBody, messageBody]);
+  } catch (e) {
+    // Condición de carrera: otro webhook concurrente insertó/reabrió este teléfono entre
+    // el SELECT y el INSERT (o el UNIQUE INDEX lo bloqueó). Se trata como actualización
+    // del lead ya existente en vez de propagar el error al webhook.
+    const race = one("SELECT id, status FROM leads WHERE customer_phone = ? ORDER BY (status != 'cerrado') DESC, id DESC LIMIT 1", [phone]);
+    if (!race) throw e;
+    const wasClosed = race.status === 'cerrado';
+    reopenOrUpdateLead(race.id, wasClosed, messageBody);
+    return { leadId: race.id, isNew: false, wasClosed };
+  }
 
   const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [phone]);
   if (!r || !r.id) {
     throw new Error('No se pudo obtener ID del lead después de INSERT');
   }
   return { leadId: r.id, isNew: true, wasClosed: false };
+}
+
+function reopenOrUpdateLead(leadId, wasClosed, messageBody) {
+  if (wasClosed) {
+    run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', ['asignado', messageBody, leadId]);
+  } else {
+    run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', [messageBody, leadId]);
+  }
 }
 
 function assignLeadToVendedor(leadId, vendedor) {
@@ -312,6 +434,10 @@ function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid,
 
 function updateMessageStatus(wamid, status) {
   run('UPDATE messages SET status = ? WHERE wamid = ?', [status, wamid]);
+}
+
+function setMessageError(wamid, detail) {
+  run('UPDATE messages SET error_detail = ? WHERE wamid = ?', [detail, wamid]);
 }
 
 function markMessageAsRead(messageId) {
@@ -542,22 +668,30 @@ function closeOrphanConversations() {
   return { closed: orphans.length };
 }
 
+// Decora leads con su lead score (0-100, en vivo — ver computeLeadScore en progress.js).
+// Se calcula al leer, no se persiste, porque su factor de recencia cambia con el
+// simple paso del tiempo y una columna guardada se desactualizaría sin un cron.
+function withLeadScore(leads) {
+  const { computeLeadScore } = require('../services/progress');
+  return leads.map(l => ({ ...l, score: computeLeadScore(l) }));
+}
+
 function getLeads(includeCerrado) {
   if (includeCerrado) {
-    return all(`
+    return withLeadScore(all(`
       SELECT l.*, v.nombre AS assigned_to_nombre
       FROM leads l
       LEFT JOIN vendedores v ON v.id = l.assigned_to_id
       ORDER BY l.updated_at DESC, l.created_at DESC
-    `);
+    `));
   }
-  return all(`
+  return withLeadScore(all(`
     SELECT l.*, v.nombre AS assigned_to_nombre
     FROM leads l
     LEFT JOIN vendedores v ON v.id = l.assigned_to_id
     WHERE l.status != 'cerrado'
     ORDER BY l.updated_at DESC, l.created_at DESC
-  `);
+  `));
 }
 
 // Marcar todos los mensajes de un lead como leídos
@@ -572,6 +706,10 @@ function setUnreadCount(leadId, count) {
 // Editar el nombre del contacto
 function setLeadNombre(leadId, nombre) {
   run('UPDATE leads SET customer_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(nombre), Number(leadId)]);
+}
+
+function setLeadOrigen(leadId, origen) {
+  run('UPDATE leads SET origen = ? WHERE id = ?', [String(origen).slice(0, 255), Number(leadId)]);
 }
 
 function getLeadCount() {
@@ -632,7 +770,7 @@ function updateUsuarioVendedorId(id, vendedorId) {
 
 // --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
-  return all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.pinned_at DESC, l.updated_at DESC", [vendedorId, 'cerrado']);
+  return withLeadScore(all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.pinned_at DESC, l.updated_at DESC", [vendedorId, 'cerrado']));
 }
 
 function getArchivedLeadsByVendedorId(vendedorId) {
@@ -704,7 +842,7 @@ function getPropiedadById(id) {
 function createPropiedad(data) {
   run('INSERT INTO propiedades (nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [data.nombre, data.descripcion||'', data.ciudad||'', data.precio||0, data.m2||0, data.tipo||'lote', data.estado||'disponible', data.imagen_url||'']);
-  return getPropiedadById(lastID());
+  return one('SELECT * FROM propiedades WHERE id = (SELECT last_insert_rowid())');
 }
 function updatePropiedad(id, data) {
   run('UPDATE propiedades SET nombre=?, descripcion=?, ciudad=?, precio=?, m2=?, tipo=?, estado=?, imagen_url=? WHERE id=?',
@@ -718,6 +856,12 @@ function deletePropiedad(id) {
 function savePushSubscription(vendedorId, sub) {
   const keys = sub.keys || {};
   run('INSERT OR REPLACE INTO push_subscriptions (vendedor_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)', [vendedorId, sub.endpoint, keys.p256dh || '', keys.auth || '']);
+}
+
+// Token FCM de la app nativa (Capacitor). Se guarda en la misma tabla reutilizando
+// `endpoint` como el token — p256dh/auth solo aplican a Web Push, quedan vacíos.
+function saveFcmToken(vendedorId, token) {
+  run('INSERT OR REPLACE INTO push_subscriptions (vendedor_id, endpoint, p256dh, auth, tipo) VALUES (?, ?, ?, ?, ?)', [vendedorId, token, '', '', 'fcm']);
 }
 
 function getPushSubscriptionsByVendedor(vendedorId) {
@@ -794,6 +938,157 @@ function addWATemplate(nombre, idioma, params) {
 
 function deleteWATemplate(id) {
   run('DELETE FROM wa_templates WHERE id = ?', [id]);
+}
+
+function getWATemplateById(id) {
+  return one('SELECT * FROM wa_templates WHERE id = ?', [id]);
+}
+
+function getWATemplateByName(nombre) {
+  return one('SELECT * FROM wa_templates WHERE nombre = ?', [nombre]);
+}
+
+// Guarda/actualiza una plantilla tal como la reporta Meta (sync real, no entrada manual).
+// Usa nombre como clave: si Meta reporta el mismo nombre en dos idiomas, la última
+// sincronizada sobrescribe — limitación aceptada mientras el negocio opera en un solo idioma.
+function upsertWATemplateFull(t) {
+  const existing = getWATemplateByName(t.nombre);
+  if (existing) {
+    run('UPDATE wa_templates SET idioma = ?, categoria = ?, estado = ?, componentes = ?, variables = ? WHERE id = ?',
+      [t.idioma || 'es', t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]', t.variables || '[]', existing.id]);
+    return existing.id;
+  }
+  run('INSERT INTO wa_templates (nombre, idioma, categoria, estado, componentes, variables) VALUES (?, ?, ?, ?, ?, ?)',
+    [t.nombre, t.idioma || 'es', t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]', t.variables || '[]']);
+  return one('SELECT id FROM wa_templates WHERE nombre = ?', [t.nombre]).id;
+}
+
+function setWATemplateMapping(id, mappingJson) {
+  run('UPDATE wa_templates SET var_mapping = ? WHERE id = ?', [mappingJson, id]);
+}
+
+// ═══════════════════════ Campañas masivas (broadcast) ═══════════════════════
+
+function createCampaign({ nombre, templateId, segmento, overrides, creadoPor }) {
+  run('INSERT INTO campaigns (nombre, template_id, segmento, overrides, creado_por) VALUES (?, ?, ?, ?, ?)',
+    [nombre, templateId, JSON.stringify(segmento || {}), JSON.stringify(overrides || {}), creadoPor || null]);
+  return one('SELECT * FROM campaigns WHERE id = (SELECT last_insert_rowid())');
+}
+
+function getCampaigns() {
+  return all('SELECT * FROM campaigns ORDER BY created_at DESC');
+}
+
+function getCampaignById(id) {
+  return one('SELECT * FROM campaigns WHERE id = ?', [id]);
+}
+
+function updateCampaignEstado(id, estado) {
+  const timestampCol = estado === 'running' ? ', started_at = datetime(\'now\')'
+    : (estado === 'done' || estado === 'failed') ? ', finished_at = datetime(\'now\')' : '';
+  run(`UPDATE campaigns SET estado = ?, updated_at = datetime('now')${timestampCol} WHERE id = ?`, [estado, id]);
+}
+
+function deleteCampaign(id) {
+  run('DELETE FROM campaign_recipients WHERE campaign_id = ?', [id]);
+  run('DELETE FROM campaigns WHERE id = ?', [id]);
+}
+
+function addCampaignRecipients(campaignId, recipients) {
+  for (const r of recipients) {
+    run('INSERT INTO campaign_recipients (campaign_id, lead_id, phone, variables) VALUES (?, ?, ?, ?)',
+      [campaignId, r.leadId || null, r.phone, JSON.stringify(r.variables || {})]);
+  }
+  run('UPDATE campaigns SET total_destinatarios = (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = ?) WHERE id = ?', [campaignId, campaignId]);
+}
+
+function getCampaignRecipients(campaignId, estado) {
+  if (estado) return all('SELECT * FROM campaign_recipients WHERE campaign_id = ? AND estado = ? ORDER BY id ASC', [campaignId, estado]);
+  return all('SELECT * FROM campaign_recipients WHERE campaign_id = ? ORDER BY id ASC', [campaignId]);
+}
+
+function updateCampaignRecipient(id, fields) {
+  const sets = [], vals = [];
+  const colByEstado = { sent: 'sent_at', delivered: 'delivered_at', read: 'read_at', failed: 'failed_at' };
+  if (fields.estado) {
+    sets.push('estado = ?'); vals.push(fields.estado);
+    const col = colByEstado[fields.estado];
+    if (col) sets.push(`${col} = datetime('now')`);
+  }
+  if (fields.wamid !== undefined) { sets.push('wamid = ?'); vals.push(fields.wamid); }
+  if (fields.errorDetail !== undefined) { sets.push('error_detail = ?'); vals.push(fields.errorDetail); }
+  if (!sets.length) return;
+  vals.push(id);
+  run(`UPDATE campaign_recipients SET ${sets.join(', ')} WHERE id = ?`, vals);
+}
+
+function getCampaignRecipientByWamid(wamid) {
+  return one('SELECT * FROM campaign_recipients WHERE wamid = ?', [wamid]);
+}
+
+// Recalcula los contadores agregados de la campaña desde sus destinatarios —
+// la fuente de verdad es siempre campaign_recipients, nunca un contador que se
+// pueda desincronizar por una actualización parcial.
+function recalcCampaignStats(campaignId) {
+  const stats = one(`SELECT
+    COUNT(*) as total,
+    SUM(CASE WHEN estado IN ('sent','delivered','read') THEN 1 ELSE 0 END) as enviados,
+    SUM(CASE WHEN estado IN ('delivered','read') THEN 1 ELSE 0 END) as entregados,
+    SUM(CASE WHEN estado = 'read' THEN 1 ELSE 0 END) as leidos,
+    SUM(CASE WHEN estado = 'failed' THEN 1 ELSE 0 END) as fallidos
+    FROM campaign_recipients WHERE campaign_id = ?`, [campaignId]);
+  run('UPDATE campaigns SET total_destinatarios = ?, total_enviados = ?, total_entregados = ?, total_leidos = ?, total_fallidos = ? WHERE id = ?',
+    [stats.total || 0, stats.enviados || 0, stats.entregados || 0, stats.leidos || 0, stats.fallidos || 0, campaignId]);
+}
+
+// --- Opt-out: exclusión permanente de campañas ---
+function isOptedOut(phone) {
+  return !!one('SELECT phone FROM optout WHERE phone = ?', [phone]);
+}
+
+function addOptout(phone, canal, motivo) {
+  run('INSERT OR REPLACE INTO optout (phone, canal, motivo) VALUES (?, ?, ?)', [phone, canal || 'whatsapp', motivo || '']);
+}
+
+function getOptouts() {
+  return all('SELECT * FROM optout ORDER BY created_at DESC');
+}
+
+// --- Segmentación de audiencia para campañas ---
+// Construye el WHERE dinámicamente a partir de filtros opcionales. Excluye SIEMPRE
+// los leads con status='cerrado' (no se hace broadcast a leads inactivos) y los
+// teléfonos en optout, sin importar qué combinación de filtros se use.
+function buildSegmentWhere(filters) {
+  const f = filters || {};
+  const where = ["l.status != 'cerrado'"];
+  const params = [];
+  if (f.etiqueta) { where.push('l.etiqueta = ?'); params.push(f.etiqueta); }
+  if (f.proyecto) { where.push('l.proyecto = ?'); params.push(f.proyecto); }
+  if (f.ciudad) { where.push('l.ciudad = ?'); params.push(f.ciudad); }
+  if (f.vendedorId) { where.push('l.assigned_to_id = ?'); params.push(f.vendedorId); }
+  if (f.contactadoAntesDe) { where.push('l.last_customer_message_at IS NOT NULL AND l.last_customer_message_at < ?'); params.push(f.contactadoAntesDe); }
+  if (f.contactadoDespuesDe) { where.push('l.last_customer_message_at IS NOT NULL AND l.last_customer_message_at > ?'); params.push(f.contactadoDespuesDe); }
+  where.push('NOT EXISTS (SELECT 1 FROM optout o WHERE o.phone = l.customer_phone)');
+  return { whereSql: where.join(' AND '), params };
+}
+
+function countSegment(filters) {
+  const { whereSql, params } = buildSegmentWhere(filters);
+  const r = one(`SELECT COUNT(*) as c FROM leads l WHERE ${whereSql}`, params);
+  return r ? r.c : 0;
+}
+
+function segmentLeads(filters) {
+  const { whereSql, params } = buildSegmentWhere(filters);
+  return all(`SELECT l.* FROM leads l WHERE ${whereSql} ORDER BY l.id ASC`, params);
+}
+
+// Valores reales existentes para poblar los filtros del constructor de segmentos
+// (evita que el admin escriba "Tocaima" cuando en la DB está guardado "tocaima").
+function getSegmentOptions() {
+  const proyectos = all("SELECT DISTINCT proyecto FROM leads WHERE proyecto IS NOT NULL AND proyecto != '' ORDER BY proyecto").map(r => r.proyecto);
+  const ciudades = all("SELECT DISTINCT ciudad FROM leads WHERE ciudad IS NOT NULL AND ciudad != '' ORDER BY ciudad").map(r => r.ciudad);
+  return { proyectos, ciudades };
 }
 
 function setVendedorEstado(id, estado) {
@@ -1373,26 +1668,44 @@ function deleteUbicacionGuardada(id) {
   run('DELETE FROM ubicaciones_guardadas WHERE id = ?', [id]);
 }
 
+// --- Cola de mensajes pendientes por ventana de 24h cerrada ---
+// Un template de reactivación ENTREGADO no reabre la ventana de servicio de WhatsApp
+// (solo lo hace una respuesta del cliente). El mensaje original del vendedor se guarda
+// aquí y se envía cuando el webhook detecta esa respuesta (ver flushPendingOutbound).
+function queuePendingOutbound(leadId, phone, body) {
+  run('INSERT INTO pending_outbound (lead_id, phone, body) VALUES (?, ?, ?)', [leadId || null, phone, body]);
+}
+function getPendingOutbound(phone) {
+  return all('SELECT * FROM pending_outbound WHERE phone = ? ORDER BY id ASC', [phone]);
+}
+function clearPendingOutbound(phone) {
+  run('DELETE FROM pending_outbound WHERE phone = ?', [phone]);
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse, resetLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
-  marcarLeido, setUnreadCount, setLeadNombre,
+  marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
-  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus,
+  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError,
   getTemplates, addTemplate, deleteTemplate,
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
-  savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription,
+  savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken,
   createDBSession, getDBSession, deleteDBSession, refreshSession, cleanExpiredSessions,
   getConfig, setConfig,
-  getWATemplates, addWATemplate, deleteWATemplate,
+  getWATemplates, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName, upsertWATemplateFull, setWATemplateMapping,
+  createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
+  addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
+  isOptedOut, addOptout, getOptouts, countSegment, segmentLeads, getSegmentOptions,
   setLeadEtiqueta, updateLeadProgress, getNotasByLead, addNota, deleteNota, reassignLead,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
+  queuePendingOutbound, getPendingOutbound, clearPendingOutbound,
   // Nuevo schema multicanal
   createCustomer, getCustomerById, findCustomerByChannel,
   linkChannelToCustomer, getCustomerChannels, getCustomers, updateCustomer, deleteCustomer,

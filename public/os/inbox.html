@@ -297,6 +297,7 @@
     x: 'M18 6 6 18M6 6l12 12',
     inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13l3.5 7v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z',
     user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+    plus: 'M12 5v14M5 12h14',
   };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -512,7 +513,7 @@
     /* Cargar mensajes */
     const data = await api('/api/inbox/conversations/' + id + '/timeline');
     const msgs = data?.messages || [];
-    api('/api/inbox/conversations/' + id + '/leido').catch(() => { });
+    api('/api/inbox/conversations/' + id + '/leido', { method: 'POST' }).catch(() => { });
     c.unread_count = 0; renderList();
     renderMsgs(msgs);
 
@@ -531,8 +532,8 @@
       }));
 
     document.getElementById('etqSel')?.addEventListener('change', async e => {
-      await api('/api/inbox/conversations/' + id + '/etiqueta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etiqueta: e.target.value }) });
-      c.etiqueta = e.target.value; toast('Etiqueta actualizada', 'ok');
+      const r = await api('/api/inbox/conversations/' + id + '/etiqueta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etiqueta: e.target.value }) });
+      if (r !== null) { c.etiqueta = e.target.value; toast('Etiqueta actualizada', 'ok'); } else toast('Error al actualizar etiqueta', 'err');
     });
 
     document.getElementById('asigSel')?.addEventListener('change', async e => {
@@ -1087,7 +1088,7 @@
       if (!leadId) { toast('Este lead no está vinculado al CRM legacy', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Pensando...';
       const suggestions = await SPOS.sugerirRespuesta(leadId, name);
-      btn.disabled = false; btn.innerHTML = '${ICONS.spark}Sugerir respuesta';
+      btn.disabled = false; btn.innerHTML = `${ICONS.spark}Sugerir respuesta`;
       const box = document.getElementById('aiSuggestions');
       if (!box) return;
       if (!suggestions.length) { box.style.display = 'none'; return; }
@@ -1111,15 +1112,28 @@
     document.getElementById('btnNewChat')?.addEventListener('click', () => openNewChatModal());
   }
 
+  function renderTplVarFields(tpl, nameValue) {
+    const box = document.getElementById('ncVarFields');
+    if (!box) return;
+    if (!tpl) { box.innerHTML = ''; return; }
+    let vars = []; try { vars = JSON.parse(tpl.variables || '[]'); } catch (e) {}
+    let mapping = {}; try { mapping = JSON.parse(tpl.var_mapping || '{}'); } catch (e) {}
+    if (!vars.length) { box.innerHTML = '<div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Esta plantilla no tiene variables.</div>'; return; }
+    box.innerHTML = '<div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin:4px 0 6px">Variables de la plantilla</div>' +
+      vars.map(ph => {
+        const prefill = mapping[ph] === 'nombre_cliente' ? esc(nameValue || '') : '';
+        return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph] ? ' — ' + esc(mapping[ph]) : ' (sin asignar en Configuración)'}" value="${prefill}" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:8px;font-size:13px">`;
+      }).join('');
+  }
+
   function openNewChatModal() {
     const existing = document.getElementById('newChatModal');
     if (existing) existing.remove();
-    const tmplNames = waTemplates.map(t => t.nombre);
     const modal = document.createElement('div');
     modal.id = 'newChatModal';
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)';
     modal.innerHTML = `
-      <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:90%;max-width:400px;border:1px solid var(--border-soft)">
+      <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:90%;max-width:400px;max-height:85vh;overflow:auto;border:1px solid var(--border-soft)">
         <h3 style="margin:0 0 16px;color:var(--text-1)">Nuevo chat WhatsApp</h3>
         <form id="newChatForm">
           <label style="font-size:12px;color:var(--text-3)">Teléfono (ej: 573211234567)</label>
@@ -1128,12 +1142,13 @@
           <input type="text" id="ncName" placeholder="Nombre del cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
           <label style="font-size:12px;color:var(--text-3)">Mensaje</label>
           <textarea id="ncMsg" required rows="3" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px;resize:none"></textarea>
-          ${tmplNames.length ? `<label style="font-size:12px;color:var(--text-3)">Template (opcional, para reabrir ventana)</label>
-          <select id="ncTemplate" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
-            <option value="">Sin template</option>
-            ${tmplNames.map(n => `<option value="${n}">${n}</option>`).join('')}
-          </select>` : ''}
-          <div style="display:flex;gap:8px;justify-content:flex-end">
+          ${waTemplates.length ? `<label style="font-size:12px;color:var(--text-3)">Plantilla (obligatoria si el número nunca te ha escrito — WhatsApp exige que el primer contacto sea con plantilla aprobada)</label>
+          <select id="ncTemplate" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:8px;font-size:14px">
+            <option value="">Sin plantilla</option>
+            ${waTemplates.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}
+          </select>
+          <div id="ncVarFields"></div>` : '<div style="font-size:11.5px;color:var(--text-3);margin-bottom:12px">No hay plantillas sincronizadas — sincroniza en Configuración antes de contactar números nuevos.</div>'}
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
             <button type="button" class="btn btn--ghost" id="ncCancel">Cancelar</button>
             <button type="submit" class="btn btn--gold">Enviar</button>
           </div>
@@ -1142,19 +1157,28 @@
     document.body.appendChild(modal);
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     modal.querySelector('#ncCancel').addEventListener('click', () => modal.remove());
+    const tplSel = document.getElementById('ncTemplate');
+    const nameInp = document.getElementById('ncName');
+    tplSel?.addEventListener('change', () => {
+      const tpl = waTemplates.find(t => String(t.id) === tplSel.value);
+      renderTplVarFields(tpl, nameInp.value.trim());
+    });
     modal.querySelector('#newChatForm').addEventListener('submit', async e => {
       e.preventDefault();
       const phone = document.getElementById('ncPhone').value.trim();
       const name = document.getElementById('ncName').value.trim();
       const message = document.getElementById('ncMsg').value.trim();
-      const tpl = document.getElementById('ncTemplate')?.value || '';
+      const templateId = tplSel?.value || '';
+      const templateVars = {};
+      document.querySelectorAll('#ncVarFields [data-var]').forEach(inp => { templateVars[inp.dataset.var] = inp.value.trim(); });
       if (!phone || !message) return;
       modal.remove();
       try {
-        await api('/api/leads/proactive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, name, message, templateName: tpl }) });
-        toast('Chat enviado a ' + phone, 'ok');
-        const r = await api('/api/inbox/unified-conversations');
-        if (Array.isArray(r)) { convs = r; renderList(); }
+        const r = await api('/api/leads/proactive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, name, message, templateId: templateId || undefined, templateVars }) });
+        if (r && r.ok) toast('Chat enviado a ' + phone, 'ok');
+        else toast('Error: ' + ((r && r.error) || 'desconocido'), 'err');
+        const rr = await api('/api/inbox/unified-conversations');
+        if (Array.isArray(rr)) { convs = rr; renderList(); }
       } catch (err) {
         toast('Error: ' + (err.message || err.detalle || 'desconocido'), 'err');
       }

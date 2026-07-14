@@ -5,6 +5,34 @@ const store = require('../db/store');
 const events = require('../services/events');
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
+// Tipos de mensaje entrante que crean una fila nueva en `messages` (dedup aplica solo a estos).
+const CREATES_MESSAGE_TYPES = ['text', 'location', ...MEDIA_TYPES];
+
+// Palabras de baja reconocidas — se comparan contra el mensaje COMPLETO (no como
+// substring) para no confundir "quiero cancelar la cita" con una orden real de baja.
+const OPTOUT_KEYWORDS = ['stop', 'baja', 'no molestar', 'no molestes', 'no molestes mas', 'unsubscribe', 'detener'];
+function isOptoutMessage(body) {
+  const t = String(body || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return OPTOUT_KEYWORDS.includes(t);
+}
+
+// Cuando el cliente responde, la ventana de 24h se reabre: se envían los mensajes que
+// quedaron encolados por sendMessageSmart mientras estaba cerrada.
+async function flushPendingOutbound(phone) {
+  const pending = store.getPendingOutbound(phone);
+  if (!pending.length) return;
+  store.clearPendingOutbound(phone);
+  for (const p of pending) {
+    try {
+      const result = await sendMessage(phone, p.body);
+      const wamid = result && result.messages && result.messages[0] && result.messages[0].id;
+      if (p.lead_id) store.saveMessage(p.lead_id, 'panel', phone, p.body, 'outgoing', null, null, wamid || null, 'sent');
+      console.log(`[Webhook] Mensaje encolado enviado a ${phone} tras reapertura de ventana`);
+    } catch (e) {
+      console.error('[Webhook] Error al enviar mensaje encolado:', e.message);
+    }
+  }
+}
 
 function handleMessage(req, res) {
   res.sendStatus(200);
@@ -30,6 +58,15 @@ function handleMessage(req, res) {
           const fromPhone = msg.from;
           if (!fromPhone) continue;
 
+          flushPendingOutbound(fromPhone).catch(e => console.error('[Webhook] flushPendingOutbound:', e.message));
+
+          // Meta reintenta webhooks si el 200 tarda o hay errores de red: si ya guardamos
+          // este wamid, es un reintento del mismo mensaje — se ignora para no duplicar.
+          if (msg.id && CREATES_MESSAGE_TYPES.includes(msg.type) && store.getMessageByWamid(msg.id)) {
+            console.log(`[Webhook] Mensaje duplicado ignorado (wamid ya procesado): ${msg.id}`);
+            continue;
+          }
+
           const contact = contacts.find(c => c && c.wa_id === fromPhone);
           const customerName = (contact?.profile?.name) || 'Cliente';
 
@@ -37,6 +74,16 @@ function handleMessage(req, res) {
           if (msg.type === 'text') {
             const messageBody = msg.text && msg.text.body;
             if (!messageBody) continue;
+
+            // Baja explícita: se registra y NO se enruta como conversación normal —
+            // es una orden al sistema, no un mensaje de venta.
+            if (isOptoutMessage(messageBody)) {
+              store.addOptout(fromPhone, 'whatsapp', messageBody);
+              console.log(`[Webhook] Opt-out registrado: ${fromPhone} ("${messageBody}")`);
+              sendMessage(fromPhone, 'Listo, no volverás a recibir mensajes promocionales de nuestra parte. Si necesitas algo, escríbenos cuando quieras.')
+                .catch(e => console.error('Error confirmando opt-out:', e.message));
+              continue;
+            }
 
             routeReply(fromPhone, messageBody, customerName, msg.id || null, (err, result) => {
               if (err) { console.error('Error routing message:', err.message); return; }
@@ -49,6 +96,20 @@ function handleMessage(req, res) {
                 ).catch(e => console.error('Error enviando mensaje de espera:', e.message));
               }
             });
+
+            // Click-to-WhatsApp ads incluyen `referral` en el primer mensaje (anuncio/campaña
+            // de origen). saveLead ya corrió de forma síncrona dentro de routeReply, así que
+            // el lead ya existe aquí — se guarda el origen real para que reportes y la
+            // distribución inteligente de leads (assigner.js) lo puedan usar.
+            if (msg.referral) {
+              try {
+                const origen = msg.referral.headline || msg.referral.body || msg.referral.source_url || null;
+                if (origen) {
+                  const lead = store.getLeadByCustomerPhone(fromPhone);
+                  if (lead && !lead.origen) store.setLeadOrigen(lead.id, origen);
+                }
+              } catch (e) { console.error('Error guardando origen de referral:', e.message); }
+            }
             continue;
           }
 
@@ -112,18 +173,42 @@ function handleMessage(req, res) {
           if (!st || !st.id || !st.status) continue;
           console.log(`[Webhook] Status update: ${st.id} → ${st.status}`);
           const wasRead = st.status === 'read';
+          const isFailed = st.status === 'failed';
           store.updateMessageStatus(st.id, st.status);
+
+          // Un status 'failed' trae el motivo en errors[] (número no en WhatsApp, ventana
+          // cerrada, plantilla rechazada, etc.). Antes se descartaba: el vendedor creía que
+          // el mensaje se envió y nadie se enteraba de por qué no llegó.
+          let errDetail = null;
+          if (isFailed && Array.isArray(st.errors) && st.errors[0]) {
+            const e0 = st.errors[0];
+            errDetail = `[${e0.code || '?'}] ${e0.title || e0.message || 'Error desconocido'}`;
+            store.setMessageError(st.id, errDetail);
+            console.error(`[Webhook] Mensaje ${st.id} FALLÓ: ${errDetail}`);
+          }
+
           // Notificar al panel para actualizar el checkmark en vivo
           const m = store.getMessageByWamid(st.id);
           if (m) {
             const lead = store.getLeadById(m.lead_id);
             if (lead) {
-              events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: m.id, status: st.status, ts: Date.now() });
-              events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, ts: Date.now() });
+              events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
+              events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
+              if (isFailed) {
+                events.emitToVendedor(lead.assigned_to_id, 'sistema_alerta', { tipo: 'mensaje_fallido', leadId: lead.id, messageId: m.id, mensaje: `No se pudo entregar un mensaje a ${lead.customer_name || lead.customer_phone}: ${errDetail}`, ts: Date.now() });
+              }
               if (wasRead && m.direction === 'outgoing') {
                 try { require('../services/progress').evaluateRead(lead.id).catch(()=>{}); } catch(e){}
               }
             }
+          }
+
+          // Conciliación con el dashboard de campañas: si este wamid pertenece a un
+          // envío masivo, su estado (sent/delivered/read/failed) se refleja ahí también.
+          const camp = store.getCampaignRecipientByWamid(st.id);
+          if (camp) {
+            store.updateCampaignRecipient(camp.id, { estado: st.status, errorDetail: errDetail || undefined });
+            store.recalcCampaignStats(camp.campaign_id);
           }
         }
       }

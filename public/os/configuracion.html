@@ -39,6 +39,8 @@
   // Cargar templates de WhatsApp para el selector de reactivación
   let waTemplates = [];
   try { waTemplates = await api('/api/wa-templates') || []; } catch (e) { waTemplates = []; }
+  let tplVarsCatalog = [];
+  try { tplVarsCatalog = await api('/api/template-vars') || []; } catch (e) { tplVarsCatalog = []; }
 
   ctx.content.innerHTML = `
    <div class="os-content__max" style="max-width:720px">
@@ -52,6 +54,13 @@
       </div>
       <button type="submit" class="cfg-save">Guardar mensaje</button>
     </form>
+
+    <div class="cfg-sec" id="secPlantillas">
+      <h3>Plantillas de WhatsApp (Meta)</h3>
+      <p>Sincroniza el catálogo real de plantillas aprobadas en Meta Business Suite (nunca se escriben a mano). Luego asigna qué dato del CRM llena cada variable de cada plantilla — así el vendedor puede iniciar conversaciones con los datos reales del lead ya completados.</p>
+      <button type="button" class="cfg-save" id="btnSyncTpl">Sincronizar desde Meta</button>
+      <div id="tplList" style="margin-top:14px"></div>
+    </div>
 
     <form class="cfg-sec" id="fReengagement">
       <h3>Template de reactivación (ventana 24h)</h3>
@@ -139,16 +148,67 @@
 
   // Poblar selector de template de reactivación
   const sel = document.getElementById('reengagement_template');
-  if (sel && waTemplates.length) {
+  function poblarSelectReactivacion() {
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Sin template (mensaje fallará si ventana cerrada)</option>';
     waTemplates.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.nombre; opt.textContent = t.nombre;
       if (cfg.reengagement_template === t.nombre) opt.selected = true;
       sel.appendChild(opt);
     });
-  } else if (sel) {
-    sel.innerHTML = '<option value="">No hay templates de WhatsApp aprobados</option>';
   }
+  poblarSelectReactivacion();
+
+  // ===== Plantillas de WhatsApp: sincronización + mapeo de variables =====
+  function renderTplList() {
+    const box = document.getElementById('tplList');
+    if (!box) return;
+    if (!waTemplates.length) { box.innerHTML = '<div class="cfg-hint">Aún no hay plantillas sincronizadas. Debes tener plantillas APROBADAS en Meta Business Suite y las variables WHATSAPP_TOKEN / WHATSAPP_BUSINESS_ACCOUNT_ID configuradas.</div>'; return; }
+    box.innerHTML = waTemplates.map(t => {
+      let vars = []; try { vars = JSON.parse(t.variables || '[]'); } catch (e) {}
+      let mapping = {}; try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+      return `<div class="pm-card" style="border:1px solid var(--border-soft);border-radius:12px;padding:14px;margin-bottom:10px;background:var(--bg-2)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="font-size:13px">${esc(t.nombre)}</strong>
+          <span class="cfg-hint" style="margin:0">${esc(t.idioma || '')} · ${esc(t.categoria || '')} · ${esc(t.estado || '')}</span>
+        </div>
+        ${vars.length ? vars.map(ph => `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:12px;color:var(--text-3);min-width:90px">{{${esc(ph)}}}</span>
+            <select data-tpl="${t.id}" data-ph="${esc(ph)}" style="flex:1;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 9px;font-size:12.5px">
+              <option value="">Sin asignar (se pedirá a mano al enviar)</option>
+              ${tplVarsCatalog.map(v => `<option value="${v.key}" ${mapping[ph] === v.key ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
+            </select>
+          </div>`).join('') : '<div class="cfg-hint">Esta plantilla no tiene variables.</div>'}
+      </div>`;
+    }).join('');
+    box.querySelectorAll('select[data-tpl]').forEach(selEl => selEl.onchange = async () => {
+      const tplId = selEl.dataset.tpl;
+      const t = waTemplates.find(x => String(x.id) === String(tplId));
+      let mapping = {}; try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+      mapping[selEl.dataset.ph] = selEl.value;
+      t.var_mapping = JSON.stringify(mapping);
+      const r = await api('/api/wa-templates/' + tplId + '/mapping', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mapping }) });
+      if (r) toast('Variable asignada', 'ok'); else toast('Error al guardar', 'err');
+    });
+  }
+  renderTplList();
+
+  document.getElementById('btnSyncTpl')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnSyncTpl');
+    btn.disabled = true; btn.textContent = 'Sincronizando...';
+    const r = await api('/api/wa-templates/sync', { method: 'POST' });
+    btn.disabled = false; btn.textContent = 'Sincronizar desde Meta';
+    if (r && r.ok) {
+      toast(`${r.synced} de ${r.total} plantilla(s) aprobada(s) sincronizada(s)`, 'ok');
+      waTemplates = await api('/api/wa-templates') || [];
+      renderTplList();
+      poblarSelectReactivacion();
+    } else {
+      toast('Error al sincronizar: ' + (r && r.detalle || 'revisa WHATSAPP_TOKEN / WHATSAPP_BUSINESS_ACCOUNT_ID'), 'err');
+    }
+  });
 
   document.getElementById('fReengagement')?.addEventListener('submit', async ev => {
     ev.preventDefault();

@@ -46,8 +46,9 @@
   .m-mark{ width:34px; height:34px; border-radius:11px; background:linear-gradient(140deg,#E8C86A,var(--gold) 55%,#9E7E3C); display:grid; place-items:center; color:#0A0A0A; font-weight:700; font-size:14px; font-family:var(--f-title); box-shadow:0 4px 16px rgba(200,164,90,.28); flex-shrink:0; }
   .m-title{ font-family:var(--f-title); font-size:19px; font-weight:600; letter-spacing:.02em; }
   .m-title small{ display:block; font-family:var(--f-ui); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3); font-weight:500; margin-top:1px; }
-  .m-headbtn{ margin-left:auto; width:38px; height:38px; border-radius:50%; background:var(--bg-2); border:1px solid var(--border-soft); color:var(--text-2); display:grid; place-items:center; }
+  .m-headbtn{ margin-left:auto; width:38px; height:38px; border-radius:50%; background:var(--bg-2); border:1px solid var(--border-soft); color:var(--text-2); display:grid; place-items:center; font-size:16px; }
   .m-headbtn svg{ width:19px; height:19px; }
+  .m-headbtn.active{ background:var(--gold-soft,rgba(200,164,90,.18)); border-color:var(--gold); }
 
   /* ── Buscador ── */
   .m-search{ position:relative; display:flex; align-items:center; height:42px; background:var(--bg-2); border:1px solid var(--border-soft); border-radius:14px; padding:0 12px; transition:border-color .2s, background .2s; }
@@ -456,6 +457,7 @@
       <div class="m-head__top">
         <div class="m-mark">SP</div>
         <div class="m-title" id="navTitle">Conversaciones<small id="navSub">SP OS Enterprise</small></div>
+        <button class="m-headbtn" id="btnPrioridad" aria-label="Ordenar por prioridad" title="Ordenar por prioridad">🔥</button>
         <button class="m-headbtn" id="btnNotif" aria-label="Notificaciones"></button>
       </div>
       <label class="m-search"><span id="icSearch"></span><input id="q" placeholder="Buscar cliente, chat, etiqueta…" autocomplete="off"></label>
@@ -530,10 +532,10 @@ const SVG = {
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
-let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats';
+let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats', ordenPrioridad = false;
 let current = null, currentMsgs = [], metricas = null;
 let showArchivados = false, archivadosCount = 0, archivedLeads = [], replyTo = null;
-const _audioPlayers = {};
+let _audioPlayers = {};
 
 const ETQ = { sin_clasificar:{t:'Nuevo',cls:'sin_clasificar'}, interesado:{t:'Interesado',cls:'interesado'}, negociacion:{t:'Negociación',cls:'negociacion'}, cita:{t:'Cita',cls:'cita'}, vendido:{t:'Vendido',cls:'vendido'}, no_interesado:{t:'No int.',cls:'no_interesado'} };
 const etqLabel = v => (ETQ[v]||{t:v}).t;
@@ -567,6 +569,11 @@ function urlBase64ToUint8Array(b){
   return u;
 }
 async function suscribirPush(){
+  // App nativa (Capacitor): FCM es más confiable en Android que Web Push (que el
+  // sistema puede matar en segundo plano) — canal separado, ver push.js en el backend.
+  if(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()){
+    return suscribirPushNativo();
+  }
   if(!('Notification'in window)||!('serviceWorker'in navigator)) return;
   if(Notification.permission==='denied') return;
   if(Notification.permission==='default'){
@@ -581,6 +588,23 @@ async function suscribirPush(){
     const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
     await api('/api/push/suscribir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});
   }catch(e){}
+}
+async function suscribirPushNativo(){
+  try{
+    const { PushNotifications } = window.Capacitor.Plugins;
+    const perm = await PushNotifications.requestPermissions();
+    if(perm.receive!=='granted') return;
+    await PushNotifications.addListener('registration', async token=>{
+      try{ await api('/api/push/suscribir-fcm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token.value})}); }catch(e){}
+    });
+    await PushNotifications.addListener('registrationError', err=>console.error('FCM registration error:', err));
+    // Tocar la notificación con la app en background debe abrir el lead correspondiente
+    await PushNotifications.addListener('pushNotificationActionPerformed', action=>{
+      const leadId = action.notification && action.notification.data && action.notification.data.leadId;
+      if(leadId) abrirChat(Number(leadId));
+    });
+    await PushNotifications.register();
+  }catch(e){ console.error('suscribirPushNativo:', e.message); }
 }
 async function limpiarCache(){
   if('caches'in window){ const k=await caches.keys(); await Promise.all(k.map(x=>caches.delete(x))); }
@@ -597,7 +621,12 @@ function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=
 
 /* ════════ API ════════ */
 async function api(url, opts){
-  try{ const r = await fetch(url, Object.assign({credentials:'include', headers:{'Accept':'application/json'}}, opts||{})); if(!r.ok) return null; const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json() : r.text(); }
+  try{
+    const r = await fetch(url, Object.assign({credentials:'include', headers:{'Accept':'application/json'}}, opts||{}));
+    if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
+    if(!r.ok) return null;
+    const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json() : r.text();
+  }
   catch(e){ return null; }
 }
 
@@ -662,7 +691,7 @@ async function init(){
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
 }
 
-async function cargar(){ const d = await api('/api/mis-leads'); leads = d || []; renderList(); }
+async function cargar(){ const d = await api('/api/mis-leads'); if(d) leads = d; else if(!leads.length) toast('Sin conexión. Reintentando...'); renderList(); }
 async function cargarArchivados(){ const d = await api('/api/mis-leads/archivados'); archivedLeads = d || []; archivadosCount = archivedLeads.length; }
 function leadsActivos(){ return leadsFiltrados(); }
 function leadsArchivados(){ let a = archivedLeads; if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)); } return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
@@ -671,7 +700,9 @@ function leadsArchivados(){ let a = archivedLeads; if(term){ const t=term.toLowe
 const FILTROS = [['todos','Todos'],['sin_clasificar','Nuevos'],['interesado','Interesados'],['negociacion','Negociación'],['cita','Citas'],['vendido','Vendidos']];
 function renderFilters(){ $('#filters').innerHTML = FILTROS.map(([k,l])=>{ const n = k==='todos'?leads.length:leads.filter(x=>(x.etiqueta||'sin_clasificar')===k).length; return `<button class="m-chip ${k===filtro?'active':''}" data-f="${k}">${l}${n?` <b>${n}</b>`:''}</button>`; }).join(''); }
 
-function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); } return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
+function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); }
+  if(ordenPrioridad) return a.sort((x,y)=>(y.score||0)-(x.score||0));
+  return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
 
 /* ════════ Lista ════════ */
 function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div class="m-ptr" id="ptr"><span class="spin"></span></div>';
@@ -776,10 +807,12 @@ async function abrirChat(id){ let l; let msgs;
   try{
     if(DEMO){ msgs=demoMsgs(); } else {
       const d=await api(`/api/leads/${id}/mensajes`);
-      if(d&&d.lead){ current=d.lead; msgs=d.mensajes||[]; } else msgs=[];
-      api(`/api/leads/${id}/leido`,{method:'POST'});
-      api(`/api/leads/${id}/mark-all-read`,{method:'POST'});
-      if(l) l.unread_count=0;
+      if(d&&d.lead){
+        current=d.lead; msgs=d.mensajes||[];
+        api(`/api/leads/${id}/leido`,{method:'POST'});
+        api(`/api/leads/${id}/mark-all-read`,{method:'POST'});
+        if(l) l.unread_count=0;
+      } else { msgs=[]; toast('No se pudo cargar la conversación. Desliza para reintentar.'); }
     }
   }catch(e){ console.error('abrirChat/api',e); msgs=msgs||[]; }
   try{
@@ -1264,25 +1297,41 @@ function renderSchList(){
 let _schInterval=null;
 function initScheduled(){
   if(_schInterval) clearInterval(_schInterval);
-  _schInterval=setInterval(()=>{
-    const s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]'); if(!s.length) return; const now=new Date(); const pend=[];
-    s.forEach(m=>{ if(new Date(m.dt)<=now){ pend.push(m); } });
+  _schInterval=setInterval(async ()=>{
+    const s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]'); if(!s.length) return; const now=new Date();
+    const pend=s.filter(m=>new Date(m.dt)<=now);
     if(!pend.length) return;
-    s.forEach(async m=>{ if(!pend.includes(m)) return;
-      if(m.leadId&&current&&current.id===m.leadId){ const inp=$('#cInput'); if(inp&&m.body&&!window._sending){ enviarMensajeProgramado(m.body); } }
-      else toast('Programado: '+esc(m.body.slice(0,40)));
-    });
-    localStorage.setItem('sp_scheduled',JSON.stringify(s.filter(m=>!pend.includes(m))));
+    const doneIds=[];
+    for(const m of pend){
+      if(!m.leadId){ toast('Programado: '+esc(m.body.slice(0,40))); doneIds.push(m.id); continue; }
+      if(window._sending) continue; // reintenta en el próximo tick, no se pierde
+      const ok=await enviarMensajeProgramadoParaLead(m.leadId,m.body,m.leadName);
+      if(ok) doneIds.push(m.id);
+    }
+    if(doneIds.length){
+      const cur=JSON.parse(localStorage.getItem('sp_scheduled')||'[]');
+      localStorage.setItem('sp_scheduled',JSON.stringify(cur.filter(m=>!doneIds.includes(m.id))));
+      renderSchList();
+    }
   },30000);
 }
-async function enviarMensajeProgramado(body){
-  if(!current||window._sending) return; window._sending=true; const tempId='sch_'+Date.now();
-  currentMsgs.push({id:tempId,body,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')});
-  $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
-  const r=await api(`/api/leads/${current.id}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:body})});
-  if(r===null){ currentMsgs=currentMsgs.filter(m=>m.id!==tempId); $('#cMsgs').innerHTML=msgsHTML(currentMsgs); }
-  else{ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
+async function enviarMensajeProgramadoParaLead(leadId,body,leadName){
+  if(window._sending) return false; window._sending=true;
+  const esChatActual=current&&current.id===leadId; let tempId=null;
+  if(esChatActual){ tempId='sch_'+Date.now();
+    currentMsgs.push({id:tempId,body,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')});
+    $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
+  }
+  const r=await api(`/api/leads/${leadId}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:body})});
   window._sending=false;
+  if(r===null){
+    if(esChatActual){ currentMsgs=currentMsgs.filter(m=>m.id!==tempId); $('#cMsgs').innerHTML=msgsHTML(currentMsgs); }
+    toast('No se pudo enviar el programado a '+esc(leadName||'cliente')+'. Se reintentará.');
+    return false;
+  }
+  if(esChatActual){ const d=await api(`/api/leads/${leadId}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
+  else{ toast('Enviado programado a '+esc(leadName||'cliente')); }
+  return true;
 }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
@@ -1442,9 +1491,9 @@ const QUICK=[
 ];
 
 function abrirAdjuntos(){
-  const items=[['image','Imagen',SVG.image],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
+  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
-  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='image'){ const fi=$('#fileInput'); if(fi) fi.click(); } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
 }
 const UBICACIONES_PREDEFINIDAS = [
   { name:'Proyecto Tocaima', address:'Tocaima, Cundinamarca', lat:4.4577, lng:-74.6329 },
@@ -1468,25 +1517,26 @@ function abrirEnviarUbicacion(){
 
     // --- GPS ---
     const gpsBtn=$('#locGpsBtn');
-    if(gpsBtn) gpsBtn.onclick=()=>{
-      if(!navigator.geolocation){ toast('GPS no disponible','err'); return; }
+    if(gpsBtn) gpsBtn.onclick=async()=>{
       toast('Obteniendo ubicación…');
       closeSheet();
-      navigator.geolocation.getCurrentPosition(async pos=>{
-        const {latitude,longitude}=pos.coords;
-        let name='',address='';
-        try{
-          const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=es`);
-          const d=await r.json();
-          name=d.name||d.display_name?.split(',')[0]||'';
-          address=d.display_name||'';
-        }catch(e){}
-        const ok=await enviarUbicacion(current.id, latitude, longitude, name, address);
-        if(ok&&name&&confirm(`¿Guardar "${name}" en tus ubicaciones?`)){
-          await api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:name,direccion:address,lat:latitude,lng:longitude})});
-          toast('📍 Ubicación guardada','ok');
-        }
-      }, err=>{ toast('Error GPS: '+err.message,'err'); }, {enableHighAccuracy:true,timeout:10000});
+      let latitude, longitude;
+      try{
+        const pos = await obtenerPosicionActual();
+        latitude = pos.latitude; longitude = pos.longitude;
+      }catch(err){ toast('Error GPS: '+(err&&err.message||'sin permiso'),'err'); return; }
+      let name='',address='';
+      try{
+        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=es`);
+        const d=await r.json();
+        name=d.name||d.display_name?.split(',')[0]||'';
+        address=d.display_name||'';
+      }catch(e){}
+      const ok=await enviarUbicacion(current.id, latitude, longitude, name, address);
+      if(ok&&name&&confirm(`¿Guardar "${name}" en tus ubicaciones?`)){
+        await api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:name,direccion:address,lat:latitude,lng:longitude})});
+        toast('📍 Ubicación guardada','ok');
+      }
     };
 
     // --- Búsqueda ---
@@ -1557,6 +1607,20 @@ async function enviarUbicacion(leadId, lat, lng, name, address){
   }catch(e){ toast('Error al enviar ubicación','err'); return false; }
 }
 
+// Envía un archivo ya codificado en base64 al lead actual — usado tanto por el
+// input de archivo (galería/documentos) como por la cámara nativa (Capacitor).
+async function enviarArchivoBase64(dataBase64, mime, filename){
+  if(!current) return;
+  const pb=showProgressBar();
+  const mediaBody = {mime,filename:filename||'archivo',dataBase64,caption:''}; if(replyTo) mediaBody.replyTo=replyTo.id;
+  try{
+    const r=await apiUpload(`/api/leads/${current.id}/responder-media`,mediaBody,pb);
+    cancelarReply();
+    if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Enviado'); } else toast('Error al enviar archivo');
+  }catch(e){ toast('Error al enviar archivo'); }
+  pb.remove();
+}
+
 // File input for media uploads
 function initFileInput(){
   const fi=document.createElement('input'); fi.type='file'; fi.id='fileInput'; fi.style.display='none'; fi.accept='image/*,video/*,.pdf,.doc,.docx';
@@ -1564,16 +1628,52 @@ function initFileInput(){
     const toBase64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
     const dataBase64=await toBase64(file); const mime=file.type||'application/octet-stream';
     closeSheet();
-    const pb=showProgressBar();
-    const mediaBody = {mime,filename:file.name,dataBase64,caption:''}; if(replyTo) mediaBody.replyTo=replyTo.id;
-    try{
-      const r=await apiUpload(`/api/leads/${current.id}/responder-media`,mediaBody,pb);
-      cancelarReply();
-      if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Enviado'); } else toast('Error al enviar archivo');
-    }catch(e){ toast('Error al enviar archivo'); }
-    pb.remove();
+    await enviarArchivoBase64(dataBase64, mime, file.name);
   };
   document.body.appendChild(fi);
+}
+
+function esNativo(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+
+// Ubicación: usa el plugin nativo (maneja el permiso en tiempo de ejecución de forma
+// más confiable que el prompt del WebView) cuando corre empaquetada; si no, cae a la
+// API web estándar (comportamiento sin cambios para el uso normal en navegador).
+function obtenerPosicionActual(){
+  if(esNativo()){
+    const { Geolocation } = window.Capacitor.Plugins;
+    return Geolocation.getCurrentPosition({ enableHighAccuracy:true, timeout:10000 })
+      .then(pos=>({ latitude:pos.coords.latitude, longitude:pos.coords.longitude }));
+  }
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){ reject(new Error('GPS no disponible')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>resolve({ latitude:pos.coords.latitude, longitude:pos.coords.longitude }),
+      reject, { enableHighAccuracy:true, timeout:10000 });
+  });
+}
+
+// Cámara nativa (Capacitor): en la app empaquetada abre la cámara directamente sin
+// pasar por el selector del sistema operativo. En navegador normal (PWA/web) cae al
+// input de archivo con capture=environment, que la mayoría de móviles interpreta
+// igual como "abrir cámara".
+async function tomarFotoNativa(){
+  if(!current){ toast('Selecciona un lead primero'); return; }
+  if(esNativo()){
+    try{
+      const { Camera } = window.Capacitor.Plugins;
+      const photo = await Camera.getPhoto({ quality:80, resultType:'base64', source:'CAMERA', saveToGallery:false });
+      if(photo && photo.base64String){
+        closeSheet(); haptic(10);
+        await enviarArchivoBase64(photo.base64String, 'image/'+(photo.format||'jpeg'), 'foto.'+(photo.format||'jpg'));
+      }
+    }catch(e){ if(String(e.message||'').toLowerCase().indexOf('cancel')===-1) toast('No se pudo abrir la cámara'); }
+  } else {
+    // Cada punto de entrada a #fileInput fija accept/capture explícitamente antes de
+    // click() (ver abrirAdjuntos) — no se restaura aquí para evitar una carrera con
+    // la apertura del selector del sistema operativo.
+    const fi=$('#fileInput'); if(!fi) return;
+    fi.accept='image/*'; fi.capture='environment'; fi.click();
+  }
 }
 
 function abrirPlantillas(){
@@ -1712,20 +1812,44 @@ function abrirEtapa(){ const l=current; openSheet('Cambiar etapa', Object.entrie
   $('#sheetBody').querySelectorAll('[data-etq]').forEach(b=>b.onclick=async()=>{ const v=b.dataset.etq; if(!DEMO){ await api(`/api/leads/${l.id}/etiqueta`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({etiqueta:v})}); } l.etiqueta=v; haptic([10,20,10]); closeSheet(); renderList(); if(!DEMO) cargar(); toast('Etapa actualizada'); });
 }
 
-function abrirNuevoLead(){
+async function abrirNuevoLead(){
+  const waTemplates = await api('/api/wa-templates') || [];
   openSheet('Nueva conversación', `
     <form id="nlForm" style="display:flex;flex-direction:column;gap:12px">
       <input name="phone" placeholder="Teléfono +573XXXXXXXXX" required inputmode="tel" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
       <input name="name" placeholder="Nombre del cliente" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
       <textarea name="message" placeholder="Mensaje inicial (opcional)" style="width:100%;min-height:60px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none;resize:none"></textarea>
+      ${waTemplates.length ? `
+      <div style="font-size:12px;color:var(--text-3)">Plantilla — obligatoria si el número nunca te ha escrito (WhatsApp exige plantilla aprobada para el primer contacto)</div>
+      <select name="templateId" id="nlTemplate" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
+        <option value="">Sin plantilla</option>
+        ${waTemplates.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}
+      </select>
+      <div id="nlVarFields"></div>` : `<div style="font-size:12px;color:var(--text-3)">No hay plantillas sincronizadas — pídele al admin que sincronice en Configuración antes de contactar números nuevos.</div>`}
       <button type="submit" class="cop-use" style="margin-top:4px">${I(SVG.send,16)} Iniciar conversación</button>
     </form>`);
+  const renderVarFields=()=>{
+    const box=$('#nlVarFields'); if(!box) return;
+    const sel=$('#nlTemplate'); const tpl=waTemplates.find(t=>String(t.id)===sel.value);
+    if(!tpl){ box.innerHTML=''; return; }
+    let vars=[]; try{ vars=JSON.parse(tpl.variables||'[]'); }catch(e){}
+    let mapping={}; try{ mapping=JSON.parse(tpl.var_mapping||'{}'); }catch(e){}
+    if(!vars.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">Esta plantilla no tiene variables.</div>'; return; }
+    const nameVal=$('#nlForm [name="name"]')?.value.trim()||'';
+    box.innerHTML=vars.map(ph=>{
+      const prefill=mapping[ph]==='nombre_cliente'?esc(nameVal):'';
+      return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph]?' — '+esc(mapping[ph]):' (sin asignar)'}" value="${prefill}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:4px">`;
+    }).join('');
+  };
+  $('#nlTemplate')?.addEventListener('change', renderVarFields);
   $('#nlForm').addEventListener('submit', async e=>{
     e.preventDefault(); const fd=new FormData(e.target); const phone=fd.get('phone').trim(); const name=fd.get('name').trim(); const message=fd.get('message').trim();
-    if(!phone){ toast('Teléfono requerido','error'); return; }
+    const templateId=fd.get('templateId')||'';
+    const templateVars={}; $('#nlVarFields')?.querySelectorAll('[data-var]').forEach(inp=>{ templateVars[inp.dataset.var]=inp.value.trim(); });
+    if(!phone){ toast('Teléfono requerido'); return; }
     haptic(10); closeSheet(); toast('Creando lead...');
-    const r=await api('/api/leads/proactive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name:name||'Cliente',message:message||'Hola, me interesan sus proyectos'})});
-    if(r&&r.leadId){ toast('Lead creado'); cargar(); } else toast('Error al crear lead','error');
+    const r=await api('/api/leads/proactive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name:name||'Cliente',message:message||'Hola, me interesan sus proyectos',templateId:templateId||undefined,templateVars})});
+    if(r&&r.leadId){ toast('Lead creado'); cargar(); } else toast('Error al crear lead: '+((r&&r.error)||'desconocido'));
   });
 }
 
@@ -2010,6 +2134,7 @@ function wire(){
   $('#filters').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filtro=b.dataset.f; haptic(8); renderList(); });
   $('#fab').onclick=()=>abrirNuevoLead();
   $('#btnNotif').onclick=()=>abrirNotificaciones();
+  $('#btnPrioridad').onclick=()=>{ ordenPrioridad=!ordenPrioridad; $('#btnPrioridad').classList.toggle('active',ordenPrioridad); haptic(8); toast(ordenPrioridad?'Ordenando por prioridad':'Orden por más reciente'); renderList(); };
   $('#sheetX').onclick=closeSheet; $('#sheetBg').onclick=closeSheet;
   // Logout desde tab Perfil (long-press)
   const perfNav=$('[data-tab="perfil"]');
