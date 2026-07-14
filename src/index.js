@@ -94,6 +94,9 @@ const loginLimiter = rateLimit({ windowMs: CFG.LOGIN_WINDOW_MS, max: CFG.LOGIN_M
 const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MEDIA_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
 const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.WEBHOOK_MAX_PER_MIN, standardHeaders: false, legacyHeaders: false });
 const messageLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MESSAGE_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_mensajes_espera' } });
+// Paraguas general para el resto de /api/* (login/media/webhook/responder ya tienen el suyo propio,
+// más estricto). No aplica a /api/stream: es una sola conexión SSE de larga duración, no ráfagas.
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.API_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/stream', message: { error: 'demasiadas_peticiones' } });
 
 // SW con versión dinámica (se invalida el caché en cada reinicio del servidor)
 const SW_VERSION = `sp-panel-${Date.now()}`;
@@ -126,6 +129,8 @@ function validarTelefono(phone) {
 
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'SP OS', version: '1.1.0' }));
+
+app.use('/api', apiLimiter);
 
 app.get('/api/health', (req, res) => {
   const dbOk = (() => { try { return !!store.getDB(); } catch { return false; } })();

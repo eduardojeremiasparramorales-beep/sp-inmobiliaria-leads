@@ -30,6 +30,7 @@ module.exports = {
   MEDIA_MAX_PER_MIN: 30,
   WEBHOOK_MAX_PER_MIN: 300,
   MESSAGE_MAX_PER_MIN: 20,
+  API_MAX_PER_MIN: 300, // paraguas general para el resto de /api/*, no reemplaza los límites específicos
 
   // API
   API_VERSION: 'v22.0',
