@@ -1,0 +1,6 @@
+## Copia este archivo a "key.properties" (mismo directorio) y completa con tus datos
+## reales. key.properties NUNCA se sube a git (ver mobile-app/.gitignore).
+storeFile=../release.keystore
+storePassword=
+keyAlias=spcrm
+keyPassword=

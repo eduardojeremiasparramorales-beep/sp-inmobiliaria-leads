@@ -1,0 +1,26 @@
+# ⚠️ NUNCA subir el keystore de firma ni sus contraseñas — sin el keystore original
+# no se pueden publicar actualizaciones futuras de la misma app en Play Store.
+*.keystore
+*.jks
+key.properties
+
+# Credenciales de Firebase (no es ultra-secreto, pero no debe ser público)
+google-services.json
+
+# node_modules de este subproyecto
+node_modules/
+
+# Salida de build de Android/Gradle (se regenera con cada build)
+android/app/build/
+android/build/
+android/.gradle/
+android/captures/
+android/local.properties
+android/*.iml
+android/.idea/
+
+# El .gitignore raíz excluye *.png/*.jpg globalmente (pensado para el backend) — se
+# re-incluyen aquí los iconos/splash de Android, que SÍ deben quedar en el repo
+# (generados una vez con `npx capacitor-assets generate`, no triviales de recrear).
+!android/app/src/main/res/**/*.png
+!resources/**/*.png
