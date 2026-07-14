@@ -571,8 +571,13 @@ function urlBase64ToUint8Array(b){
 async function suscribirPush(){
   // App nativa (Capacitor): FCM es más confiable en Android que Web Push (que el
   // sistema puede matar en segundo plano) — canal separado, ver push.js en el backend.
-  if(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()){
-    return suscribirPushNativo();
+  // NO se auto-registra: sin google-services.json (Firebase configurado), el plugin
+  // nativo lanza una excepción no capturable desde JS que tumba el proceso entero de
+  // la app cada vez que se llama — por eso es opt-in desde Perfil > Notificaciones,
+  // no automático al abrir la app.
+  if(esNativo()){
+    if(localStorage.getItem('sp_push_fcm_enabled')==='true') return suscribirPushNativo();
+    return;
   }
   if(!('Notification'in window)||!('serviceWorker'in navigator)) return;
   if(Notification.permission==='denied') return;
@@ -1961,6 +1966,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
             <div class="sec-row"><label>Vibración</label><button class="toggle-sw${localStorage.getItem('sp_notif_vibrate')!=='false'?' on':''}" data-key="sp_notif_vibrate"></button></div>
             <div class="sec-row"><label>Tono personalizado</label><button class="sec-btn" id="btnCustomSound" style="width:auto;color:var(--gold);flex:none">${localStorage.getItem('sp_notif_sound_custom')?'Cambiar':'Subir'}</button></div>
             ${localStorage.getItem('sp_notif_sound_custom')?'<div class="sec-row"><button class="sec-btn danger" id="btnRemoveSound">Eliminar tono</button></div>':''}
+            ${esNativo()?`<div class="sec-row"><label>Notificaciones push nativas</label><button class="toggle-sw${localStorage.getItem('sp_push_fcm_enabled')==='true'?' on':''}" data-key="sp_push_fcm_enabled" id="togglePushFcm"></button></div>
+            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Solo actívalo si el admin ya configuró Firebase para la app — si no, puede fallar.</div>`:''}
           </div>
         </div>
 
@@ -2017,6 +2024,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       document.querySelectorAll('.toggle-sw').forEach(b=>b.addEventListener('click',function(){
         const key=this.dataset.key; const cur=this.classList.contains('on');
         this.classList.toggle('on'); localStorage.setItem(key,cur?'false':'true'); haptic(6);
+        if(key==='sp_push_fcm_enabled'&&!cur) suscribirPushNativo();
       }));
       const inp=document.getElementById('inpAbout');
       if(inp) inp.addEventListener('change',function(){ localStorage.setItem('sp_about_text',this.value); haptic(6); });
