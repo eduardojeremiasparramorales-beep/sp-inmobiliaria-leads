@@ -699,7 +699,10 @@ function assertConvAccess(req, res, conv) {
 }
 
 app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) => {
-  const conv = store.getConversationById(req.params.id);
+  let conv = store.getConversationById(req.params.id);
+  // Fallback: si el id corresponde a un lead legacy sin conversación (item _type:'lead'
+  // del inbox unificado), crearla al vuelo con su historial en lugar de dar 404.
+  if (!conv) conv = store.getOrCreateConversationForLead(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
     return res.status(403).json({ error: 'sin_permiso' });
@@ -1291,6 +1294,111 @@ app.put('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
 });
 app.delete('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
   store.deletePropiedad(req.params.id);
+  res.json({ ok: true });
+});
+
+// ===================== PROYECTOS / LOTES =====================
+function emitLote(proyectoId, loteId, tipo) {
+  events.emitToAdmins('lote_actualizado', { proyectoId: Number(proyectoId), loteId: loteId ? Number(loteId) : null, tipo: tipo || 'update', ts: Date.now() });
+}
+
+app.get('/api/proyectos', auth.requireAuth, (req, res) => {
+  res.json(store.getProyectos());
+});
+app.get('/api/proyectos/:id', auth.requireAuth, (req, res) => {
+  const p = store.getProyectoById(req.params.id);
+  if (!p) return res.status(404).json({ error: 'no_existe' });
+  res.json(p);
+});
+app.get('/api/proyectos/:id/stats', auth.requireAuth, (req, res) => {
+  if (!store.getProyectoById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
+  res.json(store.getProyectoStats(req.params.id));
+});
+app.get('/api/proyectos/:id/lotes', auth.requireAuth, (req, res) => {
+  if (!store.getProyectoById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
+  res.json(store.getLotesByProyecto(req.params.id));
+});
+app.post('/api/proyectos', auth.requireAdmin, (req, res) => {
+  const d = req.body || {};
+  if (!d.nombre) return res.status(400).json({ error: 'nombre_requerido' });
+  const p = store.createProyecto(d);
+  res.json({ ok: true, proyecto: p });
+});
+app.put('/api/proyectos/:id', auth.requireAdmin, (req, res) => {
+  const p = store.updateProyecto(req.params.id, req.body || {});
+  if (!p) return res.status(404).json({ error: 'no_existe' });
+  res.json({ ok: true, proyecto: p });
+});
+app.delete('/api/proyectos/:id', auth.requireAdmin, (req, res) => {
+  if (!store.getProyectoById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
+  store.deleteProyecto(req.params.id);
+  res.json({ ok: true });
+});
+// Volcado masivo de lotes (trazado del plano)
+app.post('/api/proyectos/:id/lotes/bulk', auth.requireAdmin, (req, res) => {
+  if (!store.getProyectoById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
+  const lotes = Array.isArray(req.body && req.body.lotes) ? req.body.lotes : [];
+  const n = store.bulkCreateLotes(req.params.id, lotes);
+  emitLote(req.params.id, null, 'bulk');
+  res.json({ ok: true, creados: n });
+});
+
+app.get('/api/lotes/:id', auth.requireAuth, (req, res) => {
+  const l = store.getLoteById(req.params.id);
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  res.json({ lote: l, historial: store.getLoteHistorial(l.id) });
+});
+app.post('/api/proyectos/:id/lotes', auth.requireAdmin, (req, res) => {
+  if (!store.getProyectoById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
+  const l = store.createLote(req.params.id, req.body || {});
+  emitLote(req.params.id, l && l.id, 'create');
+  res.json({ ok: true, lote: l });
+});
+app.put('/api/lotes/:id', auth.requireAdmin, (req, res) => {
+  const l = store.updateLote(req.params.id, req.body || {});
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  emitLote(l.proyecto_id, l.id, 'update');
+  res.json({ ok: true, lote: l });
+});
+app.post('/api/lotes/:id/estado', auth.requireAdmin, (req, res) => {
+  const { estado, cliente_id, asesor_id } = req.body || {};
+  const estados = ['disponible','separado','vendido','reservado','bloqueado','negociacion'];
+  if (!estados.includes(estado)) return res.status(400).json({ error: 'estado_invalido' });
+  const l = store.updateLoteEstado(req.params.id, estado, { cliente_id, asesor_id, autor: req.session.nombre || '' });
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  emitLote(l.proyecto_id, l.id, 'estado');
+  res.json({ ok: true, lote: l });
+});
+app.post('/api/lotes/:id/precio', auth.requireAdmin, (req, res) => {
+  const l = store.setLotePrecio(req.params.id, Number(req.body && req.body.precio) || 0, req.session.nombre || '');
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  emitLote(l.proyecto_id, l.id, 'precio');
+  res.json({ ok: true, lote: l });
+});
+app.post('/api/lotes/:id/observacion', auth.requireAdmin, (req, res) => {
+  const l = store.setLoteObservacion(req.params.id, (req.body && req.body.texto) || '', req.session.nombre || '');
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  emitLote(l.proyecto_id, l.id, 'observacion');
+  res.json({ ok: true, lote: l });
+});
+// Documentos y fotografías: recibe { item } (URL o data URL ya subido por el cliente)
+app.post('/api/lotes/:id/documentos', auth.requireAdmin, (req, res) => {
+  const l = store.addLoteMedia(req.params.id, 'documentos', (req.body && req.body.item) || '');
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  emitLote(l.proyecto_id, l.id, 'documentos');
+  res.json({ ok: true, lote: l });
+});
+app.post('/api/lotes/:id/fotos', auth.requireAdmin, (req, res) => {
+  const l = store.addLoteMedia(req.params.id, 'fotografias', (req.body && req.body.item) || '');
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  emitLote(l.proyecto_id, l.id, 'fotos');
+  res.json({ ok: true, lote: l });
+});
+app.delete('/api/lotes/:id', auth.requireAdmin, (req, res) => {
+  const l = store.getLoteById(req.params.id);
+  if (!l) return res.status(404).json({ error: 'no_existe' });
+  store.deleteLote(req.params.id);
+  emitLote(l.proyecto_id, null, 'delete');
   res.json({ ok: true });
 });
 
@@ -2519,6 +2627,19 @@ function ensureAdminUser() {
 (async () => {
   await initDB();
   ensureAdminUser();
+  // Backfill inbox: re-vincular leads legacy que no tienen conversación en el
+  // schema multicanal (p.ej. insertados por scripts). Migra sus mensajes al timeline
+  // para que TODOS los chats aparezcan en el inbox del admin.
+  try {
+    const huerfanos = store.getUnlinkedLeads();
+    let revinculados = 0;
+    for (const lead of huerfanos) {
+      if (store.getOrCreateConversationForLead(lead.id)) revinculados++;
+    }
+    if (huerfanos.length) console.log(`[INBOX-BACKFILL] ${revinculados}/${huerfanos.length} leads re-vinculados al inbox`);
+  } catch (e) {
+    console.error('[INBOX-BACKFILL] error:', e.message);
+  }
   push.init();
   try {
     const MessageRouter = require('./services/router');
