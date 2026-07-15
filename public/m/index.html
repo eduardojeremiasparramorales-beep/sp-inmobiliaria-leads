@@ -2,13 +2,13 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0A0A0A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SP OS">
-<title>SP OS · Móvil</title>
+<meta name="apple-mobile-web-app-title" content="Leons Group">
+<title>Leons Group · Móvil</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -81,16 +81,14 @@
   .m-card{ position:relative; z-index:1; display:flex; gap:13px; padding:13px 18px; background:var(--bg-0); border-bottom:1px solid var(--border-soft); transition:transform .28s var(--spring), background .15s; will-change:transform; }
   .m-card:active{ background:var(--bg-1); }
   .m-card.unread{ background:linear-gradient(135deg,rgba(200,164,90,.07),rgba(200,164,90,.02)); border-left:3px solid var(--gold); box-shadow:inset 0 0 22px -14px rgba(200,164,90,.5); }
-  /* Borde dorado en movimiento alrededor de la tarjeta sin leer */
-  @property --spin{ syntax:'<angle>'; initial-value:0deg; inherits:false; }
+  /* Borde dorado estático en la tarjeta sin leer (la animación infinita gastaba
+     batería: repintado continuo con muchas tarjetas). El resalte queda sin loop. */
   .m-card.unread::after{
     content:''; position:absolute; inset:3px; border-radius:14px; pointer-events:none; z-index:2; padding:1.5px;
-    background:conic-gradient(from var(--spin), transparent 0 68%, rgba(232,201,122,.55) 80%, #F2DA9C 88%, rgba(232,201,122,.55) 96%, transparent 100%);
+    background:linear-gradient(135deg, rgba(232,201,122,.55), #F2DA9C 40%, rgba(232,201,122,.25));
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite:xor; mask-composite:exclude;
-    animation:spin-border 2.8s linear infinite;
   }
-  @keyframes spin-border{ to{ --spin:360deg; } }
   .m-card__prio{ position:absolute; left:0; top:9px; bottom:9px; width:3px; border-radius:0 3px 3px 0; }
   .m-avatar{ position:relative; width:52px; height:52px; border-radius:16px; display:grid; place-items:center; color:#fff; font-weight:600; font-size:18px; flex-shrink:0; overflow:hidden; }
   .m-avatar img{ width:100%; height:100%; object-fit:cover; }
@@ -447,7 +445,7 @@
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
   .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<!-- Leaflet se carga LAZY desde /vendor/leaflet solo cuando hay un mapa que mostrar -->
 </head>
 <body>
 <div id="app">
@@ -456,9 +454,9 @@
     <header class="m-head">
       <div class="m-head__top">
         <div class="m-mark">SP</div>
-        <div class="m-title" id="navTitle">Conversaciones<small id="navSub">SP OS Enterprise</small></div>
+        <div class="m-title" id="navTitle">Conversaciones<small id="navSub">Leons Group</small></div>
         <button class="m-headbtn" id="btnPrioridad" aria-label="Ordenar por prioridad" title="Ordenar por prioridad">🔥</button>
-        <button class="m-headbtn" id="btnNotif" aria-label="Notificaciones"></button>
+        <button class="m-headbtn" id="btnNotif" aria-label="Notificaciones" style="position:relative"><span id="notifBadge" style="display:none;position:absolute;top:2px;right:2px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center;z-index:2"></span></button>
       </div>
       <label class="m-search"><span id="icSearch"></span><input id="q" placeholder="Buscar cliente, chat, etiqueta…" autocomplete="off"></label>
     </header>
@@ -487,7 +485,6 @@
 </div>
 
 <script src="/sw-reg.js"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
 'use strict';
@@ -570,14 +567,17 @@ function urlBase64ToUint8Array(b){
 }
 async function suscribirPush(){
   // App nativa (Capacitor): FCM es más confiable en Android que Web Push (que el
-  // sistema puede matar en segundo plano) — canal separado, ver push.js en el backend.
-  // NO se auto-registra: sin google-services.json (Firebase configurado), el plugin
-  // nativo lanza una excepción no capturable desde JS que tumba el proceso entero de
-  // la app cada vez que se llama — por eso es opt-in desde Perfil > Notificaciones,
-  // no automático al abrir la app.
+  // sistema puede matar en segundo plano). Se registra AUTOMÁTICAMENTE al abrir,
+  // salvo que el vendedor lo haya apagado desde Perfil (opt-out). La disponibilidad
+  // del plugin se verifica con isPluginAvailable + try/catch para no tumbar la app
+  // si Firebase no está configurado en este build.
   if(esNativo()){
-    if(localStorage.getItem('sp_push_fcm_enabled')==='true') return suscribirPushNativo();
-    return;
+    if(localStorage.getItem('sp_push_fcm_enabled')==='false') return; // opt-out explícito
+    try{
+      const cap=window.Capacitor;
+      if(cap && typeof cap.isPluginAvailable==='function' && !cap.isPluginAvailable('PushNotifications')) return;
+      return suscribirPushNativo();
+    }catch(e){ return; }
   }
   if(!('Notification'in window)||!('serviceWorker'in navigator)) return;
   if(Notification.permission==='denied') return;
@@ -673,7 +673,7 @@ function demoMsgs(){ const now=new Date().toISOString().slice(0,19).replace('T',
 /* ════════ Init ════════ */
 async function init(){
   document.getElementById('icSearch').innerHTML = I(SVG.search,17);
-  $('#btnNotif').innerHTML = I(SVG.bell,19);
+  $('#btnNotif').insertAdjacentHTML('afterbegin', I(SVG.bell,19));
   $('#fab').innerHTML = I(SVG.plus,26);
   $('#sheetX').innerHTML = I(SVG.x,14);
   renderNav();
@@ -691,6 +691,7 @@ async function init(){
   initFileInput();
   initScheduled();
   initRecordatorios();
+  if(!DEMO) cargarNotifBadge();
   setTimeout(suscribirPush, 3000);
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
@@ -805,6 +806,21 @@ function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.d
 function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>x.id===id); }
 
 /* ════════ Chat ════════ */
+let _hayMasMsgs=false;
+// Cargar página anterior de mensajes (paginación del historial)
+document.addEventListener('click',async e=>{
+  const btn=e.target.closest('#cargarAnteriores'); if(!btn||!current) return;
+  btn.disabled=true; btn.textContent='Cargando…';
+  const primerId=currentMsgs.length?currentMsgs[0].id:null;
+  const d=await api(`/api/leads/${current.id}/mensajes?before_id=${primerId||''}`);
+  if(d&&d.mensajes){
+    const cont=$('#cMsgs'); const alturaAntes=cont.scrollHeight;
+    currentMsgs=d.mensajes.concat(currentMsgs); _hayMasMsgs=!!d.hay_mas; _audioPlayers={};
+    cont.innerHTML=(_hayMasMsgs?btn.outerHTML.replace('Cargando…','↑ Cargar mensajes anteriores'):'')+msgsHTML(currentMsgs);
+    const nuevoBtn=cont.querySelector('#cargarAnteriores'); if(nuevoBtn) nuevoBtn.disabled=false;
+    cont.scrollTop=cont.scrollHeight-alturaAntes; // mantener la posición visual
+  } else { btn.disabled=false; btn.textContent='↑ Cargar mensajes anteriores'; }
+});
 async function abrirChat(id){ let l; let msgs;
   try{ clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); }catch(e){ console.error('abrirChat/init',e); }
   try{ l=findLead(id); }catch(e){ console.error('abrirChat/find',e); }
@@ -813,7 +829,7 @@ async function abrirChat(id){ let l; let msgs;
     if(DEMO){ msgs=demoMsgs(); } else {
       const d=await api(`/api/leads/${id}/mensajes`);
       if(d&&d.lead){
-        current=d.lead; msgs=d.mensajes||[];
+        current=d.lead; msgs=d.mensajes||[]; _hayMasMsgs=!!d.hay_mas;
         api(`/api/leads/${id}/leido`,{method:'POST'});
         api(`/api/leads/${id}/mark-all-read`,{method:'POST'});
         if(l) l.unread_count=0;
@@ -841,7 +857,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       <input id="cSearchInput" placeholder="Buscar en el chat…" autocomplete="off">
       <button class="c-search__x" id="cSearchX">${I(SVG.x,16)}</button>
     </div>
-    <div class="c-msgs" id="cMsgs">${msgsHTML(msgs)}</div>
+    <div class="c-msgs" id="cMsgs">${_hayMasMsgs?'<button id="cargarAnteriores" style="display:block;margin:6px auto 10px;padding:7px 16px;border-radius:999px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);font-size:12px;font-family:inherit;cursor:pointer">↑ Cargar mensajes anteriores</button>':''}${msgsHTML(msgs)}</div>
     <div class="c-reply" id="cReply">
       <div class="c-reply__line"></div>
       <div class="c-reply__info">
@@ -1409,8 +1425,24 @@ function renderMedia(m){
   if(m.media_type==='audio') return src?renderAudioPlayer(m.id,src):'🎙️ Audio';
   return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`;
 }
-function initLocationMaps(){
-  document.querySelectorAll('.leaflet-map:not(.leaflet-container)').forEach(el=>{
+// Leaflet lazy: solo se descarga (local, /vendor) la primera vez que hay un mapa en pantalla
+let _leafletP=null;
+function cargarLeaflet(){
+  if(window.L) return Promise.resolve();
+  if(_leafletP) return _leafletP;
+  _leafletP=new Promise((resolve,reject)=>{
+    const css=document.createElement('link'); css.rel='stylesheet'; css.href='/vendor/leaflet/leaflet.css'; document.head.appendChild(css);
+    const s=document.createElement('script'); s.src='/vendor/leaflet/leaflet.js';
+    s.onload=resolve; s.onerror=()=>{ _leafletP=null; reject(new Error('leaflet')); };
+    document.head.appendChild(s);
+  });
+  return _leafletP;
+}
+async function initLocationMaps(){
+  const els=document.querySelectorAll('.leaflet-map:not(.leaflet-container)');
+  if(!els.length) return;
+  try{ await cargarLeaflet(); }catch(e){ return; }
+  els.forEach(el=>{
     const lat=parseFloat(el.dataset.lat); const lng=parseFloat(el.dataset.lng);
     if(isNaN(lat)||isNaN(lng)) return;
     try{
@@ -1915,14 +1947,14 @@ const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building
 function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
   $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
 async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
-  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='SP OS Enterprise'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
+  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='Leons Group'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
   else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = TABS.find(x=>x[0]===t);
     if(t==='perfil'){ const m = await api('/api/me/metricas'); if(m) metricas=m; }
     pantallaTab(t,label);
   }
 }
 function mostrarLista(v){ $('#list').style.display=v?'':'none'; $('#filters').style.display=v?'':'none'; let ph=$('#tabScreen'); if(ph) ph.remove(); }
-function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='SP OS Enterprise';
+function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='Leons Group';
   const box=document.createElement('div'); box.id='tabScreen'; box.className='m-scroll'; box.style.cssText='display:flex;';
   if(t==='perfil'){
     const n=me||{nombre:'Vendedor',rol:'vendedor',estado:'activo'};
@@ -1955,7 +1987,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         <div class="sec">
           <div class="sec-label">Acerca de</div>
           <div class="sec-body"><div class="sec-row">
-            <input id="inpAbout" placeholder="¿Qué haces ahora?" value="${esc(localStorage.getItem('sp_about_text')||'')}">
+            <input id="inpAbout" placeholder="¿Qué haces ahora?" value="${esc((me&&me.about)||localStorage.getItem('sp_about_text')||'')}">
           </div></div>
         </div>
 
@@ -1966,8 +1998,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
             <div class="sec-row"><label>Vibración</label><button class="toggle-sw${localStorage.getItem('sp_notif_vibrate')!=='false'?' on':''}" data-key="sp_notif_vibrate"></button></div>
             <div class="sec-row"><label>Tono personalizado</label><button class="sec-btn" id="btnCustomSound" style="width:auto;color:var(--gold);flex:none">${localStorage.getItem('sp_notif_sound_custom')?'Cambiar':'Subir'}</button></div>
             ${localStorage.getItem('sp_notif_sound_custom')?'<div class="sec-row"><button class="sec-btn danger" id="btnRemoveSound">Eliminar tono</button></div>':''}
-            ${esNativo()?`<div class="sec-row"><label>Notificaciones push nativas</label><button class="toggle-sw${localStorage.getItem('sp_push_fcm_enabled')==='true'?' on':''}" data-key="sp_push_fcm_enabled" id="togglePushFcm"></button></div>
-            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Solo actívalo si el admin ya configuró Firebase para la app — si no, puede fallar.</div>`:''}
+            ${esNativo()?`<div class="sec-row"><label>Notificaciones push nativas</label><button class="toggle-sw${localStorage.getItem('sp_push_fcm_enabled')!=='false'?' on':''}" data-key="sp_push_fcm_enabled" id="togglePushFcm"></button></div>
+            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Activadas por defecto — te avisan aunque la app esté cerrada.</div>`:''}
           </div>
         </div>
 
@@ -2027,7 +2059,11 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         if(key==='sp_push_fcm_enabled'&&!cur) suscribirPushNativo();
       }));
       const inp=document.getElementById('inpAbout');
-      if(inp) inp.addEventListener('change',function(){ localStorage.setItem('sp_about_text',this.value); haptic(6); });
+      if(inp) inp.addEventListener('change',function(){
+        const v=this.value;
+        api('/api/mi-about',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:v})}).then(r=>{ if(r){ if(me) me.about=v; toast('Guardado'); } });
+        haptic(6);
+      });
       const csBtn=document.getElementById('btnCustomSound');
       if(csBtn) csBtn.addEventListener('click',function(){
         const fi=document.createElement('input'); fi.type='file'; fi.accept='audio/*';
@@ -2053,19 +2089,19 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       cargarMisTpl();
       // Recordatorios
       renderRecordatorios();
-      document.getElementById('recAdd')&&document.getElementById('recAdd').addEventListener('click',()=>{
+      document.getElementById('recAdd')&&document.getElementById('recAdd').addEventListener('click',async()=>{
         const txt=document.getElementById('recTxt').value.trim(); const dt=document.getElementById('recDt').value;
         if(!txt||!dt){ toast('Completa texto y fecha'); return; }
-        const r=JSON.parse(localStorage.getItem('sp_records')||'[]');
-        r.push({id:Date.now(),txt,dt});
-        localStorage.setItem('sp_records',JSON.stringify(r));
-        document.getElementById('recTxt').value=''; renderRecordatorios(); toast('Recordatorio creado');
+        const r=await api('/api/tareas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:txt,venceAt:new Date(dt).toISOString()})});
+        if(r){ document.getElementById('recTxt').value=''; renderRecordatorios(); toast('Recordatorio creado — te avisaremos'); }
+        else toast('Error al guardar');
       });
       // Estadísticas semanales
       cargarStats();
     }, 50);
   } else if (t === 'propiedades') {
-    box.innerHTML=`<div style="padding:40px 18px;text-align:center;width:100%;max-width:400px;margin:0 auto"><div style="font-size:48px;color:var(--text-3);margin-bottom:16px">${I(SVG.building,48)}</div><div style="font-size:18px;font-weight:600;color:var(--text-2);margin-bottom:6px">Propiedades</div><p style="font-size:13px;color:var(--text-3)">Próximamente podrás gestionar propiedades desde aquí.</p></div>`;
+    box.innerHTML=`<div id="propBox" style="padding:14px;width:100%;max-width:400px;margin:0 auto"><div style="text-align:center;color:var(--text-3);padding:30px">Cargando catálogo...</div></div>`;
+    cargarPropiedades();
   } else if (t === 'calendario') {
     box.innerHTML = `<div style="padding:14px 14px 0;width:100%;max-width:400px;margin:0 auto">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -2084,9 +2120,12 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
   } else if (t === 'tareas') {
     const ec = estadoColores[me?.estado||'activo']||estadoColores.activo;
     box.innerHTML = `<div style="padding:18px;width:100%;max-width:400px;margin:0 auto">
-      <div style="display:flex;gap:8px;margin-bottom:14px">
-        <input id="taskTxt" placeholder="Nueva tarea..." style="flex:1;height:40px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);padding:0 14px;font-size:14px;outline:none">
-        <button id="taskAdd" style="height:40px;padding:0 16px;border-radius:12px;background:var(--gold);color:#0A0A0A;border:none;font-weight:600;font-size:13px">Agregar</button>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+        <div style="display:flex;gap:8px">
+          <input id="taskTxt" placeholder="Nueva tarea..." style="flex:1;height:40px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);padding:0 14px;font-size:14px;outline:none">
+          <button id="taskAdd" style="height:40px;padding:0 16px;border-radius:12px;background:var(--gold);color:#0A0A0A;border:none;font-weight:600;font-size:13px">Agregar</button>
+        </div>
+        <input type="datetime-local" id="taskDt" title="Recordatorio (opcional): te avisamos con notificación" style="height:38px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);padding:0 14px;font-size:13px;outline:none">
       </div>
       <div id="taskList"><div style="text-align:center;color:var(--text-3);padding:30px">Cargando...</div></div>
     </div>`;
@@ -2108,30 +2147,49 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         <div class="cop-card" style="margin:0;text-align:center;padding:14px"><div style="font-size:22px;font-weight:700">${sinResp.length}</div><div style="font-size:10px;color:var(--text-3)">Sin respuesta</div></div>
       </div>
       <div class="cop-card"><h5>${I(SVG.target,14)} Próxima acción recomendada</h5>
-        <p id="copAccion">${sinResp.length ? `Tienes <b>${sinResp.length}</b> leads sin responder. Prioriza responder a los más recientes.` : '¡Todo al día! Revisa leads en negociación.'}</p>
+        <p id="copAccion">Analizando tus leads…</p>
       </div>
       <div class="cop-card"><h5>${I(SVG.zap,14)} Leads calientes</h5>
         <div id="copHot">${hot.length ? hot.map(l => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft)"><div class="m-avatar" style="width:28px;height:28px;border-radius:8px;font-size:10px;background:${avatarColor(l.customer_name||'')}">${initials(l.customer_name)}</div><div style="flex:1;font-size:13px">${esc(l.customer_name||'Cliente')}</div><span class="m-tag t-${(l.etiqueta||'sin_clasificar')}">${etqLabel(l.etiqueta)}</span></div>`).join('') : '<p style="font-size:13px;color:var(--text-3)">Sin leads en negociación.</p>'}
       </div>
-      <div class="cop-card"><h5>${I(SVG.megaphone,14)} Frase del día</h5>
-        <p id="copFrase">"La confianza se construye con respuestas rápidas y claras."</p>
+      <div class="cop-card" id="copFraseCard" style="display:none"><h5>${I(SVG.megaphone,14)} Consejo del día (IA)</h5>
+        <p id="copFrase"></p>
       </div>
     </div>`;
     box.innerHTML = briefBox.innerHTML;
-    // Fetch AI briefing async
+    // Próxima acción HONESTA: derivada de reglas reales sobre tus datos
+    // (lead más antiguo sin responder → cita de hoy → tarea vencida → negociaciones)
+    (async()=>{
+      const accion=document.getElementById('copAccion'); if(!accion) return;
+      let msg=null;
+      if(sinResp.length){
+        const masViejo=[...sinResp].sort((a,b)=>new Date(a.last_customer_message_at||a.updated_at||a.created_at)-new Date(b.last_customer_message_at||b.updated_at||b.created_at))[0];
+        msg=`Responde a <b>${esc(masViejo.customer_name||'Cliente')}</b> — es el lead que más tiempo lleva esperando (${sinResp.length} sin responder en total).`;
+      } else {
+        const citas=await api('/api/citas'); const hoy=new Date().toDateString();
+        const citaHoy=(citas||[]).find(c=>c.estado==='pendiente'&&new Date(String(c.fecha).replace(' ','T')).toDateString()===hoy);
+        if(citaHoy) msg=`Hoy tienes cita: <b>${esc(citaHoy.titulo)}</b> a las ${new Date(String(citaHoy.fecha).replace(' ','T')).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}.`;
+        else {
+          const tareas=await api('/api/tareas');
+          const vencida=(tareas||[]).find(t=>Number(t.completada)!==1&&t.vence_at&&new Date(t.vence_at)<new Date());
+          if(vencida) msg=`Tienes una tarea vencida: <b>${esc(vencida.texto)}</b>.`;
+          else if(hot.length) msg=`Todo al día. Empuja tus ${hot.length} lead(s) en negociación/cita hacia el cierre.`;
+          else msg='Todo al día. Buen momento para crear un lead nuevo o hacer seguimiento a clientes antiguos.';
+        }
+      }
+      accion.innerHTML=msg;
+    })();
+    // El "consejo del día" SOLO aparece si la IA responde de verdad — sin frases fingidas
     fetch('/api/nlp/daily-briefing', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include' })
       .then(r=>r.json()).then(d=>{
         const badge = document.getElementById('copBadge');
         if(d.ok && d.briefing) {
           const b = d.briefing;
           if(badge) { badge.textContent = 'IA activa'; badge.style.background = 'var(--gold-soft)'; badge.style.color = 'var(--gold)'; }
-          const accion = document.getElementById('copAccion');
-          if(accion) accion.textContent = b.priorityAction || accion.textContent;
-          const frase = document.getElementById('copFrase');
-          if(frase) frase.textContent = `"${b.fraseDelDia || frase.textContent.replace(/"/g,'')}"`;
-        } else if(badge) { badge.textContent = 'Sin conexión IA'; badge.style.background = 'var(--bg-3)'; badge.style.color = 'var(--text-3)'; }
-      }).catch(()=>{ const badge=document.getElementById('copBadge'); if(badge) { badge.textContent='Sin conexión IA'; badge.style.background='var(--bg-3)'; badge.style.color='var(--text-3)'; } });
-    // Keep hot leads section as-is (already real data)
+          if(b.priorityAction){ const accion = document.getElementById('copAccion'); if(accion) accion.textContent = b.priorityAction; }
+          if(b.fraseDelDia){ const card=document.getElementById('copFraseCard'); const frase=document.getElementById('copFrase'); if(card&&frase){ frase.textContent=`"${b.fraseDelDia}"`; card.style.display=''; } }
+        } else if(badge) { badge.textContent = 'IA no configurada'; badge.style.background = 'var(--bg-3)'; badge.style.color = 'var(--text-3)'; }
+      }).catch(()=>{ const badge=document.getElementById('copBadge'); if(badge) { badge.textContent='IA no configurada'; badge.style.background='var(--bg-3)'; badge.style.color='var(--text-3)'; } });
   }
   $('#scHome').insertBefore(box, $('#fab'));
 }
@@ -2173,10 +2231,29 @@ function wire(){
   document.addEventListener('animationend',e=>{ if(e.target.classList.contains('flash-new')) e.target.classList.remove('flash-new'); });
 }
 
-function abrirNotificaciones(){ haptic(8);
-  const sinResp = leads.filter(l => Number(l.unread_count||0) > 0 && !l.muted_at).slice(0,10);
-  const items = sinResp.length ? sinResp.map(l=>[l.unread_count>0?'chat':'bell',`${esc(l.customer_name||'Cliente')} — ${l.unread_count||0} mensaje(s) sin responder`,horaCorta(l.updated_at||l.created_at),'var(--red)']) : [['bell','Sin notificaciones nuevas','','var(--text-3)']];
-  openSheet('Notificaciones', items.map(([ic,t,s,c])=>`<div class="tl-i" style="padding-bottom:14px"><div class="tl-dot" style="color:${c}">${I(SVG[ic]||SVG.bell,15)}</div><div class="tl-txt"><strong>${t}</strong><span>${s}</span></div></div>`).join(''));
+/* Centro de notificaciones real: persistente en el servidor + tiempo real por SSE */
+function setNotifBadge(n){
+  const b=document.getElementById('notifBadge'); if(!b) return;
+  if(n>0){ b.textContent=n>99?'99+':String(n); b.style.display='block'; }
+  else { b.style.display='none'; b.textContent=''; }
+}
+function tiempoRel(ts){ const s=Math.floor((Date.now()-Number(ts))/1000); if(s<60) return 'ahora'; if(s<3600) return Math.floor(s/60)+' min'; if(s<86400) return Math.floor(s/3600)+' h'; return Math.floor(s/86400)+' d'; }
+async function cargarNotifBadge(){ const d=await api('/api/notificaciones?limit=1'); if(d) setNotifBadge(d.sin_leer||0); }
+async function abrirNotificaciones(){ haptic(8);
+  const d=await api('/api/notificaciones?limit=30');
+  const items=(d&&d.notificaciones)||[];
+  const html = items.length
+    ? items.map(n=>`<div class="tl-i notif-item" data-nid="${n.id}" data-lead="${n.lead_id||''}" style="padding-bottom:14px;${n.leida?'opacity:.55':''};cursor:pointer"><div class="tl-dot" style="color:var(--gold)">${I(SVG.bell,15)}</div><div class="tl-txt"><strong>${esc(n.titulo||'')}</strong><span>${esc(n.cuerpo||'')}</span><span style="font-size:10px;color:var(--text-4)">${tiempoRel(n.created_at)}</span></div></div>`).join('')
+      + '<button class="cop-use" id="notifLeerTodas" style="width:100%;margin-top:6px;background:var(--bg-3);color:var(--text);border:1px solid var(--border)">Marcar todas como leídas</button>'
+    : `<div class="tl-i" style="padding-bottom:14px"><div class="tl-dot" style="color:var(--text-3)">${I(SVG.bell,15)}</div><div class="tl-txt"><strong>Sin notificaciones</strong><span></span></div></div>`;
+  openSheet('Notificaciones', html);
+  const lt=document.getElementById('notifLeerTodas');
+  if(lt) lt.onclick=async()=>{ await api('/api/notificaciones/leer-todas',{method:'POST'}); setNotifBadge(0); closeSheet(); };
+  document.querySelectorAll('.notif-item').forEach(el=>el.onclick=async()=>{
+    const nid=el.dataset.nid, leadId=el.dataset.lead;
+    if(nid) api(`/api/notificaciones/${nid}/leer`,{method:'POST'}).then(cargarNotifBadge);
+    if(leadId){ closeSheet(); const l=leads.find(x=>Number(x.id)===Number(leadId)); if(l) abrirChat(Number(leadId)); }
+  });
 }
 
 /* ════════ Mis respuestas en perfil ════════ */
@@ -2209,25 +2286,25 @@ async function cargarMisTpl(){
     if(r){ toast('Eliminada'); cargarMisTpl(); } else toast('Error');
   });
 }
-/* ════════ Recordatorios ════════ */
-function renderRecordatorios(){
+/* ════════ Recordatorios — ahora viven en el SERVIDOR (/api/tareas con vence_at).
+   El push llega aunque la app esté cerrada; el barrido lo hace el backend cada 60s. ════════ */
+async function renderRecordatorios(){
   const box=document.getElementById('recList'); if(!box) return;
-  const r=JSON.parse(localStorage.getItem('sp_records')||'[]');
+  const d=await api('/api/tareas');
+  const r=(d||[]).filter(t=>t.vence_at&&Number(t.completada)!==1);
   if(!r.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3);text-align:center;padding:10px">Sin recordatorios</div>'; return; }
-  box.innerHTML=r.map(x=>`<div class="sch-item"><span class="sch-time">${new Date(x.dt).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${esc(x.txt)}</span><button class="sch-del" data-rec="${x.id}">${I(SVG.x,14)}</button></div>`).join('');
-  box.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.rec); let r=JSON.parse(localStorage.getItem('sp_records')||'[]'); r=r.filter(x=>x.id!==id); localStorage.setItem('sp_records',JSON.stringify(r)); renderRecordatorios(); });
+  box.innerHTML=r.map(x=>`<div class="sch-item"><span class="sch-time">${new Date(x.vence_at).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${esc(x.texto)}</span><button class="sch-del" data-rec="${x.id}">${I(SVG.x,14)}</button></div>`).join('');
+  box.querySelectorAll('[data-rec]').forEach(b=>b.onclick=async()=>{ await api('/api/tareas/'+b.dataset.rec,{method:'DELETE'}); renderRecordatorios(); });
 }
-let _recCheckInterval=null;
 function initRecordatorios(){
-  if(_recCheckInterval) clearInterval(_recCheckInterval);
-  _recCheckInterval=setInterval(()=>{
-    const r=JSON.parse(localStorage.getItem('sp_records')||'[]'); if(!r.length) return; const now=new Date(); const pend=[];
-    r.forEach(x=>{ if(new Date(x.dt)<=now) pend.push(x); });
-    if(!pend.length) return;
-    pend.forEach(x=>{ toast('🔔 '+x.txt); if(Notification.permission==='granted') new Notification('SP OS Recordatorio',{body:x.txt}); });
-    localStorage.setItem('sp_records',JSON.stringify(r.filter(x=>!pend.includes(x))));
-    renderRecordatorios();
-  },15000);
+  // Migración one-shot: recordatorios viejos de localStorage → servidor
+  try{
+    const viejos=JSON.parse(localStorage.getItem('sp_records')||'[]');
+    if(viejos.length){
+      Promise.all(viejos.map(x=>api('/api/tareas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:x.txt,venceAt:new Date(x.dt).toISOString()})})))
+        .then(()=>localStorage.removeItem('sp_records'));
+    }
+  }catch(e){}
 }
 /* ════════ Estadísticas semanales ════════ */
 async function cargarStats(){
@@ -2331,36 +2408,172 @@ function abrirModalCita(fechaPref, lead){
   };
 }
 
-/* ════════ Tareas tab ════════ */
+/* ════════ Propiedades tab — catálogo REAL de proyectos y lotes ════════ */
+const ESTADO_LOTE={disponible:{bg:'rgba(87,193,104,.12)',fg:'#57C168',label:'Disponible'},separado:{bg:'rgba(200,164,90,.12)',fg:'var(--gold)',label:'Separado'},reservado:{bg:'rgba(200,164,90,.12)',fg:'var(--gold)',label:'Reservado'},negociacion:{bg:'rgba(91,141,239,.12)',fg:'#5B8DEF',label:'Negociación'},vendido:{bg:'rgba(229,72,77,.12)',fg:'var(--red)',label:'Vendido'},bloqueado:{bg:'rgba(120,120,120,.14)',fg:'var(--text-3)',label:'Bloqueado'}};
+async function cargarPropiedades(){
+  const box=document.getElementById('propBox'); if(!box) return;
+  const proyectos=await api('/api/proyectos');
+  if(!proyectos||!proyectos.length){
+    box.innerHTML=`<div style="padding:40px 12px;text-align:center"><div style="color:var(--text-3);margin-bottom:14px">${I(SVG.building,44)}</div><div style="font-size:16px;font-weight:600;color:var(--text-2);margin-bottom:6px">Sin proyectos aún</div><p style="font-size:13px;color:var(--text-3)">El admin puede crear proyectos y lotes desde el panel de escritorio.</p></div>`;
+    return;
+  }
+  box.innerHTML=proyectos.map(p=>`
+    <div class="prop-proj" data-pid="${p.id}" style="background:var(--bg-2);border:1px solid var(--border-soft);border-radius:16px;padding:16px;margin-bottom:12px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:44px;height:44px;border-radius:14px;background:var(--gold-soft,rgba(200,164,90,.12));display:grid;place-items:center;color:var(--gold)">${I(SVG.building,22)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:15px;font-weight:600">${esc(p.nombre)}</div>
+          <div style="font-size:12px;color:var(--text-3)">${esc(p.ciudad||p.ubicacion||'')}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:16px;font-weight:700;color:#57C168">${p.disponibles||0}</div>
+          <div style="font-size:10px;color:var(--text-3)">disponibles</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;font-size:11px;color:var(--text-3)">
+        <span>${p.total_lotes||0} lotes</span>·<span>${p.vendidos||0} vendidos</span>
+        ${p.precio_min?`·<span>desde ${money(p.precio_min)}</span>`:''}
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('.prop-proj').forEach(el=>el.onclick=()=>abrirProyectoMovil(Number(el.dataset.pid),proyectos.find(p=>Number(p.id)===Number(el.dataset.pid))));
+}
+async function abrirProyectoMovil(pid,proyecto){
+  haptic(8);
+  const lotes=await api(`/api/proyectos/${pid}/lotes`);
+  const nombre=proyecto?proyecto.nombre:'Proyecto';
+  if(!lotes||!lotes.length){ openSheet(nombre,'<div style="text-align:center;color:var(--text-3);padding:20px">Este proyecto aún no tiene lotes cargados.</div>'); return; }
+  const filtros=['todos','disponible','separado','negociacion','vendido'];
+  const html=`
+    <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px" id="loteFiltros">
+      ${filtros.map((f,i)=>`<button data-lf="${f}" style="flex-shrink:0;padding:6px 12px;border-radius:999px;border:1px solid ${i===0?'var(--gold)':'var(--border)'};background:${i===0?'var(--gold-soft,rgba(200,164,90,.12))':'var(--bg-3)'};color:${i===0?'var(--gold)':'var(--text-2)'};font-size:12px;font-family:inherit">${f==='todos'?'Todos':ESTADO_LOTE[f]?ESTADO_LOTE[f].label:f}</button>`).join('')}
+    </div>
+    <div id="loteGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:50vh;overflow-y:auto"></div>`;
+  openSheet(nombre,html);
+  const grid=document.getElementById('loteGrid');
+  const render=f=>{
+    const ls=f==='todos'?lotes:lotes.filter(l=>l.estado===f);
+    grid.innerHTML=ls.length?ls.map(l=>{
+      const st=ESTADO_LOTE[l.estado]||ESTADO_LOTE.disponible;
+      return `<div class="lote-card" data-lid="${l.id}" style="background:var(--bg-3);border:1px solid var(--border-soft);border-radius:12px;padding:12px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:14px;font-weight:700">${esc(l.manzana?l.manzana+'-':'')}${esc(l.numero||('#'+l.id))}</span>
+          <span style="font-size:9.5px;padding:2px 7px;border-radius:999px;background:${st.bg};color:${st.fg};font-weight:600">${st.label}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--gold)">${l.precio?money(l.precio):'—'}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px">${l.area?l.area+' m²':''}${l.dimensiones?' · '+esc(l.dimensiones):''}</div>
+      </div>`;
+    }).join(''):'<div style="grid-column:1/-1;text-align:center;color:var(--text-3);padding:16px">Sin lotes en este estado</div>';
+    grid.querySelectorAll('.lote-card').forEach(el=>el.onclick=()=>abrirLoteMovil(lotes.find(x=>Number(x.id)===Number(el.dataset.lid)),nombre,proyecto));
+  };
+  render('todos');
+  document.getElementById('loteFiltros').querySelectorAll('[data-lf]').forEach(b=>b.onclick=()=>{
+    document.getElementById('loteFiltros').querySelectorAll('[data-lf]').forEach(x=>{ x.style.borderColor='var(--border)'; x.style.background='var(--bg-3)'; x.style.color='var(--text-2)'; });
+    b.style.borderColor='var(--gold)'; b.style.background='var(--gold-soft,rgba(200,164,90,.12))'; b.style.color='var(--gold)';
+    render(b.dataset.lf);
+  });
+}
+function textoLote(l,proyectoNombre,proyecto){
+  const lineas=[`🏡 *${proyectoNombre}*${proyecto&&(proyecto.ciudad||proyecto.ubicacion)?' — '+(proyecto.ciudad||proyecto.ubicacion):''}`,
+    `Lote ${l.manzana?l.manzana+'-':''}${l.numero||('#'+l.id)}`];
+  if(l.area) lineas.push(`📐 Área: ${l.area} m²${l.dimensiones?' ('+l.dimensiones+')':''}`);
+  if(l.precio) lineas.push(`💰 Precio: ${money(l.precio)}`);
+  lineas.push('','¿Te gustaría agendar una visita o recibir más información?');
+  return lineas.join('\n');
+}
+function abrirLoteMovil(l,proyectoNombre,proyecto){
+  if(!l) return; haptic(8);
+  const st=ESTADO_LOTE[l.estado]||ESTADO_LOTE.disponible;
+  openSheet(`Lote ${l.manzana?l.manzana+'-':''}${l.numero||('#'+l.id)}`,`
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;padding:4px 10px;border-radius:999px;background:${st.bg};color:${st.fg};font-weight:600">${st.label}</span>
+        <span style="font-size:18px;font-weight:700;color:var(--gold)">${l.precio?money(l.precio):'—'}</span>
+      </div>
+      <div style="font-size:13px;color:var(--text-2)">${esc(proyectoNombre)}</div>
+      ${l.area?`<div style="font-size:13px;color:var(--text-2)">📐 ${l.area} m²${l.dimensiones?' · '+esc(l.dimensiones):''}</div>`:''}
+      ${l.observaciones?`<div style="font-size:12px;color:var(--text-3)">${esc(l.observaciones)}</div>`:''}
+      ${l.estado==='disponible'||l.estado==='separado'||l.estado==='negociacion'?`
+      <button class="cop-use" id="loteCompartir" style="margin-top:6px">${I(SVG.chat,15)} Compartir a un lead</button>`:''}
+    </div>`);
+  const btn=document.getElementById('loteCompartir');
+  if(btn) btn.onclick=()=>{
+    const activos=leads.filter(x=>x.status!=='cerrado');
+    if(!activos.length){ toast('No tienes leads activos'); return; }
+    openSheet('Enviar lote a…',`<div style="max-height:50vh;overflow-y:auto">${activos.map(x=>`<div class="lote-dest" data-lead="${x.id}" style="display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer"><div class="m-avatar" style="width:34px;height:34px;border-radius:10px;font-size:12px;background:${avatarColor(x.customer_name||'')}">${initials(x.customer_name)}</div><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:500">${esc(x.customer_name||'Cliente')}</div><div style="font-size:11px;color:var(--text-3)">${esc(x.customer_phone||'')}</div></div></div>`).join('')}</div>`);
+    document.querySelectorAll('.lote-dest').forEach(el=>el.onclick=async()=>{
+      const leadId=Number(el.dataset.lead);
+      closeSheet(); toast('Enviando…');
+      const r=await api(`/api/leads/${leadId}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:textoLote(l,proyectoNombre,proyecto)})});
+      if(r&&(r.ok||r.enviado||r.id)){ toast('Lote enviado ✓'); haptic([60,30,60]); }
+      else toast('No se pudo enviar','err');
+    });
+  };
+}
+
+/* ════════ Tareas tab — tareas REALES (/api/tareas), separadas de las citas ════════ */
 async function cargarTareas(){
   const box=document.getElementById('taskList'); if(!box) return;
-  const d=await api('/api/citas'); if(!d||!d.length){ box.innerHTML='<div style="text-align:center;color:var(--text-3);padding:20px">Sin tareas pendientes</div>'; } else {
-    box.innerHTML=d.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(t=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-soft)"><button class="task-toggle" data-id="${t.id}" style="width:24px;height:24px;border-radius:6px;border:2px solid ${t.estado==='hecha'?'var(--green)':'var(--border-strong)'};background:${t.estado==='hecha'?'var(--green)':'transparent'};display:grid;place-items:center;flex-shrink:0;color:#0A0A0A;${t.estado==='hecha'?'':'color:transparent'}">${I(SVG.check,14)}</button><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:500;${t.estado==='hecha'?'text-decoration:line-through;opacity:.5':''}">${esc(t.titulo)}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">${new Date(t.fecha).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${t.lead_id?' · Lead #'+t.lead_id:''}</div></div><button class="task-del" data-id="${t.id}" style="width:28px;height:28px;border-radius:50%;background:none;border:none;color:var(--text-3);display:grid;place-items:center">${I(SVG.x,14)}</button></div>`).join('');
+  const d=await api('/api/tareas');
+  if(!d||!d.length){ box.innerHTML='<div style="text-align:center;color:var(--text-3);padding:20px">Sin tareas pendientes</div>'; } else {
+    box.innerHTML=d.map(t=>{
+      const done=Number(t.completada)===1;
+      const cuando=t.vence_at?new Date(t.vence_at).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+      const vencida=!done&&t.vence_at&&new Date(t.vence_at)<new Date();
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-soft)"><button class="task-toggle" data-id="${t.id}" style="width:24px;height:24px;border-radius:6px;border:2px solid ${done?'var(--green)':'var(--border-strong)'};background:${done?'var(--green)':'transparent'};display:grid;place-items:center;flex-shrink:0;color:#0A0A0A;${done?'':'color:transparent'}">${I(SVG.check,14)}</button><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:500;${done?'text-decoration:line-through;opacity:.5':''}">${esc(t.texto)}</div>${cuando?`<div style="font-size:11px;color:${vencida?'var(--red)':'var(--text-3)'};margin-top:2px">🔔 ${cuando}${Number(t.lead_id)?' · Lead #'+t.lead_id:''}</div>`:(Number(t.lead_id)?`<div style="font-size:11px;color:var(--text-3);margin-top:2px">Lead #${t.lead_id}</div>`:'')}</div><button class="task-del" data-id="${t.id}" style="width:28px;height:28px;border-radius:50%;background:none;border:none;color:var(--text-3);display:grid;place-items:center">${I(SVG.x,14)}</button></div>`;
+    }).join('');
     box.querySelectorAll('.task-toggle').forEach(b=>b.onclick=async()=>{
-      const id=b.dataset.id; const t=d.find(x=>String(x.id)===String(id)); if(!t) return; const nuevoEstado=t.estado==='hecha'?'pendiente':'hecha';
-      await api('/api/citas/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevoEstado})}); cargarTareas();
+      const id=b.dataset.id; const t=d.find(x=>String(x.id)===String(id)); if(!t) return;
+      await api('/api/tareas/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({completada:Number(t.completada)!==1})}); haptic(8); cargarTareas();
     });
-    box.querySelectorAll('.task-del').forEach(b=>b.onclick=async()=>{ await api('/api/citas/'+b.dataset.id,{method:'DELETE'}); cargarTareas(); });
+    box.querySelectorAll('.task-del').forEach(b=>b.onclick=async()=>{ await api('/api/tareas/'+b.dataset.id,{method:'DELETE'}); cargarTareas(); });
   }
   const addBtn=document.getElementById('taskAdd');
   if(addBtn) addBtn.onclick=async()=>{
     const txt=document.getElementById('taskTxt').value.trim(); if(!txt) return;
-    await api('/api/citas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo:txt,fecha:new Date().toISOString().slice(0,19).replace('T',' '),notas:''})});
-    document.getElementById('taskTxt').value=''; cargarTareas(); toast('Tarea creada');
+    const venceAt=document.getElementById('taskDt')&&document.getElementById('taskDt').value?new Date(document.getElementById('taskDt').value).toISOString():null;
+    await api('/api/tareas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:txt,venceAt})});
+    document.getElementById('taskTxt').value=''; if(document.getElementById('taskDt')) document.getElementById('taskDt').value='';
+    cargarTareas(); toast(venceAt?'Recordatorio creado — te avisaremos':'Tarea creada');
   };
   document.getElementById('taskTxt')&&document.getElementById('taskTxt').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('taskAdd')&&document.getElementById('taskAdd').click(); } });
 }
 
 /* ════════ Tiempo real ════════ */
+// Refresco INCREMENTAL: al llegar un mensaje se actualiza SOLO ese lead
+// (1 request pequeño) en vez de recargar /api/mis-leads completo por cada evento.
+let _fullRefreshPend=null;
+async function refrescarLead(leadId){
+  if(!leadId){ // sin leadId en el evento → refresco completo con debounce de 2s
+    clearTimeout(_fullRefreshPend);
+    _fullRefreshPend=setTimeout(async()=>{ const d=await api('/api/mis-leads'); if(d) leads=d; renderList(); },2000);
+    return;
+  }
+  const l=await api('/api/leads/'+leadId);
+  if(!l){ // el lead ya no es mío (reasignado/archivado) → sacarlo de la lista
+    leads=leads.filter(x=>Number(x.id)!==Number(leadId)); renderList(); return;
+  }
+  const idx=leads.findIndex(x=>Number(x.id)===Number(leadId));
+  if(idx>=0) leads[idx]=Object.assign({},leads[idx],l); else leads.unshift(l);
+  leads.sort((a,b)=>new Date(String(b.updated_at||b.created_at).replace(' ','T'))-new Date(String(a.updated_at||a.created_at).replace(' ','T')));
+}
+let _primeraConexion=true;
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  es.addEventListener('nuevo_mensaje',async ev=>{ const old=leads; const d=await api('/api/mis-leads'); if(d) leads=d; const dot=$('#navDot'); const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); if(dot) dot.style.display=totalUnread>0?'':'none'; try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){} if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } try{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
-  es.addEventListener('lead_actualizado',async ev=>{ const d=await api('/api/mis-leads'); if(d) leads=d; if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); } });
+  // Al (re)conectar: refresco completo una vez — pudo perderse algo mientras no había stream
+  es.addEventListener('conectado',async()=>{ if(_primeraConexion){ _primeraConexion=false; return; } const d=await api('/api/mis-leads'); if(d){ leads=d; renderList(); } });
+  es.addEventListener('nuevo_mensaje',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){}
+    await refrescarLead(x.leadId);
+    const dot=$('#navDot'); const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); if(dot) dot.style.display=totalUnread>0?'':'none'; try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){}
+    if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); }
+    try{ if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
+  es.addEventListener('lead_actualizado',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} await refrescarLead(x.leadId); if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); } });
   // Checkmark en vivo cuando el cliente recibe/lee (sin re-render del chat)
   es.addEventListener('status_update',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m) m.status=x.status; const wrap=document.getElementById('msg_'+x.messageId); if(wrap){ const t=wrap.querySelector('.bub__t'); if(t){ const old=t.querySelector('.chk'); if(old){ const tmp=document.createElement('span'); tmp.innerHTML=chkHTML(x.status,null); old.replaceWith(tmp.firstChild); } } } }catch(e){} });
   // Mensaje eliminado (por un asesor o por el cliente — anti-delete)
   es.addEventListener('mensaje_eliminado',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } if(x.byClient) toast('El cliente eliminó un mensaje — texto conservado'); } }catch(e){} });
   // Reacción del cliente en vivo
   es.addEventListener('reaccion',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } } }catch(e){} });
+  // Notificación del centro (asignaciones, escalamientos, recordatorios…)
+  es.addEventListener('notificacion',ev=>{ try{ const x=JSON.parse(ev.data); const b=document.getElementById('notifBadge'); const cur=b?Number(b.textContent)||0:0; setNotifBadge(cur+1); if(x.tipo!=='mensaje_cliente'){ toast('🔔 '+(x.titulo||'Notificación')); haptic([80,40,80]); playNotifSound(); } }catch(e){} });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
 

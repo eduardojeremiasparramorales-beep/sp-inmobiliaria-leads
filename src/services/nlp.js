@@ -17,6 +17,10 @@ function getFromCache(key) {
 }
 
 function setCache(key, value) {
+  // Tope de 500 entradas con evicción FIFO — evita crecimiento sin límite en RAM
+  if (cache.size >= 500 && !cache.has(key)) {
+    cache.delete(cache.keys().next().value);
+  }
   cache.set(key, { value, expiresAt: Date.now() + CFG.NLP_CACHE_TTL });
 }
 
@@ -37,7 +41,7 @@ function getSiteUrl() {
 }
 
 function getAppName() {
-  return store.getConfig('openrouter_app_name') || process.env.OPENROUTER_APP_NAME || 'SP CRM';
+  return store.getConfig('openrouter_app_name') || process.env.OPENROUTER_APP_NAME || 'Leons Group';
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -279,7 +283,7 @@ async function suggestResponse(conversationHistory, customerName) {
   try {
     const historyText = (conversationHistory || []).slice(-6).map(m => `${m.role === 'customer' ? 'Cliente' : 'Vendedor'}: ${m.text}`).join('\n');
     const result = await chatJSON(
-      'Eres asesor inmobiliario de SP Inmobiliaria, una firma colombiana de lotes de inversión. Genera 3 respuestas profesionales y persuasivas para responder al cliente. Cada respuesta debe ser natural, no sonar a robot. Responde SOLO JSON: { suggestions: [string, string, string] }',
+      'Eres asesor inmobiliario de Leons Group, una firma colombiana de lotes de inversión. Genera 3 respuestas profesionales y persuasivas para responder al cliente. Cada respuesta debe ser natural, no sonar a robot. Responde SOLO JSON: { suggestions: [string, string, string] }',
       `Cliente: ${customerName || 'Cliente'}\n\nHistorial:\n${historyText || 'Sin historial previo. Es el primer mensaje.'}`,
       15000
     );
@@ -294,7 +298,7 @@ async function analyzeLead(conversationHistory, customerName, leadStage) {
   try {
     const historyText = (conversationHistory || []).slice(-10).map(m => `${m.role === 'customer' ? 'Cliente' : 'Vendedor'}: ${m.text}`).join('\n');
     const result = await chatJSON(
-      `Eres un analista inmobiliario experto. Analiza este lead de SP Inmobiliaria (venta de lotes en Colombia).
+      `Eres un analista inmobiliario experto. Analiza este lead de Leons Group (venta de lotes en Colombia).
       Responde SOLO JSON con esta estructura exacta:
       {
         "summary": "resumen de 1-2 líneas del lead",

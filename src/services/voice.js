@@ -43,15 +43,14 @@ async function initiateCall(conversationId, vendedorPhone, customerPhone) {
     statusCallbackEvent: ['completed', 'answered'],
   });
 
-  // 4. Emitir Socket.IO al vendedor
+  // 4. Emitir SSE al vendedor
   try {
-    const ws = require('../ws');
-    if (ws && ws.emitToVendedor && conversation.assigned_to_id) {
-      ws.emitToVendedor(conversation.assigned_to_id, 'call:incoming', {
+    if (conversation.assigned_to_id) {
+      require('./events').emitToVendedor(conversation.assigned_to_id, 'call:incoming', {
         conversationId, callSid: call.sid, customerPhone, ts: Date.now(),
       });
     }
-  } catch (e) { /* ws no disponible */ }
+  } catch (e) { /* sse no disponible */ }
 
   return call;
 }

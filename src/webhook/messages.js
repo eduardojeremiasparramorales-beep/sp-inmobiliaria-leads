@@ -90,7 +90,7 @@ function handleMessage(req, res) {
               if (result.forwarded) console.log(`Mensaje reenviado a ${result.to}`);
               if (result.message === 'no_hay_vendedores') {
                 sendMessage(fromPhone,
-                  '👋 Gracias por contactar a SP Inmobiliaria. ' +
+                  '👋 Gracias por contactar a Leons Group. ' +
                   'Todos nuestros asesores están ocupados en este momento. ' +
                   'Te responderemos lo antes posible. ¡Gracias por tu paciencia!'
                 ).catch(e => console.error('Error enviando mensaje de espera:', e.message));

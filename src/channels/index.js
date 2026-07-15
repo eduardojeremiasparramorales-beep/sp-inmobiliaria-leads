@@ -67,6 +67,22 @@ async function webhookReceiver(req, res) {
       }
     }
 
+    // Media entrante de Messenger/Instagram: llega como URL del CDN de Meta, que
+    // EXPIRA en horas. Se descarga y guarda en disco de inmediato para no perderla.
+    if (payload.media && payload.media.id && /^https?:\/\//.test(String(payload.media.id))) {
+      try {
+        const axios = require('axios');
+        const mediaStore = require('../services/media');
+        const resp = await axios.get(payload.media.id, { responseType: 'arraybuffer', timeout: 15000, maxContentLength: 25 * 1024 * 1024 });
+        const mime = resp.headers['content-type'] || 'application/octet-stream';
+        const ext = (mime.split('/')[1] || 'bin').split(';')[0];
+        const filename = mediaStore.saveOutgoingMedia(Buffer.from(resp.data), mime, `${payload.channel}-${Date.now()}.${ext}`);
+        payload.media = { id: null, mime, filename };
+      } catch (e) {
+        console.error(`[WEBHOOK ${channel}] No se pudo descargar media entrante:`, e.message);
+      }
+    }
+
     const MessageRouter = require('../services/router');
     console.log(`[WEBHOOK ${channel}] Enrutando mensaje de ${payload.from}...`);
     await MessageRouter.routeIncoming(payload.channel, payload.from, payload.body, {

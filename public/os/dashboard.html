@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0A0A0A">
-<title>SP OS · Dashboard</title>
+<title>Leons Group · Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -117,7 +117,7 @@
         <div class="card card--pad rise rise-2">
           <div class="t-label" style="margin-bottom:var(--s2)">Estado del negocio</div>
           <div class="u-col u-gap2">
-            ${statRow('dot--green', 'Sistema operativo', 'Todos los canales activos')}
+            ${statRow(stats&&m?'dot--green':'dot--gold', stats&&m?'Sistema en línea':'Conexión parcial', stats&&m?'Servidor y datos respondiendo':'Reintentando conexión')}
             ${statRow(m.sinResponder>0?'dot--gold':'dot--green', fmt.n(m.sinResponder) + ' sin responder', m.sinResponder>0?'Requieren atención':'Bandeja al día')}
             ${statRow('dot--green', fmt.n(stats.vendedoresActivos) + ' de ' + fmt.n(stats.totalVendedores) + ' asesores', 'Conectados ahora')}
             ${statRow('dot--gold', fmt.n(m.mensajesEntrantes) + ' mensajes', 'Recibidos en total')}

@@ -91,9 +91,12 @@ class WorkflowEngine {
           break;
         case 'notify_admin': {
           try {
-            const ws = require('../ws');
-            if (ws && ws.emitToAdmins) ws.emitToAdmins('notification', { message: params.message, conversationId: conversation.id, ts: Date.now() });
-          } catch (e) { /* ws no disponible */ }
+            const { notify } = require('./notify');
+            await notify({
+              vendedorId: 0, tipo: 'workflow', leadId: conversation.lead_id || null, push: true,
+              titulo: '⚙️ Automatización', cuerpo: String(params.message || 'Un flujo automatizado se disparó.'),
+            });
+          } catch (e) { /* notify opcional */ }
           break;
         }
         case 'webhook':
@@ -105,6 +108,19 @@ class WorkflowEngine {
       }
       return { ok: true, type };
     } catch (e) {
+      // Fallo de envío (p.ej. ventana de 24h cerrada en Messenger/IG): avisar en vez
+      // de fallar en silencio — el vendedor asignado y los admins ven qué pasó.
+      if (type === 'send_template' || type === 'send_message') {
+        try {
+          const { notify } = require('./notify');
+          const destino = conversation && conversation.assigned_to_id ? conversation.assigned_to_id : 0;
+          notify({
+            vendedorId: destino, tipo: 'fallo_envio', leadId: (conversation && conversation.lead_id) || null, push: true,
+            titulo: '⚠️ No se pudo enviar un mensaje automático',
+            cuerpo: `Canal ${conversation ? conversation.channel : '?'}: ${e.message}`.slice(0, 160),
+          }).catch(() => {});
+        } catch (err) { /* notify opcional */ }
+      }
       return { ok: false, type, error: e.message };
     }
   }

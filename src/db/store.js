@@ -330,6 +330,31 @@ async function initDB() {
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_pending_outbound_phone ON pending_outbound(phone)`);
 
+  // Tareas: la tabla existe en schema.js (lead_id, texto, fecha_vencimiento, completada).
+  // Columnas nuevas para tareas por vendedor + recordatorios con push:
+  ensureColumn('tareas', 'vendedor_id', 'INTEGER');
+  ensureColumn('tareas', 'vence_at', 'TEXT'); // ISO — si está, es recordatorio con push
+  ensureColumn('tareas', 'notificada', 'INTEGER DEFAULT 0');
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_tareas_vendedor ON tareas(vendedor_id, completada)`);
+
+  // Texto libre "Acerca de" del perfil del vendedor (antes vivía solo en localStorage)
+  ensureColumn('vendedores', 'about', 'TEXT');
+
+  // Centro de notificaciones persistente (vendedor_id = 0 → admins)
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL DEFAULT 0,
+      tipo TEXT NOT NULL DEFAULT 'info',
+      titulo TEXT NOT NULL,
+      cuerpo TEXT DEFAULT '',
+      lead_id INTEGER,
+      leida INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_notif_vendedor ON notifications(vendedor_id, leida)`);
+
   return adapter.getDB();
 }
 
@@ -676,14 +701,16 @@ function withLeadScore(leads) {
   return leads.map(l => ({ ...l, score: computeLeadScore(l) }));
 }
 
-function getLeads(includeCerrado) {
+function getLeads(includeCerrado, limit) {
+  const lim = Math.min(Number(limit) || 500, 2000);
   if (includeCerrado) {
     return withLeadScore(all(`
       SELECT l.*, v.nombre AS assigned_to_nombre
       FROM leads l
       LEFT JOIN vendedores v ON v.id = l.assigned_to_id
       ORDER BY l.updated_at DESC, l.created_at DESC
-    `));
+      LIMIT ?
+    `, [lim]));
   }
   return withLeadScore(all(`
     SELECT l.*, v.nombre AS assigned_to_nombre
@@ -691,7 +718,44 @@ function getLeads(includeCerrado) {
     LEFT JOIN vendedores v ON v.id = l.assigned_to_id
     WHERE l.status != 'cerrado'
     ORDER BY l.updated_at DESC, l.created_at DESC
-  `));
+    LIMIT ?
+  `, [lim]));
+}
+
+// Agregados SQL para dashboard/métricas — no carga todos los leads en JS
+function getLeadAggregates() {
+  const total = one('SELECT COUNT(*) AS n FROM leads');
+  const porEtiqueta = {};
+  ['sin_clasificar', 'interesado', 'negociacion', 'cita', 'vendido', 'no_interesado'].forEach(e => porEtiqueta[e] = 0);
+  all("SELECT COALESCE(NULLIF(etiqueta,''),'sin_clasificar') AS e, COUNT(*) AS n FROM leads GROUP BY e").forEach(r => { porEtiqueta[r.e] = (porEtiqueta[r.e] || 0) + Number(r.n); });
+  const porEstado = {};
+  all("SELECT COALESCE(NULLIF(status,''),'nuevo') AS s, COUNT(*) AS n FROM leads GROUP BY s").forEach(r => { porEstado[r.s] = Number(r.n); });
+  const resp = one(`
+    SELECT COUNT(*) AS respondidos,
+      COALESCE(SUM((julianday(first_response_at) - julianday(created_at)) * 1440), 0) AS sumaMin
+    FROM leads
+    WHERE first_response_at IS NOT NULL AND created_at IS NOT NULL AND first_response_at >= created_at
+  `);
+  const porVendedor = all(`
+    SELECT v.id, v.nombre, v.estado,
+      COUNT(l.id) AS total,
+      SUM(CASE WHEN l.status != 'cerrado' THEN 1 ELSE 0 END) AS activos,
+      SUM(CASE WHEN l.etiqueta = 'vendido' THEN 1 ELSE 0 END) AS vendidos
+    FROM vendedores v
+    LEFT JOIN leads l ON l.assigned_to_id = v.id
+    GROUP BY v.id
+    ORDER BY total DESC
+  `).map(r => ({
+    id: r.id, nombre: r.nombre, estado: r.estado,
+    total: Number(r.total) || 0, activos: Number(r.activos) || 0, vendidos: Number(r.vendidos) || 0,
+    conversion: r.total ? Math.round((Number(r.vendidos) / Number(r.total)) * 100) : 0,
+  }));
+  return {
+    total: total ? Number(total.n) : 0,
+    porEtiqueta, porEstado, porVendedor,
+    respondidos: resp ? Number(resp.respondidos) : 0,
+    sumaRespuestaMin: resp ? Number(resp.sumaMin) : 0,
+  };
 }
 
 // Marcar todos los mensajes de un lead como leídos
@@ -777,14 +841,25 @@ function getArchivedLeadsByVendedorId(vendedorId) {
   return all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status = ? ORDER BY l.updated_at DESC", [vendedorId, 'cerrado']);
 }
 
-function getMessagesByLead(leadId) {
-  return all(`
+// Paginado: por defecto los ÚLTIMOS `limit` mensajes (los más recientes),
+// devueltos en orden cronológico. `beforeId` trae la página anterior (scroll arriba).
+function getMessagesByLead(leadId, opts = {}) {
+  const limit = Math.min(Number(opts.limit) || 100, 500);
+  const beforeId = opts.beforeId ? Number(opts.beforeId) : null;
+  const rows = all(`
     SELECT m.*, r.body AS reply_to_body, r.direction AS reply_to_direction, r.media_type AS reply_to_media_type
     FROM messages m
     LEFT JOIN messages r ON r.id = m.reply_to_id
-    WHERE m.lead_id = ?
-    ORDER BY m.timestamp ASC, m.id ASC
-  `, [leadId]);
+    WHERE m.lead_id = ?${beforeId ? ' AND m.id < ?' : ''}
+    ORDER BY m.timestamp DESC, m.id DESC
+    LIMIT ?
+  `, beforeId ? [leadId, beforeId, limit] : [leadId, limit]);
+  return rows.reverse();
+}
+
+function countMessagesByLead(leadId) {
+  const r = one('SELECT COUNT(*) AS n FROM messages WHERE lead_id = ?', [leadId]);
+  return r ? Number(r.n) : 0;
 }
 
 // --- Templates (respuestas rápidas) ---
@@ -913,8 +988,80 @@ function refreshSession(token) {
   run('UPDATE sessions SET created_at = ? WHERE token = ?', [Date.now(), token]);
 }
 
+// Deja una sesión con un tiempo de vida restante corto (periodo de gracia tras rotar el token)
+function expireSessionSoon(token, graceMs) {
+  const CFG = require('../config');
+  run('UPDATE sessions SET created_at = ? WHERE token = ?', [Date.now() - CFG.SESSION_TTL_MS + graceMs, token]);
+}
+
 function cleanExpiredSessions(ttlMs) {
   run('DELETE FROM sessions WHERE created_at < ?', [Date.now() - ttlMs]);
+}
+
+// --- Tareas / recordatorios (por vendedor; lead_id = 0 → tarea suelta) ---
+function getTareasByVendedor(vendedorId) {
+  return all('SELECT * FROM tareas WHERE vendedor_id = ? ORDER BY completada ASC, COALESCE(vence_at, created_at) ASC LIMIT 200', [Number(vendedorId)]);
+}
+
+function createTarea({ vendedorId, texto, leadId, venceAt }) {
+  run('INSERT INTO tareas (lead_id, texto, vendedor_id, vence_at, fecha_vencimiento) VALUES (?, ?, ?, ?, ?)', [
+    leadId != null ? Number(leadId) : 0, String(texto), Number(vendedorId), venceAt || null, venceAt || '',
+  ]);
+  return one('SELECT * FROM tareas WHERE rowid = last_insert_rowid()');
+}
+
+function updateTarea(id, vendedorId, data) {
+  const t = one('SELECT * FROM tareas WHERE id = ? AND vendedor_id = ?', [Number(id), Number(vendedorId)]);
+  if (!t) return null;
+  if (data.completada != null) run('UPDATE tareas SET completada = ? WHERE id = ?', [data.completada ? 1 : 0, t.id]);
+  if (data.texto) run('UPDATE tareas SET texto = ? WHERE id = ?', [String(data.texto), t.id]);
+  if (data.venceAt !== undefined) run('UPDATE tareas SET vence_at = ?, notificada = 0 WHERE id = ?', [data.venceAt || null, t.id]);
+  return one('SELECT * FROM tareas WHERE id = ?', [t.id]);
+}
+
+function deleteTarea(id, vendedorId) {
+  run('DELETE FROM tareas WHERE id = ? AND vendedor_id = ?', [Number(id), Number(vendedorId)]);
+}
+
+// Recordatorios vencidos aún no notificados (para el barrido de push cada minuto)
+function getTareasVencidasSinNotificar(nowISO) {
+  return all("SELECT * FROM tareas WHERE vence_at IS NOT NULL AND vence_at != '' AND vence_at <= ? AND notificada = 0 AND completada = 0 AND vendedor_id IS NOT NULL", [nowISO]);
+}
+
+function markTareaNotificada(id) {
+  run('UPDATE tareas SET notificada = 1 WHERE id = ?', [Number(id)]);
+}
+
+function setVendedorAbout(id, texto) {
+  run('UPDATE vendedores SET about = ? WHERE id = ?', [String(texto || '').slice(0, 300), Number(id)]);
+}
+
+// --- Centro de notificaciones ---
+function createNotification({ vendedorId, tipo, titulo, cuerpo, leadId }) {
+  run('INSERT INTO notifications (vendedor_id, tipo, titulo, cuerpo, lead_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+    Number(vendedorId) || 0, tipo || 'info', titulo || '', cuerpo || '', leadId != null ? Number(leadId) : null, Date.now(),
+  ]);
+  // Retención: borrar notificaciones de más de 30 días (barato, sin cron)
+  run('DELETE FROM notifications WHERE created_at < ?', [Date.now() - 30 * 24 * 60 * 60 * 1000]);
+  const r = one('SELECT * FROM notifications WHERE rowid = last_insert_rowid()');
+  return r || null;
+}
+
+function getNotifications(vendedorId, limit = 30) {
+  return all('SELECT * FROM notifications WHERE vendedor_id = ? ORDER BY created_at DESC LIMIT ?', [Number(vendedorId) || 0, Math.min(Number(limit) || 30, 100)]);
+}
+
+function countUnreadNotifications(vendedorId) {
+  const r = one('SELECT COUNT(*) AS n FROM notifications WHERE vendedor_id = ? AND leida = 0', [Number(vendedorId) || 0]);
+  return r ? Number(r.n) : 0;
+}
+
+function markNotificationRead(id, vendedorId) {
+  run('UPDATE notifications SET leida = 1 WHERE id = ? AND vendedor_id = ?', [Number(id), Number(vendedorId) || 0]);
+}
+
+function markAllNotificationsRead(vendedorId) {
+  run('UPDATE notifications SET leida = 1 WHERE vendedor_id = ?', [Number(vendedorId) || 0]);
 }
 
 // --- Configuración general ---
@@ -1541,7 +1688,7 @@ function getOrCreateConversationForLead(leadId) {
      lead.last_message || '', lead.updated_at || lead.created_at, lead.updated_at || lead.created_at]);
   conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
   if (!conv) return null;
-  const msgs = getMessagesByLead(lead.id);
+  const msgs = getMessagesByLead(lead.id, { limit: 500 }); // backfill: hasta 500 mensajes recientes
   msgs.forEach(m => {
     addTimelineEvent(conv.id, 'message', {
       channel: 'whatsapp',
@@ -1884,7 +2031,10 @@ module.exports = {
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken,
-  createDBSession, getDBSession, deleteDBSession, refreshSession, cleanExpiredSessions,
+  createDBSession, getDBSession, deleteDBSession, refreshSession, expireSessionSoon, cleanExpiredSessions,
+  createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,
+  getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout,
+  countMessagesByLead, getLeadAggregates,
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName, upsertWATemplateFull, setWATemplateMapping,
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,

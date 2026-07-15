@@ -43,6 +43,7 @@
     money: P('<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 2.5-5 1-5 3.5a2.5 2 0 0 0 5 0"/>'),
     target: P('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'),
     zap: P('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
+    refresh: P('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
   };
 
   /* --- Navegación (una sola verdad) --- */
@@ -148,12 +149,12 @@
     shell.innerHTML = `
       <aside class="os-nav" id="osNav">
         <div class="os-brand">
-          <div class="os-brand__mark">SP</div>
-          <div><div class="os-brand__name">SP&nbsp;OS</div><div class="os-brand__sub">Enterprise</div></div>
+          <div class="os-brand__mark">LG</div>
+          <div><div class="os-brand__name">Leons&nbsp;Group</div><div class="os-brand__sub">Enterprise</div></div>
         </div>
         <div class="os-workspace" title="Cambiar workspace">
           <div class="os-workspace__logo">🏡</div>
-          <div class="u-grow"><div class="os-workspace__name">SP Inmobiliaria</div><div class="os-workspace__plan">Plan Enterprise</div></div>
+          <div class="u-grow"><div class="os-workspace__name">Leons Group</div><div class="os-workspace__plan">Plan Enterprise</div></div>
           ${P('<path d="M8 9l4-4 4 4M8 15l4 4 4-4"/>').replace('<svg ', '<svg style="width:14px;height:14px;opacity:.4" ')}
         </div>
         <div class="os-nav__scroll">${navHTML}</div>
@@ -166,7 +167,7 @@
           <button class="btn btn--icon btn--quiet u-hide" id="osMenuBtn" style="margin-left:-8px">${ICONS.menu}</button>
           <div><div class="os-topbar__title">${opts.title || 'Dashboard'}</div>${opts.crumb ? `<div class="os-topbar__crumb">${opts.crumb}</div>` : ''}</div>
           <div class="u-grow"></div>
-          <button class="btn btn--icon btn--ghost" title="Notificaciones">${ICONS.notifications}</button>
+          <button class="btn btn--icon btn--ghost" id="osNotifBtn" title="Notificaciones" style="position:relative">${ICONS.notifications}<span id="osNotifBadge" style="display:none;position:absolute;top:4px;right:4px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold,#C8A45A);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center"></span></button>
           <div class="avatar avatar--sm" style="background:${avatarColor(me.nombre)}" title="${me.nombre}">${initials(me.nombre)}</div>
           ${opts.action || ''}
         </header>
@@ -194,7 +195,94 @@
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
     window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
 
+    initNotificaciones();
+    initStream();
+
     return { me, content: document.getElementById('osContent'), panel: document.getElementById('osPanel') };
+  }
+
+  /* ── Tiempo real compartido: UNA conexión SSE a nivel de shell ──
+     Cualquier página admin puede suscribirse: SPOS.on('lead_actualizado', fn) */
+  let _es = null;
+  const _listeners = {};
+  function on(evento, fn) {
+    if (!_listeners[evento]) _listeners[evento] = [];
+    _listeners[evento].push(fn);
+    if (_es) _es.addEventListener(evento, fn);
+  }
+  function initStream() {
+    if (_es) return;
+    try {
+      _es = new EventSource('/api/stream');
+      ['nuevo_mensaje', 'lead_actualizado', 'message:new', 'conversation:assigned', 'conversation:closed', 'status_update', 'notificacion'].forEach(ev => {
+        (_listeners[ev] || []).forEach(fn => _es.addEventListener(ev, fn));
+      });
+      _es.addEventListener('notificacion', (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          setNotifBadge(getNotifBadge() + 1);
+          toast(`${esc(d.titulo || 'Notificación')}${d.cuerpo ? ' — ' + esc(String(d.cuerpo).slice(0, 60)) : ''}`);
+        } catch (err) { /* noop */ }
+      });
+      _es.onerror = () => { try { _es.close(); } catch (e) {} _es = null; setTimeout(initStream, 5000); };
+    } catch (e) { /* SSE no disponible */ }
+  }
+
+  /* ── Centro de notificaciones (campana del topbar) ── */
+  function getNotifBadge() {
+    const b = document.getElementById('osNotifBadge');
+    return b ? Number(b.textContent) || 0 : 0;
+  }
+  function setNotifBadge(n) {
+    const b = document.getElementById('osNotifBadge');
+    if (!b) return;
+    if (n > 0) { b.textContent = n > 99 ? '99+' : String(n); b.style.display = 'block'; }
+    else { b.style.display = 'none'; b.textContent = ''; }
+  }
+  function tiempoRelativo(ts) {
+    const s = Math.floor((Date.now() - Number(ts)) / 1000);
+    if (s < 60) return 'ahora';
+    if (s < 3600) return Math.floor(s / 60) + ' min';
+    if (s < 86400) return Math.floor(s / 3600) + ' h';
+    return Math.floor(s / 86400) + ' d';
+  }
+  async function initNotificaciones() {
+    const btn = document.getElementById('osNotifBtn');
+    if (!btn) return;
+    const data = await api('/api/notificaciones?limit=30');
+    if (data) setNotifBadge(data.sin_leer || 0);
+
+    let panel = null;
+    btn.addEventListener('click', async () => {
+      if (panel) { panel.remove(); panel = null; return; }
+      const d = await api('/api/notificaciones?limit=30');
+      const items = (d && d.notificaciones) || [];
+      panel = document.createElement('div');
+      panel.style.cssText = 'position:fixed;top:56px;right:16px;width:340px;max-height:65vh;overflow-y:auto;background:var(--bg-0,#111);border:1px solid var(--border,#222);border-radius:12px;z-index:9999;box-shadow:0 16px 48px rgba(0,0,0,.5)';
+      panel.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border-soft,#1a1a1a)">
+          <span style="font-weight:600;font-size:13px">Notificaciones</span>
+          <button class="btn btn--ghost btn--xs" id="osNotifLeerTodas" style="font-size:11px">Marcar leídas</button>
+        </div>
+        ${items.length === 0 ? '<div style="padding:22px;text-align:center;color:var(--text-3,#777);font-size:12px">Sin notificaciones</div>' : items.map(n => `
+          <div data-lead="${n.lead_id || ''}" class="os-notif-item" style="padding:11px 14px;border-bottom:1px solid var(--border-soft,#1a1a1a);cursor:${n.lead_id ? 'pointer' : 'default'};${n.leida ? 'opacity:.55' : ''}">
+            <div style="font-size:12.5px;font-weight:600;margin-bottom:2px">${esc(n.titulo || '')}</div>
+            ${n.cuerpo ? `<div style="font-size:12px;color:var(--text-2,#999);line-height:1.4">${esc(n.cuerpo)}</div>` : ''}
+            <div style="font-size:10.5px;color:var(--text-3,#777);margin-top:3px">${tiempoRelativo(n.created_at)}</div>
+          </div>`).join('')}`;
+      document.body.appendChild(panel);
+      panel.querySelector('#osNotifLeerTodas').addEventListener('click', async () => {
+        await api('/api/notificaciones/leer-todas', { method: 'POST' });
+        setNotifBadge(0);
+        panel.remove(); panel = null;
+      });
+      panel.querySelectorAll('.os-notif-item[data-lead]').forEach(el => {
+        const leadId = el.getAttribute('data-lead');
+        if (leadId) el.addEventListener('click', () => { location.href = '/os/inbox.html?lead=' + leadId; });
+      });
+      const cerrar = (e) => { if (panel && !panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { panel.remove(); panel = null; document.removeEventListener('click', cerrar); } };
+      setTimeout(() => document.addEventListener('click', cerrar), 50);
+    });
   }
 
   /* ── Copiloto SP: panel flotante con IA ── */
@@ -225,7 +313,7 @@
         <div style="display:flex;align-items:center;gap:8px">
           ${ICONS.spark.replace('<svg ', '<svg style="width:16px;height:16px;color:var(--gold)" ')}
           <span style="font-weight:600;font-size:14px">Copiloto SP</span>
-          ${brief ? '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">' + (data?.model || 'IA') + '</span>' : '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--bg-3);color:var(--text-3)">Sin conección</span>'}
+          ${brief ? '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">' + (data?.model || 'IA') + '</span>' : '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--bg-3);color:var(--text-3)">Sin conexión</span>'}
         </div>
         <button class="btn btn--icon btn--quiet" id="copilotoClose" style="width:28px;height:28px">${ICONS.menu.replace('<svg ', '<svg style="width:16px;height:16px" ')}</button>
       </div>
@@ -305,7 +393,7 @@
 
   function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc,
+  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc, on,
     fmt: {
       n: (v) => (v == null ? '—' : Number(v).toLocaleString('es-CO')),
       money: (v) => (v == null ? '—' : '$' + Number(v).toLocaleString('es-CO')),

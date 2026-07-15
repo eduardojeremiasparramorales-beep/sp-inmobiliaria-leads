@@ -2,14 +2,14 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0A0A0A">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="SP Panel">
+<meta name="apple-mobile-web-app-title" content="Leons Group">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>SP Inmobiliaria — Acceso</title>
+<title>Leons Group — Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -125,7 +125,7 @@
 <!-- ═══ SCREEN 1: Teléfono ═══ -->
 <div class="screen" id="s1">
   <div class="logo"><span>SP</span></div>
-  <div class="brand">SP INMOBILIARIA</div>
+  <div class="brand">LEONS GROUP</div>
   <div class="sub">Inversiones &amp; Finca Raíz</div>
   <div class="sp-line"></div>
 
@@ -147,7 +147,7 @@
 <!-- ═══ SCREEN 2: PIN ═══ -->
 <div class="screen hidden" id="s2">
   <div class="logo"><span>SP</span></div>
-  <div class="brand">SP INMOBILIARIA</div>
+  <div class="brand">LEONS GROUP</div>
   <div class="sub" id="pinSub"></div>
   <div class="sp-line"></div>
 
@@ -210,6 +210,7 @@
     $('pinSub').textContent = '+57 ' + formatPhone(phone);
     $('s1').classList.add('hidden');
     $('s2').classList.remove('hidden');
+    cambioPin = null;
     pin = '';
     updatePinDots();
     renderKeypad();
@@ -259,7 +260,7 @@
       <button class="k" data-p="0">0</button>
       <button class="k k-del" id="kDel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg></button>`;
     kp.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
-      if(pin.length<4 && !attempting){ pin+=b.dataset.p; updatePinDots(); if(pin.length===4) doLogin(); }
+      if(pin.length<4 && !attempting){ pin+=b.dataset.p; updatePinDots(); if(pin.length===4) procesarPinCompleto(); }
     });
     $('kBack').onclick = goToPhone;
     $('kDel').onclick = ()=>{ if(!attempting){ pin=pin.slice(0,-1); updatePinDots(); }};
@@ -286,12 +287,64 @@
         }
         return;
       }
+      const destino = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/m/';
+      if(data.must_change){
+        // PIN de fábrica: obligar a crear uno nuevo antes de entrar
+        iniciarCambioPin(destino);
+        return;
+      }
       $('msg2').textContent = 'Bienvenido'; $('msg2').className = 'msg ok';
-      setTimeout(()=>{
-        location.href = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/m/';
-      }, 300);
+      setTimeout(()=>{ location.href = destino; }, 300);
     } catch(err) {
       $('msg2').textContent = 'Error de conexión'; $('msg2').className = 'msg err';
+      setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
+    }
+  }
+
+  // ── Cambio de PIN obligatorio (PIN de fábrica) ──
+  let cambioPin = null; // null = login normal · {paso:'nuevo'|'confirmar', nuevo, destino}
+  function iniciarCambioPin(destino){
+    cambioPin = { paso:'nuevo', nuevo:'', destino };
+    pin = ''; attempting = false; updatePinDots();
+    $('pinSub').textContent = 'Crea tu PIN nuevo';
+    $('msg2').textContent = 'Tu PIN es el de fábrica. Elige uno propio.';
+    $('msg2').className = 'msg';
+  }
+  async function procesarPinCompleto(){
+    if(!cambioPin) return doLogin();
+    if(cambioPin.paso === 'nuevo'){
+      if(pin === '0000'){
+        $('msg2').textContent = 'Ese PIN no está permitido'; $('msg2').className = 'msg err';
+        setTimeout(()=>{ pin=''; updatePinDots(); }, 600);
+        return;
+      }
+      cambioPin.nuevo = pin; cambioPin.paso = 'confirmar';
+      pin = ''; updatePinDots();
+      $('pinSub').textContent = 'Confirma tu PIN nuevo';
+      $('msg2').textContent = '';
+      return;
+    }
+    // confirmar
+    if(pin !== cambioPin.nuevo){
+      for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
+      $('msg2').textContent = 'No coincide, intenta de nuevo'; $('msg2').className = 'msg err';
+      cambioPin.paso = 'nuevo'; cambioPin.nuevo = '';
+      setTimeout(()=>{ pin=''; updatePinDots(); $('pinSub').textContent='Crea tu PIN nuevo'; }, 700);
+      return;
+    }
+    attempting = true;
+    $('msg2').textContent = 'Guardando…'; $('msg2').className = 'msg';
+    try {
+      const res = await fetch('/api/mi-pin', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ pin }),
+      });
+      if(!res.ok) throw new Error('error');
+      $('msg2').textContent = 'PIN actualizado. Bienvenido'; $('msg2').className = 'msg ok';
+      const destino = cambioPin.destino;
+      setTimeout(()=>{ location.href = destino; }, 400);
+    } catch(err){
+      $('msg2').textContent = 'No se pudo guardar, intenta de nuevo'; $('msg2').className = 'msg err';
       setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
     }
   }
@@ -301,7 +354,7 @@
     if($('s2').classList.contains('hidden')) return;
     if(e.key >= '0' && e.key <= '9' && pin.length < 4 && !attempting){
       pin += e.key; updatePinDots();
-      if(pin.length === 4) doLogin();
+      if(pin.length === 4) procesarPinCompleto();
     } else if(e.key === 'Backspace' && !attempting){
       pin = pin.slice(0,-1); updatePinDots();
     } else if(e.key === 'Escape'){

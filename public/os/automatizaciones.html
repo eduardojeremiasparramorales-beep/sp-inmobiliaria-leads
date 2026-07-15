@@ -4,20 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0A0A0A">
-<title>SP OS · Automatizaciones</title>
+<title>Leons Group · Automatizaciones</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/os/sp-os.css">
-<style>
-  .node { background:var(--bg-2); border:1px solid var(--border); border-radius:14px; padding:12px 14px; display:flex; align-items:center; gap:10px; min-width:180px; }
-  .node__ic { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; }
-  .node__t { font-size:12.5px; font-weight:600; }
-  .node__s { font-size:10.5px; color:var(--text-3); }
-  .flowline { width:32px; height:2px; background:var(--border-strong); position:relative; flex-shrink:0; }
-  .flowline::after { content:''; position:absolute; right:-1px; top:-3px; border-left:6px solid var(--border-strong); border-top:4px solid transparent; border-bottom:4px solid transparent; }
-  .flow { display:flex; align-items:center; overflow-x:auto; padding:8px 0; }
-</style>
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
@@ -65,20 +56,90 @@
     }));
   }
 
-  async function crearFlujo() {
-    const nombre = prompt('Nombre del flujo (ej: "Alerta lead sin respuesta"):');
-    if (!nombre || !nombre.trim()) return;
-    const trigger = prompt('Disparador — escribe uno de:\nmessage:incoming · message:outgoing · conversation:assigned · conversation:closed · lead:tag_changed', 'message:incoming');
-    if (!trigger || !trigger.trim()) return;
-    const r = await api('/api/workflows', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ nombre: nombre.trim(), trigger_event: trigger.trim(), conditions: [], actions: [] }) });
-    if (r) { toast('Flujo creado (configura condiciones y acciones vía API)','ok'); await cargar(); }
-    else toast('Error al crear el flujo','err');
+  // Editor de flujo: formulario modal completo (trigger + condiciones + acciones).
+  const TRIGGERS = [
+    ['message:incoming','Llega un mensaje del cliente'],
+    ['message:outgoing','Un asesor envía un mensaje'],
+    ['conversation:assigned','Se asigna una conversación'],
+    ['conversation:closed','Se cierra una conversación'],
+    ['lead:tag_changed','Cambia la etiqueta de un lead'],
+  ];
+  const CAMPOS = [['body','Texto del mensaje'],['channel','Canal'],['customer_name','Nombre del cliente'],['etiqueta','Etiqueta'],['status','Estado'],['priority','Prioridad']];
+  const OPERADORES = [['contains','contiene'],['equals','es igual a'],['not_equals','es distinto de'],['regex','coincide (regex)']];
+  const ACCIONES = [
+    ['notify_admin','Notificar al admin','message','Mensaje de la notificación'],
+    ['send_message','Responder al cliente','text','Texto a enviar'],
+    ['tag','Poner etiqueta','value','Etiqueta (ej: interesado)'],
+    ['send_template','Enviar plantilla','name','Nombre de la plantilla'],
+    ['assign','Asignar a un asesor (round-robin)',null,null],
+    ['webhook','Llamar webhook externo','url','URL del webhook'],
+  ];
+
+  function filaCondicion(){ return `<div class="wf-cond" style="display:flex;gap:6px;margin-bottom:6px">
+    <select class="input wf-c-campo" style="flex:1">${CAMPOS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+    <select class="input wf-c-op" style="flex:1">${OPERADORES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+    <input class="input wf-c-val" placeholder="Valor" style="flex:1">
+    <button class="btn btn--quiet btn--sm wf-c-del" title="Quitar">✕</button>
+  </div>`; }
+  function filaAccion(){ return `<div class="wf-act" style="display:flex;gap:6px;margin-bottom:6px">
+    <select class="input wf-a-tipo" style="flex:1">${ACCIONES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+    <input class="input wf-a-param" placeholder="${ACCIONES[0][3]}" style="flex:1.4">
+    <button class="btn btn--quiet btn--sm wf-a-del" title="Quitar">✕</button>
+  </div>`; }
+
+  function crearFlujo() {
+    const overlay=document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9998;display:grid;place-items:center;padding:20px';
+    overlay.innerHTML=`<div style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--r,14px);width:100%;max-width:560px;max-height:85vh;overflow-y:auto;padding:22px" id="wfModal">
+      <div class="t-h3" style="margin-bottom:14px">Nuevo flujo automatizado</div>
+      <label class="t-label" style="display:block;margin-bottom:4px">Nombre</label>
+      <input class="input" id="wfNombre" placeholder='Ej: "Avisar cuando pregunten precio"' style="width:100%;margin-bottom:12px">
+      <label class="t-label" style="display:block;margin-bottom:4px">Cuando… (disparador)</label>
+      <select class="input" id="wfTrigger" style="width:100%;margin-bottom:12px">${TRIGGERS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+      <label class="t-label" style="display:block;margin-bottom:4px">Si… (condiciones, opcional — todas deben cumplirse)</label>
+      <div id="wfConds"></div>
+      <button class="btn btn--ghost btn--sm" id="wfAddCond" style="margin-bottom:12px">+ Condición</button>
+      <label class="t-label" style="display:block;margin-bottom:4px">Entonces… (acciones)</label>
+      <div id="wfActs">${filaAccion()}</div>
+      <button class="btn btn--ghost btn--sm" id="wfAddAct" style="margin-bottom:16px">+ Acción</button>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn--ghost" id="wfCancel">Cancelar</button>
+        <button class="btn btn--gold" id="wfSave">Crear flujo</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click',e=>{ if(e.target===overlay) overlay.remove(); });
+    const modal=overlay.querySelector('#wfModal');
+    const wireDel=()=>{ modal.querySelectorAll('.wf-c-del').forEach(b=>b.onclick=()=>b.closest('.wf-cond').remove());
+      modal.querySelectorAll('.wf-a-del').forEach(b=>b.onclick=()=>{ if(modal.querySelectorAll('.wf-act').length>1) b.closest('.wf-act').remove(); });
+      modal.querySelectorAll('.wf-a-tipo').forEach(s=>s.onchange=function(){ const def=ACCIONES.find(a=>a[0]===this.value); const inp=this.closest('.wf-act').querySelector('.wf-a-param'); if(def&&def[3]){ inp.placeholder=def[3]; inp.style.display=''; } else { inp.style.display='none'; inp.value=''; } }); };
+    wireDel();
+    modal.querySelector('#wfAddCond').onclick=()=>{ modal.querySelector('#wfConds').insertAdjacentHTML('beforeend',filaCondicion()); wireDel(); };
+    modal.querySelector('#wfAddAct').onclick=()=>{ modal.querySelector('#wfActs').insertAdjacentHTML('beforeend',filaAccion()); wireDel(); };
+    modal.querySelector('#wfCancel').onclick=()=>overlay.remove();
+    modal.querySelector('#wfSave').onclick=async()=>{
+      const nombre=modal.querySelector('#wfNombre').value.trim();
+      if(!nombre){ toast('Ponle un nombre al flujo','err'); return; }
+      const conditions=[...modal.querySelectorAll('.wf-cond')].map(row=>({
+        field:row.querySelector('.wf-c-campo').value, operator:row.querySelector('.wf-c-op').value, value:row.querySelector('.wf-c-val').value,
+      })).filter(c=>c.value!=='');
+      const actions=[...modal.querySelectorAll('.wf-act')].map(row=>{
+        const tipo=row.querySelector('.wf-a-tipo').value;
+        const def=ACCIONES.find(a=>a[0]===tipo);
+        const params={};
+        if(def&&def[2]) params[def[2]]=row.querySelector('.wf-a-param').value;
+        return { type: tipo, params };
+      });
+      if(!actions.length){ toast('Agrega al menos una acción','err'); return; }
+      const r=await api('/api/workflows',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre,trigger_event:modal.querySelector('#wfTrigger').value,conditions,actions})});
+      if(r){ toast('Flujo creado y activo','ok'); overlay.remove(); await cargar(); }
+      else toast('Error al crear el flujo','err');
+    };
   }
 
   await cargar();
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
-  function node(icon,t,s,bg,col){ return `<div class="node"><div class="node__ic" style="background:${bg};color:${col}">${ICONS[icon].replace('<svg ','<svg style="width:17px;height:17px" ')}</div><div><div class="node__t">${t}</div><div class="node__s">${s}</div></div></div>`; }
 })();
 </script>
 </body>

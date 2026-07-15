@@ -81,17 +81,33 @@ function requireAuth(req, res, next) {
   const token = getTokenFromReq(req);
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: 'no_autenticado' });
-  // Sliding expiration: si la sesión tiene más de la mitad de su vida (15 días),
-  // renueva created_at para mantenerla activa
+  // Sliding expiration con rotación de token: si la sesión tiene más de la mitad
+  // de su vida (15 días), se emite un token NUEVO (cookie) y el viejo queda con
+  // 5 minutos de gracia para requests en vuelo. Solo rota cuando el token vino
+  // por cookie — los clientes con Bearer (app nativa) guardan el token y no
+  // pueden recibir uno nuevo de forma transparente.
   if (token) {
     const store = require('../db/store');
     const raw = store.getDBSession(token);
     if (raw && Date.now() - raw.created_at > SESSION_TTL_MS / 2) {
-      store.refreshSession(token);
+      const esCookie = !(req.headers['authorization'] || '').startsWith('Bearer ');
+      if (esCookie) {
+        const nuevo = createSession({
+          userId: raw.user_id, vendedorId: raw.vendedor_id,
+          rol: raw.rol, nombre: raw.nombre, email: raw.email,
+        });
+        // El token viejo expira en 5 min (created_at retrocedido a TTL-5min)
+        store.expireSessionSoon(token, 5 * 60 * 1000);
+        const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
+        res.setHeader('Set-Cookie', `sp_session=${nuevo}; HttpOnly; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; SameSite=Lax${secure}`);
+        req.token = nuevo;
+      } else {
+        store.refreshSession(token);
+      }
     }
   }
   req.session = session;
-  req.token = token;
+  if (!req.token) req.token = token;
   next();
 }
 

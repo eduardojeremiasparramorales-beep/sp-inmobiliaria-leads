@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">SP OS</string>
-    <string name="title_activity_main">SP OS</string>
+    <string name="app_name">Leons Group</string>
+    <string name="title_activity_main">Leons Group</string>
     <string name="package_name">org.duckdns.spcrm.twa</string>
     <string name="custom_url_scheme">org.duckdns.spcrm.twa</string>
 </resources>

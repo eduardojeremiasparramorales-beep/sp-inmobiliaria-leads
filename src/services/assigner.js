@@ -1,7 +1,7 @@
 const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse, getConfig, updateCustomerMessageTimestamp } = require('../db/store');
 const { emitToVendedor, emitToAdmins } = require('./events');
 
-const WELCOME_DEFAULT = 'Hola 👋 Gracias por contactar a *SP Inmobiliaria*. Un asesor te atenderá en los próximos minutos. ¡Estamos para ayudarte!';
+const WELCOME_DEFAULT = 'Hola 👋 Gracias por contactar a *Leons Group*. Un asesor te atenderá en los próximos minutos. ¡Estamos para ayudarte!';
 
 function getWelcomeMsg() {
   return getConfig('welcome_message') || WELCOME_DEFAULT;
@@ -62,25 +62,25 @@ function triggerWorkflow(triggerEvent, leadId, messageBody) {
   } catch (e) { /* workflow engine opcional */ }
 }
 
-// Notifica al panel del vendedor (y a admins) que hubo movimiento en un lead
+// Notifica al panel del vendedor (y a admins) que hubo movimiento en un lead.
+// El evento SSE 'nuevo_mensaje' refresca la UI; el centro de notificaciones y el
+// push al celular pasan por el servicio unificado notify().
 function notificarPanel(vendedorId, leadId, tipo) {
   const data = { leadId, tipo, ts: Date.now() };
   if (vendedorId) emitToVendedor(vendedorId, 'nuevo_mensaje', data);
   emitToAdmins('nuevo_mensaje', data);
 
-  // Push al celular solo cuando llega un mensaje de un cliente
   if (vendedorId && tipo === 'mensaje_cliente') {
     try {
-      const push = require('./push');
+      const { notify } = require('./notify');
       const store = require('../db/store');
       const lead = store.getLeadById(leadId);
-      push.sendToVendedor(vendedorId, {
-        title: '💬 Nuevo mensaje',
-        body: lead ? `${lead.customer_name || 'Cliente'}: ${(lead.last_message || '').slice(0, 80)}` : 'Tienes un nuevo mensaje de un cliente.',
-        leadId,
-        tag: 'lead-' + leadId,
-      }).catch(e => console.error('Error enviando push notification:', e.message));
-    } catch (e) { /* push opcional */ }
+      notify({
+        vendedorId, tipo: 'mensaje_cliente', leadId, push: true,
+        titulo: '💬 ' + ((lead && lead.customer_name) || 'Nuevo mensaje'),
+        cuerpo: lead ? String(lead.last_message || 'Tienes un nuevo mensaje.').slice(0, 120) : 'Tienes un nuevo mensaje de un cliente.',
+      }).catch(e => console.error('Error notify mensaje_cliente:', e.message));
+    } catch (e) { /* notify opcional */ }
   }
 }
 

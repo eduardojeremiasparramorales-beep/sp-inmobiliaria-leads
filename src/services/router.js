@@ -4,25 +4,13 @@ const store = require('../db/store');
 const { getAdapter } = require('../channels');
 const events = require('./events');
 
-// Emite por SSE (events.js) y, si el módulo ws/Socket.IO está inicializado, también por ahí.
+// Emite por SSE (events.js). El tipo 'room' era de Socket.IO (eliminado): ningún
+// frontend escuchaba rooms y los admins ya reciben el mismo evento por su canal.
 function emit(channelType, target, evento, data) {
   try {
     if (channelType === 'vendedor') events.emitToVendedor(target, evento, data);
     else if (channelType === 'admins') events.emitToAdmins(evento, data);
   } catch (e) { /* noop */ }
-
-  try {
-    const ws = require('../ws');
-    if (ws && typeof ws.emitToVendedor === 'function' && channelType === 'vendedor') {
-      ws.emitToVendedor(target, evento, data);
-    }
-    if (ws && typeof ws.emitToRoom === 'function' && channelType === 'room') {
-      ws.emitToRoom(target, evento, data);
-    }
-    if (ws && typeof ws.emitToAdmins === 'function' && channelType === 'admins') {
-      ws.emitToAdmins(evento, data);
-    }
-  } catch (e) { /* ws no inicializado todavía */ }
 }
 
 function evaluateWorkflow(triggerEvent, ctx) {
@@ -100,9 +88,20 @@ class MessageRouter {
     };
     if (conversation.assigned_to_id) {
       emit('vendedor', conversation.assigned_to_id, 'message:new', payload);
+      // Notificación persistente + push (los mensajes de WhatsApp ya notifican
+      // por el camino legacy assigner.notificarPanel — no duplicar)
+      if (channel !== 'whatsapp') {
+        try {
+          const canal = channel === 'messenger' ? 'Messenger' : channel === 'instagram' ? 'Instagram' : channel;
+          require('./notify').notify({
+            vendedorId: conversation.assigned_to_id, tipo: 'mensaje_cliente', leadId: conversation.lead_id || null, push: true,
+            titulo: `💬 ${customer.name || 'Cliente'} (${canal})`,
+            cuerpo: String(messageBody || '[archivo]').slice(0, 120),
+          }).catch(() => {});
+        } catch (e) { /* notify opcional */ }
+      }
     }
     emit('admins', null, 'message:new', payload);
-    emit('room', `conv:${conversation.id}`, 'message:new', payload);
 
     // 9. Workflow
     evaluateWorkflow('message:incoming', { conversation, message, customer });
@@ -156,9 +155,8 @@ class MessageRouter {
       store.updateConversationStatus(conversation.id, 'contactado');
     }
 
-    // 6. Emitir Socket.IO a room conv:{id}
+    // 6. Emitir SSE
     const payload = { conversationId: conversation.id, channel: conversation.channel, body: text, ts: Date.now() };
-    emit('room', `conv:${conversation.id}`, 'message:new', payload);
     emit('admins', null, 'message:new', payload);
 
     // 7. Workflow
@@ -183,6 +181,12 @@ class MessageRouter {
     const updated = store.getConversationById(conversationId);
     emit('vendedor', siguiente.id, 'conversation:assigned', { conversationId, ts: Date.now() });
     emit('admins', null, 'conversation:assigned', { conversationId, vendedorId: siguiente.id, ts: Date.now() });
+    try {
+      require('./notify').notify({
+        vendedorId: siguiente.id, tipo: 'lead_asignado', leadId: updated.lead_id || null, push: true,
+        titulo: '🆕 Conversación asignada a ti', cuerpo: 'Tienes una nueva conversación. Revísala en tu panel.',
+      }).catch(() => {});
+    } catch (e) { /* notify opcional */ }
     evaluateWorkflow('conversation:assigned', { conversation: updated });
 
     return updated;

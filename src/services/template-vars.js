@@ -30,7 +30,7 @@ function resolveLeadVariables(lead, vendedor) {
     vendedor_telefono: (vendedor && vendedor.telefono) || '',
     link_ubicacion: (lead && lead.link_ubicacion) || '',
     link_catalogo: `${process.env.BASE_URL || ''}/os/propiedades.html`,
-    empresa: store.getConfig('company_name') || 'SP Inmobiliaria',
+    empresa: store.getConfig('company_name') || 'Leons Group',
   };
 }
 

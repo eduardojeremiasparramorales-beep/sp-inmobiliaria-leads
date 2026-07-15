@@ -45,7 +45,7 @@ function getPublicKey() { return process.env.VAPID_PUBLIC_KEY || ''; }
 // Envía una notificación a todas las suscripciones de un vendedor, sin importar el
 // canal (Web Push y/o FCM) — un vendedor puede tener ambas si usa el panel web y la app.
 async function sendToVendedor(vendedorId, payload) {
-  if (!vendedorId) return;
+  if (vendedorId == null) return; // 0 es válido: canal de admins
   const subs = store.getPushSubscriptionsByVendedor(vendedorId);
   for (const s of subs) {
     if (s.tipo === 'fcm') {
@@ -73,7 +73,7 @@ async function sendFcm(s, payload) {
     const admin = require('firebase-admin');
     await admin.messaging().send({
       token: s.endpoint, // el token FCM se guarda en la columna endpoint (ver store.saveFcmToken)
-      notification: { title: payload.title || 'SP CRM', body: payload.body || '' },
+      notification: { title: payload.title || 'Leons Group', body: payload.body || '' },
       data: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
     });
   } catch (e) {

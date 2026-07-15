@@ -1,4 +1,4 @@
-/* Service Worker — SP Inmobiliaria Panel
+/* Service Worker — Leons Group Panel
    - Cachea el "app shell" para carga rápida/offline.
    - NUNCA cachea /api/* (datos siempre frescos desde la red).
    - Maneja notificaciones push (Fase 4).
@@ -69,7 +69,7 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { data = { body: event.data && event.data.text() }; }
-  const title = data.title || 'SP Inmobiliaria';
+  const title = data.title || 'Leons Group';
   const options = {
     body: data.body || 'Tienes un nuevo mensaje de un cliente.',
     icon: '/icons/icon-192.png',

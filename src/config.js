@@ -12,7 +12,7 @@ module.exports = {
   ESCALATION_CHECK_INTERVAL: 60000, // 1 min
 
   // Archivos
-  MAX_FILE_SIZE: 18 * 1024 * 1024, // 18MB
+  MAX_FILE_SIZE: 16 * 1024 * 1024, // 16MB (límite de WhatsApp para audio/video)
   MAX_MESSAGE_LENGTH: 4096,
 
   // Tiempos

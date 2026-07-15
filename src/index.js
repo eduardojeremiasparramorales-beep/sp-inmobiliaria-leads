@@ -34,6 +34,7 @@ async function sendMediaFile(res, filePath, mime, mediaType) {
 const auth = require('./services/auth');
 const events = require('./services/events');
 const push = require('./services/push');
+const { notify } = require('./services/notify');
 
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
@@ -41,11 +42,16 @@ const CFG = require('./config');
 
 const app = express();
 app.set('trust proxy', 1);
-// Guardar el body crudo para verificar la firma del webhook de Meta
-app.use(express.json({
-  limit: '30mb',
+// Guardar el body crudo para verificar la firma del webhook de Meta.
+// Límite de payload por tipo de ruta: las de media (base64) aceptan hasta 25mb;
+// el resto 1mb — evita que un JSON gigante presione la RAM del contenedor (700MB).
+const esRutaMedia = (req) => /\/(responder-media|media)$/.test(req.path);
+const jsonMedia = express.json({ limit: '25mb' });
+const jsonNormal = express.json({
+  limit: '1mb',
   verify: (req, res, buf) => { if (req.originalUrl.startsWith('/webhook')) req.rawBody = buf; },
-}));
+});
+app.use((req, res, next) => (esRutaMedia(req) ? jsonMedia : jsonNormal)(req, res, next));
 // Twilio envía sus webhooks como application/x-www-form-urlencoded
 app.use(express.urlencoded({ extended: true }));
 
@@ -128,7 +134,7 @@ function validarTelefono(phone) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'SP OS', version: '1.1.0' }));
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'Leons Group', version: '1.1.0' }));
 
 app.use('/api', apiLimiter);
 
@@ -257,7 +263,7 @@ app.post('/api/nlp/chat', auth.requireAuth, async (req, res) => {
     if (!message || !message.trim()) return res.status(400).json({ error: 'Mensaje requerido' });
     const ctx = (history || []).map(m => `${m.role}: ${m.content}`).join('\n');
     const result = await nlp.chatText(
-      `Eres Copiloto SP, el asistente IA de SP Inmobiliaria, una firma colombiana de inversión en lotes.
+      `Eres Copiloto SP, el asistente IA de Leons Group, una firma colombiana de inversión en lotes.
       Ayudas a los vendedores del equipo a mejorar sus ventas, redactar mensajes, analizar leads, y resolver dudas.
       Responde de forma clara, profesional y en español.`,
       `${ctx ? 'Contexto:\n' + ctx + '\n\n' : ''}Mensaje: ${message}`,
@@ -360,38 +366,15 @@ app.get('/api/leads', auth.requireAdmin, (req, res) => {
 // Métricas reales para el dashboard (admin)
 app.get('/api/metricas', auth.requireAdmin, (req, res) => {
   try {
-    const leads = getLeads();
-    const vendedores = getVendedores();
-    const total = leads.length;
-
-    const porEtiqueta = {};
-    ['sin_clasificar', 'interesado', 'negociacion', 'cita', 'vendido', 'no_interesado'].forEach(e => porEtiqueta[e] = 0);
-    const porEstado = {};
-    let respondidos = 0, sumaRespuestaMin = 0;
-    leads.forEach(l => {
-      const etq = l.etiqueta || 'sin_clasificar';
-      porEtiqueta[etq] = (porEtiqueta[etq] || 0) + 1;
-      const st = l.status || 'nuevo';
-      porEstado[st] = (porEstado[st] || 0) + 1;
-      if (l.first_response_at && l.created_at) {
-        const t0 = new Date(l.created_at.replace(' ', 'T') + 'Z').getTime();
-        const t1 = new Date(l.first_response_at.replace(' ', 'T') + 'Z').getTime();
-        if (t1 >= t0) { respondidos++; sumaRespuestaMin += (t1 - t0) / 60000; }
-      }
-    });
-
-    const porVendedor = vendedores.map(v => {
-      const suyos = leads.filter(l => Number(l.assigned_to_id) === Number(v.id));
-      const vendidos = suyos.filter(l => (l.etiqueta || '') === 'vendido').length;
-      const activos = suyos.filter(l => (l.status || '') !== 'cerrado').length;
-      return {
-        id: v.id, nombre: v.nombre, estado: v.estado,
-        total: suyos.length, activos, vendidos,
-        conversion: suyos.length ? Math.round((vendidos / suyos.length) * 100) : 0,
-      };
-    }).sort((a, b) => b.total - a.total);
-
+    // Agregados 100% en SQL — no carga todos los leads a memoria (escala con volumen)
+    const agg = store.getLeadAggregates();
+    const { total, porEtiqueta, porEstado, porVendedor, respondidos, sumaRespuestaMin } = agg;
     const vendidosTotal = porEtiqueta['vendido'] || 0;
+    let sinResponder = 0;
+    try {
+      const r = getDB().exec("SELECT COUNT(*) FROM leads WHERE first_response_at IS NULL AND COALESCE(status,'') != 'cerrado'");
+      sinResponder = (r && r.length && r[0].values.length) ? Number(r[0].values[0][0]) : 0;
+    } catch (e) { /* noop */ }
 
     // Conteo total de mensajes (entrantes + salientes) del número principal
     let totalMensajes = 0, mensajesEntrantes = 0;
@@ -411,7 +394,7 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
       conversionGlobal: total ? Math.round((vendidosTotal / total) * 100) : 0,
       tiempoRespuestaPromedio: respondidos ? Math.round(sumaRespuestaMin / respondidos) : null,
       respondidos,
-      sinResponder: leads.filter(l => !l.first_response_at && (l.status || '') !== 'cerrado').length,
+      sinResponder,
       porEtiqueta,
       porEstado,
       porVendedor,
@@ -426,7 +409,7 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
 app.get('/api/reportes', auth.requireAdmin, (req, res) => {
   try {
     const dbx = getDB();
-    const all = getLeads(true);
+    const all = getLeads(true, 2000);
     const vendedores = getVendedores();
 
     // Leads por día (últimos 30)
@@ -582,7 +565,9 @@ app.post('/api/login', loginLimiter, (req, res) => {
     const rol = usuario && usuario.rol === 'admin' ? 'admin' : 'vendedor';
     const token = auth.createSession({ vendedorId: vendedor.id, userId: usuario ? usuario.id : null, rol, nombre: vendedor.nombre });
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
-    return res.json({ ok: true, token, usuario: { nombre: vendedor.nombre, rol, vendedorId: vendedor.id } });
+    // PIN de fábrica: obligar a cambiarlo antes de usar el panel
+    const mustChange = String(pin) === '0000';
+    return res.json({ ok: true, token, must_change: mustChange, usuario: { nombre: vendedor.nombre, rol, vendedorId: vendedor.id } });
   }
 
   // Email + contraseña (legacy admin)
@@ -593,10 +578,22 @@ app.post('/api/login', loginLimiter, (req, res) => {
     }
     const token = auth.createSession(usuario);
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
-    return res.json({ ok: true, token, usuario: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, vendedorId: usuario.vendedor_id } });
+    const mustChange = ['changeme123', 'cambiar123'].includes(String(password));
+    return res.json({ ok: true, token, must_change: mustChange, usuario: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, vendedorId: usuario.vendedor_id } });
   }
 
   return res.status(400).json({ error: 'credenciales_requeridas' });
+});
+
+// Cambiar el PIN propio (obligatorio tras primer login con PIN de fábrica 0000)
+app.post('/api/mi-pin', auth.requireAuth, (req, res) => {
+  const { pin } = req.body || {};
+  if (!/^\d{4}$/.test(String(pin || ''))) return res.status(400).json({ error: 'pin_invalido' });
+  if (String(pin) === '0000') return res.status(400).json({ error: 'pin_debil' });
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.setVendedorPin(req.session.vendedorId, auth.hashPassword(String(pin)));
+  console.log(`[PIN] Vendedor ${req.session.vendedorId} cambió su PIN`);
+  res.json({ ok: true });
 });
 
 app.post('/api/logout', auth.requireAuth, (req, res) => {
@@ -612,6 +609,7 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
     nombre: req.session.nombre, email: req.session.email,
     rol: req.session.rol, vendedorId: req.session.vendedorId,
     telefono: v ? v.telefono : null,
+    about: v ? (v.about || '') : '',
     foto: v ? v.foto : null,
     estado: v ? v.estado : null,
   });
@@ -659,6 +657,16 @@ app.get('/api/mis-leads/archivados', auth.requireAuth, (req, res) => {
   res.json(store.getArchivedLeadsByVendedorId(req.session.vendedorId));
 });
 
+// Un solo lead (para refresco incremental del panel — evita recargar toda la lista)
+app.get('/api/leads/:id(\\d+)', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  res.json(lead);
+});
+
 // Historial de mensajes de un lead (solo si le pertenece o es admin)
 app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
@@ -666,7 +674,10 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
-  const mensajes = store.getMessagesByLead(lead.id);
+  // Paginado: por defecto los últimos 100; ?before_id=N trae la página anterior
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const beforeId = req.query.before_id ? Number(req.query.before_id) : null;
+  const mensajes = store.getMessagesByLead(lead.id, { limit, beforeId });
   // Adjuntar reacciones a cada mensaje
   const msgIds = mensajes.map(m => m.id);
   const reactionsMap = store.getReactionsForMessages(msgIds);
@@ -674,7 +685,8 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
     ...m,
     reactions: reactionsMap[m.id] || [],
   }));
-  res.json({ lead, mensajes: mensajesConReacciones });
+  const total = store.countMessagesByLead(lead.id);
+  res.json({ lead, mensajes: mensajesConReacciones, total, hay_mas: mensajes.length === limit && total > mensajes.length });
 });
 
 // Estado de la ventana de 24h de WhatsApp para un lead
@@ -819,6 +831,8 @@ app.post('/api/inbox/conversations/:id/assign', auth.requireAuth, auth.requireAd
     try { store.reassignLead(conv.lead_id, vendedor); } catch (e) { console.error('assign espejo lead:', e.message); }
   }
   events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { conversationId: conv.id, leadId: conv.lead_id || null, tipo: 'asignacion', ts: Date.now() });
+  notify({ vendedorId: vendedor.id, tipo: 'lead_asignado', leadId: conv.lead_id || null, push: true,
+    titulo: '🆕 Conversación asignada a ti', cuerpo: 'Un admin te asignó una conversación. Revísala en tu panel.' }).catch(() => {});
   res.json({ ok: true, conversation: store.getConversationById(conv.id) });
 });
 
@@ -981,11 +995,39 @@ app.get('/api/media/:messageId', auth.requireAuth, async (req, res) => {
 });
 
 // Link preview: fetch OG tags from a URL
+const dns = require('dns');
+function esIpPrivada(ip) {
+  if (!ip) return true;
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  if (ip === '::1' || ip.toLowerCase().startsWith('fe80') || ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return true;
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some(isNaN)) return ip.includes(':') ? false : true;
+  return p[0] === 127 || p[0] === 10 || p[0] === 0
+    || (p[0] === 172 && p[1] >= 16 && p[1] <= 31)
+    || (p[0] === 192 && p[1] === 168)
+    || (p[0] === 169 && p[1] === 254)
+    || (p[0] === 100 && p[1] >= 64 && p[1] <= 127);
+}
 app.post('/api/preview', auth.requireAuth, (req, res) => {
   const { url } = req.body || {};
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url_requerida' });
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return res.status(400).json({ error: 'url_invalida' });
+    const puerto = parsed.port ? Number(parsed.port) : (parsed.protocol === 'https:' ? 443 : 80);
+    if (puerto !== 80 && puerto !== 443) return res.status(400).json({ error: 'url_invalida' });
+    dns.lookup(parsed.hostname, { all: true }, (dnsErr, addrs) => {
+      if (dnsErr || !addrs || !addrs.length || addrs.some(a => esIpPrivada(a.address))) {
+        return res.status(400).json({ error: 'url_invalida' });
+      }
+      fetchPreview(parsed, res, url);
+    });
+  } catch (e) {
+    res.json({ ok: true, og: { title: '', description: '', image: '', site_name: '', url } });
+  }
+});
+function fetchPreview(parsed, res, url) {
+  try {
     const fetcher = parsed.protocol === 'https:' ? https : http;
     const req_ = fetcher.get(parsed.href, { timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SPCBot/1.0)' } }, (resp_) => {
       let data = '';
@@ -1005,7 +1047,7 @@ app.post('/api/preview', auth.requireAuth, (req, res) => {
   } catch (e) {
     res.json({ ok: true, og: { title: '', description: '', image: '', site_name: '', url } });
   }
-});
+}
 
 // Responder a un cliente con un archivo (imagen/audio/video/documento) desde el panel.
 // Body JSON: { mime, filename, dataBase64, caption }
@@ -1761,6 +1803,12 @@ app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
   events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
   if (anteriorId) events.emitToVendedor(anteriorId, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
   events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+  notify({ vendedorId: vendedor.id, tipo: 'lead_asignado', leadId: lead.id, push: true,
+    titulo: '🆕 Lead asignado a ti', cuerpo: `${lead.customer_name} (${lead.customer_phone})` }).catch(() => {});
+  if (anteriorId && Number(anteriorId) !== Number(vendedor.id)) {
+    notify({ vendedorId: anteriorId, tipo: 'lead_reasignado', leadId: lead.id, push: true,
+      titulo: '🔄 Lead reasignado', cuerpo: `${lead.customer_name} pasó a ${vendedor.nombre}.` }).catch(() => {});
+  }
   res.json({ ok: true, vendedor: { id: vendedor.id, nombre: vendedor.nombre } });
 });
 
@@ -1880,6 +1928,102 @@ app.post('/api/push/suscribir-fcm', auth.requireAuth, (req, res) => {
   const vendedorId = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
   if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
   store.saveFcmToken(vendedorId, token);
+  res.json({ ok: true });
+});
+
+// ===================== SALUD DEL SISTEMA (admin) =====================
+const logger = require('./services/logger');
+const BOOT_AT = Date.now();
+
+app.get('/api/admin/salud', auth.requireAdmin, (req, res) => {
+  let dbSize = 0;
+  try { dbSize = fs.statSync(path.join(__dirname, '..', 'data', 'sp-leads.db')).size; } catch (e) { /* noop */ }
+  const mem = process.memoryUsage();
+  res.json({
+    uptime_seg: Math.round((Date.now() - BOOT_AT) / 1000),
+    memoria_mb: Math.round(mem.rss / 1024 / 1024),
+    heap_mb: Math.round(mem.heapUsed / 1024 / 1024),
+    db_mb: Math.round(dbSize / 1024 / 1024 * 10) / 10,
+    errores_ultima_hora: logger.erroresUltimaHora(),
+    node: process.version,
+  });
+});
+
+// ===================== TAREAS / RECORDATORIOS =====================
+// Cada usuario (vendedor o admin con vendedor asociado) gestiona SUS tareas.
+// Una tarea con vence_at es un recordatorio: el barrido de abajo manda push al vencer.
+
+app.get('/api/tareas', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.json([]);
+  res.json(store.getTareasByVendedor(req.session.vendedorId));
+});
+
+app.post('/api/tareas', auth.requireAuth, (req, res) => {
+  const { texto, leadId, venceAt } = req.body || {};
+  if (!texto || !String(texto).trim()) return res.status(400).json({ error: 'texto_requerido' });
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  const t = store.createTarea({ vendedorId: req.session.vendedorId, texto: String(texto).trim().slice(0, 300), leadId, venceAt });
+  res.json({ ok: true, tarea: t });
+});
+
+app.put('/api/tareas/:id', auth.requireAuth, (req, res) => {
+  const t = store.updateTarea(req.params.id, req.session.vendedorId, req.body || {});
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  res.json({ ok: true, tarea: t });
+});
+
+app.delete('/api/tareas/:id', auth.requireAuth, (req, res) => {
+  store.deleteTarea(req.params.id, req.session.vendedorId);
+  res.json({ ok: true });
+});
+
+// Guardar el "Acerca de" del perfil (persistido en el servidor, cross-device)
+app.post('/api/mi-about', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.setVendedorAbout(req.session.vendedorId, (req.body || {}).texto || '');
+  res.json({ ok: true });
+});
+
+// Barrido de recordatorios: cada 60s, push a los vencidos (funciona con la app cerrada)
+function checkRecordatorios() {
+  try {
+    const vencidas = store.getTareasVencidasSinNotificar(new Date().toISOString());
+    if (!vencidas.length) return;
+    // Los admins escuchan SSE/push por el canal 0 (no por su vendedor_id):
+    // si la tarea es de un vendedor vinculado a un usuario admin, notificar al canal 0.
+    const adminVendedorIds = new Set(store.getUsuarios().filter(u => u.rol === 'admin' && u.vendedor_id).map(u => Number(u.vendedor_id)));
+    for (const t of vencidas) {
+      store.markTareaNotificada(t.id);
+      const canal = adminVendedorIds.has(Number(t.vendedor_id)) ? 0 : t.vendedor_id;
+      notify({
+        vendedorId: canal, tipo: 'recordatorio', leadId: t.lead_id || null, push: true,
+        titulo: '🔔 Recordatorio', cuerpo: t.texto,
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.error('checkRecordatorios:', e.message);
+  }
+}
+
+// ===================== CENTRO DE NOTIFICACIONES =====================
+// Admin usa el canal 0 (misma convención que SSE y push); vendedor su propio id.
+function canalNotif(req) { return req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId); }
+
+app.get('/api/notificaciones', auth.requireAuth, (req, res) => {
+  const canal = canalNotif(req);
+  res.json({
+    notificaciones: store.getNotifications(canal, req.query.limit || 30),
+    sin_leer: store.countUnreadNotifications(canal),
+  });
+});
+
+app.post('/api/notificaciones/leer-todas', auth.requireAuth, (req, res) => {
+  store.markAllNotificationsRead(canalNotif(req));
+  res.json({ ok: true });
+});
+
+app.post('/api/notificaciones/:id/leer', auth.requireAuth, (req, res) => {
+  store.markNotificationRead(req.params.id, canalNotif(req));
   res.json({ ok: true });
 });
 
@@ -2390,6 +2534,7 @@ app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
 // Test vendedor reply simulator (solo en desarrollo)
 app.post('/api/test-reply', auth.requireAdmin, (req, res) => {
   if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'no_disponible' });
+  const { vendedorPhone, message } = req.body || {};
   if (!vendedorPhone) return res.status(400).json({ error: 'vendedorPhone requerido' });
 
   const fakePayload = {
@@ -2506,9 +2651,16 @@ async function checkEscalation() {
       if (minutosDesdeCreacion >= ESC_ALERTA_MIN && lead.escalation_level < 1) {
         incrementEscalation(lead.id);
         console.log(`[ESCALADO] Alerta ${ESC_ALERTA_MIN}min lead ${lead.id} (${lead.customer_name})`);
+        if (lead.assigned_to_id) {
+          notify({
+            vendedorId: lead.assigned_to_id, tipo: 'escalamiento_alerta', leadId: lead.id, push: true,
+            titulo: '⏰ Lead sin responder',
+            cuerpo: `Llevas ${ESC_ALERTA_MIN} min sin responder a ${lead.customer_name}.`,
+          }).catch(() => {});
+        }
         if (lead.assigned_to_phone) {
           await sendMessage(lead.assigned_to_phone,
-            `⏰ Alerta SP Inmobiliaria\nLlevas ${ESC_ALERTA_MIN} min sin responder a ${lead.customer_name} (${lead.customer_phone}).\nPor favor responde lo antes posible.`
+            `⏰ Alerta Leons Group\nLlevas ${ESC_ALERTA_MIN} min sin responder a ${lead.customer_name} (${lead.customer_phone}).\nPor favor responde lo antes posible.`
           ).catch(e => console.error('[ESCALADO] Error al enviar alerta 15min:', e.message));
         }
         continue;
@@ -2530,6 +2682,12 @@ async function checkEscalation() {
             events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            notify({ vendedorId: otroVendedor.id, tipo: 'lead_reasignado', leadId: lead.id, push: true,
+              titulo: '🆕 Lead reasignado a ti', cuerpo: `${lead.customer_name} (${lead.customer_phone}) — responde lo antes posible.` }).catch(() => {});
+            notify({ vendedorId: vendedorAnterior, tipo: 'lead_reasignado', leadId: lead.id, push: true,
+              titulo: '🔄 Lead reasignado', cuerpo: `${lead.customer_name} pasó a otro asesor por falta de respuesta.` }).catch(() => {});
+            notify({ vendedorId: 0, tipo: 'lead_reasignado', leadId: lead.id,
+              titulo: '🔄 Reasignación automática', cuerpo: `${lead.customer_name} pasó a ${otroVendedor.nombre} (${ESC_REASIGNAR_MIN} min sin respuesta).` }).catch(() => {});
             // Notificar al vendedor anterior
             if (lead.assigned_to_phone) {
               await sendMessage(lead.assigned_to_phone,
@@ -2543,6 +2701,8 @@ async function checkEscalation() {
           } else {
             // No hay otro vendedor disponible — alerta fuerte
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_sin_vendedores', ts: Date.now() });
+            notify({ vendedorId: 0, tipo: 'escalamiento_critico', leadId: lead.id, push: true,
+              titulo: '⚠️ Lead sin atender', cuerpo: `${lead.customer_name} lleva ${ESC_REASIGNAR_MIN} min esperando y no hay otros asesores disponibles.` }).catch(() => {});
             if (lead.assigned_to_phone) {
               await sendMessage(lead.assigned_to_phone,
                 `⚠️ ALERTA CRÍTICA\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min esperando.\nNo hay otros vendedores disponibles. RESPUESTA INMEDIATA REQUERIDA.`
@@ -2553,7 +2713,7 @@ async function checkEscalation() {
           // Lead recurrente — solo alerta más fuerte
           if (lead.assigned_to_phone) {
             await sendMessage(lead.assigned_to_phone,
-              `⚠️ ALERTA SP Inmobiliaria\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min sin respuesta.\nEs un cliente recurrente — prioriza su atención.`
+              `⚠️ ALERTA Leons Group\n${lead.customer_name} (${lead.customer_phone}) lleva ${ESC_REASIGNAR_MIN} min sin respuesta.\nEs un cliente recurrente — prioriza su atención.`
             ).catch(e => console.error('[ESCALADO] Error enviando alerta recurrente:', e.message));
           }
         }
@@ -2565,6 +2725,8 @@ async function checkEscalation() {
         incrementEscalation(lead.id);
         console.log(`[ESCALADO] Admin notificado — lead ${lead.id} lleva ${ESC_ADMIN_MIN} min sin respuesta`);
         events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_admin', minutos: Math.round(minutosDesdeCreacion), ts: Date.now() });
+        notify({ vendedorId: 0, tipo: 'escalamiento_admin', leadId: lead.id, push: true,
+          titulo: '🚨 Escalamiento a admin', cuerpo: `${lead.customer_name} lleva ${Math.round(minutosDesdeCreacion)} min sin respuesta.` }).catch(() => {});
         // Si es nuevo y no se reasignó antes, intentar reasignar ahora
         if (esNuevo && !esAsentado) {
           const activos = getVendedoresActivos().filter(v => v.id !== lead.assigned_to_id);
@@ -2575,6 +2737,8 @@ async function checkEscalation() {
             events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            notify({ vendedorId: otroVendedor.id, tipo: 'lead_reasignado', leadId: lead.id, push: true,
+              titulo: '🆕 Lead reasignado a ti (urgente)', cuerpo: `${lead.customer_name} — ya pasaron ${ESC_ADMIN_MIN} min sin respuesta.` }).catch(() => {});
             await sendMessage(otroVendedor.telefono,
               `🆕 Lead reasignado (urgente)\nCliente: ${lead.customer_name}\nTel: ${lead.customer_phone}\n⚠️ Ya pasaron ${ESC_ADMIN_MIN} min sin respuesta.\nTodo el historial está disponible.`
             ).catch(e => console.error('[ESCALADO] Error enviando reasignación urgente:', e.message));
@@ -2594,6 +2758,9 @@ function ensureAdminUser() {
   const ADMIN_PIN = process.env.ADMIN_PIN || '0000';
   const email = (process.env.ADMIN_EMAIL || process.env.ADMIN_USERNAME || 'admin@spinmobiliaria.com').toLowerCase();
   const password = process.env.ADMIN_PASSWORD || 'changeme123';
+  if (['changeme123', 'cambiar123'].includes(password)) {
+    console.warn('⚠ ADMIN_PASSWORD sigue en el valor por defecto — cámbialo en .env (el panel exigirá cambio al iniciar sesión)');
+  }
 
   // Crear admin user si no existe ninguno
   if (store.countUsuarios() === 0) {
@@ -2652,17 +2819,22 @@ function ensureAdminUser() {
   } catch (e) {
     console.error('No se pudo iniciar WorkflowEngine:', e.message);
   }
+  // Middleware de error de Express (después de todas las rutas): registra y responde 500
+  app.use((err, req, res, next) => {
+    logger.logError('express', err, { ruta: req.method + ' ' + req.originalUrl });
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'error_interno' });
+  });
+  // Errores no capturados: registrar sin tumbar el proceso (Docker lo reinicia si muere)
+  process.on('unhandledRejection', (err) => logger.logError('unhandledRejection', err));
+  process.on('uncaughtException', (err) => { logger.logError('uncaughtException', err); });
+
   const http = require('http');
   const httpServer = http.createServer(app);
-  try {
-    const { createWsServer } = require('./ws');
-    createWsServer(httpServer);
-  } catch (e) {
-    console.error('No se pudo iniciar Socket.IO:', e.message);
-  }
   httpServer.listen(PORT, () => {
-    console.log(`SP Inmobiliaria CRM corriendo en puerto ${PORT}`);
+    console.log(`Leons Group CRM corriendo en puerto ${PORT}`);
   });
   setInterval(checkEscalation, CFG.ESCALATION_CHECK_INTERVAL);
+  setInterval(checkRecordatorios, 60000);
   setInterval(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS), CFG.SESSION_CLEANUP_INTERVAL);
 })();
