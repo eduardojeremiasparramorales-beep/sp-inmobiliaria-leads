@@ -39,5 +39,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Notificaciones push nativas (Android 13+ exige el permiso en tiempo de ejecución) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Micrófono: notas de voz en el chat (getUserMedia dentro del WebView) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Galería en Android 13+ (adjuntar imagen/video existente) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>
