@@ -21,8 +21,7 @@
     --safe-t: env(safe-area-inset-top, 0px);
     --safe-b: env(safe-area-inset-bottom, 0px);
     --nav-h: 62px;
-    --glass: rgba(12,12,12,.72);
-    --glass-2: rgba(20,20,20,.66);
+    /* --glass / --glass-2 / --blur / --blur-sm se heredan de sp-os.css (tokens centralizados) */
     --spring: cubic-bezier(.22,1,.36,1);
     --ease: cubic-bezier(.4,0,.2,1);
   }
@@ -34,14 +33,18 @@
   * { scrollbar-width:none; }
 
   #app{ position:fixed; inset:0; overflow:hidden; }
-  .screen{ position:absolute; inset:0; display:flex; flex-direction:column; background:var(--bg-0); }
+  .screen{ position:absolute; inset:0; display:flex; flex-direction:column;
+    background:
+      radial-gradient(600px 400px at 90% -8%, rgba(200,164,90,.05), transparent 60%),
+      radial-gradient(550px 480px at -10% 104%, rgba(78,123,70,.04), transparent 60%),
+      var(--bg-0); }
 
   /* ── Transiciones de pantalla ── */
   .screen--chat{ transform:translateX(100%); transition:transform .34s var(--spring); z-index:20; will-change:transform; }
   .screen--chat.show{ transform:translateX(0); }
 
   /* ── Header (glass) ── */
-  .m-head{ position:relative; z-index:5; padding:calc(var(--safe-t) + 10px) 18px 8px; background:var(--glass); backdrop-filter:saturate(1.4) blur(20px); -webkit-backdrop-filter:saturate(1.4) blur(20px); border-bottom:1px solid var(--border-soft); }
+  .m-head{ position:relative; z-index:5; padding:calc(var(--safe-t) + 10px) 18px 8px; background:var(--glass); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border-bottom:1px solid var(--glass-border); }
   .m-head__top{ display:flex; align-items:center; gap:11px; margin-bottom:12px; }
   .m-mark{ width:34px; height:34px; border-radius:11px; overflow:hidden; flex-shrink:0; }
   .m-mark img{ width:100%; height:100%; object-fit:cover; }
@@ -126,7 +129,7 @@
   .m-fab svg{ width:26px; height:26px; }
 
   /* ── Bottom Navigation (glass) ── */
-  .m-nav{ position:absolute; left:0; right:0; bottom:0; height:calc(var(--nav-h) + var(--safe-b)); padding-bottom:var(--safe-b); display:flex; background:var(--glass); backdrop-filter:saturate(1.4) blur(22px); -webkit-backdrop-filter:saturate(1.4) blur(22px); border-top:1px solid var(--border-soft); z-index:14; }
+  .m-nav{ position:absolute; left:0; right:0; bottom:0; height:calc(var(--nav-h) + var(--safe-b)); padding-bottom:var(--safe-b); display:flex; background:var(--glass); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border-top:1px solid var(--glass-border); z-index:14; }
   .m-nav__i{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:var(--text-3); background:none; border:none; font-size:10px; font-weight:500; transition:color .2s; position:relative; }
   .m-nav__i svg{ width:23px; height:23px; transition:transform .25s var(--spring); }
   .m-nav__i.active{ color:var(--gold); }
@@ -134,7 +137,7 @@
   .m-nav__dot{ position:absolute; top:8px; right:calc(50% - 16px); min-width:8px; height:8px; border-radius:999px; background:var(--red); }
 
   /* ── Chat ── */
-  .c-head{ display:flex; align-items:center; gap:11px; padding:calc(var(--safe-t) + 8px) 12px 8px; background:var(--glass); backdrop-filter:blur(20px) saturate(1.4); -webkit-backdrop-filter:blur(20px) saturate(1.4); border-bottom:1px solid var(--border-soft); }
+  .c-head{ display:flex; align-items:center; gap:11px; padding:calc(var(--safe-t) + 8px) 12px 8px; background:var(--glass); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border-bottom:1px solid var(--glass-border); }
   .c-back{ width:38px; height:38px; border-radius:50%; background:none; border:none; color:var(--text); display:grid; place-items:center; flex-shrink:0; }
   .c-back svg{ width:22px; height:22px; }
   .c-id{ display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
@@ -286,7 +289,7 @@
   .sk-row{ display:flex; gap:13px; padding:13px 18px; align-items:center; }
 
   /* Toast */
-  .m-toast{ position:absolute; left:50%; bottom:calc(var(--nav-h) + var(--safe-b) + 20px); transform:translateX(-50%) translateY(20px); background:rgba(28,28,28,.95); backdrop-filter:blur(20px); border:1px solid var(--border-strong); color:var(--text); padding:11px 18px; border-radius:999px; font-size:13.5px; font-weight:500; box-shadow:var(--sh-3); opacity:0; transition:all .3s var(--spring); z-index:60; pointer-events:none; white-space:nowrap; }
+  .m-toast{ position:absolute; left:50%; bottom:calc(var(--nav-h) + var(--safe-b) + 20px); transform:translateX(-50%) translateY(20px); background:var(--glass-2); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border:1px solid var(--glass-border); color:var(--text); padding:11px 18px; border-radius:999px; font-size:13.5px; font-weight:500; box-shadow:var(--sh-3); opacity:0; transition:all .3s var(--spring); z-index:60; pointer-events:none; white-space:nowrap; }
 
   /* ── Green dot unread ── */
   .m-unread-dot{ position:absolute; top:-1px; right:-1px; width:13px; height:13px; border-radius:50%; background:#34C759; border:2.5px solid var(--bg-0); z-index:3; animation:pulse-dot 2s ease-in-out infinite; }
@@ -375,7 +378,7 @@
   .msg-wrap.selected .sel-check:after{ content:''; width:8px; height:4px; border-left:2px solid #0A0A0A; border-bottom:2px solid #0A0A0A; transform:rotate(-45deg) translate(1px,0); margin-top:-2px; }
   .msg-wrap.selected .bub{ background:rgba(200,164,90,.12); }
   .msg-wrap.selected.bub--out .bub{ background:#1D4535; opacity:.75; }
-  .sel-bar{ position:sticky; bottom:0; left:0; right:0; display:none; align-items:center; gap:6px; padding:8px 12px calc(8px + var(--safe-b)); background:rgba(12,12,12,.94); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-top:1px solid var(--border-strong); z-index:20; }
+  .sel-bar{ position:sticky; bottom:0; left:0; right:0; display:none; align-items:center; gap:6px; padding:8px 12px calc(8px + var(--safe-b)); background:var(--glass-2); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border-top:1px solid var(--glass-border); z-index:20; }
   .sel-bar.show{ display:flex; }
   .sel-bar .sel-count{ font-size:13px; color:var(--text-2); font-weight:500; flex:1; min-width:0; }
   .sel-bar .sel-act{ width:40px; height:40px; border-radius:12px; background:var(--bg-3); border:none; color:var(--text-2); display:grid; place-items:center; flex-shrink:0; transition:all .15s; position:relative; }
@@ -442,6 +445,23 @@
   .toggle-sw::after{ content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .25s var(--spring); }
   .toggle-sw.on::after{ transform:translateX(18px); }
 
+  /* ── Banner + hoja de permisos ── */
+  .perm-banner{ display:flex; align-items:center; gap:10px; margin:8px 14px 0; padding:10px 12px; background:var(--glass-2); border:1px solid rgba(200,164,90,.25); border-radius:14px; backdrop-filter:saturate(1.2) blur(10px); -webkit-backdrop-filter:saturate(1.2) blur(10px); }
+  .perm-banner .ic{ font-size:18px; flex-shrink:0; }
+  .perm-banner span.tx{ flex:1; font-size:12.5px; color:var(--text-2); line-height:1.35; }
+  .perm-banner button{ flex-shrink:0; border:none; background:var(--gold); color:#0A0A0A; font-family:inherit; font-size:12px; font-weight:700; padding:7px 14px; border-radius:999px; cursor:pointer; }
+  .perm-banner .perm-x{ background:none; color:var(--text-3); font-weight:400; font-size:15px; padding:4px 6px; }
+  .perm-row{ display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--border-soft); }
+  .perm-row:last-child{ border-bottom:none; }
+  .perm-row .perm-ic{ width:38px; height:38px; border-radius:12px; background:var(--bg-3); display:grid; place-items:center; font-size:18px; flex-shrink:0; }
+  .perm-row .perm-info{ flex:1; min-width:0; }
+  .perm-row .perm-info b{ display:block; font-size:14px; font-weight:600; color:var(--text); }
+  .perm-row .perm-info small{ display:block; font-size:11.5px; color:var(--text-3); line-height:1.3; margin-top:1px; }
+  .perm-row .perm-act{ flex-shrink:0; border:1px solid var(--gold); background:var(--gold-soft, rgba(200,164,90,.12)); color:var(--gold); font-family:inherit; font-size:12px; font-weight:600; padding:7px 14px; border-radius:999px; cursor:pointer; }
+  .perm-row .perm-ok{ flex-shrink:0; color:var(--green, #4E7B46); font-size:13px; font-weight:600; display:flex; align-items:center; gap:4px; }
+  .perm-row .perm-den{ flex-shrink:0; color:var(--red); font-size:12px; font-weight:600; }
+  .perm-help{ margin-top:10px; padding:10px 12px; background:var(--bg-3); border-radius:12px; font-size:12px; color:var(--text-2); line-height:1.45; }
+
   .hidden{ display:none !important; }
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
   .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
@@ -461,6 +481,12 @@
       </div>
       <label class="m-search"><span id="icSearch"></span><input id="q" placeholder="Buscar cliente, chat, etiqueta…" autocomplete="off"></label>
     </header>
+    <div class="perm-banner" id="permBanner" hidden>
+      <span class="ic">🎙️</span>
+      <span class="tx" id="permBannerTxt">Activa el micrófono para enviar notas de voz</span>
+      <button id="permBannerBtn">Activar</button>
+      <button class="perm-x" id="permBannerX" aria-label="Cerrar">✕</button>
+    </div>
     <div class="m-filters" id="filters"></div>
     <div class="m-scroll" id="list">
       <div class="m-ptr" id="ptr"><span class="spin"></span></div>
@@ -671,8 +697,104 @@ function demoMsgs(){ const now=new Date().toISOString().slice(0,19).replace('T',
   {id:105,body:'¿Cuál es el precio del lote de 250m²?',direction:'incoming',timestamp:now},
 ]; }
 
+/* ════════ Permisos del dispositivo ════════ */
+const PERMISOS=[
+  {k:'mic',   ic:'🎙️', nombre:'Micrófono',      desc:'Grabar y enviar notas de voz a tus clientes', query:'microphone'},
+  {k:'cam',   ic:'📷', nombre:'Cámara',          desc:'Tomar fotos de lotes y documentos desde el chat', query:'camera'},
+  {k:'geo',   ic:'📍', nombre:'Ubicación',       desc:'Compartir la ubicación de proyectos y citas', query:'geolocation'},
+  {k:'notif', ic:'🔔', nombre:'Notificaciones',  desc:'Enterarte al instante cuando llega un lead o mensaje', query:'notifications'},
+];
+async function estadoPermiso(query){
+  if(query==='notifications'){
+    if(esNativo()){
+      try{ const st=await window.Capacitor.Plugins.PushNotifications.checkPermissions(); return st.receive==='granted'?'granted':st.receive==='denied'?'denied':'prompt'; }catch(e){}
+    }
+    if('Notification' in window) return Notification.permission==='default'?'prompt':Notification.permission;
+    return 'desconocido';
+  }
+  try{ const st=await navigator.permissions.query({name:query}); return st.state; }catch(e){ return 'desconocido'; }
+}
+async function estadoPermisos(){
+  const out={};
+  for(const p of PERMISOS) out[p.k]=await estadoPermiso(p.query);
+  return out;
+}
+async function pedirPermiso(k){
+  try{
+    if(k==='mic'){ const s=await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); }
+    else if(k==='cam'){ const s=await navigator.mediaDevices.getUserMedia({video:true}); s.getTracks().forEach(t=>t.stop()); }
+    else if(k==='geo'){
+      if(esNativo() && window.Capacitor.Plugins.Geolocation){ await window.Capacitor.Plugins.Geolocation.requestPermissions(); }
+      else{ await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000})); }
+    }
+    else if(k==='notif'){
+      if(esNativo()) await suscribirPushNativo();
+      else{ await Notification.requestPermission(); suscribirPush(); }
+    }
+  }catch(e){
+    const st=await estadoPermiso((PERMISOS.find(p=>p.k===k)||{}).query);
+    if(k==='mic' && esNativo() && st==='prompt'){
+      // APK viejo sin RECORD_AUDIO en el manifest: Android deniega sin diálogo y el estado sigue en 'prompt'
+      mostrarAyudaPermiso('Tu versión de la app no incluye el permiso de micrófono. Descarga e instala la última versión de Leons Group para poder grabar notas de voz.');
+    } else if(st==='denied'){
+      mostrarAyudaPermiso('El permiso está bloqueado por el sistema. Actívalo manualmente en: Ajustes › Aplicaciones › Leons Group › Permisos.');
+    }
+  }
+  await refrescarPermSheet();
+  actualizarPermBanner();
+}
+function mostrarAyudaPermiso(msg){
+  const box=$('#permHelp'); if(box){ box.textContent=msg; box.hidden=false; } else toast(msg);
+}
+function permRowHTML(p,st){
+  const accion = st==='granted' ? `<span class="perm-ok">✓ Activo</span>`
+    : st==='denied' ? `<button class="perm-act" data-perm="${p.k}">Reintentar</button>`
+    : `<button class="perm-act" data-perm="${p.k}">Activar</button>`;
+  return `<div class="perm-row"><span class="perm-ic">${p.ic}</span><div class="perm-info"><b>${p.nombre}</b><small>${p.desc}</small></div>${accion}</div>`;
+}
+async function refrescarPermSheet(){
+  const body=$('#permRows'); if(!body) return;
+  const st=await estadoPermisos();
+  body.innerHTML=PERMISOS.map(p=>permRowHTML(p,st[p.k])).join('');
+  body.querySelectorAll('.perm-act').forEach(b=>b.onclick=()=>{ haptic(10); pedirPermiso(b.dataset.perm); });
+}
+async function abrirPermisos(){
+  openSheet('Permisos de la app', `
+    <div style="font-size:12.5px;color:var(--text-3);line-height:1.4;margin-bottom:6px">Para que todo funcione, la app necesita estos permisos del teléfono. Actívalos uno por uno:</div>
+    <div id="permRows"></div>
+    <div class="perm-help" id="permHelp" hidden></div>`);
+  await refrescarPermSheet();
+}
+async function actualizarPermBanner(){
+  const b=$('#permBanner'); if(!b) return;
+  const dismiss=Number(localStorage.getItem('sp_perm_banner_dismiss')||0);
+  if(Date.now()-dismiss < 3*24*60*60*1000){ b.hidden=true; return; }
+  const st=await estadoPermisos();
+  const falta=PERMISOS.filter(p=>st[p.k]==='prompt'||st[p.k]==='denied');
+  if(!falta.length){ b.hidden=true; return; }
+  const mic=falta.find(p=>p.k==='mic');
+  const p=mic||falta[0];
+  $('#permBannerTxt').textContent = mic
+    ? 'Activa el micrófono para enviar notas de voz'
+    : `Activa ${falta.length>1?'los permisos de la app':p.nombre.toLowerCase()} para usar todas las funciones`;
+  b.querySelector('.ic').textContent=p.ic;
+  b.hidden=false;
+}
+function initPermisos(){
+  const btn=$('#permBannerBtn'), x=$('#permBannerX');
+  if(btn) btn.onclick=()=>{ haptic(10); abrirPermisos(); };
+  if(x) x.onclick=()=>{ localStorage.setItem('sp_perm_banner_dismiss',String(Date.now())); $('#permBanner').hidden=true; haptic(6); };
+  actualizarPermBanner();
+  if(localStorage.getItem('spPermOnboarded')!=='1'){
+    localStorage.setItem('spPermOnboarded','1');
+    setTimeout(abrirPermisos, 1200);
+  }
+}
+
 /* ════════ Init ════════ */
 async function init(){
+  // Glass-lite: en gama baja los backdrop-filter causan jank (regla en sp-os.css §19)
+  try{ if(navigator.deviceMemory && navigator.deviceMemory<4) document.body.classList.add('glass-lite'); }catch(e){}
   document.getElementById('icSearch').innerHTML = I(SVG.search,17);
   $('#btnNotif').insertAdjacentHTML('afterbegin', I(SVG.bell,19));
   $('#fab').innerHTML = I(SVG.plus,26);
@@ -693,6 +815,7 @@ async function init(){
   initScheduled();
   initRecordatorios();
   if(!DEMO) cargarNotifBadge();
+  if(!DEMO) initPermisos();
   setTimeout(suscribirPush, 3000);
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
@@ -1014,8 +1137,15 @@ function cancelarGrabacion(){ _recCancelling=true; detenerGrabacion(); _recChunk
 async function enviarGrabacion(){ if(!_rec) return; haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
   clearInterval(_recTimer); _recTimer=null;
   const recMime=_rec.mimeType||'audio/webm';
-  // Esperar onstop ANTES de armar el blob: ahí llega el último chunk
-  await new Promise(r=>{ const orig=_rec.onstop; _rec.onstop=()=>{ if(orig) orig(); r(); }; _rec.stop(); });
+  // Esperar onstop ANTES de armar el blob: ahí llega el último chunk.
+  // Si el recorder ya está inactive (doble release / detenerGrabacion previo), stop() lanzaría
+  // InvalidStateError y la promesa jamás resolvería — la UI quedaría colgada en modo grabación.
+  try{
+    await new Promise(r=>{
+      if(_rec.state!=='recording'){ r(); return; }
+      const orig=_rec.onstop; _rec.onstop=()=>{ if(orig) orig(); r(); }; _rec.stop();
+    });
+  }catch(e){ console.error('enviarGrabacion stop',e); limpiarRecUI(); toast('Error al detener la grabación'); return; }
   const blob=new Blob(_recChunks,{type:recMime});
   if(_recChunks.length===0||blob.size<100){ limpiarRecUI(); toast('Audio muy corto — mantén presionado para grabar'); return; }
   // Usar el formato REAL que grabó el navegador (Chrome: webm, Safari: mp4); el servidor lo convierte a OGG/Opus
@@ -1529,9 +1659,9 @@ const QUICK=[
 ];
 
 function abrirAdjuntos(){
-  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
+  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
-  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='video'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
 }
 const UBICACIONES_PREDEFINIDAS = [
   { name:'Proyecto Tocaima', address:'Tocaima, Cundinamarca', lat:4.4577, lng:-74.6329 },
@@ -2005,6 +2135,13 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         </div>
 
         <div class="sec">
+          <div class="sec-label">Permisos</div>
+          <div class="sec-body">
+            <div class="sec-row" id="rowPermisos"><label>Permisos de la app</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Revisar</button></div>
+          </div>
+        </div>
+
+        <div class="sec">
           <div class="sec-label">Chat</div>
           <div class="sec-body">
             <div class="sec-row"><label>Enter envía mensaje</label><button class="toggle-sw${localStorage.getItem('sp_chat_enter_sends')!=='false'?' on':''}" data-key="sp_chat_enter_sends"></button></div>
@@ -2076,6 +2213,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if(rsBtn) rsBtn.addEventListener('click',function(){ localStorage.removeItem('sp_notif_sound_custom'); toast('Tono eliminado'); irTab('perfil'); });
       const ccBtn=document.getElementById('btnClearCache');
       if(ccBtn) ccBtn.addEventListener('click',limpiarCache);
+      const permRow=document.getElementById('rowPermisos');
+      if(permRow) permRow.addEventListener('click',()=>{ haptic(8); abrirPermisos(); });
       const sel = document.getElementById('selEstado');
       if (sel) sel.addEventListener('change', async function() {
         if (!me || !me.vendedorId) return;
