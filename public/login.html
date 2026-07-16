@@ -34,11 +34,11 @@
   /* ── Logo ── */
   .logo{
     width:72px;height:72px;border-radius:18px;
-    background:linear-gradient(140deg,var(--gold-3),var(--gold) 50%,var(--gold-2));
+    background:var(--surface);
     display:grid;place-items:center;margin-bottom:18px;
-    box-shadow:0 8px 32px rgba(200,164,90,.2),0 0 0 1px rgba(200,164,90,.1);
+    box-shadow:0 8px 32px rgba(0,0,0,.3),0 0 0 1px rgba(200,164,90,.1);
   }
-  .logo span{font-family:'Cinzel',serif;font-weight:700;font-size:24px;color:#0A0A0A;letter-spacing:.04em}
+  .logo img{width:100%;height:100%;object-fit:cover;border-radius:18px}
   .brand{font-family:'Cinzel',serif;font-weight:600;font-size:1.1rem;letter-spacing:.16em;text-align:center;margin-bottom:4px;
     background:linear-gradient(135deg,var(--gold-3),var(--gold),var(--gold-2));
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
@@ -124,7 +124,7 @@
 
 <!-- ═══ SCREEN 1: Teléfono ═══ -->
 <div class="screen" id="s1">
-  <div class="logo"><span>SP</span></div>
+  <div class="logo"><img src="/icons/logo.png" alt="SP Leons Group"></div>
   <div class="brand">LEONS GROUP</div>
   <div class="sub">Inversiones &amp; Finca Raíz</div>
   <div class="sp-line"></div>
@@ -146,7 +146,7 @@
 
 <!-- ═══ SCREEN 2: PIN ═══ -->
 <div class="screen hidden" id="s2">
-  <div class="logo"><span>SP</span></div>
+  <div class="logo"><img src="/icons/logo.png" alt="SP Leons Group"></div>
   <div class="brand">LEONS GROUP</div>
   <div class="sub" id="pinSub"></div>
   <div class="sp-line"></div>

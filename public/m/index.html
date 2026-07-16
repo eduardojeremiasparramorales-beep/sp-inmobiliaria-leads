@@ -43,7 +43,8 @@
   /* ── Header (glass) ── */
   .m-head{ position:relative; z-index:5; padding:calc(var(--safe-t) + 10px) 18px 8px; background:var(--glass); backdrop-filter:saturate(1.4) blur(20px); -webkit-backdrop-filter:saturate(1.4) blur(20px); border-bottom:1px solid var(--border-soft); }
   .m-head__top{ display:flex; align-items:center; gap:11px; margin-bottom:12px; }
-  .m-mark{ width:34px; height:34px; border-radius:11px; background:linear-gradient(140deg,#E8C86A,var(--gold) 55%,#9E7E3C); display:grid; place-items:center; color:#0A0A0A; font-weight:700; font-size:14px; font-family:var(--f-title); box-shadow:0 4px 16px rgba(200,164,90,.28); flex-shrink:0; }
+  .m-mark{ width:34px; height:34px; border-radius:11px; overflow:hidden; flex-shrink:0; }
+  .m-mark img{ width:100%; height:100%; object-fit:cover; }
   .m-title{ font-family:var(--f-title); font-size:19px; font-weight:600; letter-spacing:.02em; }
   .m-title small{ display:block; font-family:var(--f-ui); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3); font-weight:500; margin-top:1px; }
   .m-headbtn{ margin-left:auto; width:38px; height:38px; border-radius:50%; background:var(--bg-2); border:1px solid var(--border-soft); color:var(--text-2); display:grid; place-items:center; font-size:16px; }
@@ -453,7 +454,7 @@
   <section class="screen" id="scHome">
     <header class="m-head">
       <div class="m-head__top">
-        <div class="m-mark">SP</div>
+        <div class="m-mark"><img src="/icons/logo.png" alt="SP Leons Group"></div>
         <div class="m-title" id="navTitle">Conversaciones<small id="navSub">Leons Group</small></div>
         <button class="m-headbtn" id="btnPrioridad" aria-label="Ordenar por prioridad" title="Ordenar por prioridad">🔥</button>
         <button class="m-headbtn" id="btnNotif" aria-label="Notificaciones" style="position:relative"><span id="notifBadge" style="display:none;position:absolute;top:2px;right:2px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center;z-index:2"></span></button>
