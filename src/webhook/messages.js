@@ -6,7 +6,7 @@ const events = require('../services/events');
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 // Tipos de mensaje entrante que crean una fila nueva en `messages` (dedup aplica solo a estos).
-const CREATES_MESSAGE_TYPES = ['text', 'location', ...MEDIA_TYPES];
+const CREATES_MESSAGE_TYPES = ['text', 'location', 'contacts', ...MEDIA_TYPES];
 
 // Palabras de baja reconocidas — se comparan contra el mensaje COMPLETO (no como
 // substring) para no confundir "quiero cancelar la cita" con una orden real de baja.
@@ -120,6 +120,22 @@ function handleMessage(req, res) {
             routeIncomingLocation(fromPhone, customerName, { latitude: loc.latitude, longitude: loc.longitude, name: loc.name || '', address: loc.address || '' }, msg.id || null, (err, result) => {
               if (err) { console.error('Error routing location:', err.message); return; }
               if (result && result.forwarded) console.log(`Ubicación reenviada a ${result.to}`);
+            });
+            continue;
+          }
+
+          // --- Tarjetas de CONTACTO compartidas por el cliente ---
+          // Antes caían fuera de todos los handlers y se perdían en silencio; se guardan
+          // como texto legible para que el vendedor vea el dato en el chat.
+          if (msg.type === 'contacts' && Array.isArray(msg.contacts) && msg.contacts.length) {
+            const tarjetas = msg.contacts.map(c => {
+              const nombre = (c.name && (c.name.formatted_name || [c.name.first_name, c.name.last_name].filter(Boolean).join(' '))) || 'Sin nombre';
+              const tels = Array.isArray(c.phones) ? c.phones.map(p => p.phone || p.wa_id).filter(Boolean).join(', ') : '';
+              return `📇 Contacto: ${nombre}${tels ? ' — ' + tels : ''}`;
+            }).join('\n');
+            routeReply(fromPhone, tarjetas, customerName, msg.id || null, (err, result) => {
+              if (err) { console.error('Error routing contact card:', err.message); return; }
+              if (result && result.forwarded) console.log(`Tarjeta de contacto reenviada a ${result.to}`);
             });
             continue;
           }

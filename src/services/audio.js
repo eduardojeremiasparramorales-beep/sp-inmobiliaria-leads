@@ -25,6 +25,13 @@ function isOggOpus(mime) {
   return String(mime || '').split(';')[0].trim().toLowerCase() === 'audio/ogg';
 }
 
+// Formatos de audio que la Cloud API de WhatsApp acepta directamente (sin transcodificar).
+// webm (lo que graba Chrome) NO está en la lista — ese sí exige conversión.
+function isWhatsAppAcceptedAudio(mime) {
+  const base = String(mime || '').split(';')[0].trim().toLowerCase();
+  return ['audio/aac', 'audio/mp4', 'audio/mpeg', 'audio/amr', 'audio/x-m4a', 'audio/m4a'].includes(base);
+}
+
 // Convierte cualquier audio soportado por ffmpeg a OGG/Opus (mono, 32kbps, 48kHz),
 // el formato de nota de voz nativa de WhatsApp.
 // Devuelve { buffer, mime, ext }. Si ya es OGG, pasa sin convertir.
@@ -33,6 +40,14 @@ async function convertToOggOpus(buffer, inputMime) {
     return { buffer, mime: 'audio/ogg; codecs=opus', ext: 'ogg' };
   }
   if (!isFfmpegAvailable()) {
+    // Sin ffmpeg no se pierde la nota de voz si el formato ya lo acepta WhatsApp
+    // (Safari graba mp4/m4a): se envía tal cual, solo sin la conversión a OGG.
+    if (isWhatsAppAcceptedAudio(inputMime)) {
+      const base = String(inputMime).split(';')[0].trim().toLowerCase();
+      const ext = base === 'audio/mpeg' ? 'mp3' : base === 'audio/amr' ? 'amr' : base === 'audio/aac' ? 'aac' : 'm4a';
+      console.warn('[AUDIO] ffmpeg no disponible — enviando audio original sin convertir:', base);
+      return { buffer, mime: base, ext };
+    }
     const err = new Error('ffmpeg_no_disponible: no se puede convertir ' + inputMime + ' a OGG/Opus');
     err.code = 'FFMPEG_MISSING';
     throw err;
