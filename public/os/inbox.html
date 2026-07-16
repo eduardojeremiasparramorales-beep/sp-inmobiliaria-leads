@@ -46,7 +46,7 @@
   .ibx-empty svg { width: 48px; height: 48px; opacity: .2; }
 
   /* Header del hilo */
-  .ibx-thead { height: 62px; flex-shrink: 0; display: flex; align-items: center; gap: 11px; padding: 0 var(--s3); border-bottom: 1px solid var(--border-soft); background: rgba(10,10,10,.8); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .ibx-thead { height: 62px; flex-shrink: 0; display: flex; align-items: center; gap: 11px; padding: 0 var(--s3); border-bottom: 1px solid var(--border-soft); background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
   .ibx-thead__name { font-size: 14px; font-weight: 600; color: var(--text); }
   .ibx-thead__sub { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
 
@@ -200,7 +200,7 @@
   /* ── Image preview modal ── */
   .img-preview-overlay {
     display: none; position: fixed; inset: 0; z-index: 200;
-    background: rgba(0,0,0,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    background: rgba(0,0,0,.85); backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm);
     flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px;
   }
   .img-preview-overlay.show { display: flex; }
@@ -226,7 +226,7 @@
   /* ── Lightbox ── */
   .lightbox {
     display: none; position: fixed; inset: 0; z-index: 300;
-    background: rgba(0,0,0,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    background: rgba(0,0,0,.92); backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm);
     align-items: center; justify-content: center; cursor: zoom-out;
   }
   .lightbox.show { display: flex; }
@@ -1185,6 +1185,27 @@
     });
   }
 
+  /* ── Beep de notificación (WebAudio) ──
+     El AudioContext se crea tras el primer gesto del usuario (política de autoplay);
+     si aún no hubo gesto, el beep simplemente no suena esa vez. */
+  let _audioCtx = null;
+  document.addEventListener('pointerdown', () => {
+    if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
+    if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume().catch(() => { });
+  }, { passive: true });
+  function beepNotificacion() {
+    if (!_audioCtx || _audioCtx.state !== 'running') return;
+    const t = _audioCtx.currentTime;
+    const osc = _audioCtx.createOscillator();
+    const gain = _audioCtx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(880, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    osc.connect(gain); gain.connect(_audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.15);
+  }
+
   /* ── SSE ── */
   function conectarStream() {
     const es = new EventSource('/api/stream');
@@ -1199,7 +1220,7 @@
         if (current && (data.leadId === current || data.conversationId === current)) await recargarMensajes(current);
         if (data.tipo === 'mensaje_cliente') {
           toast('Nuevo mensaje de un cliente');
-          try { new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play(); } catch (e) { }
+          try { beepNotificacion(); } catch (e) { }
           try { if (navigator.vibrate) navigator.vibrate([100, 50, 100]); } catch (e) { }
         }
       } catch (e) { console.error('SSE error:', e); }

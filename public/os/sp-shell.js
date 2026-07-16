@@ -6,6 +6,15 @@
 (function () {
   'use strict';
 
+  /* Glass-lite: en dispositivos de poca memoria, los backdrop-filter del tema
+     glass causan jank — se anulan globalmente (ver sp-os.css §19). */
+  try {
+    if (navigator.deviceMemory && navigator.deviceMemory < 4) {
+      const marcarLite = () => document.body.classList.add('glass-lite');
+      if (document.body) marcarLite(); else document.addEventListener('DOMContentLoaded', marcarLite);
+    }
+  } catch (e) { }
+
   /* --- Íconos (stroke, 24x24) --- */
   const P = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const ICONS = {

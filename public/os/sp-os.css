@@ -51,6 +51,18 @@
   --sh-3: 0 12px 40px rgba(0,0,0,.40);
   --sh-pop: 0 8px 30px rgba(0,0,0,.45), 0 0 0 1px var(--border);
 
+  /* Glass — vidrio sobre la paleta SP.
+     --glass/-2: superficies translúcidas · --blur solo en elementos flotantes/sticky
+     (headers, nav, sheets, toasts); las cards repetidas usan glass SIN blur
+     (simulado: translúcido + borde + filo luminoso) para no castigar el rendimiento. */
+  --glass:        rgba(23, 23, 23, .58);
+  --glass-2:      rgba(28, 28, 28, .72);
+  --glass-border: rgba(248, 248, 248, .08);
+  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .06);
+  --glass-gold:   rgba(200, 164, 90, .06);
+  --blur:    saturate(1.4) blur(18px);
+  --blur-sm: saturate(1.2) blur(10px);
+
   /* Tipografía */
   --f-title: 'Cinzel', Georgia, serif;
   --f-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -75,7 +87,13 @@
 html, body { height: 100%; }
 body {
   font-family: var(--f-ui);
-  background: var(--bg-0);
+  /* Aurora: gradientes fijos muy tenues (oro/verde) sobre el negro raíz — dan
+     profundidad y hacen legible el efecto vidrio de las superficies translúcidas. */
+  background:
+    radial-gradient(900px 600px at 85% -10%, rgba(200,164,90,.05), transparent 60%),
+    radial-gradient(800px 700px at -10% 100%, rgba(78,123,70,.04), transparent 60%),
+    var(--bg-0);
+  background-attachment: fixed;
   color: var(--text);
   font-size: 14px;
   line-height: 1.5;
@@ -130,8 +148,10 @@ svg { display: block; flex-shrink: 0; }
 /* --- Sidebar --- */
 .os-nav {
   grid-column: 1;
-  background: var(--bg-0);
-  border-right: 1px solid var(--border-soft);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-right: 1px solid var(--glass-border);
   display: flex; flex-direction: column;
   min-height: 0;
   padding: var(--s2) 0;
@@ -190,8 +210,8 @@ svg { display: block; flex-shrink: 0; }
   height: var(--topbar-h); flex-shrink: 0;
   display: flex; align-items: center; gap: var(--s2);
   padding: 0 var(--s3);
-  border-bottom: 1px solid var(--border-soft);
-  background: rgba(10,10,10,.72); backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .os-topbar__title { font-size: 15px; font-weight: 600; }
 .os-topbar__crumb { font-size: 12px; color: var(--text-3); }
@@ -202,8 +222,10 @@ svg { display: block; flex-shrink: 0; }
 /* --- Right contextual panel --- */
 .os-panel {
   grid-column: 3;
-  background: var(--bg-1);
-  border-left: 1px solid var(--border-soft);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-left: 1px solid var(--glass-border);
   display: flex; flex-direction: column; min-height: 0;
 }
 .os-panel__head { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: space-between; }
@@ -250,24 +272,27 @@ svg { display: block; flex-shrink: 0; }
    6. PRIMITIVAS — Cards / Surfaces
    ---------------------------------------------------------------------------- */
 .card {
-  background: var(--bg-2);
-  border: 1px solid var(--border-soft);
+  /* Glass simulado: translúcido + filo luminoso, sin blur (rendimiento) */
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-lg);
+  box-shadow: var(--glass-edge), var(--sh-1);
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .card--pad { padding: var(--s3); }
-.card--hover:hover { border-color: var(--border-strong); background: var(--bg-3); }
-.card--float:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--sh-2); }
-.surface { background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); }
+.card--hover:hover { border-color: var(--gold-line); background: var(--glass-2); }
+.card--float:hover { transform: translateY(-2px); border-color: var(--gold-line); box-shadow: var(--glass-edge), var(--sh-2); }
+.surface { background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); }
 
 /* Metric card */
 .metric {
-  background: var(--bg-2); border: 1px solid var(--border-soft);
+  background: var(--glass); border: 1px solid var(--glass-border);
   border-radius: var(--r-lg); padding: var(--s3);
+  box-shadow: var(--glass-edge), var(--sh-1);
   display: flex; flex-direction: column; gap: 14px;
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-.metric:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+.metric:hover { border-color: var(--gold-line); transform: translateY(-2px); }
 .metric__top { display: flex; align-items: center; justify-content: space-between; }
 .metric__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
 .metric__icon svg { width: 18px; height: 18px; }
@@ -335,13 +360,13 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
    10. KANBAN / PIPELINE
    ---------------------------------------------------------------------------- */
 .kanban { display: flex; gap: var(--s2); height: 100%; overflow-x: auto; padding-bottom: var(--s2); }
-.kan-col { flex: 0 0 300px; display: flex; flex-direction: column; background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r); min-height: 0; }
+.kan-col { flex: 0 0 300px; display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); min-height: 0; }
 .kan-col__head { padding: 13px var(--s2); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-soft); }
 .kan-col__title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .kan-col__count { font-size: 11px; color: var(--text-3); background: var(--bg-3); padding: 1px 8px; border-radius: 999px; }
 .kan-col__body { flex: 1; overflow-y: auto; min-height: 0; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-.kan-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 13px; cursor: grab; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
-.kan-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.kan-card { background: var(--glass-2); border: 1px solid var(--glass-border); border-radius: var(--r-sm); padding: 13px; box-shadow: var(--glass-edge); cursor: grab; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.kan-card:hover { border-color: var(--gold-line); transform: translateY(-1px); }
 
 /* ----------------------------------------------------------------------------
    11. TIMELINE
@@ -371,7 +396,7 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
   position: fixed; right: var(--s3); bottom: var(--s3); z-index: 60;
   display: flex; align-items: center; gap: 10px;
   height: 46px; padding: 0 8px 0 16px; border-radius: var(--r-full);
-  background: rgba(23,23,23,.86); backdrop-filter: blur(20px);
+  background: var(--glass-2); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--gold-line); box-shadow: var(--sh-3);
   cursor: pointer; transition: transform var(--dur) var(--ease-out), border-color var(--dur) var(--ease);
 }
@@ -388,8 +413,8 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
 .os-toasts { position: fixed; bottom: var(--s3); left: 50%; transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
 .os-toast {
   display: flex; align-items: center; gap: 10px; padding: 11px 18px;
-  background: rgba(28,28,28,.94); backdrop-filter: blur(20px);
-  border: 1px solid var(--border-strong); border-radius: var(--r-full);
+  background: var(--glass-2); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border); border-radius: var(--r-full);
   font-size: 13px; font-weight: 500; box-shadow: var(--sh-3);
   animation: toastIn .32s var(--ease-out);
 }
@@ -440,3 +465,17 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
   .grid--4, .grid--3, .grid--2 { grid-template-columns: 1fr; }
   .os-search { min-width: 0; }
 }
+
+/* ----------------------------------------------------------------------------
+   19. GLASS-LITE — escape de rendimiento para dispositivos de gama baja.
+   Anula todos los blur (lo más costoso del vidrio) y devuelve fondos sólidos
+   a las superficies principales. Activar con: document.body.classList.add('glass-lite')
+   p. ej. cuando navigator.deviceMemory < 4.
+   ---------------------------------------------------------------------------- */
+body.glass-lite * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+body.glass-lite { background: var(--bg-0); }
+body.glass-lite .os-nav, body.glass-lite .os-panel { background: var(--bg-1); }
+body.glass-lite .os-topbar { background: var(--bg-0); }
+body.glass-lite .card, body.glass-lite .surface, body.glass-lite .metric,
+body.glass-lite .kan-col { background: var(--bg-2); }
+body.glass-lite .kan-card { background: var(--bg-3); }
