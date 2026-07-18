@@ -1,5 +1,32 @@
 # SP OS — App de vendedores (Android)
 
+## 🚀 Publicar una actualización de la app (auto-update in-app)
+
+Desde la v1.2.0 (versionCode 3) la app se actualiza SOLA: al abrirla compara su
+versión con `/api/app/version` y, si hay una nueva, muestra la pantalla de
+actualización (descarga con progreso → instalador encima, sin desinstalar).
+
+**Proceso de release (cada vez que cambies algo NATIVO):**
+```powershell
+# 1. Subir versión en android/app/build.gradle:  versionCode +1, versionName x.y.z
+# 2. Compilar release FIRMADO (nunca repartir debug — firma distinta):
+cd mobile-app; npx cap sync android; cd android; .\gradlew assembleRelease
+# 3. Publicar en el canal de actualización:
+cd ..\..; npm run release:apk -- "• Cambio 1`n• Cambio 2"     # --obligatoria si aplica
+# 4. Commit + push + deploy en la VM:
+git add public/descargas mobile-app/android/app/build.gradle
+git commit -m "release: app vX.Y.Z"; git push
+# (VM) git fetch origin master && git reset --hard origin/master && docker compose up -d --build
+# 5. Los teléfonos ven la actualización al abrir la app. Listo.
+```
+
+⚠️ **Reglas de oro:** (1) SIEMPRE el APK release firmado con `release.keystore` —
+si pierdes el keystore, el auto-update muere (habría que desinstalar en cada
+teléfono). (2) La PRIMERA instalación de la v3 es manual; si el teléfono tenía el
+APK debug, esa única vez toca desinstalar (firma distinta). Desde ahí, todo OTA.
+Los cambios SOLO de web (public/, src/) no necesitan release de APK — llegan con
+el deploy normal.
+
 Envuelve el panel del vendedor (`/m/`) del CRM en una app nativa Android con
 [Capacitor](https://capacitorjs.com). **No es una reescritura**: la app carga el
 mismo sitio web en producción (`https://spcrm.duckdns.org`) dentro de un WebView

@@ -143,6 +143,20 @@ app.get('/api/health', (req, res) => {
   res.json({ status: dbOk ? 'ok' : 'error', timestamp: new Date().toISOString(), db: dbOk ? 'connected' : 'disconnected', uptime: process.uptime() });
 });
 
+// Versión publicada de la app Android (auto-actualización in-app).
+// Sin auth: el update-gate corre antes del login. version.json lo genera
+// `npm run release:apk` — nunca se edita a mano. El APK se sirve por
+// express.static desde public/descargas/ (HTTP Range gratis, sin rate limit).
+app.get('/api/app/version', (req, res) => {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, '..', 'public', 'descargas', 'version.json'), 'utf8');
+    res.set('Cache-Control', 'no-store');
+    res.json(JSON.parse(raw));
+  } catch (e) {
+    res.status(404).json({ error: 'sin_version_publicada' });
+  }
+});
+
 app.get('/webhook', handleVerification);
 app.post('/webhook', webhookLimiter, verifyWebhookSignature, handleMessage);
 

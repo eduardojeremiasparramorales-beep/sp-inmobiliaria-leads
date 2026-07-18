@@ -462,6 +462,23 @@
   .perm-row .perm-den{ flex-shrink:0; color:var(--red); font-size:12px; font-weight:600; }
   .perm-help{ margin-top:10px; padding:10px 12px; background:var(--bg-3); border-radius:12px; font-size:12px; color:var(--text-2); line-height:1.45; }
 
+  /* ── Pantalla de actualización (estilo Free Fire) ── */
+  .screen--update{ z-index:90; display:none; align-items:center; justify-content:center; padding:28px; }
+  .screen--update.show{ display:flex; }
+  .upd-card{ width:100%; max-width:340px; background:var(--glass-2); border:1px solid var(--glass-border); border-radius:22px; box-shadow:var(--glass-edge), var(--sh-3); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); padding:28px 22px; display:flex; flex-direction:column; align-items:center; text-align:center; }
+  .upd-card .upd-logo{ width:64px; height:64px; border-radius:16px; overflow:hidden; margin-bottom:14px; box-shadow:0 8px 30px rgba(0,0,0,.5), 0 0 0 1px var(--gold-line); }
+  .upd-card .upd-logo img{ width:100%; height:100%; object-fit:cover; }
+  .upd-card h2{ margin:0 0 2px; font-family:var(--f-title); font-size:17px; letter-spacing:.06em; color:var(--gold); }
+  .upd-card .upd-ver{ font-size:12px; color:var(--text-3); margin-bottom:14px; }
+  .upd-card .upd-notas{ width:100%; text-align:left; font-size:12.5px; color:var(--text-2); line-height:1.5; background:var(--bg-3); border-radius:12px; padding:10px 12px; margin-bottom:16px; white-space:pre-line; max-height:120px; overflow-y:auto; }
+  .upd-bar{ width:100%; height:10px; border-radius:999px; background:var(--bg-4); overflow:hidden; margin-bottom:8px; border:1px solid var(--border-soft); }
+  .upd-bar__fill{ height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,#E8C86A,var(--gold) 60%,#B08D42); transition:width .25s ease; box-shadow:0 0 12px rgba(200,164,90,.5); }
+  .upd-pct{ font-size:12px; color:var(--text-3); min-height:16px; margin-bottom:14px; }
+  .upd-btn{ width:100%; height:48px; border:none; border-radius:12px; background:linear-gradient(135deg,#E8C86A,var(--gold) 55%,#B08D42); color:#0A0A0A; font-family:inherit; font-size:15px; font-weight:700; letter-spacing:.03em; cursor:pointer; }
+  .upd-btn:active{ transform:scale(.98); }
+  .upd-btn:disabled{ opacity:.5; }
+  .upd-later{ margin-top:10px; background:none; border:none; color:var(--text-3); font-family:inherit; font-size:13px; cursor:pointer; padding:6px; }
+
   .hidden{ display:none !important; }
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
   .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
@@ -481,6 +498,11 @@
       </div>
       <label class="m-search"><span id="icSearch"></span><input id="q" placeholder="Buscar cliente, chat, etiqueta…" autocomplete="off"></label>
     </header>
+    <div class="perm-banner" id="updBanner" hidden>
+      <span class="ic">⬆️</span>
+      <span class="tx" id="updBannerTxt">Hay una nueva versión de la app</span>
+      <button id="updBannerBtn">Actualizar</button>
+    </div>
     <div class="perm-banner" id="permBanner" hidden>
       <span class="ic">🎙️</span>
       <span class="tx" id="permBannerTxt">Activa el micrófono para enviar notas de voz</span>
@@ -496,6 +518,20 @@
 
   <!-- ══ Chat ══ -->
   <section class="screen screen--chat" id="scChat"></section>
+
+  <!-- ══ Actualización de la app (estilo Free Fire) ══ -->
+  <section class="screen screen--update" id="scUpdate">
+    <div class="upd-card">
+      <div class="upd-logo"><img src="/icons/logo.png" alt="Leons Group"></div>
+      <h2>Nueva versión</h2>
+      <div class="upd-ver" id="updVer"></div>
+      <div class="upd-notas" id="updNotas"></div>
+      <div class="upd-bar" hidden id="updBar"><div class="upd-bar__fill" id="updFill"></div></div>
+      <div class="upd-pct" id="updPct"></div>
+      <button class="upd-btn" id="updBtn">Actualizar ahora</button>
+      <button class="upd-later" id="updLater" hidden>Más tarde</button>
+    </div>
+  </section>
 
   <!-- ══ Bottom Nav ══ -->
   <nav class="m-nav" id="nav"></nav>
@@ -697,6 +733,130 @@ function demoMsgs(){ const now=new Date().toISOString().slice(0,19).replace('T',
   {id:105,body:'¿Cuál es el precio del lote de 250m²?',direction:'incoming',timestamp:now},
 ]; }
 
+/* ════════ Auto-actualización de la app (estilo Free Fire) ════════
+   La web es OTA por sí sola (la app carga el sitio remoto); esto actualiza el
+   APK NATIVO: detecta versión nueva vía /api/app/version, descarga con progreso
+   (Filesystem) y lanza el instalador encima (ApkInstaller, misma firma). */
+let _updInfo=null, _updApkPath=null, _updDescargando=false;
+
+async function checkAppUpdate(){
+  if(!esNativo()) return false;
+  try{
+    const info = await window.Capacitor.Plugins.App.getInfo();      // build = versionCode instalado
+    const v = await api('/api/app/version');
+    if(!v || !v.versionCode) return false;
+    const instalado = Number(info.build)||0;
+    if(v.versionCode <= instalado) return false;
+    _updInfo = v;
+    if(!v.obligatoria){
+      try{
+        const { Preferences } = window.Capacitor.Plugins;
+        const skip = await Preferences.get({key:'sp_upd_skip'});
+        if(Number(skip.value) === v.versionCode){ mostrarUpdBanner(v); return false; }
+      }catch(e){}
+    }
+    mostrarPantallaUpdate(v);
+    return !!v.obligatoria; // obligatoria = bloquear el resto del init
+  }catch(e){ console.error('checkAppUpdate', e); return false; }
+}
+
+function mostrarPantallaUpdate(v){
+  $('#updVer').textContent = 'Leons Group '+v.versionName;
+  $('#updNotas').textContent = v.notas || '';
+  $('#updBar').hidden = true; $('#updFill').style.width='0%'; $('#updPct').textContent='';
+  const btn=$('#updBtn'); btn.disabled=false; btn.textContent = _updApkPath ? 'Instalar' : 'Actualizar ahora';
+  btn.onclick = ()=>{ haptic(10); ejecutarUpdate(v); };
+  const later=$('#updLater');
+  later.hidden = !!v.obligatoria;
+  later.onclick = async ()=>{
+    try{ await window.Capacitor.Plugins.Preferences.set({key:'sp_upd_skip', value:String(v.versionCode)}); }catch(e){}
+    $('#scUpdate').classList.remove('show'); mostrarUpdBanner(v);
+  };
+  $('#scUpdate').classList.add('show');
+}
+
+async function ejecutarUpdate(v){
+  if(_updDescargando) return;
+  const cap = window.Capacitor;
+  // APK viejo sin los plugins nuevos: transición única vía descarga del navegador
+  if(!cap.isPluginAvailable('ApkInstaller') || !cap.isPluginAvailable('Filesystem')){
+    toast('Descargando… instala el APK desde tus descargas');
+    window.open(location.origin + v.apkUrl, '_blank');
+    return;
+  }
+  const { Filesystem, ApkInstaller } = cap.Plugins;
+  try{
+    const can = await ApkInstaller.canInstall();
+    if(!can.value){
+      toast('Autoriza "Instalar apps desconocidas" y vuelve a intentar');
+      await ApkInstaller.openInstallSettings();
+      return;
+    }
+    // Ya descargado (canceló el instalador antes): reinstalar directo
+    if(_updApkPath){ await ApkInstaller.install({ path:_updApkPath }); return; }
+
+    _updDescargando = true;
+    const btn=$('#updBtn'); btn.disabled=true; btn.textContent='Descargando…';
+    $('#updBar').hidden=false;
+    const sub = await Filesystem.addListener('progress', p=>{
+      const pct = p.contentLength ? Math.min(100, Math.round(p.bytes/p.contentLength*100)) : 0;
+      $('#updFill').style.width = pct+'%';
+      $('#updPct').textContent = pct+'%' + (p.contentLength ? '  ('+(p.bytes/1048576).toFixed(1)+' MB)' : '');
+    });
+    try{
+      const r = await Filesystem.downloadFile({
+        url: location.origin + v.apkUrl,
+        path: 'leons-group-'+v.versionCode+'.apk',
+        directory: 'CACHE',
+        progress: true,
+      });
+      _updApkPath = r.path;
+      $('#updFill').style.width='100%'; $('#updPct').textContent='Abriendo instalador…';
+      await ApkInstaller.install({ path: r.path });
+      btn.textContent='Instalar'; btn.disabled=false; // por si el usuario cancela el instalador
+    } finally {
+      try{ sub.remove(); }catch(e){}
+      _updDescargando = false;
+    }
+  }catch(e){
+    console.error('ejecutarUpdate', e);
+    _updDescargando = false;
+    const btn=$('#updBtn'); btn.disabled=false; btn.textContent='Reintentar';
+    $('#updPct').textContent='Error al descargar. Revisa tu conexión.';
+  }
+}
+
+function mostrarUpdBanner(v){
+  const b=$('#updBanner'); if(!b) return;
+  $('#updBannerTxt').textContent = _updApkPath
+    ? 'Actualización descargada — toca para instalar'
+    : 'Nueva versión '+v.versionName+' disponible';
+  $('#updBannerBtn').onclick = ()=>{ haptic(10); mostrarPantallaUpdate(v); };
+  b.hidden=false;
+}
+
+function initUpdateResume(){
+  if(!esNativo()) return;
+  try{
+    window.Capacitor.Plugins.App.addListener('resume', async ()=>{
+      if(!_updInfo) return;
+      try{
+        const info = await window.Capacitor.Plugins.App.getInfo();
+        if(Number(info.build) >= _updInfo.versionCode){
+          // Ya se actualizó — limpiar restos
+          _updInfo=null; _updApkPath=null;
+          $('#scUpdate').classList.remove('show'); $('#updBanner').hidden=true;
+          location.reload();
+        } else if(_updInfo.obligatoria){
+          mostrarPantallaUpdate(_updInfo);
+        } else if(_updApkPath){
+          mostrarUpdBanner(_updInfo);
+        }
+      }catch(e){}
+    });
+  }catch(e){}
+}
+
 /* ════════ Permisos del dispositivo ════════ */
 const PERMISOS=[
   {k:'mic',   ic:'🎙️', nombre:'Micrófono',      desc:'Grabar y enviar notas de voz a tus clientes', query:'microphone'},
@@ -795,6 +955,10 @@ function initPermisos(){
 async function init(){
   // Glass-lite: en gama baja los backdrop-filter causan jank (regla en sp-os.css §19)
   try{ if(navigator.deviceMemory && navigator.deviceMemory<4) document.body.classList.add('glass-lite'); }catch(e){}
+  // Auto-actualización: si hay versión OBLIGATORIA nueva, bloquea la app hasta actualizar
+  initUpdateResume();
+  const updBloqueado = await checkAppUpdate();
+  if(updBloqueado) return;
   document.getElementById('icSearch').innerHTML = I(SVG.search,17);
   $('#btnNotif').insertAdjacentHTML('afterbegin', I(SVG.bell,19));
   $('#fab').innerHTML = I(SVG.plus,26);

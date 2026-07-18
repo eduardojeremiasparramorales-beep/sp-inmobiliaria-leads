@@ -140,7 +140,40 @@ async function initDB() {
   ensureColumn('messages', 'deleted_by', 'TEXT');
   ensureColumn('messages', 'read_at', 'DATETIME');
   ensureColumn('messages', 'error_detail', 'TEXT');
+  ensureColumn('messages', 'starred_at', 'DATETIME');       // mensajes destacados ⭐
+  ensureColumn('messages', 'transcript', 'TEXT');           // transcripción IA de notas de voz
+  ensureColumn('messages', 'translated_body', 'TEXT');      // traducción IA bajo demanda (cache)
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
+
+  // --- Mensajes programados en SERVIDOR (salen aunque la app esté cerrada) ---
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS scheduled_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      vendedor_id INTEGER NOT NULL,
+      body TEXT NOT NULL,
+      send_at DATETIME NOT NULL,
+      estado TEXT DEFAULT 'pendiente',
+      intentos INTEGER DEFAULT 0,
+      last_error TEXT,
+      sent_at DATETIME,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lead_id) REFERENCES leads(id)
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_sched_pend ON scheduled_messages(estado, send_at)`);
+
+  // --- Chat interno del equipo (to_vendedor_id NULL = canal general) ---
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS team_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_vendedor_id INTEGER NOT NULL,
+      from_nombre TEXT DEFAULT '',
+      to_vendedor_id INTEGER,
+      body TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS message_reactions (
@@ -508,6 +541,87 @@ function getReactionsForMessages(messageIds) {
 // --- Editar mensaje ---
 function editMessage(messageId, newBody) {
   run("UPDATE messages SET body = ?, edited_at = datetime('now') WHERE id = ?", [String(newBody).trim(), messageId]);
+}
+
+// --- Mensajes destacados ⭐ ---
+function toggleStarMessage(messageId) {
+  const m = one('SELECT starred_at FROM messages WHERE id = ?', [messageId]);
+  if (!m) return null;
+  const nuevo = !m.starred_at;
+  run(nuevo
+    ? "UPDATE messages SET starred_at = datetime('now') WHERE id = ?"
+    : 'UPDATE messages SET starred_at = NULL WHERE id = ?', [messageId]);
+  return nuevo;
+}
+function getStarredMessages(vendedorId, isAdmin) {
+  return all(`
+    SELECT m.id, m.lead_id, m.body, m.direction, m.timestamp, m.media_type, m.starred_at,
+           l.customer_name, l.customer_phone
+    FROM messages m JOIN leads l ON l.id = m.lead_id
+    WHERE m.starred_at IS NOT NULL AND (? OR l.assigned_to_id = ?)
+    ORDER BY m.starred_at DESC LIMIT 100`, [isAdmin ? 1 : 0, vendedorId || 0]);
+}
+
+// --- Búsqueda global de mensajes (por vendedor; admin ve todos) ---
+function searchMessages(q, vendedorId, isAdmin) {
+  const term = '%' + String(q).replace(/[\\%_]/g, c => '\\' + c) + '%';
+  return all(`
+    SELECT m.id, m.lead_id, m.body, m.direction, m.timestamp, l.customer_name
+    FROM messages m JOIN leads l ON l.id = m.lead_id
+    WHERE (? OR l.assigned_to_id = ?)
+      AND COALESCE(m.deleted_for_all,0) = 0 AND COALESCE(m.deleted_for_sender,0) = 0
+      AND m.body LIKE ? ESCAPE '\\'
+    ORDER BY m.timestamp DESC LIMIT 50`, [isAdmin ? 1 : 0, vendedorId || 0, term]);
+}
+
+// --- IA: transcripción y traducción ---
+function setTranscript(messageId, text) {
+  run('UPDATE messages SET transcript = ? WHERE id = ?', [String(text).slice(0, 4000), messageId]);
+}
+function setTranslation(messageId, text) {
+  run('UPDATE messages SET translated_body = ? WHERE id = ?', [String(text).slice(0, 4000), messageId]);
+}
+
+// --- Mensajes programados en servidor ---
+function createScheduled(leadId, vendedorId, body, sendAt) {
+  run('INSERT INTO scheduled_messages (lead_id, vendedor_id, body, send_at) VALUES (?, ?, ?, ?)',
+    [leadId, vendedorId, body, sendAt]);
+  const r = one('SELECT id FROM scheduled_messages ORDER BY id DESC LIMIT 1');
+  return r ? r.id : null;
+}
+function getScheduledByVendedor(vendedorId, isAdmin) {
+  return all(`
+    SELECT s.*, l.customer_name FROM scheduled_messages s
+    JOIN leads l ON l.id = s.lead_id
+    WHERE (? OR s.vendedor_id = ?) AND s.estado = 'pendiente'
+    ORDER BY s.send_at ASC LIMIT 100`, [isAdmin ? 1 : 0, vendedorId || 0]);
+}
+function getScheduledById(id) {
+  return one('SELECT * FROM scheduled_messages WHERE id = ?', [id]);
+}
+function getScheduledDue() {
+  return all(`SELECT * FROM scheduled_messages WHERE estado = 'pendiente' AND send_at <= datetime('now') ORDER BY send_at ASC LIMIT 20`);
+}
+function updateScheduled(id, fields) {
+  const sets = [], vals = [];
+  for (const [k, v] of Object.entries(fields)) { sets.push(`${k} = ?`); vals.push(v); }
+  if (!sets.length) return;
+  vals.push(id);
+  run(`UPDATE scheduled_messages SET ${sets.join(', ')} WHERE id = ?`, vals);
+}
+
+// --- Chat interno del equipo ---
+function saveTeamMessage(fromVendedorId, fromNombre, body) {
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body) VALUES (?, ?, NULL, ?)',
+    [fromVendedorId, fromNombre || '', String(body).slice(0, 2000)]);
+  return one('SELECT * FROM team_messages ORDER BY id DESC LIMIT 1');
+}
+function getTeamMessages(beforeId, limit) {
+  const lim = Math.min(Number(limit) || 50, 100);
+  if (beforeId) {
+    return all('SELECT * FROM team_messages WHERE id < ? ORDER BY id DESC LIMIT ?', [beforeId, lim]).reverse();
+  }
+  return all('SELECT * FROM team_messages ORDER BY id DESC LIMIT ?', [lim]).reverse();
 }
 
 // --- Borrar para mí ---
@@ -2068,4 +2182,9 @@ module.exports = {
   getProyectos, getProyectoById, createProyecto, updateProyecto, deleteProyecto, getProyectoStats,
   getLotesByProyecto, getLoteById, createLote, bulkCreateLotes, updateLote, updateLoteEstado, deleteLote,
   setLoteObservacion, setLotePrecio, addLoteMedia, addLoteHistorial, getLoteHistorial,
+  // Chat Pro / IA / programados / equipo
+  toggleStarMessage, getStarredMessages, searchMessages,
+  setTranscript, setTranslation,
+  createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
+  saveTeamMessage, getTeamMessages,
 };
