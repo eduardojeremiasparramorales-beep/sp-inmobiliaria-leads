@@ -11,7 +11,8 @@
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>Leons Group — Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:wght@300..700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0A0A0A; --gold:#C8A45A; --gold-2:#A8872B; --gold-3:#E8C86A;
@@ -21,14 +22,17 @@
     /* Glass (mismos valores que sp-os.css — este archivo no enlaza el core) */
     --glass:rgba(23,23,23,.58); --glass-2:rgba(28,28,28,.72);
     --glass-border:rgba(248,248,248,.08); --blur-sm:saturate(1.2) blur(10px);
+    --grad-gold:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42);
+    --grad-gold-text:linear-gradient(135deg,#E8C86A,var(--gold) 55%,#A8872B);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow:hidden}
   body{
     font-family:'Inter',system-ui,sans-serif;color:var(--txt);
+    font-optical-sizing:auto;letter-spacing:-0.011em;
     background:
-      radial-gradient(700px 500px at 85% -10%, rgba(200,164,90,.06), transparent 60%),
-      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.05), transparent 60%),
+      radial-gradient(700px 500px at 85% -10%, rgba(200,164,90,.05), transparent 60%),
+      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.04), transparent 60%),
       var(--bg);
     display:flex;flex-direction:column;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
@@ -48,7 +52,7 @@
   }
   .logo img{width:100%;height:100%;object-fit:cover;border-radius:18px}
   .brand{font-family:'Cinzel',serif;font-weight:600;font-size:1.1rem;letter-spacing:.16em;text-align:center;margin-bottom:4px;
-    background:linear-gradient(135deg,var(--gold-3),var(--gold),var(--gold-2));
+    background:var(--grad-gold-text);
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   }
   .sub{font-family:'Cormorant Garamond',serif;font-size:.85rem;color:var(--txt-2);letter-spacing:.1em;text-align:center;margin-bottom:24px;font-weight:400}
@@ -95,7 +99,7 @@
   .k-del{color:var(--txt-2)}
   .k-del svg{width:22px;height:22px}
   .k-ok{
-    background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#0A0A0A;
+    background:var(--grad-gold);color:#0A0A0A;
     font-weight:600;font-size:.9rem;letter-spacing:.04em;
   }
   .k-ok:active{opacity:.8;transform:scale(.96)}
@@ -108,7 +112,7 @@
   }
   .btn-entrar{
     width:100%;height:52px;border-radius:12px;border:none;
-    background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#0A0A0A;
+    background:var(--grad-gold);color:#0A0A0A;
     font-size:.95rem;font-weight:600;font-family:'Inter',sans-serif;letter-spacing:.04em;
     cursor:pointer;transition:opacity .15s,transform .1s;
   }
@@ -128,6 +132,8 @@
     .k{height:60px;font-size:1.4rem}
     .pin-dot{width:58px;height:62px}
   }
+  @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}.pin-dot .circ,.spin{corner-shape:round}
+    [style*="border-radius:50%"],[style*="border-radius: 50%"]{corner-shape:round}}
 </style>
 </head>
 <body>

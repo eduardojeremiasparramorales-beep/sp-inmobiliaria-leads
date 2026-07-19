@@ -67,6 +67,16 @@
   --f-title: 'Cinzel', Georgia, serif;
   --f-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --f-num: 'SF Pro Display', 'Inter', sans-serif;
+  --track-display: -0.022em;  /* .t-h1, .metric__value — SF Display */
+  --track-title:  -0.016em;  /* .t-h2 */
+  --track-body:   -0.011em;  /* body (heredado) */
+
+  /* Gradientes oro (token único reemplaza ~15 duplicados en todo el sistema) */
+  --grad-gold:      linear-gradient(140deg, #E8C86A, var(--gold) 60%, #B08D42);
+  --grad-gold-deep: linear-gradient(140deg, #E8C86A, var(--gold) 55%, #9E7E3C);
+  --grad-gold-text: linear-gradient(135deg, #E8C86A, var(--gold) 55%, #A8872B);
+  --grad-gold-bar:  linear-gradient(90deg, #B89840, var(--gold));
+  --grad-surface:   linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0) 45%);
 
   /* Movimiento */
   --ease: cubic-bezier(.4, 0, .2, 1);
@@ -97,6 +107,8 @@ body {
   color: var(--text);
   font-size: 14px;
   line-height: 1.5;
+  font-optical-sizing: auto;
+  letter-spacing: var(--track-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
@@ -117,15 +129,25 @@ svg { display: block; flex-shrink: 0; }
    3. TIPOGRAFÍA / UTILIDADES
    ---------------------------------------------------------------------------- */
 .t-brand { font-family: var(--f-title); font-weight: 600; letter-spacing: .06em; }
-.t-num   { font-family: var(--f-num); font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
-.t-h1 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
-.t-h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
-.t-h3 { font-size: 16px; font-weight: 600; }
+.t-num   { font-family: var(--f-num); font-variant-numeric: tabular-nums lining-nums; font-feature-settings: 'tnum' on; }
+.t-h1 { font-size: 28px; font-weight: 600; letter-spacing: var(--track-display); }
+.t-h2 { font-size: 20px; font-weight: 600; letter-spacing: var(--track-title); }
+.t-h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.012em; }
 .t-label { font-size: 11px; font-weight: 600; letter-spacing: .10em; text-transform: uppercase; color: var(--text-3); }
 .t-dim { color: var(--text-2); }
 .t-dim3 { color: var(--text-3); }
 .t-gold { color: var(--gold); }
 .t-green { color: var(--green); }
+
+/* Guardarraíl Cinzel: el tracking negativo del body hereda y aplasta serifas.
+   Selectores con --f-title sin letter-spacing explícito → .02em mínimo.
+   (Los que ya tienen .03em+ se dejan intactos.) */
+.sheet__title, .lp-name,
+.pm h3, .prop-card__name, .prop-empty h3,
+.cal-head h2, .modal h3,
+.donut .dv, .lote-tip b, .cc-stage-empty h3, .mm h3,
+.pj-pct__big
+{ letter-spacing: .02em; }
 
 .u-row { display: flex; align-items: center; }
 .u-col { display: flex; flex-direction: column; }
@@ -255,7 +277,7 @@ svg { display: block; flex-shrink: 0; }
 .btn svg { width: 16px; height: 16px; }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; pointer-events: none; }
-.btn--gold { background: linear-gradient(140deg, #E8C86A, var(--gold) 60%, #B08D42); color: #0A0A0A; box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,.25); }
+.btn--gold { background: var(--grad-gold); color: #0A0A0A; box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,.25); }
 .btn--gold:hover { filter: brightness(1.05); }
 .btn--ghost { background: var(--bg-2); border-color: var(--border); color: var(--text); }
 .btn--ghost:hover { background: var(--bg-3); border-color: var(--border-strong); }
@@ -273,7 +295,7 @@ svg { display: block; flex-shrink: 0; }
    ---------------------------------------------------------------------------- */
 .card {
   /* Glass simulado: translúcido + filo luminoso, sin blur (rendimiento) */
-  background: var(--glass);
+  background: var(--grad-surface), var(--glass);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-lg);
   box-shadow: var(--glass-edge), var(--sh-1);
@@ -282,11 +304,11 @@ svg { display: block; flex-shrink: 0; }
 .card--pad { padding: var(--s3); }
 .card--hover:hover { border-color: var(--gold-line); background: var(--glass-2); }
 .card--float:hover { transform: translateY(-2px); border-color: var(--gold-line); box-shadow: var(--glass-edge), var(--sh-2); }
-.surface { background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); }
+.surface { background: var(--grad-surface), var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); }
 
 /* Metric card */
 .metric {
-  background: var(--glass); border: 1px solid var(--glass-border);
+  background: var(--grad-surface), var(--glass); border: 1px solid var(--glass-border);
   border-radius: var(--r-lg); padding: var(--s3);
   box-shadow: var(--glass-edge), var(--sh-1);
   display: flex; flex-direction: column; gap: 14px;
@@ -297,7 +319,7 @@ svg { display: block; flex-shrink: 0; }
 .metric__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
 .metric__icon svg { width: 18px; height: 18px; }
 .metric__label { font-size: 12px; color: var(--text-3); font-weight: 500; }
-.metric__value { font-family: var(--f-num); font-size: 30px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+.metric__value { font-family: var(--f-num); font-size: 30px; font-weight: 600; letter-spacing: var(--track-display); line-height: 1; }
 .metric__delta { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
 .metric__delta.up { color: var(--green); } .metric__delta.down { color: #FF8A8E; } .metric__delta.flat { color: var(--text-3); }
 
@@ -360,12 +382,12 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
    10. KANBAN / PIPELINE
    ---------------------------------------------------------------------------- */
 .kanban { display: flex; gap: var(--s2); height: 100%; overflow-x: auto; padding-bottom: var(--s2); }
-.kan-col { flex: 0 0 300px; display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); min-height: 0; }
+.kan-col { flex: 0 0 300px; display: flex; flex-direction: column; background: var(--grad-surface), var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); min-height: 0; }
 .kan-col__head { padding: 13px var(--s2); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-soft); }
 .kan-col__title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .kan-col__count { font-size: 11px; color: var(--text-3); background: var(--bg-3); padding: 1px 8px; border-radius: 999px; }
 .kan-col__body { flex: 1; overflow-y: auto; min-height: 0; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-.kan-card { background: var(--glass-2); border: 1px solid var(--glass-border); border-radius: var(--r-sm); padding: 13px; box-shadow: var(--glass-edge); cursor: grab; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.kan-card { background: var(--grad-surface), var(--glass-2); border: 1px solid var(--glass-border); border-radius: var(--r-sm); padding: 13px; box-shadow: var(--glass-edge); cursor: grab; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
 .kan-card:hover { border-color: var(--gold-line); transform: translateY(-1px); }
 
 /* ----------------------------------------------------------------------------
@@ -401,7 +423,7 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
   cursor: pointer; transition: transform var(--dur) var(--ease-out), border-color var(--dur) var(--ease);
 }
 .ai-dock:hover { transform: translateY(-2px); border-color: var(--gold); }
-.ai-dock__spark { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(140deg, #E8C86A, var(--gold) 60%, #9E7E3C); display: grid; place-items: center; color: #000; }
+.ai-dock__spark { width: 30px; height: 30px; border-radius: 50%; background: var(--grad-gold-deep); display: grid; place-items: center; color: #000; }
 .ai-dock__label { font-size: 13px; font-weight: 600; }
 .ai-dock__hint { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-family: var(--f-num); }
 /* En móvil el dock tapa el botón de enviar del chat: se oculta */
@@ -479,3 +501,38 @@ body.glass-lite .os-topbar { background: var(--bg-0); }
 body.glass-lite .card, body.glass-lite .surface, body.glass-lite .metric,
 body.glass-lite .kan-col { background: var(--bg-2); }
 body.glass-lite .kan-card { background: var(--bg-3); }
+
+/* ----------------------------------------------------------------------------
+   20. SQUIRCLE (Progressive Enhancement — Chrome/WebView 139+)
+   ---------------------------------------------------------------------------- */
+@supports (corner-shape: squircle) {
+  *, *::before, *::after { corner-shape: squircle; }
+
+  /* Círculos puros → redondo */
+  .avatar, .dot, .tl-item__dot, .ai-dock__spark,
+  .m-headbtn, .m-ptr .spin, .m-unread-dot,
+  .c-back, .c-act, .c-plus, .c-send, .sheet__x,
+  .sel-check, .sch-del, .toggle-sw::after,
+  .c-reply__x, .c-search__x, .audio-player__btn,
+  .sp-progress-lg__stages span,
+  .rec-bar .rec-dot, .rec-bar .rec-send, .rec-bar .rec-cancel,
+  .pin-dot .circ,
+  .m-avatar__st,
+  [style*="border-radius:50%"], [style*="border-radius: 50%"]
+  { corner-shape: round; }
+
+  /* Cápsulas 999px → redondo */
+  .chip, .os-search, .os-nav__badge, .kan-col__count, .os-toast, .ai-dock,
+  ::-webkit-scrollbar-thumb,
+  .m-chip, .m-badge, .m-tag, .m-vendor, .m-nav__dot,
+  .sp-pbar, .sp-pbar i, .m-card__progress .sp-pbar,
+  .sp-progress-lg__track, .sp-progress-lg__track i,
+  .cop-badge, .bub-reaction, .m-toast, .m-arch-btn .badge,
+  .perm-banner button, .perm-row .perm-act, .upd-bar, .upd-bar__fill,
+  .c-date, .c-quick button,
+  [style*="border-radius:999"], [style*="border-radius: 999"]
+  { corner-shape: round; }
+
+  /* PLAN B (solo si el anillo mask de .m-card.unread::after baila):
+     .m-card.unread::after { corner-shape: round; } */
+}

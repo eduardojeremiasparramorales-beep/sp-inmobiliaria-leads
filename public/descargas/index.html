@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0A0A0A">
 <title>Descargar Leons Group</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:wght@300..700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0A0A0A; --gold:#C8A45A; --gold-2:#A8872B; --gold-3:#E8C86A;
@@ -12,14 +15,17 @@
     --glass:rgba(23,23,23,.58); --glass-2:rgba(28,28,28,.72);
     --glass-border:rgba(248,248,248,.08); --blur-sm:saturate(1.2) blur(10px);
     --green:#4E7B46;
+    --grad-gold:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42);
+    --grad-gold-text:linear-gradient(135deg,#E8C86A,var(--gold) 55%,#A8872B);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{
     min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--txt);
+    font-optical-sizing:auto;letter-spacing:-0.011em;
     display:flex;align-items:center;justify-content:center;padding:24px;
     background:
-      radial-gradient(700px 500px at 85% -10%, rgba(200,164,90,.06), transparent 60%),
-      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.05), transparent 60%),
+      radial-gradient(700px 500px at 85% -10%, rgba(200,164,90,.05), transparent 60%),
+      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.04), transparent 60%),
       var(--bg);
   }
   .card{
@@ -31,13 +37,13 @@
   .logo{width:76px;height:76px;border-radius:20px;margin:0 auto 14px;overflow:hidden;
     box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(200,164,90,.15)}
   .logo img{width:100%;height:100%;object-fit:cover}
-  h1{font-family:Georgia,serif;font-size:1.25rem;letter-spacing:.12em;margin-bottom:2px;
-    background:linear-gradient(135deg,var(--gold-3),var(--gold),var(--gold-2));
+  h1{font-family:'Cinzel',Georgia,serif;font-size:1.25rem;letter-spacing:.12em;margin-bottom:2px;
+    background:var(--grad-gold-text);
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
   .ver{font-size:.8rem;color:var(--txt-2);margin-bottom:22px}
   .btn{
     display:block;width:100%;padding:16px;border-radius:14px;border:none;cursor:pointer;
-    background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#0A0A0A;
+    background:var(--grad-gold);color:#0A0A0A;
     font-size:1rem;font-weight:700;font-family:inherit;letter-spacing:.03em;
     text-decoration:none;margin-bottom:20px;
   }
@@ -50,6 +56,8 @@
     background:rgba(200,164,90,.08);border:1px solid rgba(200,164,90,.22);color:var(--txt-2);text-align:left;line-height:1.5}
   .nota b{color:var(--gold)}
   .foot{margin-top:18px;font-size:.62rem;color:var(--txt-3);letter-spacing:.08em}
+  @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}
+    .logo,[style*="border-radius:50%"],[style*="border-radius: 50%"]{corner-shape:round}}
 </style>
 </head>
 <body>

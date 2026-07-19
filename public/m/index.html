@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:wght@300..700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/os/sp-os.css">
 <style>
   /* ══════════ SP OS · Mobile Experience ══════════ */
@@ -115,7 +115,7 @@
   /* SP Progress bar — definitiva */
   .m-card__progress{ margin-top:6px; padding-top:6px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px; }
   .m-card__progress .sp-pbar{ flex:1; height:4px; border-radius:999px; background:var(--bg-4); overflow:hidden; }
-  .m-card__progress .sp-pbar i{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#B89840,var(--gold)); transition:width .6s var(--ease); }
+  .m-card__progress .sp-pbar i{ display:block; height:100%; border-radius:999px; background:var(--grad-gold-bar); transition:width .6s var(--ease); }
   .m-card__progress .sp-pct{ font-family:var(--f-title); font-size:11px; font-weight:700; color:var(--gold); letter-spacing:.04em; flex-shrink:0; }
 
   .t-interesado{ background:var(--blue-soft); color:var(--blue); } .t-negociacion{ background:var(--gold-soft); color:var(--gold); }
@@ -124,7 +124,7 @@
   .st-disponible{ background:#57C168; } .st-esperando{ background:var(--amber); } .st-inactivo{ background:var(--text-4); } .st-caliente{ background:var(--red); }
 
   /* ── FAB ── */
-  .m-fab{ position:absolute; right:18px; bottom:calc(var(--nav-h) + var(--safe-b) + 14px); width:56px; height:56px; border-radius:19px; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; display:grid; place-items:center; box-shadow:0 10px 30px rgba(200,164,90,.35), inset 0 1px 0 rgba(255,255,255,.3); z-index:15; transition:transform .18s var(--spring); }
+   .m-fab{ position:absolute; right:18px; bottom:calc(var(--nav-h) + var(--safe-b) + 14px); width:56px; height:56px; border-radius:19px; background:var(--grad-gold); color:#0A0A0A; border:none; display:grid; place-items:center; box-shadow:0 10px 30px rgba(200,164,90,.35), inset 0 1px 0 rgba(255,255,255,.3); z-index:15; transition:transform .18s var(--spring); }
   .m-fab:active{ transform:scale(.9); }
   .m-fab svg{ width:26px; height:26px; }
 
@@ -178,7 +178,7 @@
   .c-pill:focus-within{ border-color:var(--gold-line); }
   .c-pill textarea{ flex:1; border:none; background:none; outline:none; color:var(--text); font-size:15px; line-height:1.35; padding:11px 6px; max-height:110px; resize:none; }
   .c-pill textarea::placeholder{ color:var(--text-3); }
-  .c-send{ width:44px; height:44px; border-radius:50%; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; display:grid; place-items:center; flex-shrink:0; transition:transform .15s var(--spring); }
+  .c-send{ width:44px; height:44px; border-radius:50%; background:var(--grad-gold); color:#0A0A0A; border:none; display:grid; place-items:center; flex-shrink:0; transition:transform .15s var(--spring); }
   .c-send:active{ transform:scale(.88); }
   .c-send svg{ width:21px; height:21px; }
 
@@ -228,7 +228,7 @@
   /* Perfil del lead */
   .lp-head{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:9px; padding-bottom:16px; }
   .lp-head .m-avatar{ width:72px; height:72px; border-radius:22px; font-size:26px; }
-  .lp-name{ font-family:var(--f-title); font-size:20px; font-weight:600; background:linear-gradient(135deg,var(--gold),#9E7E3C); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .lp-name{ font-family:var(--f-title); font-size:20px; font-weight:600; background:var(--grad-gold-text); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
   .lp-actions{ display:flex; gap:10px; margin-top:4px; }
   .lp-actions button{ width:46px; height:46px; border-radius:15px; background:var(--bg-3); border:1px solid var(--border-soft); color:var(--gold); display:grid; place-items:center; }
   .lp-actions button svg{ width:21px; height:21px; }
@@ -267,7 +267,7 @@
   .cop-sent{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#83B778; }
   .cop-obj{ display:flex; gap:8px; font-size:13px; color:var(--text-2); margin-bottom:6px; }
   .cop-obj::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--amber); margin-top:6px; flex-shrink:0; }
-  .cop-use{ margin-top:9px; width:100%; height:40px; border-radius:13px; background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42); color:#0A0A0A; border:none; font-weight:700; font-size:13px; }
+   .cop-use{ margin-top:9px; width:100%; height:40px; border-radius:13px; background:var(--grad-gold); color:#0A0A0A; border:none; font-weight:700; font-size:13px; }
 
   /* Calendario */
   .cal-nav{ background:var(--bg-3);border:1px solid var(--border);color:var(--text-2);width:32px;height:32px;border-radius:10px;font-size:16px;cursor:pointer;display:grid;place-items:center }
@@ -472,9 +472,9 @@
   .upd-card .upd-ver{ font-size:12px; color:var(--text-3); margin-bottom:14px; }
   .upd-card .upd-notas{ width:100%; text-align:left; font-size:12.5px; color:var(--text-2); line-height:1.5; background:var(--bg-3); border-radius:12px; padding:10px 12px; margin-bottom:16px; white-space:pre-line; max-height:120px; overflow-y:auto; }
   .upd-bar{ width:100%; height:10px; border-radius:999px; background:var(--bg-4); overflow:hidden; margin-bottom:8px; border:1px solid var(--border-soft); }
-  .upd-bar__fill{ height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,#E8C86A,var(--gold) 60%,#B08D42); transition:width .25s ease; box-shadow:0 0 12px rgba(200,164,90,.5); }
+  .upd-bar__fill{ height:100%; width:0%; border-radius:999px; background:var(--grad-gold-bar); transition:width .25s ease; box-shadow:0 0 12px rgba(200,164,90,.5); }
   .upd-pct{ font-size:12px; color:var(--text-3); min-height:16px; margin-bottom:14px; }
-  .upd-btn{ width:100%; height:48px; border:none; border-radius:12px; background:linear-gradient(135deg,#E8C86A,var(--gold) 55%,#B08D42); color:#0A0A0A; font-family:inherit; font-size:15px; font-weight:700; letter-spacing:.03em; cursor:pointer; }
+  .upd-btn{ width:100%; height:48px; border:none; border-radius:12px; background:var(--grad-gold); color:#0A0A0A; font-family:inherit; font-size:15px; font-weight:700; letter-spacing:.03em; cursor:pointer; }
   .upd-btn:active{ transform:scale(.98); }
   .upd-btn:disabled{ opacity:.5; }
   .upd-later{ margin-top:10px; background:none; border:none; color:var(--text-3); font-family:inherit; font-size:13px; cursor:pointer; padding:6px; }
@@ -540,7 +540,7 @@
   <section class="screen screen--chat" id="scEquipo">
     <header class="c-head">
       <button class="c-back" id="eqBack"></button>
-      <div class="m-avatar" style="width:38px;height:38px;background:linear-gradient(140deg,#E8C86A,#C8A45A 60%,#9E7E3C);color:#0A0A0A;font-size:16px;border-radius:12px;display:grid;place-items:center">🦁</div>
+      <div class="m-avatar" style="width:38px;height:38px;background:var(--grad-gold-deep);color:#0A0A0A;font-size:16px;border-radius:12px;display:grid;place-items:center">🦁</div>
       <div style="min-width:0;flex:1">
         <div style="font-size:15px;font-weight:600;color:var(--gold)">Equipo Leons</div>
         <div style="font-size:11px;color:var(--text-3)">Chat interno — los clientes no lo ven</div>
@@ -549,7 +549,7 @@
     <div class="m-scroll" id="eqMsgs" style="padding:12px 14px"></div>
     <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border)">
       <textarea id="eqInput" placeholder="Mensaje al equipo…" rows="1" style="flex:1;min-height:40px;max-height:100px;padding:10px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
-      <button id="eqSend" style="width:42px;height:42px;border-radius:50%;border:none;background:linear-gradient(135deg,#E8C86A,#C8A45A);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
+      <button id="eqSend" style="width:42px;height:42px;border-radius:50%;border:none;background:var(--grad-gold);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
     </div>
   </section>
 
@@ -558,7 +558,7 @@
     <div style="width:72px;height:72px;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.5),0 0 0 1px rgba(200,164,90,.28)"><img src="/icons/logo.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
     <div style="font-family:var(--f-title);font-size:16px;letter-spacing:.08em;color:var(--gold)">LEONS GROUP</div>
     <div style="font-size:13px;color:var(--text-2)">Desbloquea con tu huella</div>
-    <button id="bioUnlock" style="margin-top:8px;height:46px;padding:0 28px;border:none;border-radius:12px;background:linear-gradient(135deg,#E8C86A,#C8A45A);color:#0A0A0A;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">🔓 Desbloquear</button>
+    <button id="bioUnlock" style="margin-top:8px;height:46px;padding:0 28px;border:none;border-radius:12px;background:var(--grad-gold);color:#0A0A0A;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">🔓 Desbloquear</button>
   </div>
 
   <!-- ══ Bottom Nav ══ -->
@@ -1166,7 +1166,7 @@ function equipoRowHTML(){
   const unread=teamMsgs.filter(m=>m.id>lastRead&&!esMio(m)).length;
   const last=teamMsgs.length?teamMsgs[teamMsgs.length-1]:null;
   return `<div class="m-row" style="padding:0"><div class="m-card" id="equipoRow" style="cursor:pointer;border-color:var(--gold-line)">
-    <div class="m-avatar" style="background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#9E7E3C);color:#0A0A0A;font-size:15px">🦁</div>
+    <div class="m-avatar" style="background:var(--grad-gold-deep);color:#0A0A0A;font-size:15px">🦁</div>
     <div class="m-card__body">
       <div class="m-card__l1"><span class="m-card__name" style="color:var(--gold)">Equipo Leons</span><span class="m-card__time">${last?horaCorta(last.created_at):''}</span></div>
       <div class="m-card__l2"><span class="m-card__msg">${last?esc((last.from_nombre?last.from_nombre+': ':'')+last.body).slice(0,60):'Chat interno del equipo'}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
