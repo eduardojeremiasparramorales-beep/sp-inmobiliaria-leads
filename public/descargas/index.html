@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0A0A0A">
+<title>Descargar Leons Group</title>
+<style>
+  :root{
+    --bg:#0A0A0A; --gold:#C8A45A; --gold-2:#A8872B; --gold-3:#E8C86A;
+    --txt:#F8F8F8; --txt-2:rgba(248,248,248,.6); --txt-3:rgba(248,248,248,.35);
+    --glass:rgba(23,23,23,.58); --glass-2:rgba(28,28,28,.72);
+    --glass-border:rgba(248,248,248,.08); --blur-sm:saturate(1.2) blur(10px);
+    --green:#4E7B46;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{
+    min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--txt);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    background:
+      radial-gradient(700px 500px at 85% -10%, rgba(200,164,90,.06), transparent 60%),
+      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.05), transparent 60%),
+      var(--bg);
+  }
+  .card{
+    width:100%;max-width:420px;padding:32px 26px;border-radius:22px;text-align:center;
+    background:var(--glass-2);border:1px solid var(--glass-border);
+    backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
+    box-shadow:inset 0 1px 0 rgba(248,248,248,.06), 0 12px 40px rgba(0,0,0,.4);
+  }
+  .logo{width:76px;height:76px;border-radius:20px;margin:0 auto 14px;overflow:hidden;
+    box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(200,164,90,.15)}
+  .logo img{width:100%;height:100%;object-fit:cover}
+  h1{font-family:Georgia,serif;font-size:1.25rem;letter-spacing:.12em;margin-bottom:2px;
+    background:linear-gradient(135deg,var(--gold-3),var(--gold),var(--gold-2));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ver{font-size:.8rem;color:var(--txt-2);margin-bottom:22px}
+  .btn{
+    display:block;width:100%;padding:16px;border-radius:14px;border:none;cursor:pointer;
+    background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#0A0A0A;
+    font-size:1rem;font-weight:700;font-family:inherit;letter-spacing:.03em;
+    text-decoration:none;margin-bottom:20px;
+  }
+  .btn:active{opacity:.85;transform:scale(.98)}
+  .pasos{text-align:left;font-size:.82rem;color:var(--txt-2);line-height:1.55}
+  .pasos b{color:var(--txt)}
+  .pasos li{margin-bottom:9px;padding-left:2px}
+  .pasos ol{padding-left:20px}
+  .nota{margin-top:16px;padding:11px 13px;border-radius:12px;font-size:.75rem;
+    background:rgba(200,164,90,.08);border:1px solid rgba(200,164,90,.22);color:var(--txt-2);text-align:left;line-height:1.5}
+  .nota b{color:var(--gold)}
+  .foot{margin-top:18px;font-size:.62rem;color:var(--txt-3);letter-spacing:.08em}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo"><img src="/icons/logo.png" alt="Leons Group"></div>
+    <h1>LEONS GROUP</h1>
+    <div class="ver" id="ver">Panel de asesores — Android</div>
+    <a class="btn" id="btnDescargar" href="/descargas/leons-group.apk" download>⬇ Descargar e instalar</a>
+    <div class="pasos">
+      <ol>
+        <li>Toca <b>Descargar e instalar</b> (si estás en WhatsApp, primero abre esta página en <b>Chrome</b>: menú ⋮ → "Abrir en Chrome").</li>
+        <li>Cuando termine la descarga, <b>baja la barra de notificaciones y toca el archivo</b> (o Chrome → ⋮ → Descargas).</li>
+        <li>Si el teléfono pregunta, activa <b>"Permitir instalar aplicaciones desconocidas"</b> para Chrome y vuelve atrás.</li>
+        <li>Toca <b>Instalar</b> y abre la app. Entra con tu teléfono y PIN.</li>
+      </ol>
+    </div>
+    <div class="nota">
+      <b>¿Dice "App no instalada"?</b> Tienes una versión vieja con otra firma: desinstala Leons Group primero y repite. Esto pasa <b>solo esta vez</b> — desde esta versión la app se actualiza sola, sin desinstalar nada.
+    </div>
+    <div class="foot">SERGIO PARRA INVERSIONES & FINCA RAÍZ</div>
+  </div>
+<script>
+  // Mostrar versión y tamaño reales desde version.json
+  fetch('/api/app/version').then(r=>r.ok?r.json():null).then(v=>{
+    if(!v) return;
+    document.getElementById('ver').textContent =
+      'Versión '+v.versionName+' · '+(v.size/1048576).toFixed(1)+' MB · '+(v.fecha||'');
+  }).catch(()=>{});
+</script>
+</body>
+</html>
