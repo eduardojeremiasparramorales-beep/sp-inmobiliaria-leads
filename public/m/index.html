@@ -480,6 +480,9 @@
   .upd-later{ margin-top:10px; background:none; border:none; color:var(--text-3); font-family:inherit; font-size:13px; cursor:pointer; padding:6px; }
 
   .hidden{ display:none !important; }
+  /* El atributo hidden debe ganar SIEMPRE, incluso sobre display:flex de la clase
+     (sin esto, banners/overlays con hidden quedan visibles) */
+  [hidden]{ display:none !important; }
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
   .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
 </style>
@@ -532,6 +535,31 @@
       <button class="upd-later" id="updLater" hidden>Más tarde</button>
     </div>
   </section>
+
+  <!-- ══ Chat interno Equipo Leons ══ -->
+  <section class="screen screen--chat" id="scEquipo">
+    <header class="c-head">
+      <button class="c-back" id="eqBack"></button>
+      <div class="m-avatar" style="width:38px;height:38px;background:linear-gradient(140deg,#E8C86A,#C8A45A 60%,#9E7E3C);color:#0A0A0A;font-size:16px;border-radius:12px;display:grid;place-items:center">🦁</div>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:15px;font-weight:600;color:var(--gold)">Equipo Leons</div>
+        <div style="font-size:11px;color:var(--text-3)">Chat interno — los clientes no lo ven</div>
+      </div>
+    </header>
+    <div class="m-scroll" id="eqMsgs" style="padding:12px 14px"></div>
+    <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border)">
+      <textarea id="eqInput" placeholder="Mensaje al equipo…" rows="1" style="flex:1;min-height:40px;max-height:100px;padding:10px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
+      <button id="eqSend" style="width:42px;height:42px;border-radius:50%;border:none;background:linear-gradient(135deg,#E8C86A,#C8A45A);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
+    </div>
+  </section>
+
+  <!-- ══ Bloqueo con huella ══ -->
+  <div id="bioLock" hidden style="position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(10,10,10,.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)">
+    <div style="width:72px;height:72px;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.5),0 0 0 1px rgba(200,164,90,.28)"><img src="/icons/logo.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+    <div style="font-family:var(--f-title);font-size:16px;letter-spacing:.08em;color:var(--gold)">LEONS GROUP</div>
+    <div style="font-size:13px;color:var(--text-2)">Desbloquea con tu huella</div>
+    <button id="bioUnlock" style="margin-top:8px;height:46px;padding:0 28px;border:none;border-radius:12px;background:linear-gradient(135deg,#E8C86A,#C8A45A);color:#0A0A0A;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">🔓 Desbloquear</button>
+  </div>
 
   <!-- ══ Bottom Nav ══ -->
   <nav class="m-nav" id="nav"></nav>
@@ -857,6 +885,91 @@ function initUpdateResume(){
   }catch(e){}
 }
 
+/* ════════ Chat interno Equipo Leons (canal general, SSE) ════════ */
+let teamMsgs=[], _eqAbierto=false;
+function esMio(m){
+  if(!me) return false;
+  if(me.rol==='admin') return Number(m.from_vendedor_id)===0;
+  return Number(m.from_vendedor_id)===Number(me.vendedorId);
+}
+function eqMsgHTML(m){
+  const mio=esMio(m);
+  const hora=horaCorta(m.created_at);
+  return `<div class="msg-wrap" style="justify-content:${mio?'flex-end':'flex-start'};display:flex;margin-bottom:8px">
+    <div class="bub bub--${mio?'out':'in'}" style="max-width:80%">
+      ${!mio?`<div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:2px">${esc(m.from_nombre||'Asesor')}</div>`:''}
+      <span class="bub-body">${esc(m.body)}</span>
+      <div class="bub__t">${hora}</div>
+    </div></div>`;
+}
+function renderEquipo(){
+  const box=$('#eqMsgs'); if(!box) return;
+  box.innerHTML=teamMsgs.length?teamMsgs.map(eqMsgHTML).join(''):'<div class="m-empty" style="min-height:200px"><p>Escribe el primer mensaje al equipo 🦁</p></div>';
+  box.scrollTop=box.scrollHeight;
+}
+async function cargarEquipo(){
+  const d=await api('/api/equipo/mensajes');
+  if(Array.isArray(d)) teamMsgs=d;
+}
+function marcarEquipoLeido(){
+  if(teamMsgs.length) localStorage.setItem('sp_equipo_last_read', String(teamMsgs[teamMsgs.length-1].id));
+}
+async function abrirEquipo(){
+  haptic(8); _eqAbierto=true;
+  $('#scEquipo').classList.add('show');
+  await cargarEquipo(); renderEquipo(); marcarEquipoLeido(); renderList();
+}
+function cerrarEquipo(){ _eqAbierto=false; $('#scEquipo').classList.remove('show'); marcarEquipoLeido(); renderList(); }
+async function enviarEquipo(){
+  const inp=$('#eqInput'); const body=(inp.value||'').trim(); if(!body) return;
+  inp.value=''; haptic([10,20]);
+  const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+  if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); }
+  else toast('Error al enviar');
+}
+function initEquipo(){
+  const back=$('#eqBack'); if(back){ back.innerHTML=I(SVG.back,22); back.onclick=cerrarEquipo; }
+  const send=$('#eqSend'); if(send){ send.innerHTML=I(SVG.send,19); send.onclick=enviarEquipo; }
+  const inp=$('#eqInput');
+  if(inp) inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviarEquipo(); } });
+  cargarEquipo().then(renderList);
+}
+
+/* ════════ Bloqueo con huella (BiometricLock, solo app nativa) ════════ */
+async function bioDisponible(){
+  try{
+    if(!esNativo()||!window.Capacitor.isPluginAvailable('BiometricLock')) return false;
+    const r=await window.Capacitor.Plugins.BiometricLock.isAvailable();
+    return !!r.value;
+  }catch(e){ return false; }
+}
+async function bioActivado(){
+  try{ const r=await window.Capacitor.Plugins.Preferences.get({key:'sp_bio_lock'}); return r.value==='1'; }catch(e){ return false; }
+}
+async function pedirDesbloqueo(){
+  const ov=$('#bioLock'); if(!ov) return;
+  ov.hidden=false;
+  const intentar=async()=>{
+    try{
+      await window.Capacitor.Plugins.BiometricLock.authenticate();
+      ov.hidden=true; haptic([10,20]);
+    }catch(e){ /* canceló o falló — el overlay persiste, botón reintenta */ }
+  };
+  $('#bioUnlock').onclick=intentar;
+  intentar();
+}
+async function initBioLock(){
+  if(!esNativo()) return;
+  if(await bioActivado() && await bioDisponible()){
+    pedirDesbloqueo();
+  }
+  try{
+    window.Capacitor.Plugins.App.addListener('resume', async ()=>{
+      if(await bioActivado() && await bioDisponible() && $('#bioLock').hidden) pedirDesbloqueo();
+    });
+  }catch(e){}
+}
+
 /* ════════ Permisos del dispositivo ════════ */
 const PERMISOS=[
   {k:'mic',   ic:'🎙️', nombre:'Micrófono',      desc:'Grabar y enviar notas de voz a tus clientes', query:'microphone'},
@@ -976,10 +1089,12 @@ async function init(){
   }
   wire();
   initFileInput();
-  initScheduled();
+  if(!DEMO) initScheduled();
   initRecordatorios();
   if(!DEMO) cargarNotifBadge();
   if(!DEMO) initPermisos();
+  if(!DEMO) initEquipo();
+  initBioLock();
   setTimeout(suscribirPush, 3000);
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
@@ -999,22 +1114,62 @@ function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.et
   return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
 
 /* ════════ Lista ════════ */
+let _msgResults=[];
+function msgResultsHTML(){
+  if(term.length<3||!_msgResults.length) return '';
+  const t=term.toLowerCase();
+  return `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);padding:12px 18px 6px">Mensajes</div>`+
+    _msgResults.map(r=>{
+      const body=String(r.body||''); const i=body.toLowerCase().indexOf(t);
+      const frag=i>=0?esc(body.slice(Math.max(0,i-25),i))+'<b style="color:var(--gold)">'+esc(body.slice(i,i+term.length))+'</b>'+esc(body.slice(i+term.length,i+term.length+45)):esc(body.slice(0,70));
+      return `<div class="m-card" data-msgres="${r.lead_id}" style="margin:0 14px 8px;padding:10px 14px;gap:10px;display:flex;align-items:center;cursor:pointer">
+        <div class="m-avatar" style="width:34px;height:34px;border-radius:10px;font-size:11px;flex-shrink:0;background:${avatarColor(r.customer_name||'')}">${initials(r.customer_name)}</div>
+        <div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600">${esc(r.customer_name||'Cliente')} <span style="font-weight:400;color:var(--text-3);font-size:11px">· ${horaCorta(r.timestamp)}</span></div>
+        <div style="font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.direction==='outgoing'?'Tú: ':''}${frag}</div></div></div>`;
+    }).join('');
+}
+function wireMsgResults(box){
+  box.querySelectorAll('[data-msgres]').forEach(el=>el.onclick=async()=>{
+    haptic(8); const leadId=Number(el.dataset.msgres); const q=term;
+    await abrirChat(leadId);
+    setTimeout(()=>{ const s=$('#cSearch'); const i=$('#cSearchInput'); if(s&&i){ s.classList.add('show'); i.value=q; i.dispatchEvent(new Event('input')); } },400);
+  });
+}
+function equipoRowHTML(){
+  if(showArchivados||DEMO) return '';
+  const lastRead=Number(localStorage.getItem('sp_equipo_last_read')||0);
+  const unread=teamMsgs.filter(m=>m.id>lastRead&&!esMio(m)).length;
+  const last=teamMsgs.length?teamMsgs[teamMsgs.length-1]:null;
+  return `<div class="m-row" style="padding:0"><div class="m-card" id="equipoRow" style="cursor:pointer;border-color:var(--gold-line)">
+    <div class="m-avatar" style="background:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#9E7E3C);color:#0A0A0A;font-size:15px">🦁</div>
+    <div class="m-card__body">
+      <div class="m-card__l1"><span class="m-card__name" style="color:var(--gold)">Equipo Leons</span><span class="m-card__time">${last?horaCorta(last.created_at):''}</span></div>
+      <div class="m-card__l2"><span class="m-card__msg">${last?esc((last.from_nombre?last.from_nombre+': ':'')+last.body).slice(0,60):'Chat interno del equipo'}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
+    </div>
+  </div></div>`;
+}
 function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div class="m-ptr" id="ptr"><span class="spin"></span></div>';
   const items = showArchivados ? leadsArchivados() : leadsFiltrados();
   const archBtn = archivadosCount > 0 ? `<div class="m-arch-btn" id="archToggle">${I(SVG.archive,17)}<span>Archivados</span><span class="badge">${archivadosCount}</span></div>` : '';
+  const equipoRow = term ? '' : equipoRowHTML();
+  const msgRes = msgResultsHTML();
   if(!items.length && showArchivados){
     box.innerHTML = ptr + archBtn + `<div class="m-empty"><div class="ic">${I(SVG.archive,28)}</div><h3>Sin archivados</h3><p>Los leads que archives aparecerán aquí.</p></div>`;
     const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
     return;
   }
   if(!items.length){
-    box.innerHTML = ptr + archBtn + `<div class="m-empty"><div class="ic">${I(SVG.chat,28)}</div><h3>Sin conversaciones</h3><p>${leads.length?'No hay resultados para este filtro.':'Aquí aparecerán tus leads asignados.'}</p></div>`;
+    box.innerHTML = ptr + equipoRow + archBtn + `<div class="m-empty"><div class="ic">${I(SVG.chat,28)}</div><h3>Sin conversaciones</h3><p>${leads.length?'No hay resultados para este filtro.':'Aquí aparecerán tus leads asignados.'}</p></div>` + msgRes;
     const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
+    const eq=document.getElementById('equipoRow'); if(eq) eq.onclick=abrirEquipo;
+    wireMsgResults(box);
     return;
   }
-  box.innerHTML = ptr + archBtn + items.map((l,idx)=>cardHTML(l,idx)).join('');
-  box.querySelectorAll('.m-row').forEach(row=>wireCard(row));
+  box.innerHTML = ptr + equipoRow + archBtn + items.map((l,idx)=>cardHTML(l,idx)).join('') + msgRes;
+  box.querySelectorAll('.m-row[data-id]').forEach(row=>wireCard(row));
   const at = document.getElementById('archToggle'); if(at) at.onclick=toggleArchivados;
+  const eq=document.getElementById('equipoRow'); if(eq) eq.onclick=abrirEquipo;
+  wireMsgResults(box);
 }
 function updateCardBadges(){ document.querySelectorAll('.m-row').forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); card.classList.toggle('unread',unread>0); const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
 
@@ -1449,18 +1604,23 @@ function showDeleteOptions(msgId){
   if(isOut) $('#delAll').onclick=()=>{ closeSheet(); selDelete(msgId,'everyone'); };
 }
 async function selForward(msgId){
-  let texts=[];
-  if(msgId){ const m=currentMsgs.find(x=>String(x.id)===String(msgId)); if(m&&m.body) texts=[m.body]; }
-  else texts=getSelTexts();
-  if(!texts.length){ toast('Sin contenido'); clearSelection(); return; }
+  // Reenvío server-side: soporta TEXTO y MEDIA (fotos, audios, videos, docs)
+  let ids=[];
+  if(msgId){ ids=[msgId]; }
+  else ids=[...selIds];
+  const validos=ids.map(id=>currentMsgs.find(x=>String(x.id)===String(id))).filter(m=>m&&(m.body||m.media_type)&&String(m.id).indexOf('temp_')!==0);
+  if(!validos.length){ toast('Sin contenido'); clearSelection(); return; }
   const destinos=leads.filter(l=>l.id!==(current?current.id:null));
   openSheet('Reenviar a…', `<div style="max-height:300px;overflow-y:auto">${destinos.length?destinos.map(l=>`<div class="m-row" style="padding:0;border:none"><div class="m-card" style="border:none;padding:10px 14px;gap:10px" data-fwd="${l.id}"><div class="m-avatar" style="width:36px;height:36px;border-radius:10px;font-size:12px;background:${avatarColor(l.customer_name||'')}">${initials(l.customer_name)}</div><div style="font-size:14px;font-weight:500">${esc(l.customer_name||'Cliente')}</div></div></div>`).join(''):'<div style="text-align:center;color:var(--text-3);padding:20px">Sin otros leads disponibles</div>'}</div>`);
   document.querySelectorAll('[data-fwd]').forEach(el=>el.addEventListener('click',async()=>{
     const destId=Number(el.dataset.fwd); closeSheet(); toast('Reenviando...');
-    for(const t of texts){
-      await api(`/api/leads/${destId}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:'✉️ Reenviado: '+t})});
+    let ok=0;
+    for(const m of validos){
+      const r=await api(`/api/messages/${m.id}/forward`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({toLeadId:destId})});
+      if(r) ok++;
     }
-    if(!msgId) clearSelection(); toast('Reenviado');
+    if(!msgId) clearSelection();
+    toast(ok===validos.length?'Reenviado':ok?'Reenviado parcialmente':'Error al reenviar');
   }));
 }
 /* ════════ Context menu (long-press) ════════ */
@@ -1475,6 +1635,8 @@ function showCtxMenu(msgId){
     ${out&&hasText?C(I(SVG.edit,18),'Editar','ctxEdit'):''}
     ${hasText?C(I(SVG.copy,18),'Copiar texto','ctxCopy'):''}
     ${C(I(SVG.send,18),'Reenviar','ctxForward')}
+    ${C('<span style="font-size:16px">⭐</span>', m.starred_at?'Quitar destacado':'Destacar','ctxStar')}
+    ${hasText&&m.direction==='incoming'?C('<span style="font-size:15px">🌐</span>','Traducir','ctxTranslate'):''}
     ${C(I(SVG.arrowUp,18),'Compartir','ctxShare')}
     ${out?C(I(SVG.info||'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01',18),'Info del mensaje','ctxInfo'):''}
     ${C(I(SVG.reply,18),'Responder','ctxReply')}
@@ -1485,6 +1647,9 @@ function showCtxMenu(msgId){
   if(out&&hasText){ $('#ctxEdit').onclick=()=>{ closeSheet(); startEditMsg(msgId); }; }
   if(hasText){ $('#ctxCopy').onclick=()=>{ closeSheet(); selCopy([m.body]); }; }
   $('#ctxForward').onclick=()=>{ closeSheet(); selForward(msgId); };
+  $('#ctxStar').onclick=async()=>{ closeSheet(); const r=await api('/api/messages/'+msgId+'/star',{method:'POST'}); if(r){ m.starred_at=r.starred?new Date().toISOString():null; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); toast(r.starred?'Mensaje destacado ⭐':'Destacado quitado'); } };
+  const ctxTr=$('#ctxTranslate');
+  if(ctxTr) ctxTr.onclick=async()=>{ closeSheet(); toast('Traduciendo…'); const r=await api('/api/mensajes/'+msgId+'/traducir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({a:'español'})}); if(r&&r.traduccion){ m.translated_body=r.traduccion; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } else toast('No se pudo traducir'); };
   $('#ctxShare').onclick=()=>{ closeSheet(); selShare([m.body||'']); };
   if(out){ $('#ctxInfo').onclick=()=>{ closeSheet(); showMsgInfo(msgId); }; }
   $('#ctxReply').onclick=()=>{ closeSheet(); setReply(msgId); };
@@ -1584,10 +1749,12 @@ function wireMsgLongPress(wrap){
   bub.addEventListener('touchmove',onMove,{passive:true});
   bub.addEventListener('touchend',onEnd);
 }
-/* ════════ Scheduled Messages ════════ */
+/* ════════ Scheduled Messages — en SERVIDOR (salen aunque la app esté cerrada) ════════ */
 function abrirProgramar(){
+  if(!current){ toast('Abre un chat primero'); return; }
   openSheet('Mensaje programado', `
     <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:12px;color:var(--text-3)">Se enviará automáticamente aunque cierres la app 🚀</div>
       <textarea id="schBody" placeholder="Mensaje a enviar..." style="width:100%;min-height:70px;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
       <input type="datetime-local" id="schDate" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
       <button class="cop-use" id="schSave">Programar</button>
@@ -1595,59 +1762,55 @@ function abrirProgramar(){
       <div class="rec-list" id="schList"></div></div>
     </div>`);
   renderSchList();
-  $('#schSave').onclick=()=>{
+  $('#schSave').onclick=async()=>{
     const body=($('#schBody').value||'').trim(); const dt=$('#schDate').value;
     if(!body||!dt){ toast('Completa mensaje y fecha'); return; }
-    const s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]');
-    s.push({id:Date.now(),body,dt,leadId:current?current.id:null,leadName:current?current.customer_name:''});
-    localStorage.setItem('sp_scheduled',JSON.stringify(s));
-    $('#schBody').value=''; $('#schDate').value=''; renderSchList(); toast('Programado');
+    const r=await api('/api/programados',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({leadId:current.id,body,sendAt:new Date(dt).toISOString()})});
+    if(r){ $('#schBody').value=''; $('#schDate').value=''; renderSchList(); toast('Programado en el servidor ✓'); haptic([10,20]); }
+    else toast('Error al programar');
   };
 }
-function renderSchList(){
-  const s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]'); const box=$('#schList'); if(!box) return;
+async function renderSchList(){
+  const box=$('#schList'); if(!box) return;
+  const s=await api('/api/programados')||[];
   if(!s.length){ box.innerHTML='<div style="font-size:13px;color:var(--text-3);text-align:center;padding:12px">Sin mensajes programados</div>'; return; }
-  box.innerHTML=s.map(m=>`<div class="sch-item"><span class="sch-time">${new Date(m.dt).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${m.leadName?esc(m.leadName)+': ':''}${esc(m.body)}</span><button class="sch-del" data-sch="${m.id}">${I(SVG.x,14)}</button></div>`).join('');
-  box.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.sch); let s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]'); s=s.filter(x=>x.id!==id); localStorage.setItem('sp_scheduled',JSON.stringify(s)); renderSchList(); });
+  box.innerHTML=s.map(m=>`<div class="sch-item"><span class="sch-time">${new Date(m.send_at.replace(' ','T')+'Z').toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${m.customer_name?esc(m.customer_name)+': ':''}${esc(m.body)}</span><button class="sch-del" data-sch="${m.id}">${I(SVG.x,14)}</button></div>`).join('');
+  box.querySelectorAll('[data-sch]').forEach(b=>b.onclick=async()=>{ const r=await api('/api/programados/'+b.dataset.sch,{method:'DELETE'}); if(r){ renderSchList(); toast('Cancelado'); } });
 }
-let _schInterval=null;
-function initScheduled(){
-  if(_schInterval) clearInterval(_schInterval);
-  _schInterval=setInterval(async ()=>{
-    const s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]'); if(!s.length) return; const now=new Date();
-    const pend=s.filter(m=>new Date(m.dt)<=now);
-    if(!pend.length) return;
-    const doneIds=[];
-    for(const m of pend){
-      if(!m.leadId){ toast('Programado: '+esc(m.body.slice(0,40))); doneIds.push(m.id); continue; }
-      if(window._sending) continue; // reintenta en el próximo tick, no se pierde
-      const ok=await enviarMensajeProgramadoParaLead(m.leadId,m.body,m.leadName);
-      if(ok) doneIds.push(m.id);
+// Migración one-shot: programados viejos de localStorage → servidor
+async function initScheduled(){
+  try{
+    const s=JSON.parse(localStorage.getItem('sp_scheduled')||'[]');
+    if(!s.length){ localStorage.removeItem('sp_scheduled'); return; }
+    let migrados=0;
+    for(const m of s){
+      if(!m.leadId||!m.body||!m.dt) continue;
+      const r=await api('/api/programados',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({leadId:m.leadId,body:m.body,sendAt:new Date(m.dt).toISOString()})});
+      if(r) migrados++;
     }
-    if(doneIds.length){
-      const cur=JSON.parse(localStorage.getItem('sp_scheduled')||'[]');
-      localStorage.setItem('sp_scheduled',JSON.stringify(cur.filter(m=>!doneIds.includes(m.id))));
-      renderSchList();
-    }
-  },30000);
+    localStorage.removeItem('sp_scheduled');
+    if(migrados) toast(migrados+' programado'+(migrados>1?'s':'')+' migrado'+(migrados>1?'s':'')+' al servidor');
+  }catch(e){ console.error('initScheduled migración',e); }
 }
-async function enviarMensajeProgramadoParaLead(leadId,body,leadName){
-  if(window._sending) return false; window._sending=true;
-  const esChatActual=current&&current.id===leadId; let tempId=null;
-  if(esChatActual){ tempId='sch_'+Date.now();
-    currentMsgs.push({id:tempId,body,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')});
-    $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
-  }
-  const r=await api(`/api/leads/${leadId}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:body})});
-  window._sending=false;
-  if(r===null){
-    if(esChatActual){ currentMsgs=currentMsgs.filter(m=>m.id!==tempId); $('#cMsgs').innerHTML=msgsHTML(currentMsgs); }
-    toast('No se pudo enviar el programado a '+esc(leadName||'cliente')+'. Se reintentará.');
-    return false;
-  }
-  if(esChatActual){ const d=await api(`/api/leads/${leadId}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
-  else{ toast('Enviado programado a '+esc(leadName||'cliente')); }
-  return true;
+
+/* ════════ Stickers ════════ */
+async function abrirStickers(){
+  if(!current){ toast('Abre un chat primero'); return; }
+  let lista=[];
+  try{ const r=await fetch('/stickers/index.json',{credentials:'include'}); if(r.ok) lista=await r.json(); }catch(e){}
+  if(!Array.isArray(lista)||!lista.length){ toast('Sin stickers disponibles aún'); return; }
+  openSheet('Stickers', `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:6px 0">${lista.map(f=>`<button data-stk="${esc(f)}" style="border:none;background:var(--bg-3);border-radius:14px;padding:8px;cursor:pointer"><img src="/stickers/${esc(f)}" style="width:100%;aspect-ratio:1;object-fit:contain"></button>`).join('')}</div>`);
+  $('#sheetBody').querySelectorAll('[data-stk]').forEach(b=>b.onclick=async()=>{
+    haptic(10); closeSheet(); toast('Enviando sticker…');
+    try{
+      const resp=await fetch('/stickers/'+b.dataset.stk,{credentials:'include'});
+      const blob=await resp.blob();
+      const dataBase64=await new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(blob); });
+      const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mime:'image/webp',filename:b.dataset.stk,dataBase64,sticker:true})});
+      if(r){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const bx=$('#cMsgs'); bx.scrollTop=bx.scrollHeight; } toast('Sticker enviado'); }
+      else toast('Error al enviar sticker');
+    }catch(e){ toast('Error al enviar sticker'); }
+  });
 }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
@@ -1674,10 +1837,15 @@ function msgInner(m){
   if(m.deleted_for_sender) return '<div class="bub-deleted">Eliminaste este mensaje</div>';
   let quoteHTML='';
   if(m.reply_to_id && m.reply_to_body){ const icon=m.reply_to_media_type?{'image':'🖼️','video':'🎬','audio':'🎙️','document':'📄'}[m.reply_to_media_type]||'📎':''; const preview=icon+(m.reply_to_body||'').slice(0,80); const label=m.reply_to_direction!=='incoming'?'Tú':'Cliente'; quoteHTML=`<div class="bub-quote"><span>${esc(label)}</span>${esc(preview)}</div>`; }
-  if(m.media_type) return quoteHTML+renderMedia(m);
+  const starHTML=m.starred_at?'<span class="bub-star" style="font-size:10px;margin-left:4px;opacity:.85">⭐</span>':'';
+  const transHTML=m.translated_body?`<div class="bub-translated" style="margin-top:5px;padding-top:5px;border-top:1px solid var(--border-soft);font-size:12.5px;font-style:italic;color:var(--text-2)"><span style="font-size:9.5px;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);display:block;margin-bottom:1px">Traducción</span>${esc(m.translated_body)}</div>`:'';
+  if(m.media_type){
+    const transcriptHTML=(m.media_type==='audio'&&m.transcript)?`<div class="audio-transcript" style="margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.4"><span style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);display:block;margin-bottom:1px">Transcripción</span>${esc(m.transcript)}</div>`:'';
+    return quoteHTML+renderMedia(m)+transcriptHTML+starHTML;
+  }
   const body=m.body||''; const long=body.length>200;
   const content=long?`<span class="bub-body bub-body--trunc" data-full="${esc(body)}">${esc(body.slice(0,200))}<button class="bub__more">Ver más</button></span>`:`<span class="bub-body">${esc(body)}</span>`;
-  return quoteHTML+content;
+  return quoteHTML+content+starHTML+transHTML;
 }
 /* ════════ Link Preview ════════ */
 function linkPreviews(){
@@ -1750,12 +1918,23 @@ async function initLocationMaps(){
 }
 function generateWaveform(id){ let h=0; const s=String(id); for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } const b=[]; for(let i=0;i<20;i++){ b.push(Math.round(Math.abs(Math.sin(h*(i+1)*137.5))*18+4)); } return b; }
 function formatDuration(s){ const m=Math.floor(s/60); const sec=Math.floor(s%60); return m+':'+(sec<10?'0':'')+sec; }
-function togglePlay(id){ const btn=document.getElementById(id+'_btn'); const wave=document.getElementById(id+'_wave'); const timeEl=document.getElementById(id+'_time'); const errEl=document.getElementById(id+'_err'); const dlEl=document.getElementById(id+'_dl'); if(!btn||!wave) return; const container=btn.closest('.audio-player'); if(!container) return; const src=container.dataset.src; if(!src) return; Object.keys(_audioPlayers).forEach(k=>{ if(k!==id&&_audioPlayers[k]&&!_audioPlayers[k].paused){ _audioPlayers[k].pause(); const ob=document.getElementById(k+'_btn'); if(ob) ob.classList.remove('playing'); } }); if(_audioPlayers[id]){ if(!_audioPlayers[id].paused){ _audioPlayers[id].pause(); btn.classList.remove('playing'); return; } _audioPlayers[id].play().then(()=>btn.classList.add('playing')).catch(()=>{}); return; } if(errEl) errEl.style.display='none'; if(dlEl) dlEl.style.display='none'; const a=new Audio(); a.preload='auto'; a.src=src; a.addEventListener('timeupdate',()=>{ if(a.duration){ const bars=wave.querySelectorAll('.audio-player__bar'); bars.forEach((bar,i)=>bar.classList.toggle('active',i<Math.floor((a.currentTime/a.duration)*bars.length))); } if(timeEl) timeEl.textContent=formatDuration(a.currentTime); }); a.addEventListener('ended',()=>{ btn.classList.remove('playing'); if(timeEl&&isFinite(a.duration)) timeEl.textContent=formatDuration(a.duration||0); wave.querySelectorAll('.audio-player__bar').forEach(b=>b.classList.remove('active')); }); a.addEventListener('loadedmetadata',()=>{ if(timeEl&&isFinite(a.duration)) timeEl.textContent=formatDuration(a.duration||0); }); a.addEventListener('error',()=>{ btn.classList.remove('playing'); delete _audioPlayers[id]; if(errEl) errEl.style.display='inline'; if(dlEl) dlEl.style.display='inline'; revealNativeAudio(id,false); if(typeof toast==='function') toast('No se pudo cargar el audio'); }); _audioPlayers[id]=a; a.play().then(()=>btn.classList.add('playing')).catch(()=>{ btn.classList.remove('playing'); delete _audioPlayers[id]; if(errEl) errEl.style.display='inline'; if(dlEl) dlEl.style.display='inline'; revealNativeAudio(id,true); if(typeof toast==='function') toast('Reproduciendo con el control nativo'); }); }
+function togglePlay(id){ const btn=document.getElementById(id+'_btn'); const wave=document.getElementById(id+'_wave'); const timeEl=document.getElementById(id+'_time'); const errEl=document.getElementById(id+'_err'); const dlEl=document.getElementById(id+'_dl'); if(!btn||!wave) return; const container=btn.closest('.audio-player'); if(!container) return; const src=container.dataset.src; if(!src) return; Object.keys(_audioPlayers).forEach(k=>{ if(k!==id&&_audioPlayers[k]&&!_audioPlayers[k].paused){ _audioPlayers[k].pause(); const ob=document.getElementById(k+'_btn'); if(ob) ob.classList.remove('playing'); } }); if(_audioPlayers[id]){ if(!_audioPlayers[id].paused){ _audioPlayers[id].pause(); btn.classList.remove('playing'); return; } _audioPlayers[id].play().then(()=>btn.classList.add('playing')).catch(()=>{}); return; } if(errEl) errEl.style.display='none'; if(dlEl) dlEl.style.display='none'; const a=new Audio(); a.preload='auto'; a.src=src; a.playbackRate=Number(localStorage.getItem('sp_audio_rate'))||1; a.addEventListener('timeupdate',()=>{ if(a.duration){ const bars=wave.querySelectorAll('.audio-player__bar'); bars.forEach((bar,i)=>bar.classList.toggle('active',i<Math.floor((a.currentTime/a.duration)*bars.length))); } if(timeEl) timeEl.textContent=formatDuration(a.currentTime); }); a.addEventListener('ended',()=>{ btn.classList.remove('playing'); if(timeEl&&isFinite(a.duration)) timeEl.textContent=formatDuration(a.duration||0); wave.querySelectorAll('.audio-player__bar').forEach(b=>b.classList.remove('active')); }); a.addEventListener('loadedmetadata',()=>{ if(timeEl&&isFinite(a.duration)) timeEl.textContent=formatDuration(a.duration||0); }); a.addEventListener('error',()=>{ btn.classList.remove('playing'); delete _audioPlayers[id]; if(errEl) errEl.style.display='inline'; if(dlEl) dlEl.style.display='inline'; revealNativeAudio(id,false); if(typeof toast==='function') toast('No se pudo cargar el audio'); }); _audioPlayers[id]=a; a.play().then(()=>btn.classList.add('playing')).catch(()=>{ btn.classList.remove('playing'); delete _audioPlayers[id]; if(errEl) errEl.style.display='inline'; if(dlEl) dlEl.style.display='inline'; revealNativeAudio(id,true); if(typeof toast==='function') toast('Reproduciendo con el control nativo'); }); }
 // Respaldo iOS/Safari: si el reproductor con onda falla, muestra el control <audio> nativo (que reproduce m4a de forma confiable).
 function revealNativeAudio(id,tryPlay){ const nat=document.getElementById(id+'_native'); const cp=document.getElementById(id+'_cp'); if(!nat) return; nat.style.display='block'; if(cp) cp.style.display='none'; if(tryPlay){ try{ const pr=nat.play(); if(pr&&pr.catch) pr.catch(()=>{}); }catch(e){} } }
-function renderAudioPlayer(id,src){ const bars=generateWaveform(id); return `<div class="audio-wrap" id="${id}_wrap"><div class="audio-player" id="${id}_cp" data-src="${src}" data-id="${id}"><button class="audio-player__btn" id="${id}_btn" onclick="togglePlay('${id}')"><svg viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg></button><div class="audio-player__wave" id="${id}_wave">${bars.map(h=>`<div class="audio-player__bar" style="height:${h}px"></div>`).join('')}</div><span class="audio-player__time" id="${id}_time">0:00</span><a href="${src}" target="_blank" download class="audio-player__dl" id="${id}_dl" style="display:none;font-size:13px;color:var(--gold);margin-left:6px;text-decoration:none" title="Descargar audio">⬇</a><span class="audio-player__err" id="${id}_err" style="display:none;font-size:10px;color:#ff5050;margin-left:4px">Error</span></div><audio id="${id}_native" controls preload="none" src="${src}" style="display:none;width:100%;max-width:240px;margin-top:6px"></audio></div>`; }
+function renderAudioPlayer(id,src){ const bars=generateWaveform(id); return `<div class="audio-wrap" id="${id}_wrap"><div class="audio-player" id="${id}_cp" data-src="${src}" data-id="${id}"><button class="audio-player__btn" id="${id}_btn" onclick="togglePlay('${id}')"><svg viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg></button><div class="audio-player__wave" id="${id}_wave">${bars.map(h=>`<div class="audio-player__bar" style="height:${h}px"></div>`).join('')}</div><span class="audio-player__time" id="${id}_time">0:00</span><button class="audio-player__rate" data-rate-btn onclick="cycleRate()" style="border:1px solid var(--gold-line);background:var(--gold-soft, rgba(200,164,90,.12));color:var(--gold);font-family:inherit;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;margin-left:6px;cursor:pointer">${(Number(localStorage.getItem('sp_audio_rate'))||1)}x</button><a href="${src}" target="_blank" download class="audio-player__dl" id="${id}_dl" style="display:none;font-size:13px;color:var(--gold);margin-left:6px;text-decoration:none" title="Descargar audio">⬇</a><span class="audio-player__err" id="${id}_err" style="display:none;font-size:10px;color:#ff5050;margin-left:4px">Error</span></div><audio id="${id}_native" controls preload="none" src="${src}" style="display:none;width:100%;max-width:240px;margin-top:6px"></audio></div>`; }
+// Velocidad de reproducción de notas de voz: cicla 1x → 1.5x → 2x → 1x.
+// Aplica a los players activos y persiste la preferencia para los siguientes.
+function cycleRate(){
+  const actual=Number(localStorage.getItem('sp_audio_rate'))||1;
+  const nuevo=actual===1?1.5:actual===1.5?2:1;
+  localStorage.setItem('sp_audio_rate', String(nuevo));
+  Object.values(_audioPlayers).forEach(a=>{ try{ a.playbackRate=nuevo; }catch(e){} });
+  document.querySelectorAll('[data-rate-btn]').forEach(b=>b.textContent=nuevo+'x');
+  haptic(6);
+}
 // El script va envuelto en un IIFE, así que togglePlay no es global. El botón de audio usa onclick inline → hay que exponerla o el clic no hace nada.
 window.togglePlay = togglePlay;
+window.cycleRate = cycleRate;
 
 // El cliente ve "escribiendo…" en su WhatsApp (Meta lo muestra 25s; throttle de 20s)
 let _typingLast=0;
@@ -1823,9 +2002,9 @@ const QUICK=[
 ];
 
 function abrirAdjuntos(){
-  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
+  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['sticker','Sticker',SVG.smile],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
-  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='video'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='sticker') abrirStickers(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='video'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
 }
 const UBICACIONES_PREDEFINIDAS = [
   { name:'Proyecto Tocaima', address:'Tocaima, Cundinamarca', lat:4.4577, lng:-74.6329 },
@@ -2306,6 +2485,14 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         </div>
 
         <div class="sec">
+          <div class="sec-label">Chat Pro</div>
+          <div class="sec-body">
+            <div class="sec-row" id="rowDestacados"><label>⭐ Mensajes destacados</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Ver</button></div>
+            <div class="sec-row" id="rowBioLock" style="display:none"><label>🔒 Bloquear con huella</label><button class="toggle-sw" id="toggleBio"></button></div>
+          </div>
+        </div>
+
+        <div class="sec">
           <div class="sec-label">Chat</div>
           <div class="sec-body">
             <div class="sec-row"><label>Enter envía mensaje</label><button class="toggle-sw${localStorage.getItem('sp_chat_enter_sends')!=='false'?' on':''}" data-key="sp_chat_enter_sends"></button></div>
@@ -2379,6 +2566,34 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if(ccBtn) ccBtn.addEventListener('click',limpiarCache);
       const permRow=document.getElementById('rowPermisos');
       if(permRow) permRow.addEventListener('click',()=>{ haptic(8); abrirPermisos(); });
+      // ⭐ Mensajes destacados
+      const destRow=document.getElementById('rowDestacados');
+      if(destRow) destRow.addEventListener('click',async()=>{
+        haptic(8);
+        const lista=await api('/api/mensajes/destacados')||[];
+        openSheet('Mensajes destacados', lista.length
+          ? `<div style="max-height:340px;overflow-y:auto">${lista.map(m=>`<div class="ctx-item" data-dst="${m.lead_id}"><div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600;color:var(--gold)">${esc(m.customer_name||'Cliente')} <span style="font-weight:400;color:var(--text-3);font-size:11px">· ${horaCorta(m.timestamp)}</span></div><div style="font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.media_type?'📎 '+(m.media_type||''):''} ${esc((m.body||'').slice(0,70))}</div></div><span style="flex-shrink:0">⭐</span></div>`).join('')}</div>`
+          : '<div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Mantén presionado un mensaje y toca ⭐ Destacar para guardarlo aquí.</div>');
+        $('#sheetBody').querySelectorAll('[data-dst]').forEach(el=>el.onclick=()=>{ closeSheet(); irTab('chats'); abrirChat(Number(el.dataset.dst)); });
+      });
+      // 🔒 Bloqueo con huella (solo app nativa con biometría disponible)
+      bioDisponible().then(async disp=>{
+        const row=document.getElementById('rowBioLock'); if(!row||!disp) return;
+        row.style.display='';
+        const tg=document.getElementById('toggleBio');
+        if(await bioActivado()) tg.classList.add('on');
+        tg.addEventListener('click',async function(){
+          const on=this.classList.contains('on');
+          if(!on){
+            // Verificar la huella ANTES de activar (evita quedar bloqueado sin biometría funcional)
+            try{ await window.Capacitor.Plugins.BiometricLock.authenticate(); }
+            catch(e){ toast('No se pudo verificar tu huella'); return; }
+          }
+          this.classList.toggle('on');
+          try{ await window.Capacitor.Plugins.Preferences.set({key:'sp_bio_lock',value:on?'0':'1'}); }catch(e){}
+          toast(on?'Bloqueo con huella desactivado':'Bloqueo con huella activado 🔒'); haptic(8);
+        });
+      });
       const sel = document.getElementById('selEstado');
       if (sel) sel.addEventListener('change', async function() {
         if (!me || !me.vendedorId) return;
@@ -2500,7 +2715,18 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
 
 /* ════════ Interacciones globales ════════ */
 function wire(){
-  $('#q').addEventListener('input',e=>{ term=e.target.value.trim(); renderList(); });
+  $('#q').addEventListener('input',e=>{
+    term=e.target.value.trim(); renderList();
+    // Búsqueda global en el CONTENIDO de todos los mensajes (3+ caracteres, debounce)
+    clearTimeout(window._qDeb);
+    if(term.length>=3&&!DEMO){
+      const q=term;
+      window._qDeb=setTimeout(async()=>{
+        const r=await api('/api/mensajes/buscar?q='+encodeURIComponent(q));
+        if(q===term){ _msgResults=Array.isArray(r)?r:[]; renderList(); }
+      },300);
+    } else { _msgResults=[]; }
+  });
   $('#filters').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filtro=b.dataset.f; haptic(8); renderList(); });
   $('#fab').onclick=()=>abrirNuevoLead();
   $('#btnNotif').onclick=()=>abrirNotificaciones();
@@ -2878,6 +3104,15 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
   es.addEventListener('reaccion',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } } }catch(e){} });
   // Notificación del centro (asignaciones, escalamientos, recordatorios…)
   es.addEventListener('notificacion',ev=>{ try{ const x=JSON.parse(ev.data); const b=document.getElementById('notifBadge'); const cur=b?Number(b.textContent)||0:0; setNotifBadge(cur+1); if(x.tipo!=='mensaje_cliente'){ toast('🔔 '+(x.titulo||'Notificación')); haptic([80,40,80]); playNotifSound(); } }catch(e){} });
+  // Chat interno del equipo en vivo
+  es.addEventListener('equipo_mensaje',ev=>{ try{ const m=JSON.parse(ev.data); if(teamMsgs.find(x=>x.id===m.id)) return; teamMsgs.push(m);
+    if(_eqAbierto){ renderEquipo(); marcarEquipoLeido(); }
+    else if(!esMio(m)){ renderList(); toast('🦁 '+esc(m.from_nombre||'Equipo')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); } }catch(e){} });
+  // Transcripción IA lista para una nota de voz
+  es.addEventListener('transcripcion',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m){ m.transcript=x.transcript; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }catch(e){} });
+  // Programados del servidor
+  es.addEventListener('programado_enviado',async ev=>{ try{ const x=JSON.parse(ev.data); toast('⏰ Mensaje programado enviado'); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b2=$('#cMsgs'); b2.scrollTop=b2.scrollHeight; } } }catch(e){} });
+  es.addEventListener('programado_fallido',ev=>{ try{ const x=JSON.parse(ev.data); toast('⚠️ Un mensaje programado no se pudo enviar'); haptic([80,40,80]); }catch(e){} });
   es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
   }catch(e){} }
 
