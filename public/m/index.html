@@ -35,7 +35,10 @@
   #app{ position:fixed; inset:0; overflow:hidden; }
   .screen{ position:absolute; inset:0; display:flex; flex-direction:column;
     background:
-      radial-gradient(600px 400px at 90% -8%, rgba(200,164,90,.05), transparent 60%),
+      radial-gradient(circle 260px at 16% 14%, rgba(248,248,248,.05), transparent 68%),
+      radial-gradient(circle 200px at 86% 44%, rgba(248,248,248,.032), transparent 70%),
+      radial-gradient(circle 320px at 50% 106%, rgba(248,248,248,.028), transparent 72%),
+      radial-gradient(600px 400px at 90% -8%, rgba(212,175,55,.08), transparent 60%),
       radial-gradient(550px 480px at -10% 104%, rgba(78,123,70,.04), transparent 60%),
       var(--bg-0); }
 
@@ -186,7 +189,7 @@
   /* ── Bottom Sheet (iOS) ── */
   .sheet-bg{ position:absolute; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); opacity:0; transition:opacity .3s var(--ease); z-index:40; pointer-events:none; }
   .sheet-bg.show{ opacity:1; pointer-events:auto; }
-  .sheet{ position:absolute; left:0; right:0; bottom:0; max-height:88%; background:var(--bg-1); border-radius:26px 26px 0 0; border-top:1px solid var(--border); box-shadow:0 -20px 50px rgba(0,0,0,.5); transform:translateY(100%); transition:transform .38s var(--spring); z-index:41; display:flex; flex-direction:column; padding-bottom:var(--safe-b); }
+  .sheet{ position:absolute; left:0; right:0; bottom:0; max-height:88%; background:rgba(18,18,18,.72); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-radius:26px 26px 0 0; border-top:1px solid var(--glass-border); box-shadow:var(--glass-edge), 0 -20px 50px rgba(0,0,0,.5); transform:translateY(100%); transition:transform .38s var(--spring); z-index:41; display:flex; flex-direction:column; padding-bottom:var(--safe-b); }
   .sheet.show{ transform:translateY(0); }
   .sheet__grab{ width:38px; height:5px; border-radius:3px; background:var(--border-strong); margin:10px auto 4px; flex-shrink:0; }
   .sheet__head{ display:flex; align-items:center; gap:10px; padding:6px 20px 12px; border-bottom:1px solid var(--border-soft); }
@@ -628,8 +631,8 @@ let _audioPlayers = {};
 
 const ETQ = { sin_clasificar:{t:'Nuevo',cls:'sin_clasificar'}, interesado:{t:'Interesado',cls:'interesado'}, negociacion:{t:'Negociación',cls:'negociacion'}, cita:{t:'Cita',cls:'cita'}, vendido:{t:'Vendido',cls:'vendido'}, no_interesado:{t:'No int.',cls:'no_interesado'} };
 const etqLabel = v => (ETQ[v]||{t:v}).t;
-const estadoColores = { activo:{bg:'rgba(87,193,104,.15)',fg:'#57C168',bd:'rgba(87,193,104,.3)'}, ocupado:{bg:'rgba(200,164,90,.15)',fg:'#C8A45A',bd:'rgba(200,164,90,.3)'}, inactivo:{bg:'rgba(109,109,109,.15)',fg:'#6D6D6D',bd:'rgba(109,109,109,.3)'}, vacaciones:{bg:'rgba(91,139,236,.15)',fg:'#5B8BEC',bd:'rgba(91,139,236,.3)'} };
-const AV = ['#4E7B46','#C8A45A','#5B8DEF','#E0A44A','#7C6BB0','#2E7D8C'];
+const estadoColores = { activo:{bg:'rgba(87,193,104,.15)',fg:'#57C168',bd:'rgba(87,193,104,.3)'}, ocupado:{bg:'rgba(200,164,90,.15)',fg:'#D4AF37',bd:'rgba(200,164,90,.3)'}, inactivo:{bg:'rgba(109,109,109,.15)',fg:'#6D6D6D',bd:'rgba(109,109,109,.3)'}, vacaciones:{bg:'rgba(91,139,236,.15)',fg:'#5B8BEC',bd:'rgba(91,139,236,.3)'} };
+const AV = ['#4E7B46','#D4AF37','#5B8DEF','#E0A44A','#7C6BB0','#2E7D8C'];
 const avatarColor = n => AV[(String(n||'').length + String(n||'').charCodeAt(0)||0) % AV.length];
 const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 const money = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
@@ -916,7 +919,7 @@ function marcarEquipoLeido(){
   if(teamMsgs.length) localStorage.setItem('sp_equipo_last_read', String(teamMsgs[teamMsgs.length-1].id));
 }
 async function abrirEquipo(){
-  haptic(8); _eqAbierto=true;
+  haptic(8); _eqAbierto=true; cerrarChat();
   $('#scEquipo').classList.add('show');
   await cargarEquipo(); renderEquipo(); marcarEquipoLeido(); renderList();
 }
@@ -1291,7 +1294,7 @@ document.addEventListener('click',async e=>{
   } else { btn.disabled=false; btn.textContent='↑ Cargar mensajes anteriores'; }
 });
 async function abrirChat(id){ let l; let msgs;
-  try{ clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); }catch(e){ console.error('abrirChat/init',e); }
+  try{ clearSelection(); cancelEdit(); _editingMsg=null; haptic(10); cerrarEquipo(); }catch(e){ console.error('abrirChat/init',e); }
   try{ l=findLead(id); }catch(e){ console.error('abrirChat/find',e); }
   try{ current=l||{id,customer_name:'Cliente',customer_phone:''}; }catch(e){ current={id,customer_name:'Cliente',customer_phone:''}; }
   try{

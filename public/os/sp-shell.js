@@ -106,7 +106,7 @@
     setTimeout(() => { t.style.transition = 'opacity .3s, transform .3s'; t.style.opacity = '0'; t.style.transform = 'translateY(8px)'; setTimeout(() => t.remove(), 320); }, 2600);
   }
 
-  const AV = ['#C8A45A', '#4E7B46', '#5B8DEF', '#B0763C', '#8C6BB0', '#3F8E8E'];
+  const AV = ['#D4AF37', '#4E7B46', '#5B8DEF', '#B0763C', '#8C6BB0', '#3F8E8E'];
   const avatarColor = (s) => AV[(String(s || '?').charCodeAt(0) + String(s || '?').length) % AV.length];
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
   // Formatea teléfono: +573001112233 → 300 111 2233
@@ -176,7 +176,7 @@
           <button class="btn btn--icon btn--quiet u-hide" id="osMenuBtn" style="margin-left:-8px">${ICONS.menu}</button>
           <div><div class="os-topbar__title">${opts.title || 'Dashboard'}</div>${opts.crumb ? `<div class="os-topbar__crumb">${opts.crumb}</div>` : ''}</div>
           <div class="u-grow"></div>
-          <button class="btn btn--icon btn--ghost" id="osNotifBtn" title="Notificaciones" style="position:relative">${ICONS.notifications}<span id="osNotifBadge" style="display:none;position:absolute;top:4px;right:4px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold,#C8A45A);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center"></span></button>
+          <button class="btn btn--icon btn--ghost" id="osNotifBtn" title="Notificaciones" style="position:relative">${ICONS.notifications}<span id="osNotifBadge" style="display:none;position:absolute;top:4px;right:4px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold,#D4AF37);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center"></span></button>
           <div class="avatar avatar--sm" style="background:${avatarColor(me.nombre)}" title="${me.nombre}">${initials(me.nombre)}</div>
           ${opts.action || ''}
         </header>

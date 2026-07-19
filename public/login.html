@@ -15,15 +15,15 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0A0A0A; --gold:#C8A45A; --gold-2:#A8872B; --gold-3:#E8C86A;
+    --bg:#0A0A0A; --gold:#D4AF37; --gold-2:#8E7028; --gold-3:#EDCC60;
     --green:#4E7B46; --txt:#F8F8F8; --txt-2:rgba(248,248,248,.5);
     --txt-3:rgba(248,248,248,.22); --border:#1A1A1A; --surface:#111;
     --red:#E5484D; --ease:cubic-bezier(.22,1,.36,1);
-    /* Glass (mismos valores que sp-os.css — este archivo no enlaza el core) */
-    --glass:rgba(20,20,20,.45); --glass-2:rgba(25,25,25,.60);
-    --glass-border:rgba(248,248,248,.10); --blur-sm:saturate(1.2) blur(14px);
-    --grad-gold:linear-gradient(140deg,#E8C86A,var(--gold) 60%,#B08D42);
-    --grad-gold-text:linear-gradient(135deg,#E8C86A,var(--gold) 55%,#A8872B);
+    /* Glass (sync sp-os.css) */
+    --glass:rgba(20,20,20,.15); --glass-2:rgba(25,25,25,.22);
+    --glass-border:rgba(248,248,248,.08); --blur-sm:saturate(1.4) blur(24px);
+    --grad-gold:linear-gradient(140deg,#EDCC60,var(--gold) 60%,#A08028);
+    --grad-gold-text:linear-gradient(135deg,#EDCC60,var(--gold) 55%,#8E7028);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow:hidden}
@@ -31,9 +31,11 @@
     font-family:'Inter',system-ui,sans-serif;color:var(--txt);
     font-optical-sizing:auto;letter-spacing:-0.011em;
     background:
-      radial-gradient(700px 500px at 80% -15%, rgba(200,164,90,.10), transparent 60%),
-      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.07), transparent 60%),
-      radial-gradient(500px 400px at 50% 50%, rgba(200,164,90,.04), transparent 70%),
+      radial-gradient(circle 260px at 15% 18%, rgba(248,248,248,.05), transparent 68%),
+      radial-gradient(circle 200px at 85% 60%, rgba(248,248,248,.032), transparent 70%),
+      radial-gradient(700px 500px at 80% -15%, rgba(212,175,55,.14), transparent 60%),
+      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.08), transparent 60%),
+      radial-gradient(500px 400px at 50% 50%, rgba(212,175,55,.05), transparent 70%),
       var(--bg);
     display:flex;flex-direction:column;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Preview — Fondos de Chat</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+<style>
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  :root{
+    --bg-0:#0A0A0A; --bg-1:#121212; --bg-2:#171717; --bg-3:#1C1C1C;
+    --gold:#D4AF37; --gold-line:rgba(212,175,55,.30);
+    --text:#F8F8F8; --text-2:rgba(248,248,248,.62); --text-3:rgba(248,248,248,.38);
+    --border:#252525; --border-soft:#1E1E1E;
+    --spring:cubic-bezier(.34,1.56,.64,1);
+  }
+  body{ background:var(--bg-0); color:var(--text); font-family:'Inter',sans-serif; padding:20px; }
+  h1{ font-size:20px; font-weight:600; margin-bottom:6px; letter-spacing:-.3px; }
+  .sub{ font-size:13px; color:var(--text-3); margin-bottom:24px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; max-width:1200px; margin:0 auto; }
+  .card{ border-radius:16px; overflow:hidden; background:var(--bg-1); border:1px solid var(--border); }
+  .card-label{ padding:10px 14px; font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--text-3); border-bottom:1px solid var(--border-soft); }
+  .card-label span{ color:var(--gold); }
+  .chat-preview{ height:380px; display:flex; flex-direction:column; padding:12px; gap:4px; position:relative; overflow:hidden; }
+  .chat-preview .bub{ width:fit-content; max-width:78%; padding:8px 13px; border-radius:18px; font-size:13.5px; line-height:1.4; }
+  .chat-preview .bub-in{ margin-right:auto; background:var(--bg-3); border-bottom-left-radius:6px; border-left:2px solid var(--gold-line); }
+  .chat-preview .bub-out{ margin-left:auto; background:linear-gradient(160deg,#1D4535,#153427); color:#EDF5F1; border-bottom-right-radius:6px; }
+  .chat-preview .bub__t{ font-size:10px; opacity:.5; margin-top:2px; text-align:right; }
+  .chat-preview .date{ align-self:center; font-size:10px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:2px 10px; border-radius:999px; margin:6px 0; }
+
+  /* ── Patrón Actual ── */
+  .bg-current{ background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
+
+  /* ── Patrón Collage Leones ── */
+  .bg-leones{
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'%3E%3Cdefs%3E%3Cstyle%3E.c%7Bfill:none;stroke:rgba(200,164,90,0.045);stroke-width:.7;stroke-linecap:round;stroke-linejoin:round%7D.c2%7Bfill:none;stroke:rgba(200,164,90,0.03);stroke-width:.5%7D%3C/style%3E%3C/defs%3E%3Cg transform='translate(30,25)'%3E%3Cpath class='c' d='M0 35 Q5 10 25 5 Q35 3 42 10 Q50 5 58 12 L65 8 Q72 15 68 25 Q75 30 70 42 Q78 55 65 62 Q60 68 50 65 L48 72 Q40 78 30 75 L25 80 Q15 78 12 70 L8 65 Q-2 58 2 45 Q-4 38 0 35Z'/%3E%3Ccircle class='c2' cx='28' cy='38' r='2'/%3E%3Ccircle class='c2' cx='45' cy='36' r='2'/%3E%3Cpath class='c2' d='M34 48 L38 52 L42 48'/%3E%3Cpath class='c' d='M25 5 L20-5 M35 3 L38-6 M45 5 L48-4 M55 10 L60 2'/%3E%3C/g%3E%3Cg transform='translate(250,60)'%3E%3Cpath class='c' d='M20 0 L40 0 L42 15 L50 15 L30 35 L10 15 L18 15Z'/%3E%3Cpath class='c2' d='M20 15 L30 25 L40 15'/%3E%3Cpath class='c2' d='M0 15 L10 15 M42 15 L52 15'/%3E%3Cpath class='c' d='M30 35 L30 50'/%3E%3Cpath class='c2' d='M22 50 L38 50'/%3E%3C/g%3E%3Cg transform='translate(420,40)'%3E%3Cpath class='c' d='M15 0 Q30-5 45 0 L50 5 L55 2 L60 8 L55 12 L60 18 L52 15 L48 20 L40 18 L30 22 L20 18 L12 22 L8 15 L0 18 L5 12 L0 8 L5 5Z'/%3E%3C/g%3E%3Cg transform='translate(100,160)'%3E%3Crect class='c' x='0' y='0' width='50' height='35' rx='8'/%3E%3Ccircle class='c2' cx='12' cy='17' r='2.5'/%3E%3Ccircle class='c2' cx='25' cy='17' r='2.5'/%3E%3Ccircle class='c2' cx='38' cy='17' r='2.5'/%3E%3Cpath class='c2' d='M15 35 L8 45'/%3E%3C/g%3E%3Cg transform='translate(300,180)'%3E%3Cpath class='c' d='M0 40 Q0 0 25 0 Q50 0 50 40 L42 35 L35 42 L25 32 L15 42 L8 35Z'/%3E%3Cpath class='c2' d='M18 15 L25 8 L32 15'/%3E%3C/g%3E%3Cg transform='translate(480,150)'%3E%3Ccircle class='c' cx='22' cy='22' r='22'/%3E%3Cpath class='c2' d='M14 22 L18 26 L30 18'/%3E%3Cpath class='c' d='M8 8 L14 14 M36 8 L30 14 M8 36 L14 30 M36 36 L30 30'/%3E%3C/g%3E%3Cg transform='translate(50,320)'%3E%3Cpath class='c' d='M20 0 Q40 0 40 20 L40 30 L35 30 L35 20 Q35 5 20 5 Q5 5 5 20 L5 30 L0 30 L0 20 Q0 0 20 0Z'/%3E%3Cpath class='c2' d='M12 18 L28 18 M12 24 L22 24'/%3E%3C/g%3E%3Cg transform='translate(200,340)'%3E%3Cpath class='c' d='M25 0 L50 25 L25 50 L0 25Z'/%3E%3Cpath class='c2' d='M25 10 L40 25 L25 40 L10 25Z'/%3E%3Cpath class='c2' d='M25 18 L32 25 L25 32 L18 25Z'/%3E%3C/g%3E%3Cg transform='translate(380,330)'%3E%3Ccircle class='c' cx='18' cy='18' r='18'/%3E%3Cpath class='c2' d='M12 14 L16 10 L20 14 L24 10'/%3E%3Cpath class='c2' d='M12 22 L24 22'/%3E%3C/g%3E%3Cg transform='translate(520,300)'%3E%3Cpath class='c' d='M15 0 L30 0 Q35 0 35 5 L35 25 L30 30 L0 30 L0 5 Q0 0 5 0Z'/%3E%3Ccircle class='c2' cx='18' cy='15' r='6'/%3E%3Cpath class='c2' d='M12 15 L15 18 L22 12'/%3E%3C/g%3E%3Cg transform='translate(30,470)'%3E%3Cpath class='c' d='M10 0 Q20-5 30 0 Q40 5 40 15 L35 20 Q30 15 25 20 Q20 25 15 20 Q10 15 5 20 L0 15 Q0 5 10 0Z'/%3E%3Cpath class='c2' d='M20 0 L20 35'/%3E%3Cpath class='c' d='M8 20 L5 30 L12 28 M32 20 L35 30 L28 28'/%3E%3C/g%3E%3Cg transform='translate(160,480)'%3E%3Cpath class='c' d='M12 0 Q24-3 36 0 Q42 3 42 12 L42 18 Q36 24 30 24 L24 30 L18 24 Q12 24 6 18 L6 12 Q6 3 12 0Z'/%3E%3Ccircle class='c2' cx='18' cy='10' r='1.5'/%3E%3Ccircle class='c2' cx='30' cy='10' r='1.5'/%3E%3Cpath class='c2' d='M20 17 Q24 21 28 17'/%3E%3C/g%3E%3Cg transform='translate(310,450)'%3E%3Cpath class='c' d='M0 30 Q5 5 25 0 Q35 0 40 8 L48 5 L45 15 Q50 20 45 30 Q42 38 35 40 L30 45 Q20 48 12 42 L8 38 Q0 35 0 30Z'/%3E%3Ccircle class='c2' cx='20' cy='22' r='2.5'/%3E%3Ccircle class='c2' cx='35' cy='20' r='2.5'/%3E%3Cpath class='c2' d='M25 32 L28 35 L31 32'/%3E%3Cpath class='c' d='M15 0 L12-8 M25 0 L25-10 M35 0 L38-8'/%3E%3C/g%3E%3Cg transform='translate(460,470)'%3E%3Cpath class='c' d='M0 20 Q0 0 20 0 L25 0 Q30 5 30 10 L30 25 L25 30 L5 30 L0 25Z'/%3E%3Cpath class='c2' d='M8 10 L22 10 M8 16 L18 16'/%3E%3C/g%3E%3Cg transform='translate(540,430)'%3E%3Cpath class='c' d='M18 0 L22 8 L30 8 L24 14 L26 22 L18 18 L10 22 L12 14 L6 8 L14 8Z'/%3E%3C/g%3E%3Cg transform='translate(80,50)'%3E%3Cpath class='c' d='M15 0 L18 12 L30 12 L20 20 L24 32 L15 24 L6 32 L10 20 L0 12 L12 12Z'/%3E%3C/g%3E%3Cg transform='translate(350,100)'%3E%3Cpath class='c2' d='M0 20 Q10 0 20 20 Q30 0 40 20'/%3E%3Cpath class='c2' d='M10 20 L10 35 M20 20 L20 38 M30 20 L30 35'/%3E%3C/g%3E%3Cg transform='translate(450,230)'%3E%3Cpath class='c' d='M0 25 Q0 0 25 0 Q50 0 50 25 L50 35 L0 35Z'/%3E%3Cpath class='c2' d='M15 12 L35 12 M15 20 L28 20'/%3E%3C/g%3E%3Cg transform='translate(130,280)'%3E%3Cpath class='c' d='M18 0 L36 18 L18 36 L0 18Z'/%3E%3Cpath class='c2' d='M18 8 L28 18 L18 28 L8 18Z'/%3E%3C/g%3E%3Cg transform='translate(250,520)'%3E%3Ccircle class='c' cx='12' cy='12' r='12'/%3E%3Cpath class='c2' d='M8 8 L16 8 L16 16 L8 16Z'/%3E%3Cpath class='c2' d='M12 4 L12 8 M12 16 L12 20 M4 12 L8 12 M16 12 L20 12'/%3E%3C/g%3E%3Cg transform='translate(420,560)'%3E%3Cpath class='c' d='M20 0 L22 10 L32 10 L24 16 L27 26 L20 20 L13 26 L16 16 L8 10 L18 10Z'/%3E%3C/g%3E%3Cg transform='translate(550,560)'%3E%3Cpath class='c2' d='M0 15 Q8 0 16 15 Q24 0 32 15'/%3E%3Cpath class='c2' d='M8 15 L8 28 M16 15 L16 30 M24 15 L24 28'/%3E%3C/g%3E%3Cg transform='translate(500,100)'%3E%3Cpath class='c' d='M10 0 Q20-4 30 0 Q35 8 30 15 Q25 20 20 18 Q15 20 10 15 Q5 8 10 0Z'/%3E%3Cpath class='c' d='M5 15 Q0 25 8 30 M35 15 Q40 25 32 30'/%3E%3C/g%3E%3Cg transform='translate(0,180)'%3E%3Cpath class='c' d='M12 0 L24 12 L12 24 L0 12Z'/%3E%3Cpath class='c2' d='M12 6 L18 12 L12 18 L6 12Z'/%3E%3C/g%3E%3Cg transform='translate(220,260)'%3E%3Ccircle class='c' cx='15' cy='15' r='15'/%3E%3Cpath class='c2' d='M8 15 L12 11 L18 19 L22 15'/%3E%3C/g%3E%3C/svg%3E") repeat,
+      linear-gradient(180deg,var(--bg-0),#0C0C0C);
+  }
+
+  /* ── Selección activa ── */
+  .card.selected{ outline:2px solid var(--gold); outline-offset:-2px; }
+  .check{ display:none; position:absolute; top:8px; right:8px; width:24px; height:24px; border-radius:50%; background:var(--gold); color:#000; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
+  .card.selected .check{ display:flex; }
+  .card{ position:relative; cursor:pointer; transition:transform .15s var(--spring), box-shadow .2s; }
+  .card:hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  .card:active{ transform:scale(.98); }
+</style>
+</head>
+<body>
+
+<h1>Fondos de Chat — SP Leons Group</h1>
+<p class="sub">Seleccioná una opción · Tocá para marcar con ✓</p>
+
+<div class="grid" id="grid">
+  <!-- Actual -->
+  <div class="card selected" data-bg="current">
+    <div class="check">✓</div>
+    <div class="card-label">Actual <span>· Sin patrón</span></div>
+    <div class="chat-preview bg-current">
+      <div class="date">HOY</div>
+      <div class="bub bub-in">Hola, me interesa el lote en Tocaima</div>
+      <div class="bub bub-in">¿Todavía está disponible?</div>
+      <div class="bub bub-out">¡Buen día! Sí, tenemos disponibilidad</div>
+      <div class="bub bub-out">El lote es de 200m² con todos los servicios</div>
+      <div style="flex:1"></div>
+    </div>
+  </div>
+
+  <!-- Leones Collage -->
+  <div class="card" data-bg="leones">
+    <div class="check">✓</div>
+    <div class="card-label">Leones <span>· Collage premium</span></div>
+    <div class="chat-preview bg-leones">
+      <div class="date">HOY</div>
+      <div class="bub bub-in">Hola, me interesa el lote en Tocaima</div>
+      <div class="bub bub-in">¿Todavía está disponible?</div>
+      <div class="bub bub-out">¡Buen día! Sí, tenemos disponibilidad</div>
+      <div class="bub bub-out">El lote es de 200m² con todos los servicios</div>
+      <div style="flex:1"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.card').forEach(c => {
+    c.addEventListener('click', () => {
+      document.querySelectorAll('.card').forEach(x => x.classList.remove('selected'));
+      c.classList.add('selected');
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -19,9 +19,9 @@
   --border-strong: #313131;
 
   /* Marca */
-  --gold: #C8A45A;
-  --gold-soft: rgba(200, 164, 90, .12);
-  --gold-line: rgba(200, 164, 90, .28);
+  --gold: #D4AF37;
+  --gold-soft: rgba(212, 175, 55, .14);
+  --gold-line: rgba(212, 175, 55, .30);
   --green: #4E7B46;
   --green-soft: rgba(78, 123, 70, .14);
 
@@ -42,8 +42,8 @@
   /* Espaciado (múltiplos de 8) */
   --s1: 8px;  --s2: 16px; --s3: 24px; --s4: 32px; --s5: 48px; --s6: 64px;
 
-  /* Radios */
-  --r-sm: 12px; --r: 16px; --r-lg: 20px; --r-xl: 24px; --r-full: 999px;
+  /* Radios (generosos, estilo glassmorphism minimal) */
+  --r-sm: 12px; --r: 18px; --r-lg: 24px; --r-xl: 28px; --r-full: 999px;
 
   /* Sombras (muy suaves) */
   --sh-1: 0 1px 2px rgba(0,0,0,.30);
@@ -51,16 +51,16 @@
   --sh-3: 0 12px 40px rgba(0,0,0,.40);
   --sh-pop: 0 8px 30px rgba(0,0,0,.45), 0 0 0 1px var(--border);
 
-  /* Glass — vidrio premium sobre la paleta SP.
-     Más transparente que antes para que la aurora se vea a través.
-     Edge doble: highlight arriba + sombra abajo (ilusión de grosor). */
-  --glass:        rgba(20, 20, 20, .45);
-  --glass-2:      rgba(25, 25, 25, .60);
-  --glass-border: rgba(248, 248, 248, .10);
-  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .12), inset 0 -1px 0 rgba(0,0,0,.25);
-  --glass-gold:   rgba(200, 164, 90, .06);
-  --blur:    saturate(1.4) blur(22px);
-  --blur-sm: saturate(1.2) blur(14px);
+  /* Glass — vidrio premium ultra-transparente.
+     Aurora visible nítidamente a través de cada superficie.
+     Edge superior reforzado para que el cristal se perciba. */
+  --glass:        rgba(20, 20, 20, .15);
+  --glass-2:      rgba(25, 25, 25, .22);
+  --glass-border: rgba(248, 248, 248, .08);
+  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .22), inset 0 -1px 0 rgba(255,255,255,.04);
+  --glass-gold:   rgba(212, 175, 55, .08);
+  --blur:    saturate(1.6) blur(36px);
+  --blur-sm: saturate(1.4) blur(24px);
 
   /* Tipografía */
   --f-title: 'Cinzel', Georgia, serif;
@@ -71,11 +71,11 @@
   --track-body:   -0.012em;  /* body (heredado) */
 
   /* Gradientes oro (token único reemplaza ~15 duplicados en todo el sistema) */
-  --grad-gold:      linear-gradient(140deg, #E8C86A, var(--gold) 60%, #B08D42);
-  --grad-gold-deep: linear-gradient(140deg, #E8C86A, var(--gold) 55%, #9E7E3C);
-  --grad-gold-text: linear-gradient(135deg, #E8C86A, var(--gold) 55%, #A8872B);
-  --grad-gold-bar:  linear-gradient(90deg, #B89840, var(--gold));
-  --grad-surface:   linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0) 45%);
+  --grad-gold:      linear-gradient(140deg, #EDCC60, var(--gold) 60%, #A08028);
+  --grad-gold-deep: linear-gradient(140deg, #EDCC60, var(--gold) 55%, #8E7028);
+  --grad-gold-text: linear-gradient(135deg, #EDCC60, var(--gold) 55%, #8E7028);
+  --grad-gold-bar:  linear-gradient(90deg, #C8A830, var(--gold));
+  --grad-surface:   linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,0) 45%);
 
   /* Movimiento */
   --ease: cubic-bezier(.4, 0, .2, 1);
@@ -96,11 +96,15 @@
 html, body { height: 100%; }
 body {
   font-family: var(--f-ui);
-  /* Aurora: gradientes más visibles — profundidad y riqueza visual */
+  /* Aurora + orbes: formas grandes y difusas detrás del vidrio (estilo
+     glassmorphism minimal) — le dan al frosted algo que esmerilar. */
   background:
-    radial-gradient(900px 600px at 80% -15%, rgba(200,164,90,.09), transparent 60%),
-    radial-gradient(800px 700px at -10% 100%, rgba(78,123,70,.06), transparent 60%),
-    radial-gradient(500px 400px at 50% 50%, rgba(200,164,90,.03), transparent 70%),
+    radial-gradient(circle 420px at 14% 16%, rgba(248,248,248,.055), transparent 68%),
+    radial-gradient(circle 300px at 78% 38%, rgba(248,248,248,.035), transparent 70%),
+    radial-gradient(circle 500px at 55% 108%, rgba(248,248,248,.030), transparent 72%),
+    radial-gradient(800px 600px at 80% -15%, rgba(212,175,55,.14), transparent 60%),
+    radial-gradient(700px 650px at -10% 100%, rgba(78,123,70,.08), transparent 60%),
+    radial-gradient(600px 500px at 50% 50%, rgba(212,175,55,.05), transparent 70%),
     var(--bg-0);
   background-attachment: fixed;
   color: var(--text);
@@ -194,13 +198,15 @@ svg { display: block; flex-shrink: 0; }
 .os-workspace {
   margin: 0 var(--s2) var(--s2);
   padding: 10px 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-soft);
+  background: var(--glass);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
   display: flex; align-items: center; gap: 10px;
   cursor: pointer; transition: background var(--dur) var(--ease);
 }
-.os-workspace:hover { background: var(--bg-3); }
+.os-workspace:hover { background: var(--glass-2); }
 .os-workspace__logo { width: 26px; height: 26px; border-radius: 7px; background: var(--bg-4); display: grid; place-items: center; font-size: 13px; }
 .os-workspace__name { font-size: 13px; font-weight: 600; }
 .os-workspace__plan { font-size: 10px; color: var(--gold); letter-spacing: .04em; }
@@ -253,11 +259,14 @@ svg { display: block; flex-shrink: 0; }
 /* Search (topbar) */
 .os-search {
   display: flex; align-items: center; gap: 9px;
-  background: var(--bg-2); border: 1px solid var(--border-soft);
+  background: var(--glass);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-full); padding: 7px 14px; min-width: 220px;
   color: var(--text-3); transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.os-search:focus-within { border-color: var(--gold-line); background: var(--bg-3); }
+.os-search:focus-within { border-color: var(--gold-line); background: var(--glass-2); }
 .os-search input { background: none; border: none; outline: none; color: var(--text); font-size: 13px; width: 100%; }
 .os-search kbd { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-family: var(--f-num); }
 
@@ -275,10 +284,16 @@ svg { display: block; flex-shrink: 0; }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; pointer-events: none; }
 .btn--gold { background: var(--grad-gold); color: #0A0A0A; box-shadow: var(--sh-2), inset 0 1px 0 rgba(255,255,255,.3); position: relative; overflow: hidden; }
-.btn--gold:hover { filter: brightness(1.08); box-shadow: 0 4px 20px rgba(200,164,90,.35), inset 0 1px 0 rgba(255,255,255,.3); }
-.btn--gold:active { transform: scale(.95); box-shadow: 0 2px 8px rgba(200,164,90,.2), inset 0 1px 0 rgba(255,255,255,.3); }
-.btn--ghost { background: var(--bg-2); border-color: var(--border); color: var(--text); }
-.btn--ghost:hover { background: var(--bg-3); border-color: var(--border-strong); }
+.btn--gold:hover { filter: brightness(1.08); box-shadow: 0 4px 20px rgba(212,175,55,.35), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn--gold:active { transform: scale(.95); box-shadow: 0 2px 8px rgba(212,175,55,.2), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn--ghost {
+  background: var(--glass);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+}
+.btn--ghost:hover { background: var(--glass-2); border-color: var(--gold-line); }
 .btn--quiet { background: transparent; color: var(--text-2); }
 .btn--quiet:hover { background: var(--bg-2); color: var(--text); }
 .btn--danger { background: var(--red-soft); color: #FF8A8E; border-color: rgba(229,72,77,.25); }
@@ -300,7 +315,7 @@ svg { display: block; flex-shrink: 0; }
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .card--pad { padding: var(--s3); }
-.card--hover:hover { border-color: var(--gold-line); background: var(--glass-2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,.3), 0 0 0 1px var(--gold-line); }
+.card--hover:hover { border-color: var(--gold-line); background: var(--glass); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,.3), 0 0 0 1px var(--gold-line); }
 .card--float:hover { transform: translateY(-2px); border-color: var(--gold-line); box-shadow: var(--glass-edge), var(--sh-2); }
 .surface { background: var(--grad-surface), var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); }
 
@@ -329,10 +344,14 @@ svg { display: block; flex-shrink: 0; }
   display: inline-flex; align-items: center; gap: 6px;
   height: 26px; padding: 0 11px; border-radius: var(--r-full);
   font-size: 12px; font-weight: 600;
-  background: var(--bg-4); color: var(--text-2); border: 1px solid transparent;
+  background: var(--glass);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
+  color: var(--text-2);
   transition: all var(--dur) var(--ease); cursor: pointer; white-space: nowrap;
 }
-.chip:hover { color: var(--text); }
+.chip:hover { color: var(--text); background: var(--glass-2); }
 .chip.active { background: var(--gold-soft); color: var(--gold); border-color: var(--gold-line); }
 .badge { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 7px; font-size: 11.5px; font-weight: 600; }
 .badge--gold { background: var(--gold-soft); color: var(--gold); }
@@ -354,12 +373,15 @@ svg { display: block; flex-shrink: 0; }
 .field__label { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .input {
   height: 40px; padding: 0 14px; border-radius: var(--r-sm);
-  background: var(--bg-2); border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
   color: var(--text); font-size: 14px; outline: none;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   width: 100%;
 }
-.input:focus { border-color: var(--gold-line); background: var(--bg-3); box-shadow: 0 0 0 3px var(--gold-soft); }
+.input:focus { border-color: var(--gold-line); box-shadow: 0 0 0 3px var(--gold-soft); }
 .input::placeholder { color: var(--text-4); }
 textarea.input { height: auto; padding: 11px 14px; resize: vertical; min-height: 88px; line-height: 1.5; }
 select.input { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
@@ -388,6 +410,14 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
 .kan-col__body { flex: 1; overflow-y: auto; min-height: 0; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .kan-card { background: var(--grad-surface), var(--glass-2); border: 1px solid var(--glass-border); border-radius: var(--r-sm); padding: 13px; box-shadow: var(--glass-edge); cursor: grab; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
 .kan-card:hover { border-color: var(--gold-line); transform: translateY(-1px); }
+
+/* Frosted real: con el vidrio ultra-transparente (alpha .15) el blur es lo que
+   convierte los orbes del fondo en esmerilado legible (estilo referencia).
+   glass-lite lo anula globalmente en gama baja (§19). */
+.card, .surface, .metric, .kan-col, .kan-card {
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+}
 
 /* ----------------------------------------------------------------------------
    11. TIMELINE
@@ -500,6 +530,11 @@ body.glass-lite .os-topbar { background: var(--bg-0); }
 body.glass-lite .card, body.glass-lite .surface, body.glass-lite .metric,
 body.glass-lite .kan-col { background: var(--bg-2); }
 body.glass-lite .kan-card { background: var(--bg-3); }
+body.glass-lite .os-search { background: var(--bg-2); border-color: var(--border-soft); }
+body.glass-lite .input { background: var(--bg-2); border-color: var(--border); }
+body.glass-lite .os-workspace { background: var(--bg-2); border-color: var(--border-soft); }
+body.glass-lite .chip { background: var(--bg-4); border-color: transparent; }
+body.glass-lite .btn--ghost { background: var(--bg-2); border-color: var(--border); }
 
 /* ----------------------------------------------------------------------------
    20. SQUIRCLE (Progressive Enhancement — Chrome/WebView 139+)
