@@ -145,7 +145,8 @@ svg { display: block; flex-shrink: 0; }
 .pm h3, .prop-card__name, .prop-empty h3,
 .cal-head h2, .modal h3,
 .donut .dv, .lote-tip b, .cc-stage-empty h3, .mm h3,
-.pj-pct__big
+.pj-pct__big,
+.m-empty h3, #calMes
 { letter-spacing: .02em; }
 
 .u-row { display: flex; align-items: center; }
