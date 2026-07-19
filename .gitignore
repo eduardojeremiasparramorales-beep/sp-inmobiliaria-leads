@@ -25,3 +25,7 @@ coverage/
 # El APK de distribución SÍ viaja por git — es el único transporte hacia la VM
 # (canal de auto-actualización in-app, ver scripts/release-apk.js)
 !public/descargas/leons-group.apk
+
+# Los íconos de la app también viajan por git (logo, favicon, PWA icons)
+!public/icons/*.png
+!public/icons/*.ico
