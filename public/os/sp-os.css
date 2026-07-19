@@ -51,14 +51,11 @@
   --sh-3: 0 12px 40px rgba(0,0,0,.40);
   --sh-pop: 0 8px 30px rgba(0,0,0,.45), 0 0 0 1px var(--border);
 
-  /* Glass — vidrio sobre la paleta SP.
-     --glass/-2: superficies translúcidas · --blur solo en elementos flotantes/sticky
-     (headers, nav, sheets, toasts); las cards repetidas usan glass SIN blur
-     (simulado: translúcido + borde + filo luminoso) para no castigar el rendimiento. */
+  /* Glass — vidrio sobre la paleta SP. */
   --glass:        rgba(23, 23, 23, .58);
   --glass-2:      rgba(28, 28, 28, .72);
-  --glass-border: rgba(248, 248, 248, .08);
-  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .06);
+  --glass-border: rgba(248, 248, 248, .10);
+  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .10);
   --glass-gold:   rgba(200, 164, 90, .06);
   --blur:    saturate(1.4) blur(18px);
   --blur-sm: saturate(1.2) blur(10px);
@@ -67,9 +64,9 @@
   --f-title: 'Cinzel', Georgia, serif;
   --f-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --f-num: 'SF Pro Display', 'Inter', sans-serif;
-  --track-display: -0.022em;  /* .t-h1, .metric__value — SF Display */
-  --track-title:  -0.016em;  /* .t-h2 */
-  --track-body:   -0.011em;  /* body (heredado) */
+  --track-display: -0.024em;  /* .t-h1, .metric__value — SF Display */
+  --track-title:  -0.018em;  /* .t-h2 */
+  --track-body:   -0.012em;  /* body (heredado) */
 
   /* Gradientes oro (token único reemplaza ~15 duplicados en todo el sistema) */
   --grad-gold:      linear-gradient(140deg, #E8C86A, var(--gold) 60%, #B08D42);
@@ -97,11 +94,11 @@
 html, body { height: 100%; }
 body {
   font-family: var(--f-ui);
-  /* Aurora: gradientes fijos muy tenues (oro/verde) sobre el negro raíz — dan
-     profundidad y hacen legible el efecto vidrio de las superficies translúcidas. */
+  /* Aurora: gradientes más visibles — profundidad y riqueza visual */
   background:
-    radial-gradient(900px 600px at 85% -10%, rgba(200,164,90,.05), transparent 60%),
-    radial-gradient(800px 700px at -10% 100%, rgba(78,123,70,.04), transparent 60%),
+    radial-gradient(900px 600px at 80% -15%, rgba(200,164,90,.09), transparent 60%),
+    radial-gradient(800px 700px at -10% 100%, rgba(78,123,70,.06), transparent 60%),
+    radial-gradient(500px 400px at 50% 50%, rgba(200,164,90,.03), transparent 70%),
     var(--bg-0);
   background-attachment: fixed;
   color: var(--text);
@@ -122,8 +119,8 @@ svg { display: block; flex-shrink: 0; }
 /* Scrollbar minimal */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: #3d3d3d; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; transition: background .2s; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold-line); background-clip: content-box; }
 
 /* ----------------------------------------------------------------------------
    3. TIPOGRAFÍA / UTILIDADES
@@ -218,11 +215,8 @@ svg { display: block; flex-shrink: 0; }
 }
 .os-nav__item svg { width: 18px; height: 18px; opacity: .85; }
 .os-nav__item:hover { background: var(--bg-2); color: var(--text); }
-.os-nav__item.active { background: var(--bg-3); color: var(--text); }
-.os-nav__item.active::before {
-  content: ''; position: absolute; left: -12px; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--gold);
-}
+.os-nav__item.active { background: var(--gold-soft); color: var(--text); border-left: 3px solid var(--gold); }
+.os-nav__item.active::before { display: none; }
 .os-nav__badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--gold); background: var(--gold-soft); padding: 1px 7px; border-radius: 999px; }
 .os-nav__foot { padding: 12px 12px 0; border-top: 1px solid var(--border-soft); margin: 0 12px; }
 
@@ -277,8 +271,9 @@ svg { display: block; flex-shrink: 0; }
 .btn svg { width: 16px; height: 16px; }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; pointer-events: none; }
-.btn--gold { background: var(--grad-gold); color: #0A0A0A; box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,.25); }
-.btn--gold:hover { filter: brightness(1.05); }
+.btn--gold { background: var(--grad-gold); color: #0A0A0A; box-shadow: var(--sh-2), inset 0 1px 0 rgba(255,255,255,.3); position: relative; overflow: hidden; }
+.btn--gold:hover { filter: brightness(1.08); box-shadow: 0 4px 20px rgba(200,164,90,.35), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn--gold:active { transform: scale(.95); box-shadow: 0 2px 8px rgba(200,164,90,.2), inset 0 1px 0 rgba(255,255,255,.3); }
 .btn--ghost { background: var(--bg-2); border-color: var(--border); color: var(--text); }
 .btn--ghost:hover { background: var(--bg-3); border-color: var(--border-strong); }
 .btn--quiet { background: transparent; color: var(--text-2); }
@@ -294,15 +289,15 @@ svg { display: block; flex-shrink: 0; }
    6. PRIMITIVAS — Cards / Surfaces
    ---------------------------------------------------------------------------- */
 .card {
-  /* Glass simulado: translúcido + filo luminoso, sin blur (rendimiento) */
   background: var(--grad-surface), var(--glass);
   border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--gold-soft);
   border-radius: var(--r-lg);
   box-shadow: var(--glass-edge), var(--sh-1);
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .card--pad { padding: var(--s3); }
-.card--hover:hover { border-color: var(--gold-line); background: var(--glass-2); }
+.card--hover:hover { border-color: var(--gold-line); background: var(--glass-2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,.3), 0 0 0 1px var(--gold-line); }
 .card--float:hover { transform: translateY(-2px); border-color: var(--gold-line); box-shadow: var(--glass-edge), var(--sh-2); }
 .surface { background: var(--grad-surface), var(--glass); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--glass-edge); }
 
@@ -314,7 +309,8 @@ svg { display: block; flex-shrink: 0; }
   display: flex; flex-direction: column; gap: 14px;
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-.metric:hover { border-color: var(--gold-line); transform: translateY(-2px); }
+.metric { border-top: 1px solid var(--gold-soft); }
+.metric:hover { border-color: var(--gold-line); transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,.3), 0 0 0 1px var(--gold-line); }
 .metric__top { display: flex; align-items: center; justify-content: space-between; }
 .metric__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
 .metric__icon svg { width: 18px; height: 18px; }
