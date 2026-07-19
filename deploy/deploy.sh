@@ -39,7 +39,13 @@ ok "Requisitos OK"
 log "📂 Actualizando código..."
 if [ -d "$APP_DIR" ]; then
   cd "$APP_DIR"
-  git pull origin main 2>/dev/null || warn "git pull falló (continuando con directorio existente)"
+  git fetch origin HEAD 2>/dev/null
+  if [ $? -eq 0 ]; then
+    git reset --hard origin/HEAD && git clean -fd
+    ok "Código actualizado + archivos huérfanos eliminados"
+  else
+    warn "git fetch falló — revisa conexión con GitHub"
+  fi
 else
   mkdir -p "$(dirname "$APP_DIR")"
   git clone https://github.com/eduardojeremiasparramorales-beep/sp-inmobiliaria-leads.git "$APP_DIR"
