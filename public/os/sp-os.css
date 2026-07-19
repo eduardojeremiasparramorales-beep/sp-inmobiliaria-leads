@@ -51,14 +51,16 @@
   --sh-3: 0 12px 40px rgba(0,0,0,.40);
   --sh-pop: 0 8px 30px rgba(0,0,0,.45), 0 0 0 1px var(--border);
 
-  /* Glass — vidrio sobre la paleta SP. */
-  --glass:        rgba(23, 23, 23, .58);
-  --glass-2:      rgba(28, 28, 28, .72);
+  /* Glass — vidrio premium sobre la paleta SP.
+     Más transparente que antes para que la aurora se vea a través.
+     Edge doble: highlight arriba + sombra abajo (ilusión de grosor). */
+  --glass:        rgba(20, 20, 20, .45);
+  --glass-2:      rgba(25, 25, 25, .60);
   --glass-border: rgba(248, 248, 248, .10);
-  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .10);
+  --glass-edge:   inset 0 1px 0 rgba(248, 248, 248, .12), inset 0 -1px 0 rgba(0,0,0,.25);
   --glass-gold:   rgba(200, 164, 90, .06);
-  --blur:    saturate(1.4) blur(18px);
-  --blur-sm: saturate(1.2) blur(10px);
+  --blur:    saturate(1.4) blur(22px);
+  --blur-sm: saturate(1.2) blur(14px);
 
   /* Tipografía */
   --f-title: 'Cinzel', Georgia, serif;
