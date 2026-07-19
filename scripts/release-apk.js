@@ -40,10 +40,13 @@ if (!fs.existsSync(APK_SRC)) {
     '\n  (NUNCA publiques el APK debug: firma distinta = a los teléfonos les tocaría desinstalar)');
 }
 const apkBuf = fs.readFileSync(APK_SRC);
-// Verificación de firma: un APK firmado contiene bloque META-INF con .RSA/.EC/.DSA
-const firmado = apkBuf.includes(Buffer.from('META-INF/')) &&
+// Verificación de firma: V1 deja META-INF/*.RSA|.EC|.DSA dentro del zip; la firma
+// moderna V2/V3 (la que produce gradle hoy) NO — deja el "APK Signing Block" cuyo
+// magic es la cadena literal "APK Sig Block 42" antes del central directory.
+const firmadoV1 = apkBuf.includes(Buffer.from('META-INF/')) &&
   (apkBuf.includes(Buffer.from('.RSA')) || apkBuf.includes(Buffer.from('.EC')) || apkBuf.includes(Buffer.from('.DSA')));
-if (!firmado) {
+const firmadoV2 = apkBuf.includes(Buffer.from('APK Sig Block 42'));
+if (!firmadoV1 && !firmadoV2) {
   console.warn('⚠ No detecté firma en el APK (¿falta key.properties?). Si no está firmado con release.keystore, la auto-actualización FALLARÁ en los teléfonos.');
 }
 
