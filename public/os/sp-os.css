@@ -99,9 +99,9 @@ body {
   /* Aurora + orbes: formas grandes y difusas detrás del vidrio (estilo
      glassmorphism minimal) — le dan al frosted algo que esmerilar. */
   background:
-    radial-gradient(circle 420px at 14% 16%, rgba(248,248,248,.055), transparent 68%),
-    radial-gradient(circle 300px at 78% 38%, rgba(248,248,248,.035), transparent 70%),
-    radial-gradient(circle 500px at 55% 108%, rgba(248,248,248,.030), transparent 72%),
+    radial-gradient(circle 420px at 14% 16%, rgba(248,248,248,.10), rgba(248,248,248,.03) 52%, transparent 62%),
+    radial-gradient(circle 300px at 78% 38%, rgba(248,248,248,.065), rgba(248,248,248,.02) 54%, transparent 64%),
+    radial-gradient(circle 500px at 55% 108%, rgba(248,248,248,.055), rgba(248,248,248,.018) 54%, transparent 64%),
     radial-gradient(800px 600px at 80% -15%, rgba(212,175,55,.14), transparent 60%),
     radial-gradient(700px 650px at -10% 100%, rgba(78,123,70,.08), transparent 60%),
     radial-gradient(600px 500px at 50% 50%, rgba(212,175,55,.05), transparent 70%),
