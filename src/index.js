@@ -91,6 +91,7 @@ function validarTelefono(phone) {
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'SP OS', version: '1.1.0' }));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html')));
 app.get('/webhook', handleVerification);
 app.post('/webhook', webhookLimiter, verifyWebhookSignature, handleMessage);
 
