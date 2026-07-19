@@ -135,6 +135,7 @@ function validarTelefono(phone) {
 
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'Leons Group', version: '1.1.0' }));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html')));
 
 app.use('/api', apiLimiter);
 
