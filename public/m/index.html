@@ -978,14 +978,39 @@ const PERMISOS=[
   {k:'notif', ic:'🔔', nombre:'Notificaciones',  desc:'Enterarte al instante cuando llega un lead o mensaje', query:'notifications'},
 ];
 async function estadoPermiso(query){
+  const P=(window.Capacitor&&window.Capacitor.Plugins)||{};
+  if(esNativo()){
+    // 1) Plugin propio Permisos (APK v4+): estado REAL de Android via checkSelfPermission
+    try{
+      if(window.Capacitor.isPluginAvailable&&window.Capacitor.isPluginAvailable('Permisos')){
+        const r=await P.Permisos.estado();
+        const st=r[{microphone:'mic',camera:'cam',geolocation:'geo',notifications:'notif'}[query]];
+        if(st) return st;
+      }
+    }catch(e){}
+    // 2) checkPermissions de los plugins oficiales (disponibles desde v3)
+    try{
+      if(query==='camera'&&P.Camera){ const st=await P.Camera.checkPermissions(); return st.camera==='granted'?'granted':st.camera==='denied'?'denied':'prompt'; }
+      if(query==='geolocation'&&P.Geolocation){ const st=await P.Geolocation.checkPermissions(); return st.location==='granted'?'granted':st.location==='denied'?'denied':'prompt'; }
+      if(query==='notifications'&&P.PushNotifications){ const st=await P.PushNotifications.checkPermissions(); return st.receive==='granted'?'granted':st.receive==='denied'?'denied':'prompt'; }
+    }catch(e){}
+  }
   if(query==='notifications'){
-    if(esNativo()){
-      try{ const st=await window.Capacitor.Plugins.PushNotifications.checkPermissions(); return st.receive==='granted'?'granted':st.receive==='denied'?'denied':'prompt'; }catch(e){}
-    }
     if('Notification' in window) return Notification.permission==='default'?'prompt':Notification.permission;
     return 'desconocido';
   }
-  try{ const st=await navigator.permissions.query({name:query}); return st.state; }catch(e){ return 'desconocido'; }
+  // 3) Permissions API del navegador. OJO WebView Android: para mic/cam devuelve
+  // 'prompt' PARA SIEMPRE aunque ya esté concedido (la concesión la resuelve
+  // Capacitor a nivel nativo por cada request) — por eso el flag local de respaldo
+  // que se marca cuando un pedido real tuvo éxito.
+  try{
+    const st=await navigator.permissions.query({name:query});
+    if(st.state==='granted'){ localStorage.setItem('sp_perm_ok_'+query,'1'); return 'granted'; }
+    if(st.state==='prompt'&&localStorage.getItem('sp_perm_ok_'+query)==='1') return 'granted';
+    return st.state;
+  }catch(e){
+    return localStorage.getItem('sp_perm_ok_'+query)==='1'?'granted':'desconocido';
+  }
 }
 async function estadoPermisos(){
   const out={};
@@ -994,11 +1019,11 @@ async function estadoPermisos(){
 }
 async function pedirPermiso(k){
   try{
-    if(k==='mic'){ const s=await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); }
-    else if(k==='cam'){ const s=await navigator.mediaDevices.getUserMedia({video:true}); s.getTracks().forEach(t=>t.stop()); }
+    if(k==='mic'){ const s=await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); localStorage.setItem('sp_perm_ok_microphone','1'); }
+    else if(k==='cam'){ const s=await navigator.mediaDevices.getUserMedia({video:true}); s.getTracks().forEach(t=>t.stop()); localStorage.setItem('sp_perm_ok_camera','1'); }
     else if(k==='geo'){
       if(esNativo() && window.Capacitor.Plugins.Geolocation){ await window.Capacitor.Plugins.Geolocation.requestPermissions(); }
-      else{ await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000})); }
+      else{ await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000})); localStorage.setItem('sp_perm_ok_geolocation','1'); }
     }
     else if(k==='notif'){
       if(esNativo()) await suscribirPushNativo();
@@ -1441,6 +1466,7 @@ function startGrabacion(){
   _recSec=0; _recChunks=[]; _recCancelling=false; _recLocked=false;
   try{
     navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
+      localStorage.setItem('sp_perm_ok_microphone','1'); // la hoja de permisos lee este flag (WebView no reporta mic via permissions.query)
       const mt=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
       _rec=new MediaRecorder(s, mt?{mimeType:mt}:{});
       _rec.ondataavailable=e=>{ if(e.data.size>0) _recChunks.push(e.data); };

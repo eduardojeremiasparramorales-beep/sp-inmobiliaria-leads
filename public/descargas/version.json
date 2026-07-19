@@ -1,10 +1,10 @@
 {
-  "versionCode": 3,
-  "versionName": "1.2.0",
+  "versionCode": 4,
+  "versionName": "1.3.0",
   "apkUrl": "/descargas/leons-group.apk",
   "size": 10722034,
-  "sha256": "62c668eaa517a58f86a124025a13e490de4660c48517d5c05ea9bebcd0921d45",
-  "notas": "Actualización automática, chat pro (audio 2x, destacados, búsqueda, stickers), mensajes programados, transcripción IA, chat de equipo y bloqueo con huella",
+  "sha256": "78d723e9f725187c89be9b7b72dc445d611b5ac194b33b4dbdbea31703b6a540",
+  "notas": "Permisos con estado real (ya se marcan como activos), deteccion nativa de permisos y mejoras internas",
   "obligatoria": false,
   "fecha": "2026-07-19"
 }

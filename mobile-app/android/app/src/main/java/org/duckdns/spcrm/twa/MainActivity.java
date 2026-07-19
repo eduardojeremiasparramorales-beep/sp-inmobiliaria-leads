@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         // Plugins propios: registrar ANTES de super.onCreate para que el bridge los exponga
         registerPlugin(ApkInstallerPlugin.class);
         registerPlugin(BiometricLockPlugin.class);
+        registerPlugin(PermisosPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
