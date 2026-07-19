@@ -955,6 +955,17 @@ app.get('/api/public/media/:filename', async (req, res) => {
 // ===================== RESPONDER (OLD) =====================
 
 // Responder a un cliente DESDE EL PANEL → se envía por el número oficial
+// Firma del asesor al pie de cada mensaje saliente. Compartida entre el envío
+// manual (/responder) y el scheduler de mensajes programados en servidor.
+function buildMensajeConFirma(mensaje, nombreVendedor) {
+  const nombre = nombreVendedor || 'Asesor';
+  const compania = store.getConfig('company_name') || 'Sp Leons Group';
+  const separator = '_____________________________';
+  const padding = Math.floor((separator.length - nombre.length) / 2);
+  const centrado = padding > 0 ? ' '.repeat(padding) : ' ';
+  return `${mensaje}\n\n${separator}\n${centrado}*_${nombre}_*\n\`Asesor · ${compania}\``;
+}
+
 app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (req, res) => {
   const { mensaje, replyTo } = req.body || {};
   if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_vacio' });
@@ -967,13 +978,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
   }
 
   try {
-    const nombreVendedor = req.session.nombre || 'Asesor';
-    const compania = store.getConfig('company_name') || 'Sp Leons Group';
-    const separator = '_____________________________';
-    const nameVisualLen = nombreVendedor.length;
-    const padding = Math.floor((separator.length - nameVisualLen) / 2);
-    const centrado = padding > 0 ? ' '.repeat(padding) : ' ';
-    const mensajeConFirma = `${String(mensaje)}\n\n${separator}\n${centrado}*_${nombreVendedor}_*\n\`Asesor · ${compania}\``;
+    const mensajeConFirma = buildMensajeConFirma(String(mensaje), req.session.nombre);
     const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
@@ -1079,6 +1084,8 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
   if (mime.startsWith('image/')) tipo = 'image';
   else if (mime.startsWith('audio/')) tipo = 'audio';
   else if (mime.startsWith('video/')) tipo = 'video';
+  // Stickers: webp marcado explícitamente desde el panel (WhatsApp: 512x512 estático <100KB)
+  if (req.body.sticker === true && mime === 'image/webp') tipo = 'sticker';
 
   try {
     let buffer = Buffer.from(dataBase64, 'base64');
@@ -1189,6 +1196,210 @@ app.post('/api/messages/:id/react', auth.requireAuth, (req, res) => {
   }
   const reactions = store.getReactionsForMessage(msgId);
   res.json({ ok: true, reactions });
+});
+
+// Destacar/quitar destacado de un mensaje ⭐ (toggle)
+app.post('/api/messages/:id/star', auth.requireAuth, (req, res) => {
+  const msgId = req.params.id;
+  if (!msgId || isNaN(Number(msgId))) return res.status(400).json({ error: 'id_requerido' });
+  const row = store.getMessageById(msgId);
+  if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
+  const lead = store.getLeadById(row.lead_id);
+  if (req.session.rol !== 'admin' && (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId))) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const starred = store.toggleStarMessage(msgId);
+  res.json({ ok: true, starred });
+});
+
+// Lista de mensajes destacados del vendedor (admin: todos)
+app.get('/api/mensajes/destacados', auth.requireAuth, (req, res) => {
+  res.json(store.getStarredMessages(req.session.vendedorId, req.session.rol === 'admin'));
+});
+
+// Búsqueda global en el contenido de los mensajes
+app.get('/api/mensajes/buscar', auth.requireAuth, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 3) return res.status(400).json({ error: 'minimo_3_caracteres' });
+  res.json(store.searchMessages(q, req.session.vendedorId, req.session.rol === 'admin'));
+});
+
+// Reenviar un mensaje (texto o MEDIA) a otro lead — server-side.
+// Media: reusa el media_id de WhatsApp (~30 días de vida); si Graph lo rechaza,
+// re-sube el archivo desde disco y reintenta con el id fresco.
+app.post('/api/messages/:id/forward', auth.requireAuth, messageLimiter, async (req, res) => {
+  const msgId = req.params.id;
+  const { toLeadId } = req.body || {};
+  if (!msgId || isNaN(Number(msgId)) || !toLeadId) return res.status(400).json({ error: 'id_y_toLeadId_requeridos' });
+  const row = store.getMessageById(msgId);
+  if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
+  const leadOrigen = store.getLeadById(row.lead_id);
+  const leadDest = store.getLeadById(toLeadId);
+  if (!leadDest) return res.status(404).json({ error: 'lead_destino_no_existe' });
+  const esAdmin = req.session.rol === 'admin';
+  const vid = Number(req.session.vendedorId);
+  if (!esAdmin && ((!leadOrigen || Number(leadOrigen.assigned_to_id) !== vid) || Number(leadDest.assigned_to_id) !== vid)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  try {
+    const fromNumber = leadDest.assigned_to_phone || req.session.email || 'panel';
+    let wamid = null;
+    let media = null;
+    // El body de media sin caption guarda el placeholder interno '[image]'/'[video]'/…
+    // (assigner.js) — jamás debe llegarle al cliente como caption literal.
+    const esPlaceholder = /^\[(image|audio|video|document|sticker|location)\]$/.test(String(row.body || '').trim());
+    if (row.media_type === 'location') {
+      // Las ubicaciones se guardan como JSON en body (media_id NULL): reenviar
+      // como pin de WhatsApp real, no como texto con coordenadas crudas.
+      let loc = null;
+      try { loc = JSON.parse(row.body); } catch (e) { }
+      const lat = Number(loc && loc.latitude), lng = Number(loc && loc.longitude);
+      if (!loc || isNaN(lat) || isNaN(lng)) {
+        return res.status(422).json({ error: 'ubicacion_invalida' });
+      }
+      const result = await sendLocation(leadDest.customer_phone, lat, lng, loc.name || '', loc.address || '');
+      wamid = result && result.messages && result.messages[0] ? result.messages[0].id : null;
+      media = { media_type: 'location', media_id: null, media_mime: null, media_filename: null };
+      store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, row.body, 'outgoing', media, null, wamid, 'sent');
+    } else if (row.media_type && row.media_id) {
+      const caption = !esPlaceholder && row.body ? row.body : '';
+      let result;
+      let mediaIdVigente = row.media_id;
+      try {
+        result = await sendMedia(leadDest.customer_phone, mediaIdVigente, row.media_type, caption);
+      } catch (e) {
+        // media_id caducado → re-subir desde disco y reintentar
+        if (!row.media_filename) throw e;
+        const fp = path.join(__dirname, '..', 'data', 'media', String(row.media_filename));
+        if (!fs.existsSync(fp)) throw e;
+        mediaIdVigente = await uploadMedia(fs.readFileSync(fp), row.media_mime || 'application/octet-stream', row.media_filename);
+        result = await sendMedia(leadDest.customer_phone, mediaIdVigente, row.media_type, caption);
+      }
+      wamid = result && result.messages && result.messages[0] ? result.messages[0].id : null;
+      // Persistir el media_id VIGENTE (si se re-subió, el viejo está muerto)
+      media = { media_type: row.media_type, media_id: mediaIdVigente, media_mime: row.media_mime, media_filename: row.media_filename };
+      store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, row.body || '', 'outgoing', media, null, wamid, 'sent');
+    } else {
+      const texto = '✉️ Reenviado: ' + (row.body || '');
+      const smart = await sendMessageSmart(leadDest.customer_phone, texto, leadDest.id);
+      wamid = smart.data && smart.data.messages && smart.data.messages[0] ? smart.data.messages[0].id : null;
+      store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, texto, 'outgoing', null, null, wamid, 'sent');
+    }
+    store.syncLeadToConversation(store.getLeadById(leadDest.id), { direction: 'outgoing', body: row.body || `[${row.media_type}]`, fromNumber, toNumber: leadDest.customer_phone });
+    events.emitToVendedor(leadDest.assigned_to_id, 'nuevo_mensaje', { leadId: leadDest.id, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { leadId: leadDest.id, tipo: 'respuesta_panel', ts: Date.now() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error reenviando mensaje:', e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+  }
+});
+
+// Traducir un mensaje con IA (cachea en translated_body — no se paga dos veces)
+app.post('/api/mensajes/:id/traducir', auth.requireAuth, async (req, res) => {
+  const msgId = req.params.id;
+  if (!msgId || isNaN(Number(msgId)))  return res.status(400).json({ error: 'id_requerido' });
+  const row = store.getMessageById(msgId);
+  if (!row || !row.body) return res.status(404).json({ error: 'mensaje_sin_texto' });
+  const lead = store.getLeadById(row.lead_id);
+  if (req.session.rol !== 'admin' && (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId))) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  // '[object Object]' = cache envenenada por un bug previo (se guardó el objeto en vez de .text) — re-traducir
+  if (row.translated_body && row.translated_body !== '[object Object]') {
+    return res.json({ ok: true, traduccion: row.translated_body, cache: true });
+  }
+  try {
+    const nlp = require('./services/nlp');
+    if (!nlp.isAIEnabled()) return res.status(503).json({ error: 'ia_no_configurada' });
+    const lang = String((req.body || {}).a || 'español');
+    const r = await nlp.chatText(
+      `Eres un traductor profesional. Traduce el mensaje del usuario al ${lang} manteniendo el tono. Devuelve SOLO la traducción, sin explicaciones.`,
+      row.body, 15000);
+    // chatText devuelve { text, model } (no un string)
+    const traduccion = typeof r === 'string' ? r : (r && r.text);
+    if (!traduccion || typeof traduccion !== 'string') return res.status(502).json({ error: 'traduccion_fallida' });
+    store.setTranslation(msgId, traduccion);
+    res.json({ ok: true, traduccion });
+  } catch (e) {
+    console.error('Error traduciendo mensaje:', e.message);
+    res.status(502).json({ error: 'traduccion_fallida' });
+  }
+});
+
+// ===================== MENSAJES PROGRAMADOS (servidor) =====================
+// Salen aunque la app esté cerrada — los envía src/services/scheduler.js
+
+app.get('/api/programados', auth.requireAuth, (req, res) => {
+  res.json(store.getScheduledByVendedor(req.session.vendedorId, req.session.rol === 'admin'));
+});
+
+// messageLimiter: sin él, programar N mensajes con sendAt inmediato saltaba el
+// rate limit de envíos que /responder y /forward sí respetan.
+app.post('/api/programados', auth.requireAuth, messageLimiter, (req, res) => {
+  const { leadId, body, sendAt } = req.body || {};
+  if (!leadId || !body || !String(body).trim() || !sendAt) return res.status(400).json({ error: 'leadId_body_sendAt_requeridos' });
+  if (String(body).length > CFG.MAX_MESSAGE_LENGTH) return res.status(400).json({ error: 'mensaje_muy_largo' });
+  const lead = store.getLeadById(leadId);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const fecha = new Date(sendAt);
+  if (isNaN(fecha.getTime()) || fecha.getTime() < Date.now() - 60000) return res.status(400).json({ error: 'fecha_invalida_o_pasada' });
+  const sendAtSQL = fecha.toISOString().slice(0, 19).replace('T', ' ');
+  const id = store.createScheduled(Number(leadId), Number(req.session.vendedorId) || 0, String(body).trim(), sendAtSQL);
+  res.json({ ok: true, id });
+});
+
+app.put('/api/programados/:id', auth.requireAuth, (req, res) => {
+  const s = store.getScheduledById(req.params.id);
+  if (!s) return res.status(404).json({ error: 'no_existe' });
+  if (s.estado !== 'pendiente') return res.status(400).json({ error: 'solo_pendientes' });
+  if (req.session.rol !== 'admin' && Number(s.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const { body, sendAt } = req.body || {};
+  const fields = {};
+  if (body && String(body).trim()) {
+    if (String(body).length > CFG.MAX_MESSAGE_LENGTH) return res.status(400).json({ error: 'mensaje_muy_largo' });
+    fields.body = String(body).trim();
+  }
+  if (sendAt) {
+    const fecha = new Date(sendAt);
+    // Misma regla que el POST: editar a una fecha pasada convertiría la edición en envío inmediato
+    if (isNaN(fecha.getTime()) || fecha.getTime() < Date.now() - 60000) return res.status(400).json({ error: 'fecha_invalida_o_pasada' });
+    fields.send_at = fecha.toISOString().slice(0, 19).replace('T', ' ');
+  }
+  store.updateScheduled(s.id, fields);
+  res.json({ ok: true });
+});
+
+app.delete('/api/programados/:id', auth.requireAuth, (req, res) => {
+  const s = store.getScheduledById(req.params.id);
+  if (!s) return res.status(404).json({ error: 'no_existe' });
+  if (s.estado !== 'pendiente') return res.status(400).json({ error: 'solo_pendientes' });
+  if (req.session.rol !== 'admin' && Number(s.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.updateScheduled(s.id, { estado: 'cancelado' });
+  res.json({ ok: true });
+});
+
+// ===================== CHAT INTERNO DEL EQUIPO =====================
+
+app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
+  res.json(store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 50));
+});
+
+app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
+  const { body } = req.body || {};
+  if (!body || !String(body).trim()) return res.status(400).json({ error: 'body_requerido' });
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
+  const msg = store.saveTeamMessage(fromId, nombre, String(body).trim());
+  events.emitToTodos('equipo_mensaje', msg);
+  res.json({ ok: true, mensaje: msg });
 });
 
 // Editar mensaje enviado (solo outgoing y reciente)
@@ -2851,4 +3062,6 @@ function ensureAdminUser() {
   setInterval(checkEscalation, CFG.ESCALATION_CHECK_INTERVAL);
   setInterval(checkRecordatorios, 60000);
   setInterval(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS), CFG.SESSION_CLEANUP_INTERVAL);
+  // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
+  require('./services/scheduler').start(buildMensajeConFirma);
 })();

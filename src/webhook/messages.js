@@ -255,6 +255,12 @@ async function handleMediaMessage(msg, fromPhone, customerName) {
   routeIncomingMedia(fromPhone, customerName, mediaData, msg.id || null, (err, result) => {
     if (err) { console.error('Error routing media:', err.message); return; }
     if (result && result.forwarded) console.log(`Media (${type}) avisado a ${result.to}`);
+    // Transcripción IA de notas de voz (async, no bloquea el webhook; no-op sin proveedor)
+    if (type === 'audio') {
+      try {
+        require('../services/transcribe').enqueue({ wamid: msg.id, filename, mime });
+      } catch (e) { console.error('Error encolando transcripción:', e.message); }
+    }
   });
 }
 

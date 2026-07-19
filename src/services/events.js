@@ -44,4 +44,9 @@ function emitToAdmins(evento, data) {
   emitToVendedor(0, evento, data);
 }
 
-module.exports = { addClient, removeClient, emitToVendedor, emitToAdmins };
+// Enviar a TODOS los conectados (vendedores + admins) — chat de equipo
+function emitToTodos(evento, data) {
+  for (const id of clients.keys()) emitToVendedor(id, evento, data);
+}
+
+module.exports = { addClient, removeClient, emitToVendedor, emitToAdmins, emitToTodos };
