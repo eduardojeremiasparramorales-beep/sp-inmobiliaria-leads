@@ -7,6 +7,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <!-- Canal por defecto para push FCM en background — debe coincidir con el
+             channelId creado en MainActivity.java y el que envía src/services/push.js -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="leons_group_push" />
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"

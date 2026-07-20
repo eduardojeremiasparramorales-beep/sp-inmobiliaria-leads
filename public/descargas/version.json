@@ -1,10 +1,10 @@
 {
-  "versionCode": 4,
-  "versionName": "1.3.0",
+  "versionCode": 5,
+  "versionName": "1.3.1",
   "apkUrl": "/descargas/leons-group.apk",
-  "size": 10722034,
-  "sha256": "78d723e9f725187c89be9b7b72dc445d611b5ac194b33b4dbdbea31703b6a540",
-  "notas": "Permisos con estado real (ya se marcan como activos), deteccion nativa de permisos y mejoras internas",
-  "obligatoria": false,
-  "fecha": "2026-07-19"
+  "size": 10722114,
+  "sha256": "034dbc4529a1f42fd5ea9824652452e3b6b5aaaaf05742bf3744f0ac47c326c9",
+  "notas": "Fix: notificaciones push nativas no llegaban con la app en segundo plano (faltaba el canal de notificacion de Android)",
+  "obligatoria": true,
+  "fecha": "2026-07-20"
 }

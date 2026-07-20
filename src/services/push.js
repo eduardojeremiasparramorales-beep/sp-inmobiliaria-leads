@@ -79,6 +79,12 @@ async function sendFcm(s, payload) {
       token: s.endpoint, // el token FCM se guarda en la columna endpoint (ver store.saveFcmToken)
       notification: { title: payload.title || 'Leons Group', body: payload.body || '' },
       data: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
+      // Prioridad alta: sin esto, Android puede retrasar la entrega en Doze/segundo
+      // plano — crítico en fabricantes agresivos con batería (Tecno/HiOS, Xiaomi/MIUI,
+      // Huawei) donde una notificación de prioridad normal simplemente nunca despierta el dispositivo.
+      // channelId debe coincidir con el canal creado en MainActivity.java (mobile-app) —
+      // si no coincide con un canal que exista en el dispositivo, Android descarta el push.
+      android: { priority: 'high', notification: { channelId: 'leons_group_push', sound: 'default', defaultSound: true, visibility: 'public' } },
     });
   } catch (e) {
     // Token inválido/desinstalado → eliminarlo, igual que una suscripción Web Push expirada
