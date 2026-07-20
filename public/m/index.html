@@ -960,37 +960,83 @@ function initEquipo(){
   cargarEquipo().then(renderList);
 }
 
-/* ════════ Bloqueo con huella (BiometricLock, solo app nativa) ════════ */
+/* ════════ Bloqueo con huella (Biometric native + WebAuthn web) ════════ */
+const BIO_KEY='sp_bio_lock';
 async function bioDisponible(){
   try{
-    if(!esNativo()||!window.Capacitor.isPluginAvailable('BiometricLock')) return false;
-    const r=await window.Capacitor.Plugins.BiometricLock.isAvailable();
-    return !!r.value;
-  }catch(e){ return false; }
+    if(esNativo()&&window.Capacitor.isPluginAvailable('BiometricLock')){
+      const r=await window.Capacitor.Plugins.BiometricLock.isAvailable();
+      if(r.value) return true;
+    }
+    if(window.PublicKeyCredential&&typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable==='function')
+      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  }catch(e){}
+  return false;
 }
 async function bioActivado(){
-  try{ const r=await window.Capacitor.Plugins.Preferences.get({key:'sp_bio_lock'}); return r.value==='1'; }catch(e){ return false; }
+  try{
+    if(esNativo()&&window.Capacitor.isPluginAvailable('Preferences')){
+      const r=await window.Capacitor.Plugins.Preferences.get({key:BIO_KEY});
+      if(r.value==='1') return true;
+    }
+    return localStorage.getItem(BIO_KEY)==='1';
+  }catch(e){ return localStorage.getItem(BIO_KEY)==='1'; }
+}
+async function bioSetActivado(v){
+  try{
+    if(esNativo()&&window.Capacitor.isPluginAvailable('Preferences'))
+      await window.Capacitor.Plugins.Preferences.set({key:BIO_KEY,value:v?'1':'0'});
+    localStorage.setItem(BIO_KEY,v?'1':'0');
+  }catch(e){ localStorage.setItem(BIO_KEY,v?'1':'0'); }
+}
+function getBioCredId(){
+  try{ const r=localStorage.getItem('sp_bio_cred'); return r?Uint8Array.from(JSON.parse(r)):null; }catch(e){ return null; }
+}
+function setBioCredId(id){
+  localStorage.setItem('sp_bio_cred',JSON.stringify(Array.from(id)));
 }
 async function pedirDesbloqueo(){
   const ov=$('#bioLock'); if(!ov) return;
   ov.hidden=false;
   const intentar=async()=>{
     try{
-      await window.Capacitor.Plugins.BiometricLock.authenticate();
+      if(esNativo()&&window.Capacitor.isPluginAvailable('BiometricLock')){
+        await window.Capacitor.Plugins.BiometricLock.authenticate();
+      }else if(window.PublicKeyCredential){
+        let credId=getBioCredId();
+        if(!credId){
+          const cred=await navigator.credentials.create({publicKey:{
+            challenge:crypto.getRandomValues(new Uint8Array(32)),
+            rp:{name:'SP CRM',id:window.location.hostname},
+            user:{id:crypto.getRandomValues(new Uint8Array(16)),name:'sp_user',displayName:'SP CRM'},
+            pubKeyCredParams:[{alg:-7,type:'public-key'}],
+            authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
+          }});
+          if(cred){ setBioCredId(cred.rawId); credId=cred.rawId; }
+          else throw new Error('no_register');
+        }
+        await navigator.credentials.get({publicKey:{
+          challenge:crypto.getRandomValues(new Uint8Array(32)),
+          allowCredentials:[{type:'public-key',id:credId}],
+          userVerification:'required',
+        }});
+      }
       ov.hidden=true; haptic([10,20]);
-    }catch(e){ /* canceló o falló — el overlay persiste, botón reintenta */ }
+    }catch(e){ /* canceló o falló */ }
   };
   $('#bioUnlock').onclick=intentar;
   intentar();
 }
 async function initBioLock(){
-  if(!esNativo()) return;
-  if(await bioActivado() && await bioDisponible()){
-    pedirDesbloqueo();
-  }
+  if(await bioActivado()&&await bioDisponible()) pedirDesbloqueo();
   try{
-    window.Capacitor.Plugins.App.addListener('resume', async ()=>{
-      if(await bioActivado() && await bioDisponible() && $('#bioLock').hidden) pedirDesbloqueo();
+    if(esNativo()&&window.Capacitor.isPluginAvailable('App'))
+      window.Capacitor.Plugins.App.addListener('resume',async()=>{
+        if(await bioActivado()&&await bioDisponible()&&$('#bioLock').hidden) pedirDesbloqueo();
+      });
+    // Fallback web: detectar vuelta de background
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden&&$('#bioLock').hidden) (async()=>{ if(await bioActivado()&&await bioDisponible()) pedirDesbloqueo(); })();
     });
   }catch(e){}
 }
@@ -2656,7 +2702,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           : '<div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Mantén presionado un mensaje y toca ⭐ Destacar para guardarlo aquí.</div>');
         $('#sheetBody').querySelectorAll('[data-dst]').forEach(el=>el.onclick=()=>{ closeSheet(); irTab('chats'); abrirChat(Number(el.dataset.dst)); });
       });
-      // 🔒 Bloqueo con huella (solo app nativa con biometría disponible)
+      // 🔒 Bloqueo con huella (nativo + web vía WebAuthn)
       bioDisponible().then(async disp=>{
         const row=document.getElementById('rowBioLock'); if(!row||!disp) return;
         row.style.display='';
@@ -2665,12 +2711,31 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         tg.addEventListener('click',async function(){
           const on=this.classList.contains('on');
           if(!on){
-            // Verificar la huella ANTES de activar (evita quedar bloqueado sin biometría funcional)
-            try{ await window.Capacitor.Plugins.BiometricLock.authenticate(); }
-            catch(e){ toast('No se pudo verificar tu huella'); return; }
+            try{
+              if(esNativo()&&window.Capacitor.isPluginAvailable('BiometricLock'))
+                await window.Capacitor.Plugins.BiometricLock.authenticate();
+              else if(window.PublicKeyCredential){
+                const credId=getBioCredId();
+                if(!credId){
+                  const cred=await navigator.credentials.create({publicKey:{
+                    challenge:crypto.getRandomValues(new Uint8Array(32)),
+                    rp:{name:'SP CRM',id:window.location.hostname},
+                    user:{id:crypto.getRandomValues(new Uint8Array(16)),name:'sp_user',displayName:'SP CRM'},
+                    pubKeyCredParams:[{alg:-7,type:'public-key'}],
+                    authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
+                  }});
+                  if(cred) setBioCredId(cred.rawId);
+                }
+                await navigator.credentials.get({publicKey:{
+                  challenge:crypto.getRandomValues(new Uint8Array(32)),
+                  allowCredentials:[{type:'public-key',id:getBioCredId()}],
+                  userVerification:'required',
+                }});
+              }
+            }catch(e){ toast('No se pudo verificar tu huella'); return; }
           }
           this.classList.toggle('on');
-          try{ await window.Capacitor.Plugins.Preferences.set({key:'sp_bio_lock',value:on?'0':'1'}); }catch(e){}
+          await bioSetActivado(!on);
           toast(on?'Bloqueo con huella desactivado':'Bloqueo con huella activado 🔒'); haptic(8);
         });
       });
