@@ -335,6 +335,10 @@ async function initDB() {
   // Puente legacy → multicanal: cada conversación puede apuntar a su lead
   ensureColumn('conversations', 'lead_id', 'INTEGER');
   execSQL(`CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id)`);
+  // Defensivo: en DBs creadas antes de que `progress_pct` estuviera en el CREATE
+  // TABLE de schema.js, la columna no existe y syncLeadToConversation() falla
+  // silenciosamente (try/catch) en cada INSERT — ninguna conversación se crea.
+  ensureColumn('conversations', 'progress_pct', 'INTEGER DEFAULT 5');
 
   // Citas (visitas, llamadas, seguimientos agendados)
   execSQL(`
@@ -1430,12 +1434,25 @@ function deleteVendedor(id) {
       run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
       run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [siguiente.id]);
     });
+    // Reasignar también las conversaciones del schema multicanal — tienen su propia
+    // FK (conversations.assigned_to_id → vendedores.id) independiente de `leads`, y
+    // si no se limpia primero, DELETE FROM vendedores revienta con "FOREIGN KEY
+    // constraint failed" en cuanto el vendedor tiene una sola conversación asignada.
+    run('UPDATE conversations SET assigned_to_id = ? WHERE assigned_to_id = ?', [siguiente.id, id]);
   } else {
     // No hay vendedores activos: marcar leads como huérfanos (sin asignar) y cambiar status a 'nuevo' para que round-robin los reasigne
     leadsReasignar.forEach(lead => {
       run('UPDATE leads SET assigned_to_id = NULL, assigned_to_phone = NULL, status = ?, updated_at = datetime(\'now\') WHERE id = ?', ['nuevo', lead.id]);
     });
+    run('UPDATE conversations SET assigned_to_id = NULL, status = ? WHERE assigned_to_id = ?', ['nuevo', id]);
   }
+
+  // Otras FK reales hacia vendedores.id que deleteVendedor debe liberar antes de
+  // borrar la fila padre, o SQLite rechaza el DELETE con FOREIGN KEY constraint failed.
+  run('UPDATE lotes SET asesor_id = NULL WHERE asesor_id = ?', [id]);
+  run('DELETE FROM ubicaciones_guardadas WHERE vendedor_id = ?', [id]);
+  // Sin FK declarada, pero quedaría huérfana (NOT NULL vendedor_id) sin dueño posible.
+  run('DELETE FROM vendedor_templates WHERE vendedor_id = ?', [id]);
 
   run('DELETE FROM push_subscriptions WHERE vendedor_id = ?', [id]);
   run('DELETE FROM sessions WHERE vendedor_id = ?', [id]);
