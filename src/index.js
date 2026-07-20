@@ -2869,6 +2869,16 @@ app.delete('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const vendedor = getVendedores().find(v => Number(v.id) === id);
   if (!vendedor) return res.status(404).json({ error: 'vendedor_no_existe' });
+  // No permitir borrar tu propia cuenta ni la de otro admin: deleteVendedor() borra
+  // también su fila en `usuarios` y sus sesiones, así que el admin quedaría deslogueado
+  // y bloqueado del sistema de inmediato.
+  if (Number(req.session.vendedorId) === id) {
+    return res.status(400).json({ error: 'no_puedes_eliminar_tu_propia_cuenta' });
+  }
+  const usuarioVinculado = store.getUsuarioByVendedorId(id);
+  if (usuarioVinculado && usuarioVinculado.rol === 'admin') {
+    return res.status(400).json({ error: 'no_se_puede_eliminar_una_cuenta_admin' });
+  }
   const reasignadoA = deleteVendedor(id);
   events.emitToAdmins('vendedor_eliminado', { vendedorId: id, reasignadoA: reasignadoA ? reasignadoA.nombre : null, ts: Date.now() });
   res.json({ ok: true, reasignadoA: reasignadoA ? { id: reasignadoA.id, nombre: reasignadoA.nombre } : null });

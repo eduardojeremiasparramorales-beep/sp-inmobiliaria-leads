@@ -50,6 +50,9 @@
     // Mapa: vendedor_id → nombre de usuario (para saber quién tiene cuenta)
     const vUserMap = {};
     usrs.forEach(u => { if(u.vendedor_id) vUserMap[u.vendedor_id] = u.email; });
+    // Cuentas admin: no se pueden suspender/eliminar desde aquí — borrar esa fila
+    // borra también su login (usuarios + sesión) y deja al admin bloqueado fuera del sistema.
+    const adminVendedorIds = new Set(usrs.filter(u => u.rol === 'admin' && u.vendedor_id).map(u => u.vendedor_id));
 
     ctx.content.innerHTML = `
      <div class="os-content__max">
@@ -119,17 +122,19 @@
           </tr></thead>
           <tbody>${vends.map(v => {
             const tieneCuenta = vUserMap[v.id] ? true : false;
+            const esAdmin = adminVendedorIds.has(v.id);
             return `<tr>
-              <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span></div></td>
+              <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span>${esAdmin?`<span class="badge badge--gold" style="font-size:10px">Admin</span>`:''}</div></td>
               <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}${v.telefono && !v.telefono.startsWith('+57') ? ` <button class="btn btn--ghost btn--xs" data-action="fixPhone" data-id="${v.id}" data-tel="${esc(v.telefono)}" title="Corregir teléfono (agregar +57)">${S.refresh}Fix</button>` : ''}</td>
               <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
               <td>${tieneCuenta ? '<span class="badge badge--green" style="font-size:10px">Sí</span>' : '<span class="t-dim3" style="font-size:11px">—</span>'}</td>
               <td><button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button></td>
               <td>
+                ${esAdmin ? `<span class="t-dim3" style="font-size:11px" title="Las cuentas admin no se pueden suspender ni eliminar desde aquí">Protegida</span>` : `
                 <div class="u-row u-gap1">
                   <button class="btn btn--ghost btn--xs" data-action="estado" data-id="${v.id}" data-name="${esc(v.nombre)}" data-estado="${v.estado}">${S.activity} ${v.estado==='activo'?'Suspender':'Activar'}</button>
                   <button class="btn btn--ghost btn--xs t-red" data-action="delete" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.trash} Eliminar</button>
-                </div>
+                </div>`}
               </td>
             </tr>`;
           }).join('') || '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3)">Sin asesores registrados</td></tr>'}</tbody>
@@ -247,7 +252,10 @@
           const reasig = r.reasignadoA ? ` Leads reasignados a ${r.reasignadoA.nombre}` : '';
           toast('Asesor eliminado.'+reasig);
           cargar();
-        } else toast(r?.error || 'Error al eliminar','err');
+        } else {
+          const errores = { no_puedes_eliminar_tu_propia_cuenta:'No puedes eliminar tu propia cuenta', no_se_puede_eliminar_una_cuenta_admin:'Las cuentas admin no se pueden eliminar', vendedor_no_existe:'Ese asesor ya no existe' };
+          toast((r?.error && errores[r.error]) || r?.error || 'Error al eliminar','err');
+        }
       } catch(err){ toast('Error de conexión','err'); }
     }));
 

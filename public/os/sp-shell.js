@@ -88,8 +88,12 @@
         headers: { 'Accept': 'application/json' }, credentials: 'include'
       }, opts || {}));
       if (res.status === 401) { if (!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
-      if (!res.ok) throw new Error('http_' + res.status);
-      return await res.json();
+      let body = null;
+      try { body = await res.json(); } catch (e) { /* respuesta sin JSON (204, HTML de error, etc.) */ }
+      // En error HTTP, devolver el body igual (trae { error: '...' } del backend) en vez de
+      // descartarlo — así los callers pueden mostrar el motivo real en vez de un genérico.
+      if (!res.ok) return body || { error: 'http_' + res.status };
+      return body;
     } catch (e) {
       return null;
     }
