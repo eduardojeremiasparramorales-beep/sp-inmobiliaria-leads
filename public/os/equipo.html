@@ -40,8 +40,12 @@
     const totalVend = team.reduce((s,v)=>s+v.vendidos,0);
     const avgConv = team.length ? Math.round(team.reduce((s,v)=>s+v.conversion,0)/team.length) : 0;
     const topId = team.slice().sort((a,b)=>b.vendidos-a.vendidos)[0]?.id;
-    const vends = Array.isArray(vendedores) ? vendedores : [];
+    const vendsAll = Array.isArray(vendedores) ? vendedores : [];
     const usrs = Array.isArray(usuarios) ? usuarios : [];
+    // Auto-registrados desde /login.html, esperando aprobación — no entran a la
+    // tabla de gestión normal hasta que el admin decide.
+    const pendientes = vendsAll.filter(v => v.estado === 'pendiente');
+    const vends = vendsAll.filter(v => v.estado !== 'pendiente');
 
     // Mapa: vendedor_id → nombre de usuario (para saber quién tiene cuenta)
     const vUserMap = {};
@@ -62,7 +66,7 @@
           return `<div class="card card--pad card--float">
             <div class="u-between" style="margin-bottom:var(--s2)">
               <div class="u-row u-gap2">
-                <div class="avatar avatar--md" style="background:${avatarColor(v.nombre)}">${initials(v.nombre)}</div>
+                <div class="avatar avatar--md" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div>
                 <div><div style="font-weight:600">${v.nombre}</div>
                 <div class="u-row u-gap1" style="font-size:11.5px"><span class="dot dot--${v.estado==='activo'?'green':'mute'}"></span><span class="t-dim3">${v.estado}</span></div></div>
               </div>
@@ -80,6 +84,29 @@
         }).join('') || `<div class="empty" style="grid-column:1/-1">${ICONS.team}<div>Aún no hay asesores</div></div>`}
       </div>
 
+      ${pendientes.length ? `
+      <!-- Pendientes de aprobación (auto-registro desde /login.html) -->
+      <div class="card rise rise-2" style="overflow:hidden;margin-bottom:var(--s3);border-color:rgba(200,164,90,.4)">
+        <div class="card--pad" style="padding-bottom:var(--s2)">
+          <div class="t-h3">Pendientes de aprobación <span class="badge badge--gold" style="font-size:11px">${pendientes.length}</span></div>
+          <div class="t-dim3" style="font-size:12px;margin-top:4px">Se registraron ellos mismos desde el login — revisa y aprueba o rechaza</div>
+        </div>
+        <table class="table">
+          <thead><tr><th>Asesor</th><th>Teléfono</th><th>Acción</th></tr></thead>
+          <tbody>${pendientes.map(v => `
+            <tr>
+              <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span></div></td>
+              <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}</td>
+              <td>
+                <div class="u-row u-gap1">
+                  <button class="btn btn--gold btn--xs" data-action="aprobar" data-id="${v.id}" data-name="${esc(v.nombre)}">Aprobar</button>
+                  <button class="btn btn--ghost btn--xs t-red" data-action="rechazar" data-id="${v.id}" data-name="${esc(v.nombre)}">Rechazar</button>
+                </div>
+              </td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>` : ''}
+
       <!-- Tabla de gestión -->
       <div class="card rise rise-3" style="overflow:hidden">
         <div class="card--pad" style="padding-bottom:var(--s2)">
@@ -93,7 +120,7 @@
           <tbody>${vends.map(v => {
             const tieneCuenta = vUserMap[v.id] ? true : false;
             return `<tr>
-              <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)}">${initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span></div></td>
+              <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span></div></td>
               <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}${v.telefono && !v.telefono.startsWith('+57') ? ` <button class="btn btn--ghost btn--xs" data-action="fixPhone" data-id="${v.id}" data-tel="${esc(v.telefono)}" title="Corregir teléfono (agregar +57)">${S.refresh}Fix</button>` : ''}</td>
               <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
               <td>${tieneCuenta ? '<span class="badge badge--green" style="font-size:10px">Sí</span>' : '<span class="t-dim3" style="font-size:11px">—</span>'}</td>
@@ -137,6 +164,26 @@
         } catch(err){ toast('Error de conexión','err'); }
       });
     });
+
+    // ── Pendientes: aprobar / rechazar ──
+    document.querySelectorAll('[data-action="aprobar"]').forEach(btn => btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.id; const name = btn.dataset.name;
+      if(!confirm(`¿Aprobar a ${name}? Podrá iniciar sesión de inmediato.`)) return;
+      try {
+        const r = await api('/api/vendedores/'+id+'/estado', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ estado:'activo' }) });
+        if(r && r.ok){ toast(name+' aprobado'); cargar(); }
+        else toast(r?.error || 'Error al aprobar','err');
+      } catch(err){ toast('Error de conexión','err'); }
+    }));
+    document.querySelectorAll('[data-action="rechazar"]').forEach(btn => btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.id; const name = btn.dataset.name;
+      if(!confirm(`¿Rechazar y eliminar el registro de ${name}? No podrá volver a intentarlo con el mismo teléfono a menos que se vuelva a registrar.`)) return;
+      try {
+        const r = await api('/api/vendedores/'+id, { method:'DELETE' });
+        if(r && r.ok){ toast(name+' rechazado'); cargar(); }
+        else toast(r?.error || 'Error al rechazar','err');
+      } catch(err){ toast('Error de conexión','err'); }
+    }));
 
     // ── Acciones de tabla ──
     document.querySelectorAll('[data-action="resetPin"]').forEach(btn => btn.addEventListener('click', ()=>{

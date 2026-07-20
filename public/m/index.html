@@ -179,17 +179,27 @@
   .c-input{ padding:8px 12px calc(8px + var(--safe-b)); border-top:1px solid var(--border-soft); background:var(--bg-1); }
   .c-quick{ display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; }
   .c-quick button{ flex-shrink:0; height:30px; padding:0 13px; border-radius:999px; background:var(--bg-3); border:1px solid var(--border); color:var(--text-2); font-size:12px; }
-  .c-input__row{ display:flex; align-items:flex-end; gap:8px; }
+  .c-input__row{ display:flex; align-items:flex-end; gap:8px; position:relative; }
   /* Durante grabación: ocultar + y campo de texto SIN ocultar #cSend (esconder el botón bajo el dedo cancela el touch) */
   .c-input__row.recording .c-plus, .c-input__row.recording .c-pill{ display:none; }
   .c-input__row.recording{ justify-content:flex-end; }
   .c-plus{ width:44px; height:44px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border); color:var(--gold); display:grid; place-items:center; flex-shrink:0; transition:transform .25s var(--spring); }
   .c-plus.open{ transform:rotate(45deg); }
   .c-plus svg{ width:22px; height:22px; }
+  .c-input__row.recording .c-emoji{ display:none; }
+  .c-emoji{ width:44px; height:44px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border); color:var(--gold); display:grid; place-items:center; flex-shrink:0; font-size:20px; }
+  .c-emoji-pop{ position:absolute; bottom:100%; left:0; right:0; margin-bottom:8px; max-height:260px; overflow-y:auto; background:var(--bg-2); border:1px solid var(--border); border-radius:16px; padding:10px; box-shadow:0 -8px 24px rgba(0,0,0,.3); display:none; z-index:20; }
+  .c-emoji-pop.show{ display:block; }
+  .c-emoji-pop__cat{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin:8px 4px 4px; }
+  .c-emoji-pop__cat:first-child{ margin-top:0; }
+  .c-emoji-pop__grid{ display:grid; grid-template-columns:repeat(8,1fr); gap:2px; }
+  .c-emoji-pop__grid button{ background:none; border:none; font-size:22px; padding:5px 0; border-radius:8px; cursor:pointer; line-height:1; }
+  .c-emoji-pop__grid button:active{ background:var(--bg-3); }
   .c-pill{ flex:1; display:flex; align-items:flex-end; background:var(--bg-3); border:1px solid var(--border); border-radius:22px; padding:2px 6px; min-height:44px; transition:border-color .2s; }
   .c-pill:focus-within{ border-color:var(--gold-line); }
   .c-pill textarea{ flex:1; border:none; background:none; outline:none; color:var(--text); font-size:15px; line-height:1.35; padding:11px 6px; max-height:110px; resize:none; }
   .c-pill textarea::placeholder{ color:var(--text-3); }
+  @media(max-width:359px){ .c-input{ padding:6px 8px calc(6px + var(--safe-b)); } .c-pill textarea{ font-size:14px; padding:8px 4px; } .c-plus,.c-send{ transform:scale(.85); } .c-quick button{ font-size:11px; padding:0 10px; height:26px; } }
   .c-send{ width:44px; height:44px; border-radius:50%; background:var(--grad-gold); color:#0A0A0A; border:none; display:grid; place-items:center; flex-shrink:0; transition:transform .15s var(--spring); }
   .c-send:active{ transform:scale(.88); }
   .c-send svg{ width:21px; height:21px; }
@@ -236,6 +246,14 @@
   .loc-result:last-child{ border-bottom:none; }
   .loc-result:active{ background:var(--bg-3); }
   .loc-result .loc-r-icon{ font-size:14px; flex-shrink:0; }
+  .loc-picker-map{ width:100%; height:200px; border-radius:14px; overflow:hidden; background:var(--bg-4); margin-bottom:8px; position:relative; }
+  .loc-picker-hint{ font-size:11px; color:var(--text-3); text-align:center; margin-bottom:10px; }
+  .loc-picker-info{ display:flex; align-items:center; gap:8px; background:var(--bg-3); border:1px solid var(--border-soft); border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; color:var(--text-2); }
+  .loc-picker-info .loc-ic{ font-size:16px; flex-shrink:0; }
+  .loc-picker-info .loc-picker-addr{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .loc-picker-locate{ position:absolute; right:10px; bottom:10px; z-index:15; width:38px; height:38px; border-radius:50%; background:var(--bg-2); border:1px solid var(--border); color:var(--gold); display:grid; place-items:center; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+  .loc-picker-send{ width:100%; padding:13px; border-radius:12px; border:none; background:var(--gold); color:#000; font-weight:600; font-size:14px; font-family:inherit; cursor:pointer; margin-bottom:14px; }
+  .loc-picker-send:disabled{ opacity:.5; }
 
   /* Perfil del lead */
   .lp-head{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:9px; padding-bottom:16px; }
@@ -368,6 +386,10 @@
   .c-search input{ flex:1; height:36px; border-radius:10px; border:1px solid var(--border); background:var(--bg-3); color:var(--text); padding:0 12px; font-size:14px; outline:none; }
   .c-search input:focus{ border-color:var(--gold-line); }
   .c-search__x{ width:36px; height:36px; border-radius:50%; background:none; border:none; color:var(--text-3); display:grid; place-items:center; }
+  .c-window-badge{ display:none; align-items:center; gap:8px; padding:8px 14px; background:rgba(200,164,90,.12); border-bottom:1px solid var(--border-soft); font-size:12px; color:var(--gold); }
+  .c-window-badge span{ display:flex; align-items:center; gap:6px; flex:1; }
+  .c-window-badge svg{ flex-shrink:0; }
+  .c-window-badge button{ padding:6px 12px; border-radius:999px; border:1px solid var(--gold-line); background:var(--gold); color:#000; font-size:11.5px; font-weight:600; font-family:inherit; cursor:pointer; white-space:nowrap; }
   .bub.highlight{ outline:2px solid var(--gold); outline-offset:2px; border-radius:18px; }
   .msg-info{ display:flex; flex-direction:column; gap:8px; }
   .mi-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
@@ -647,6 +669,7 @@ const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats', ordenPrioridad = false;
 let current = null, currentMsgs = [], metricas = null;
+let _templates = [];
 let showArchivados = false, archivadosCount = 0, archivedLeads = [], replyTo = null;
 let _audioPlayers = {};
 
@@ -704,11 +727,12 @@ async function suscribirPush(){
   try{
     const reg=await navigator.serviceWorker.ready;
     const kr=await api('/api/push/clave');
-    if(!kr||!kr.publicKey) return;
+    if(!kr||!kr.publicKey) return console.warn('suscribirPush: sin clave pública');
+    if(!kr.enabled) return console.warn('suscribirPush: push deshabilitado en backend');
     const key=urlBase64ToUint8Array(kr.publicKey);
     const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
     await api('/api/push/suscribir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});
-  }catch(e){}
+  }catch(e){ console.error('suscribirPush:', e.message); }
 }
 async function suscribirPushNativo(){
   try{
@@ -1172,6 +1196,9 @@ async function init(){
   $('#btnNotif').insertAdjacentHTML('afterbegin', I(SVG.bell,19));
   $('#fab').innerHTML = I(SVG.plus,26);
   $('#sheetX').innerHTML = I(SVG.x,14);
+  // Estado base de historial: garantiza que siempre haya una entrada que
+  // consumir en popstate, para que el back nunca se salga de la app al login.
+  if(!history.state || !history.state.base) history.replaceState({ base:true }, '');
   renderNav();
   if(DEMO){ me={nombre:'Vendedor Test',rol:'vendedor'}; leads=demoLeads(); renderFilters(); renderList(); }
   else {
@@ -1192,8 +1219,14 @@ async function init(){
   if(!DEMO) initEquipo();
   initBioLock();
   setTimeout(suscribirPush, 3000);
+  if(!DEMO) initTemplates();
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
+  window.addEventListener('popstate', (e) => {
+    if ($('#scChat') && $('#scChat').classList.contains('show')) {
+      cerrarChat();
+    }
+  });
 }
 
 async function cargar(){ const d = await api('/api/mis-leads'); if(d) leads = d; else if(!leads.length) toast('Sin conexión. Reintentando...'); renderList(); }
@@ -1380,6 +1413,8 @@ async function abrirChat(id){ let l; let msgs;
     const _cm=document.getElementById('cMsgs');
     if(_cm&&localStorage.getItem('sp_chat_bg')==='leones') _cm.classList.add('c-msgs--patron');
     $('#scChat').classList.add('show');
+    history.pushState({ chat: id }, '');
+    if(!DEMO) checkWindowStatus(current.id);
   }catch(e){ console.error('abrirChat/render',e); toast('Error al abrir'); return; }
   try{ if(l){ l.unread_count=0; renderList(); } }catch(e){ console.error('abrirChat/list',e); }
 }
@@ -1395,6 +1430,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
         <button class="c-act" data-ca="more">${I(SVG.dots,20)}</button>
       </div>
     </header>
+    <div class="c-window-badge" id="cWindowBadge"></div>
     <div class="c-search" id="cSearch">
       <input id="cSearchInput" placeholder="Buscar en el chat…" autocomplete="off">
       <button class="c-search__x" id="cSearchX">${I(SVG.x,16)}</button>
@@ -1417,7 +1453,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       <button class="sel-act x" data-sel="clear" title="Cancelar">${I(SVG.x,18)}</button>
     </div>
     <div class="c-input">
-      <div class="c-quick" id="cQuick">${QUICK.map(q=>`<button data-q="${esc(q.body)}">${q.t}</button>`).join('')}</div>
+      <div class="c-quick" id="cQuick">${(_templates.length?_templates:QUICK).map(q=>`<button data-q="${esc(q.body||q.cuerpo)}">${esc(q.t||q.titulo)}</button>`).join('')}</div>
       <div class="rec-bar" id="recBar">
         <span class="rec-dot" id="recDot"></span>
         <span class="rec-time" id="recTime">0:00</span>
@@ -1427,6 +1463,8 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       </div>
       <div class="c-input__row" id="cInput__row">
         <button class="c-plus" id="cPlus">${I(SVG.plus,22)}</button>
+        <button class="c-emoji" id="cEmoji">😊</button>
+        <div class="c-emoji-pop" id="cEmojiPop"></div>
         <div class="c-pill"><textarea id="cInput" rows="1" placeholder="Mensaje…"></textarea></div>
         <button class="c-send" id="cSend">${I(SVG.mic,21)}</button>
       </div>
@@ -1477,10 +1515,11 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
     else if(a==='clear') clearSelection();
   }); }
   updateSelBar();
-  $('#cBack').onclick=cerrarChat;
+  $('#cBack').onclick=()=>{ if(history.state && history.state.chat) history.back(); else cerrarChat(); };
   $('#cId').onclick=()=>abrirPerfil();
   $('#scChat').querySelectorAll('.c-act').forEach(b=>b.onclick=()=>chatAccion(b.dataset.ca));
   $('#cPlus').onclick=()=>{ $('#cPlus').classList.toggle('open'); abrirAdjuntos(); };
+  $('#cEmoji').onclick=()=>toggleComposeEmojiPicker();
   $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
   const inp=$('#cInput'); inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; updateSend(); notifyTyping(); });
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(localStorage.getItem('sp_chat_enter_sends')!=='false')&&!e.shiftKey){ e.preventDefault(); enviar(); } });
@@ -1769,6 +1808,40 @@ function openEmojiPicker(msgId){
     const emoji=b.dataset.emoji; closeSheet();
     await toggleReaction(msgId,emoji);
   });
+}
+
+/* ════════ Emoji picker de composición (barra de chat) ════════ */
+const COMPOSE_EMOJIS=[
+  ['Frecuentes',['👍','❤️','😂','🙏','🔥','🎉','💯','😊']],
+  ['Caritas',['😀','😁','😅','😊','🙂','😉','😍','🥰','😘','😎','🤔','😐','😴','🥳','😢','😭','😡','😱','🤗','🙌']],
+  ['Gestos',['👋','👏','🙏','💪','👌','✌️','🤝','👆','👇','🤞']],
+  ['Negocio',['🏠','🏡','🏘️','📍','📅','💰','💵','📈','✅','❌','⏰','📞','📩','📄','🔑','🚗']],
+];
+function toggleComposeEmojiPicker(){
+  const pop=$('#cEmojiPop'); if(!pop) return;
+  if(pop.classList.contains('show')){ pop.classList.remove('show'); return; }
+  if(!pop.innerHTML){
+    pop.innerHTML=COMPOSE_EMOJIS.map(([cat,list])=>`<div class="c-emoji-pop__cat">${cat}</div><div class="c-emoji-pop__grid">${list.map(e=>`<button type="button" data-e="${e}">${e}</button>`).join('')}</div>`).join('');
+    pop.querySelectorAll('button[data-e]').forEach(b=>b.onclick=()=>insertEmojiEnInput(b.dataset.e));
+  }
+  pop.classList.add('show');
+  document.addEventListener('click', _closeComposeEmojiOnOutside, true);
+}
+function _closeComposeEmojiOnOutside(e){
+  const pop=$('#cEmojiPop'); const btn=$('#cEmoji');
+  if(!pop) return;
+  if(pop.contains(e.target)||e.target===btn) return;
+  pop.classList.remove('show');
+  document.removeEventListener('click', _closeComposeEmojiOnOutside, true);
+}
+function insertEmojiEnInput(emoji){
+  const inp=$('#cInput'); if(!inp) return;
+  const start=inp.selectionStart??inp.value.length, end=inp.selectionEnd??inp.value.length;
+  inp.value=inp.value.slice(0,start)+emoji+inp.value.slice(end);
+  const pos=start+emoji.length;
+  inp.focus(); inp.setSelectionRange(pos,pos);
+  inp.dispatchEvent(new Event('input',{bubbles:true}));
+  haptic(6);
 }
 async function toggleReaction(msgId,emoji){
   const r=await api('/api/messages/'+msgId+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
@@ -2102,50 +2175,156 @@ const QUICK=[
 ];
 
 function abrirAdjuntos(){
-  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['sticker','Sticker',SVG.smile],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
+  const items=[['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['sticker','Sticker',SVG.smile],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['metaTpl','Plantilla Meta',SVG.megaphone],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
-  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='sticker') abrirStickers(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='video'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
+  $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='metaTpl') abrirPlantillaMeta(); else if(k==='sticker') abrirStickers(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*,video/*,.pdf,.doc,.docx'; fi.click(); } } else if(k==='video'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
 }
-const UBICACIONES_PREDEFINIDAS = [
-  { name:'Proyecto Tocaima', address:'Tocaima, Cundinamarca', lat:4.4577, lng:-74.6329 },
-  { name:'Oficina SP Inmobiliaria', address:'Bogotá', lat:4.7110, lng:-74.0721 },
-];
 
+// Estado de la ventana de 24h de WhatsApp para el lead abierto — badge + CTA de reactivación
+async function checkWindowStatus(leadId){
+  const badge=$('#cWindowBadge'); if(!badge) return;
+  try{
+    const st=await api(`/api/leads/${leadId}/window-status`);
+    if(!st || st.open){ badge.style.display='none'; badge.innerHTML=''; return; }
+    badge.style.display='flex';
+    badge.innerHTML=`<span>${I(SVG.clock,14)} Ventana de WhatsApp cerrada — hay que reactivar con plantilla</span><button id="cReactivarBtn">Reactivar</button>`;
+    const btn=$('#cReactivarBtn'); if(btn) btn.onclick=()=>abrirPlantillaMeta(st.templateName||null);
+  }catch(e){ badge.style.display='none'; }
+}
+
+// Enviar una plantilla de WhatsApp aprobada por Meta al lead actual (primer contacto o reactivación post-24h)
+async function abrirPlantillaMeta(prefillName){
+  if(!current){ toast('Selecciona un lead primero'); return; }
+  const waTemplates = await api('/api/wa-templates') || [];
+  if(!waTemplates.length){ toast('No hay plantillas sincronizadas. Pide al admin que sincronice en Configuración.','err'); return; }
+  openSheet('Plantilla de WhatsApp', `
+    <form id="mtForm" style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:12px;color:var(--text-3)">Envía una plantilla aprobada por Meta a ${esc(current.customer_name||'este cliente')}.</div>
+      <select name="templateId" id="mtTemplate" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
+        <option value="">Selecciona una plantilla</option>
+        ${waTemplates.map(t=>`<option value="${t.id}" ${prefillName&&t.nombre===prefillName?'selected':''}>${esc(t.nombre)}</option>`).join('')}
+      </select>
+      <div id="mtVarFields"></div>
+      <button type="submit" class="cop-use" style="margin-top:4px">${I(SVG.send,16)} Enviar plantilla</button>
+    </form>`);
+  const renderVarFields=()=>{
+    const box=$('#mtVarFields'); if(!box) return;
+    const sel=$('#mtTemplate'); const tpl=waTemplates.find(t=>String(t.id)===sel.value);
+    if(!tpl){ box.innerHTML=''; return; }
+    let vars=[]; try{ vars=JSON.parse(tpl.variables||'[]'); }catch(e){}
+    let mapping={}; try{ mapping=JSON.parse(tpl.var_mapping||'{}'); }catch(e){}
+    if(!vars.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">Esta plantilla no tiene variables.</div>'; return; }
+    const nameVal=current.customer_name||'';
+    box.innerHTML=vars.map(ph=>{
+      const prefill=mapping[ph]==='nombre_cliente'?esc(nameVal):'';
+      return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph]?' — '+esc(mapping[ph]):' (sin asignar)'}" value="${prefill}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:4px">`;
+    }).join('');
+  };
+  $('#mtTemplate')?.addEventListener('change', renderVarFields);
+  if(prefillName) renderVarFields();
+  $('#mtForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const templateId=$('#mtTemplate').value;
+    if(!templateId){ toast('Selecciona una plantilla'); return; }
+    const overrides={}; $('#mtVarFields')?.querySelectorAll('[data-var]').forEach(inp=>{ overrides[inp.dataset.var]=inp.value.trim(); });
+    haptic(10); closeSheet(); toast('Enviando plantilla…');
+    const leadId=current.id;
+    const r=await api(`/api/leads/${leadId}/enviar-template`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templateId,overrides})});
+    if(r&&r.ok){
+      toast('Plantilla enviada');
+      const d=await api(`/api/leads/${leadId}/mensajes`);
+      if(d&&current&&current.id===leadId){ currentMsgs=d.mensajes||[]; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); if(b) b.scrollTop=b.scrollHeight; }
+      cargar();
+      if(current&&current.id===leadId) checkWindowStatus(leadId);
+    } else toast('Error al enviar: '+((r&&r.error)||'desconocido'),'err');
+  });
+}
+// Reverse geocoding con manejo de error visible (antes se tragaba silenciosamente)
+async function reverseGeocodeUbic(lat,lng){
+  const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=es`,{headers:{'Accept-Language':'es'}});
+  if(!r.ok) throw new Error('nominatim_'+r.status);
+  const d=await r.json();
+  return { name:d.name||(d.display_name?d.display_name.split(',')[0]:'')||'', address:d.display_name||'' };
+}
+
+// Hoja de envío de ubicación con minimapa interactivo (marcador arrastrable, tipo WhatsApp)
 function abrirEnviarUbicacion(){
   if(!current){ toast('Selecciona un lead primero'); return; }
-  // Cargar ubicaciones guardadas
-  api('/api/ubicaciones-guardadas').then(saved=>{
+  const DEFAULT_POS={lat:4.7110,lng:-74.0721}; // Bogotá — centro por defecto si no hay GPS
+  let picker={lat:DEFAULT_POS.lat,lng:DEFAULT_POS.lng,name:'',address:'',fromSaved:false};
+  let pMap=null, pMarker=null;
+
+  api('/api/ubicaciones-guardadas').then(async saved=>{
     const savedList = (saved&&saved.length) ? saved.map(p=>
       `<div style="display:flex;align-items:center;gap:6px"><button class="loc-preset-btn loc-preset-saved" data-sid="${p.id}" style="flex:1"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.nombre)}</strong>${p.direccion ? ' — '+esc(p.direccion) : ''}</span></button><button class="loc-del-saved" data-sid="${p.id}" style="background:none;border:none;color:var(--text-3);font-size:16px;cursor:pointer;padding:4px">✕</button></div>`
     ).join('') : '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:8px 0">Aún no tienes ubicaciones guardadas</div>';
 
     const formHtml = `
-      <button class="loc-preset-btn" id="locGpsBtn"><span class="loc-preset-icon">📡</span><span style="color:var(--gold)">Mi ubicación actual</span></button>
+      <div class="loc-picker-map" id="locPickerMap"><button class="loc-picker-locate" id="locLocateBtn" title="Mi ubicación">${I(SVG.target,18)}</button></div>
+      <div class="loc-picker-hint">Toca el mapa o arrastra el pin para ajustar el punto</div>
+      <div class="loc-picker-info" id="locPickerInfo"><span class="loc-ic">📍</span><span class="loc-picker-addr" id="locPickerAddr">Ubicando…</span></div>
+      <button class="loc-picker-send" id="locSendBtn">${I(SVG.send,15)} Enviar esta ubicación</button>
       <div class="loc-search-wrap"><input id="locSearch" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="locResults"></div></div>
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin:10px 0 6px">Guardadas</div>
       <div class="loc-preset" id="locSavedList">${savedList}</div>`;
     openSheet('Enviar ubicación', formHtml);
 
-    // --- GPS ---
-    const gpsBtn=$('#locGpsBtn');
-    if(gpsBtn) gpsBtn.onclick=async()=>{
-      toast('Obteniendo ubicación…');
+    const addrEl=$('#locPickerAddr');
+    const setAddr=(txt)=>{ if(addrEl) addrEl.textContent=txt; };
+
+    const movePicker=async(lat,lng,{name='',address='',fromSaved=false,skipGeocode=false}={})=>{
+      picker={lat,lng,name,address,fromSaved};
+      if(pMarker) pMarker.setLatLng([lat,lng]);
+      if(pMap) pMap.setView([lat,lng], pMap.getZoom()<14?15:pMap.getZoom());
+      if(address){ setAddr(name?`${name} — ${address}`:address); return; }
+      if(skipGeocode) return;
+      setAddr('Buscando dirección…');
+      try{
+        const g=await reverseGeocodeUbic(lat,lng);
+        picker.name=g.name; picker.address=g.address;
+        setAddr(g.address||`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      }catch(e){
+        setAddr(`${lat.toFixed(5)}, ${lng.toFixed(5)} (sin dirección — ${e.message==='nominatim_429'?'límite alcanzado':'error de red'})`);
+      }
+    };
+
+    // --- Minimapa interactivo ---
+    (async()=>{
+      const mapEl=$('#locPickerMap'); if(!mapEl) return;
+      try{ await cargarLeaflet(); }catch(e){ if(mapEl) mapEl.innerHTML='<div style="display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px">No se pudo cargar el mapa</div>'; return; }
+      if(!$('#locPickerMap')) return; // la hoja pudo cerrarse mientras cargaba
+      pMap=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([picker.lat,picker.lng],12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(pMap);
+      pMarker=L.marker([picker.lat,picker.lng],{draggable:true}).addTo(pMap);
+      pMarker.on('dragend',()=>{ const p=pMarker.getLatLng(); movePicker(p.lat,p.lng); });
+      pMap.on('click', e=>movePicker(e.latlng.lat,e.latlng.lng));
+      setTimeout(()=>pMap&&pMap.invalidateSize(),150);
+      // Intento silencioso de centrar en el GPS real al abrir (sin bloquear el mapa por defecto)
+      try{
+        const pos=await obtenerPosicionActual();
+        if($('#locPickerMap')) movePicker(pos.latitude, pos.longitude);
+      }catch(e){ movePicker(picker.lat,picker.lng); } // sin permiso/GPS: se queda en el centro por defecto
+    })();
+
+    // --- Botón "Mi ubicación" (reintento explícito) ---
+    const locateBtn=$('#locLocateBtn');
+    if(locateBtn) locateBtn.onclick=async()=>{
+      haptic(8);
+      try{
+        const pos=await obtenerPosicionActual();
+        movePicker(pos.latitude, pos.longitude);
+      }catch(err){ toast('No se pudo obtener el GPS: '+(err&&err.message||'sin permiso'),'err'); }
+    };
+
+    // --- Enviar ---
+    const sendBtn=$('#locSendBtn');
+    if(sendBtn) sendBtn.onclick=async()=>{
+      sendBtn.disabled=true;
+      const {lat,lng,name,address,fromSaved}=picker;
       closeSheet();
-      let latitude, longitude;
-      try{
-        const pos = await obtenerPosicionActual();
-        latitude = pos.latitude; longitude = pos.longitude;
-      }catch(err){ toast('Error GPS: '+(err&&err.message||'sin permiso'),'err'); return; }
-      let name='',address='';
-      try{
-        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=es`);
-        const d=await r.json();
-        name=d.name||d.display_name?.split(',')[0]||'';
-        address=d.display_name||'';
-      }catch(e){}
-      const ok=await enviarUbicacion(current.id, latitude, longitude, name, address);
-      if(ok&&name&&confirm(`¿Guardar "${name}" en tus ubicaciones?`)){
-        await api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:name,direccion:address,lat:latitude,lng:longitude})});
+      const ok=await enviarUbicacion(current.id, lat, lng, name, address);
+      if(ok&&!fromSaved&&name&&confirm(`¿Guardar "${name}" en tus ubicaciones?`)){
+        await api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:name,direccion:address,lat,lng})});
         toast('📍 Ubicación guardada','ok');
       }
     };
@@ -2162,6 +2341,7 @@ function abrirEnviarUbicacion(){
         searchTimer=setTimeout(async()=>{
           try{
             const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);
+            if(!r.ok) throw new Error('nominatim_'+r.status);
             const data=await r.json();
             if(!resultsEl) return;
             if(data&&data.length){
@@ -2169,28 +2349,23 @@ function abrirEnviarUbicacion(){
               resultsEl.style.display='block';
               resultsEl.querySelectorAll('.loc-result').forEach(btn=>btn.onclick=()=>{
                 const r2=data[parseInt(btn.dataset.idx)];
-                closeSheet();
+                resultsEl.style.display='none'; searchInput.value=r2.display_name;
                 const n=r2.name||''; const a=r2.display_name||''; const lt=parseFloat(r2.lat); const ln=parseFloat(r2.lon);
-                enviarUbicacion(current.id, lt, ln, n, a).then(ok=>{
-                  if(ok&&n&&confirm(`¿Guardar "${n}" en tus ubicaciones?`)){
-                    api('/api/ubicaciones-guardadas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:n,direccion:a,lat:lt,lng:ln})});
-                    toast('📍 Ubicación guardada','ok');
-                  }
-                });
+                movePicker(lt,ln,{name:n,address:a});
               });
-            } else resultsEl.style.display='none';
-          }catch(e){}
+            } else { resultsEl.innerHTML='<div class="loc-result" style="cursor:default">Sin resultados</div>'; resultsEl.style.display='block'; }
+          }catch(e){ toast('Error al buscar: '+e.message,'err'); if(resultsEl) resultsEl.style.display='none'; }
         },400);
       };
       document.addEventListener('click',e=>{ if(resultsEl&&!resultsEl.contains(e.target)&&e.target!==searchInput) resultsEl.style.display='none'; });
     }
 
-    // --- Guardadas: enviar ---
+    // --- Guardadas: seleccionar (mueve el pin, no envía directo) ---
     $('#sheetBody').querySelectorAll('.loc-preset-saved').forEach(b=>b.onclick=()=>{
       const s=saved.find(x=>String(x.id)===b.dataset.sid);
       if(!s) return;
-      closeSheet();
-      enviarUbicacion(current.id, s.lat, s.lng, s.nombre, s.direccion);
+      haptic(8);
+      movePicker(s.lat, s.lng, {name:s.nombre, address:s.direccion||'', fromSaved:true});
     });
 
     // --- Guardadas: eliminar ---
@@ -2201,7 +2376,7 @@ function abrirEnviarUbicacion(){
       b.closest('div').remove();
       toast('Ubicación eliminada');
     });
-  });
+  }).catch(()=>toast('No se pudieron cargar tus ubicaciones guardadas','err'));
 }
 
 async function enviarUbicacion(leadId, lat, lng, name, address){
@@ -2894,7 +3069,7 @@ function wire(){
         </div>
       </div>`);
       $('#logoutCancel').onclick=closeSheet;
-      $('#logoutConfirm').onclick=()=>{ closeSheet(); fetch('/api/logout',{method:'POST',credentials:'include'}).catch(()=>{}); location.href='/login.html'; };
+      $('#logoutConfirm').onclick=()=>{ closeSheet(); fetch('/api/logout',{method:'POST',credentials:'include'}).catch(()=>{}); if('caches'in window)caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))).catch(()=>{}); navigator.serviceWorker&&navigator.serviceWorker.getRegistrations().then(r=>r.forEach(reg=>reg.unregister())).catch(()=>{}); location.replace('/login.html'); };
     }
   });
   // Pull to refresh
@@ -2932,9 +3107,11 @@ async function abrirNotificaciones(){ haptic(8);
 }
 
 /* ════════ Mis respuestas en perfil ════════ */
+async function initTemplates(){ try{ const d=await api('/api/mis-templates'); if(d&&d.length) _templates=d; else{ const g=await api('/api/templates'); if(g&&g.length) _templates=g; } }catch(e){} }
 async function cargarMisTpl(){
   const box=document.getElementById('secMisTpl'); if(!box) return;
   const data=await api('/api/mis-templates');
+  if(data&&data.length) _templates=data;
   if(!data||!data.length){
     box.innerHTML='<div class="sec-row"><button class="sec-btn" id="btnAddTpl" style="color:var(--gold)">+ Agregar respuesta</button></div>';
   } else {

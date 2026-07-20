@@ -60,10 +60,61 @@
     </div>
   </div>`;
 
+  const TOKEN_CHANNELS = {
+    messenger: { label:'Messenger', idField:'pageId', idPlaceholder:'ID de la página de Facebook' },
+    instagram: { label:'Instagram', idField:'igUserId', idPlaceholder:'ID de la cuenta de Instagram Business' },
+  };
+
   ctx.content.querySelectorAll('[data-k]').forEach(b=>b.addEventListener('click',()=>{
-    if(b.dataset.k==='whatsapp') location.href='/os/whatsapp.html';
+    const k = b.dataset.k;
+    if(k==='whatsapp') location.href='/os/whatsapp.html';
+    else if(TOKEN_CHANNELS[k]) abrirConectarModal(k);
     else toast('La conexión de '+b.textContent+' se habilita en Configuración','ok');
   }));
+
+  function abrirConectarModal(k){
+    const c = TOKEN_CHANNELS[k];
+    abrirModal('Conectar '+c.label, `
+      <form id="connForm" style="display:flex;flex-direction:column;gap:14px">
+        <div class="t-dim3" style="font-size:12px">Pega el token de acceso de página (Meta for Developers → tu app → Messenger/Instagram → Generar token).</div>
+        <input name="token" placeholder="Token de acceso" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+        <input name="id" placeholder="${c.idPlaceholder}" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
+          <button type="submit" class="btn btn--gold">Guardar</button>
+        </div>
+      </form>`);
+    document.getElementById('modalCancel').addEventListener('click', cerrarModal);
+    document.getElementById('connForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const token = fd.get('token').trim();
+      const id = fd.get('id').trim();
+      if(!token || !id){ toast('Campos requeridos','err'); return; }
+      try{
+        const body = { token }; body[c.idField] = id;
+        const r = await api('/api/channels/'+k+'/token', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        if(r && r.ok){ toast(c.label+' conectado'); cerrarModal(); setTimeout(()=>location.reload(), 600); }
+        else toast(r?.error || 'Error al conectar','err');
+      }catch(err){ toast('Error de conexión','err'); }
+    });
+  }
+
+  // Modal helper (mismo patrón que equipo.html)
+  const modalBg = document.createElement('div');
+  modalBg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:999;display:grid;place-items:center;animation:fadeIn .2s ease';
+  let modalActive = null;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function abrirModal(titulo, html){
+    if(modalActive) cerrarModal();
+    modalActive = document.createElement('div');
+    modalActive.style.cssText = 'background:var(--bg-1);border:1px solid var(--border-soft);border-radius:16px;padding:28px;width:90%;max-width:400px;animation:slideUp .25s var(--ease);max-height:90vh;overflow-y:auto';
+    modalActive.innerHTML = `<div style="font-size:16px;font-weight:600;margin-bottom:20px">${esc(titulo)}</div>${html}`;
+    modalBg.innerHTML = '';
+    modalBg.appendChild(modalActive);
+    document.body.appendChild(modalBg);
+  }
+  function cerrarModal(){ modalBg.remove(); modalActive = null; }
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
 })();

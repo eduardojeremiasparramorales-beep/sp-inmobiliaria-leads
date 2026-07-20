@@ -100,6 +100,9 @@ const loginLimiter = rateLimit({ windowMs: CFG.LOGIN_WINDOW_MS, max: CFG.LOGIN_M
 const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MEDIA_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
 const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.WEBHOOK_MAX_PER_MIN, standardHeaders: false, legacyHeaders: false });
 const messageLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MESSAGE_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_mensajes_espera' } });
+// Registro público de asesores (sin sesión) — límite estricto anti-abuso, no reutiliza loginLimiter
+// porque es una acción de escritura (crea filas), no solo intentos de autenticación.
+const registroLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos_intenta_mas_tarde' } });
 // Paraguas general para el resto de /api/* (login/media/webhook/responder ya tienen el suyo propio,
 // más estricto). No aplica a /api/stream: es una sola conexión SSE de larga duración, no ráfagas.
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.API_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/stream', message: { error: 'demasiadas_peticiones' } });
@@ -166,9 +169,27 @@ app.post('/webhook', webhookLimiter, verifyWebhookSignature, handleMessage);
 app.get('/api/channels/status', auth.requireAdmin, (req, res) => {
   res.json({
     whatsapp: !!process.env.WHATSAPP_TOKEN,
-    messenger: !!process.env.FACEBOOK_PAGE_TOKEN,
-    instagram: !!process.env.INSTAGRAM_TOKEN,
+    messenger: !!(store.getConfig('channel_messenger_token') || process.env.FACEBOOK_PAGE_TOKEN),
+    instagram: !!(store.getConfig('channel_instagram_token') || process.env.INSTAGRAM_TOKEN),
   });
+});
+
+// Guarda el token (+ id de página/cuenta) de un canal desde la UI de Integraciones,
+// sin tener que editar el .env del servidor. Se persiste en la tabla config.
+const CHANNEL_TOKEN_FIELDS = {
+  messenger: { tokenKey: 'channel_messenger_token', idKey: 'channel_messenger_page_id', idField: 'pageId' },
+  instagram: { tokenKey: 'channel_instagram_token', idKey: 'channel_instagram_user_id', idField: 'igUserId' },
+};
+app.post('/api/channels/:name/token', auth.requireAdmin, (req, res) => {
+  const { name } = req.params;
+  const cfg = CHANNEL_TOKEN_FIELDS[name];
+  if (!cfg) return res.status(404).json({ error: 'canal_no_soporta_token_ui' });
+  const { token, pageId, igUserId } = req.body || {};
+  const id = pageId || igUserId;
+  if (!token || !String(token).trim()) return res.status(400).json({ error: 'token_requerido' });
+  store.setConfig(cfg.tokenKey, String(token).trim());
+  if (id && String(id).trim()) store.setConfig(cfg.idKey, String(id).trim());
+  res.json({ ok: true });
 });
 
 app.get('/api/channels/:name/test', auth.requireAdmin, async (req, res) => {
@@ -515,6 +536,26 @@ app.post('/api/vendedores', auth.requireAdmin, (req, res) => {
   res.json({ ok: true, vendedorId });
 });
 
+// Registro público: un asesor se auto-registra desde /login.html sin admin de por
+// medio. Queda en estado 'pendiente' (bloqueado en login) hasta que un admin lo
+// aprueba en Equipo → Pendientes. Sin cédula/fecha de nacimiento — biometría se
+// configura después, en el dispositivo, con el flujo ya existente.
+app.post('/api/vendedores/registro', registroLimiter, (req, res) => {
+  const { nombre, telefono, pin, foto } = req.body || {};
+  if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'nombre_requerido' });
+  if (!telefono || !validarTelefono(telefono)) return res.status(400).json({ error: 'formato_telefono_invalido_debe_ser_57' });
+  if (!pin || !/^\d{4}$/.test(String(pin)) || String(pin) === '0000') return res.status(400).json({ error: 'pin_invalido' });
+  const tel = String(telefono).replace(/[\s-]/g, '');
+  if (store.getVendedorByTelefono(tel)) return res.status(409).json({ error: 'telefono_ya_registrado' });
+  if (foto && String(foto).length > 3 * 1024 * 1024) return res.status(400).json({ error: 'foto_demasiado_grande' });
+  const vendedorId = addVendedor(String(nombre).trim(), tel, 'pendiente');
+  store.setVendedorPin(vendedorId, auth.hashPassword(String(pin)));
+  if (foto && /^data:image\//.test(String(foto))) store.setVendedorFoto(vendedorId, String(foto));
+  console.log(`[REGISTRO] Nuevo asesor pendiente de aprobación: ${nombre} (${tel})`);
+  events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), ts: Date.now() });
+  res.json({ ok: true, vendedorId, estado: 'pendiente' });
+});
+
 app.post('/api/vendedores/:id/pin', auth.requireAdmin, (req, res) => {
   const { pin } = req.body || {};
   if (!pin || !/^\d{4}$/.test(String(pin))) return res.status(400).json({ error: 'PIN debe ser 4 dígitos' });
@@ -570,6 +611,10 @@ app.post('/api/login', loginLimiter, (req, res) => {
     if (!vendedor.pin) {
       console.log('[LOGIN] Vendedor sin PIN:', vendedor.nombre, vendedor.id);
       return res.status(401).json({ error: 'credenciales_invalidas' });
+    }
+    if (vendedor.estado === 'pendiente') {
+      console.log('[LOGIN] Cuenta pendiente de aprobación:', vendedor.nombre, vendedor.id);
+      return res.status(403).json({ error: 'cuenta_pendiente_aprobacion' });
     }
     if (!auth.verifyPassword(String(pin), vendedor.pin)) {
       console.log('[LOGIN] PIN incorrecto para:', vendedor.nombre, vendedor.id);

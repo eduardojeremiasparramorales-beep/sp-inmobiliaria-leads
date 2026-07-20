@@ -21,18 +21,22 @@ function init() {
   }
 
   // FCM: opcional. Requiere un service account de Firebase (Project Settings →
-  // Service Accounts → Generate new private key), pegado como JSON en la variable
-  // de entorno FCM_SERVICE_ACCOUNT_JSON. Sin esto, la app nativa simplemente no
-  // recibe push (el resto del CRM sigue funcionando igual).
-  const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
-  if (saJson) {
+  // Service Accounts → Generate new private key), pegado en la variable de entorno
+  // FCM_SERVICE_ACCOUNT_JSON. Sin esto, la app nativa simplemente no recibe push
+  // (el resto del CRM sigue funcionando igual).
+  // Acepta dos formatos: el JSON crudo (empieza con '{') o el JSON codificado en
+  // base64 (recomendado — evita que los saltos de línea de la private_key se
+  // rompan al pegarlo en un .env de una sola línea).
+  const saRaw = process.env.FCM_SERVICE_ACCOUNT_JSON;
+  if (saRaw) {
     try {
+      const saJson = saRaw.trim().startsWith('{') ? saRaw : Buffer.from(saRaw, 'base64').toString('utf8');
       const admin = require('firebase-admin');
       const serviceAccount = JSON.parse(saJson);
       if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
       fcmEnabled = true;
     } catch (e) {
-      console.error('FCM deshabilitado: FCM_SERVICE_ACCOUNT_JSON inválido —', e.message);
+      console.error('FCM deshabilitado: FCM_SERVICE_ACCOUNT_JSON inválido (¿JSON crudo o base64 corrupto?) —', e.message);
     }
   }
 }

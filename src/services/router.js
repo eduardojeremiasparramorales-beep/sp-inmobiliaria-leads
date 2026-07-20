@@ -30,9 +30,13 @@ class MessageRouter {
     let customer = store.findCustomerByChannel(channel, fromUserId);
 
     // 2. Si no existe, crear customer nuevo y vincular canal
+    // Foto de perfil: Meta solo la expone para Messenger/Instagram (WhatsApp Cloud
+    // API no da acceso a la foto del cliente), por eso solo llega en meta.profile_pic.
     if (!customer) {
-      customer = store.createCustomer(meta.name || 'Cliente', channel === 'whatsapp' ? fromUserId : '');
+      customer = store.createCustomer(meta.name || 'Cliente', channel === 'whatsapp' ? fromUserId : '', meta.profile_pic || '');
       store.linkChannelToCustomer(customer.id, channel, fromUserId, meta.username || '');
+    } else if (meta.profile_pic) {
+      store.setCustomerAvatarIfEmpty(customer.id, meta.profile_pic);
     }
 
     // 3. Buscar conversación activa
@@ -158,6 +162,15 @@ class MessageRouter {
     // 6. Emitir SSE
     const payload = { conversationId: conversation.id, channel: conversation.channel, body: text, ts: Date.now() };
     emit('admins', null, 'message:new', payload);
+
+    // 6b. Notificar push al admin cuando el vendedor responde
+    try {
+      require('./notify').notify({
+        vendedorId: 0, tipo: 'respuesta_vendedor', leadId: conversation.lead_id || null, push: true,
+        titulo: '📤 ' + (customer ? customer.name : 'Vendedor') + ' respondió',
+        cuerpo: String(text || '').slice(0, 120),
+      }).catch(() => {});
+    } catch (e) { /* notify opcional */ }
 
     // 7. Workflow
     evaluateWorkflow('message:outgoing', { conversation, message });

@@ -903,10 +903,10 @@ function incrementEscalation(leadId) {
   run('UPDATE leads SET escalation_level = escalation_level + 1 WHERE id = ?', [leadId]);
 }
 
-function addVendedor(nombre, telefono) {
+function addVendedor(nombre, telefono, estado) {
   let t = String(telefono).replace(/[\s-]/g, '');
   if (t.startsWith('57') && !t.startsWith('+')) t = '+' + t;
-  run('INSERT OR IGNORE INTO vendedores (nombre, telefono) VALUES (?, ?)', [nombre, t]);
+  run('INSERT OR IGNORE INTO vendedores (nombre, telefono, estado) VALUES (?, ?, ?)', [nombre, t, estado || 'activo']);
   const r = one('SELECT id FROM vendedores WHERE telefono = ? LIMIT 1', [t]);
   return r ? r.id : null;
 }
@@ -1496,9 +1496,16 @@ function getAdminInboxStats() {
 // =====================================================================
 
 // --- Customers ---
-function createCustomer(name, phone) {
-  run('INSERT INTO customers (name, phone) VALUES (?, ?)', [name || 'Cliente', phone || '']);
+function createCustomer(name, phone, avatarUrl) {
+  run('INSERT INTO customers (name, phone, avatar_url) VALUES (?, ?, ?)', [name || 'Cliente', phone || '', avatarUrl || '']);
   return one('SELECT * FROM customers WHERE id = (SELECT last_insert_rowid())');
+}
+
+// Backfill del avatar del cliente (solo lo llenamos si aún está vacío — WhatsApp
+// nunca lo tendrá porque la Graph API no expone foto de perfil de clientes).
+function setCustomerAvatarIfEmpty(customerId, avatarUrl) {
+  if (!avatarUrl) return;
+  run("UPDATE customers SET avatar_url = ? WHERE id = ? AND (avatar_url IS NULL OR avatar_url = '')", [avatarUrl, customerId]);
 }
 
 function getCustomerById(id) {
@@ -1579,7 +1586,7 @@ function getConversationById(id) {
 
 function getConversationsByVendedorId(vendedorId) {
   return all(`
-    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone
+    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, c.avatar_url AS customer_avatar
     FROM conversations conv
     LEFT JOIN customers c ON c.id = conv.customer_id
     WHERE conv.assigned_to_id = ?
@@ -1625,7 +1632,7 @@ function getConversations({ channel, status, etiqueta, busqueda, vendedorId, lim
   const lim = Number(limite) || 50;
   const off = Number(offset) || 0;
   return all(`
-    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, v.nombre AS assigned_to_nombre
+    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, c.avatar_url AS customer_avatar, v.nombre AS assigned_to_nombre
     FROM conversations conv
     LEFT JOIN customers c ON c.id = conv.customer_id
     LEFT JOIN vendedores v ON v.id = conv.assigned_to_id
@@ -2159,7 +2166,7 @@ module.exports = {
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   queuePendingOutbound, getPendingOutbound, clearPendingOutbound,
   // Nuevo schema multicanal
-  createCustomer, getCustomerById, findCustomerByChannel,
+  createCustomer, getCustomerById, findCustomerByChannel, setCustomerAvatarIfEmpty,
   linkChannelToCustomer, getCustomerChannels, getCustomers, updateCustomer, deleteCustomer,
   getActiveConversationsByCustomer,
   createConversation, getConversationById, getConversationsByVendedorId,

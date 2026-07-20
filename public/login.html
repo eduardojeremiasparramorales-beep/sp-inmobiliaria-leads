@@ -128,6 +128,14 @@
   .msg.err{color:var(--red)}
   .msg.ok{color:var(--green)}
 
+  /* ── Crear cuenta ── */
+  .link-row{text-align:center;margin-top:18px;font-size:.78rem;color:var(--txt-2)}
+  .link-row a{color:var(--gold);text-decoration:none;font-weight:600;cursor:pointer}
+  .reg-photo{width:76px;height:76px;border-radius:20px;margin:0 auto 16px;background:var(--glass);border:1.5px dashed var(--glass-border);display:grid;place-items:center;cursor:pointer;overflow:hidden;font-size:1.4rem;color:var(--txt-3)}
+  .reg-photo img{width:100%;height:100%;object-fit:cover}
+  .reg-photo-label{text-align:center;font-size:.68rem;color:var(--txt-3);margin:-10px 0 16px}
+  .reg-body{width:100%;max-width:320px;overflow-y:auto;max-height:100%;padding-bottom:12px}
+
   /* ── Footer ── */
   .foot{position:absolute;bottom:0;left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.6rem;color:var(--txt-3);letter-spacing:.08em}
 
@@ -159,8 +167,41 @@
 
   <div class="msg" id="msg"></div>
 
+  <div class="link-row">¿Eres asesor nuevo? <a id="linkCrearCuenta">Crear cuenta</a></div>
+
   <div class="bottom-btn">
     <button class="btn-entrar" id="btnEntrar" disabled>Entrar</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN 3: Crear cuenta (auto-registro de asesor) ═══ -->
+<div class="screen hidden" id="s3">
+  <div class="reg-body">
+    <div class="logo" style="margin:0 auto 18px"><img src="/icons/logo.png" alt="SP Leons Group"></div>
+    <div class="brand" style="text-align:center">LEONS GROUP</div>
+    <div class="sub" style="text-align:center">Crear cuenta de asesor</div>
+    <div class="sp-line" style="margin:0 auto 24px"></div>
+
+    <div class="reg-photo" id="regPhotoBox">📷</div>
+    <div class="reg-photo-label">Foto de perfil (opcional)</div>
+    <input type="file" id="regFotoInput" accept="image/*" style="display:none">
+
+    <div class="field">
+      <label>Nombre completo</label>
+      <div class="field-wrap"><input type="text" id="regNombre" placeholder="Tu nombre" autocomplete="name"></div>
+    </div>
+    <div class="field">
+      <label>Teléfono</label>
+      <div class="field-wrap"><span class="prefix">+57</span><input type="tel" id="regPhone" placeholder="300 123 4567" inputmode="numeric" maxlength="12"></div>
+    </div>
+    <div class="field">
+      <label>PIN de 4 dígitos</label>
+      <div class="field-wrap"><input type="password" id="regPin" placeholder="••••" inputmode="numeric" maxlength="4"></div>
+    </div>
+
+    <div class="msg" id="msgReg"></div>
+    <button class="btn-entrar" id="btnRegistrar" style="margin-top:6px">Solicitar cuenta</button>
+    <div class="link-row"><a id="linkVolverLogin">Volver al inicio de sesión</a></div>
   </div>
 </div>
 
@@ -189,7 +230,7 @@
   'use strict';
 
   fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
-    if(u) location.href = u.rol==='admin' ? '/os/dashboard.html' : '/m/';
+    if(u) location.replace(u.rol==='admin' ? '/os/dashboard.html' : '/m/');
   });
 
   const $ = id => document.getElementById(id);
@@ -302,6 +343,9 @@
           for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
           $('msg2').textContent = 'Número o PIN incorrecto'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
+        } else if(data.error === 'cuenta_pendiente_aprobacion'){
+          $('msg2').textContent = 'Tu cuenta está en revisión. El admin te avisará cuando esté activa.'; $('msg2').className = 'msg err';
+          setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 900);
         } else {
           throw new Error(data.error || 'Error');
         }
@@ -314,7 +358,7 @@
         return;
       }
       $('msg2').textContent = 'Bienvenido'; $('msg2').className = 'msg ok';
-      setTimeout(()=>{ location.href = destino; }, 300);
+      setTimeout(()=>{ location.replace(destino); }, 300);
     } catch(err) {
       $('msg2').textContent = 'Error de conexión'; $('msg2').className = 'msg err';
       setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
@@ -362,7 +406,7 @@
       if(!res.ok) throw new Error('error');
       $('msg2').textContent = 'PIN actualizado. Bienvenido'; $('msg2').className = 'msg ok';
       const destino = cambioPin.destino;
-      setTimeout(()=>{ location.href = destino; }, 400);
+      setTimeout(()=>{ location.replace(destino); }, 400);
     } catch(err){
       $('msg2').textContent = 'No se pudo guardar, intenta de nuevo'; $('msg2').className = 'msg err';
       setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
@@ -379,6 +423,72 @@
       pin = pin.slice(0,-1); updatePinDots();
     } else if(e.key === 'Escape'){
       goToPhone();
+    }
+  });
+
+  // ── Crear cuenta (auto-registro de asesor) ──
+  let regFotoBase64 = '';
+  $('linkCrearCuenta').addEventListener('click', ()=>{
+    $('s1').classList.add('hidden');
+    $('s3').classList.remove('hidden');
+    $('regNombre').focus();
+  });
+  $('linkVolverLogin').addEventListener('click', ()=>{
+    $('s3').classList.add('hidden');
+    $('s1').classList.remove('hidden');
+  });
+  $('regPhotoBox').addEventListener('click', ()=> $('regFotoInput').click());
+  $('regFotoInput').addEventListener('change', function(){
+    const file = this.files[0]; if(!file) return;
+    const r = new FileReader();
+    r.onload = e=>{
+      regFotoBase64 = e.target.result;
+      $('regPhotoBox').innerHTML = '<img src="'+regFotoBase64+'" alt="">';
+    };
+    r.readAsDataURL(file);
+  });
+  $('regPhone').addEventListener('input', e=>{
+    let raw = e.target.value.replace(/\D/g,'');
+    if(raw.length > 10) raw = raw.slice(-10);
+    e.target.value = formatPhone(raw);
+  });
+  $('regPin').addEventListener('input', e=>{
+    e.target.value = e.target.value.replace(/\D/g,'').slice(0,4);
+  });
+  let registrando = false;
+  $('btnRegistrar').addEventListener('click', async ()=>{
+    if(registrando) return;
+    const nombre = $('regNombre').value.trim();
+    const telRaw = $('regPhone').value.replace(/\D/g,'');
+    const pinReg = $('regPin').value.trim();
+    const msgEl = $('msgReg');
+    if(!nombre){ msgEl.textContent = 'Escribe tu nombre completo'; msgEl.className = 'msg err'; return; }
+    if(telRaw.length < 10){ msgEl.textContent = 'Teléfono inválido'; msgEl.className = 'msg err'; return; }
+    if(pinReg.length !== 4 || pinReg === '0000'){ msgEl.textContent = 'Elige un PIN de 4 dígitos distinto de 0000'; msgEl.className = 'msg err'; return; }
+    registrando = true;
+    $('btnRegistrar').disabled = true;
+    msgEl.textContent = 'Enviando…'; msgEl.className = 'msg';
+    try{
+      const res = await fetch('/api/vendedores/registro', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre, telefono:'+57'+telRaw, pin:pinReg, foto: regFotoBase64 || undefined }),
+      });
+      const data = await res.json();
+      if(!res.ok){
+        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde' };
+        msgEl.textContent = errores[data.error] || 'No se pudo registrar'; msgEl.className = 'msg err';
+        registrando = false; $('btnRegistrar').disabled = false;
+        return;
+      }
+      msgEl.textContent = '¡Listo! Tu cuenta está en revisión — el admin te avisará cuando esté activa.'; msgEl.className = 'msg ok';
+      setTimeout(()=>{
+        $('s3').classList.add('hidden');
+        $('s1').classList.remove('hidden');
+        registrando = false; $('btnRegistrar').disabled = false;
+      }, 2200);
+    }catch(err){
+      msgEl.textContent = 'Error de conexión'; msgEl.className = 'msg err';
+      registrando = false; $('btnRegistrar').disabled = false;
     }
   });
 

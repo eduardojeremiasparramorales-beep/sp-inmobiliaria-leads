@@ -62,6 +62,7 @@ async function webhookReceiver(req, res) {
         const profile = await adapter.getUserProfile(payload.from);
         payload.metadata.name = profile.name;
         payload.metadata.username = profile.username;
+        payload.metadata.profile_pic = profile.profile_pic;
       } catch (e) {
         console.warn(`[${payload.channel}] No se pudo obtener perfil:`, e.message);
       }

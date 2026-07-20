@@ -1,6 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const ChannelAdapter = require('./adapter');
+const store = require('../db/store');
 
 const API_VERSION = 'v22.0';
 const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
@@ -10,9 +11,11 @@ class MessengerAdapter extends ChannelAdapter {
     super('messenger');
   }
 
+  // Prioridad: token guardado desde la UI (Integraciones → tabla config) > .env.
+  // Así el admin puede conectar el canal sin tocar el servidor.
   getConfig() {
-    const token = process.env.FACEBOOK_PAGE_TOKEN;
-    const pageId = process.env.FACEBOOK_PAGE_ID;
+    const token = store.getConfig('channel_messenger_token') || process.env.FACEBOOK_PAGE_TOKEN;
+    const pageId = store.getConfig('channel_messenger_page_id') || process.env.FACEBOOK_PAGE_ID;
     if (!token || !pageId) throw new Error('Faltan FACEBOOK_PAGE_TOKEN o FACEBOOK_PAGE_ID');
     return { token, pageId };
   }

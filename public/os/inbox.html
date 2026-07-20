@@ -269,6 +269,14 @@
   'use strict';
   const { ICONS, api, toast, avatarColor, initials, fmtPhone } = SPOS;
 
+  // Avatar del cliente: usa foto real si existe (Messenger/Instagram la exponen vía
+  // Graph API; WhatsApp no — ahí siempre caemos a iniciales de color).
+  function avatarInner(c) {
+    if (c.customer_avatar) return `<img src="${esc(c.customer_avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+    return initials(c.customer_name);
+  }
+  function avatarBg(c) { return c.customer_avatar ? 'transparent' : avatarColor(c.customer_name); }
+
   const EMOJIS = ['😀','😂','😊','😍','🥰','😎','🤝','👍','👌','🙏','💪','👏','🎉','🔥','⭐','❤️','💛','💚','✅','❌','⏰','📍','📞','💬','🏡','🏠','🌳','📐','📄','💰','💵','🤑','📈','🔑','🚪','🚗','☀️','🎯','✨','💡','🙌','😅','🤔','😉','🥳','🫡'];
 
   const CH = {
@@ -372,7 +380,7 @@
       const ch = chan(c.channel);
       return `<div class="ibx-item${current === c.id ? ' active' : ''}${c.unread_count > 0 ? ' unread' : ''}" data-id="${c.id}">
         <div class="ibx-item__av">
-          <div class="avatar avatar--sm" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+          <div class="avatar avatar--sm" style="background:${avatarBg(c)}">${avatarInner(c)}</div>
           <div class="ibx-item__ch" style="background:${ch.bg}">${ch.e}</div>
         </div>
         <div class="ibx-item__info">
@@ -417,7 +425,7 @@
     $chat.innerHTML = `
       <div class="ibx-thead">
         <button class="btn btn--icon btn--quiet btn-back" id="btnBack">${I(D.back)}</button>
-        <div class="avatar avatar--sm" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+        <div class="avatar avatar--sm" style="background:${avatarBg(c)}">${avatarInner(c)}</div>
         <div style="flex:1;min-width:0">
           <div class="ibx-thead__name">${esc(c.customer_name || 'Sin nombre')}</div>
           <div class="ibx-thead__sub">${ch.e} ${ch.t} · ${esc(fmtPhone(c.customer_phone))}</div>
@@ -1066,7 +1074,7 @@
       <div class="os-panel__head"><div class="t-label">Contexto</div><a class="btn btn--quiet btn--sm" href="/os/crm.html">Ver en CRM</a></div>
       <div class="os-panel__body">
         <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:var(--s3);text-align:center">
-          <div class="avatar avatar--lg" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+          <div class="avatar avatar--lg" style="background:${avatarBg(c)}">${avatarInner(c)}</div>
           <div><div style="font-weight:700;font-size:15px">${esc(c.customer_name || 'Sin nombre')}</div><div style="color:var(--text-3);font-size:12.5px;margin-top:2px">${esc(fmtPhone(c.customer_phone))}</div></div>
           <span style="font-size:11px;padding:3px 10px;border-radius:999px;background:var(--bg-3);color:var(--text-2)">${ch.e} ${ch.t}</span>
         </div>

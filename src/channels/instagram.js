@@ -1,6 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const ChannelAdapter = require('./adapter');
+const store = require('../db/store');
 
 const API_VERSION = 'v22.0';
 const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
@@ -10,9 +11,10 @@ class InstagramAdapter extends ChannelAdapter {
     super('instagram');
   }
 
+  // Prioridad: token guardado desde la UI (Integraciones → tabla config) > .env.
   getConfig() {
-    const token = process.env.INSTAGRAM_TOKEN;
-    const igUserId = process.env.INSTAGRAM_USER_ID;
+    const token = store.getConfig('channel_instagram_token') || process.env.INSTAGRAM_TOKEN;
+    const igUserId = store.getConfig('channel_instagram_user_id') || process.env.INSTAGRAM_USER_ID;
     if (!token || !igUserId) throw new Error('Faltan INSTAGRAM_TOKEN o INSTAGRAM_USER_ID');
     return { token, igUserId };
   }
@@ -39,11 +41,11 @@ class InstagramAdapter extends ChannelAdapter {
     const { token } = this.getConfig();
     try {
       const res = await axios.get(`${GRAPH}/${userId}`, {
-        params: { fields: 'username,name', access_token: token },
+        params: { fields: 'username,name,profile_pic', access_token: token },
       });
-      return { username: res.data.username || null, name: res.data.name || 'Cliente' };
+      return { username: res.data.username || null, name: res.data.name || 'Cliente', profile_pic: res.data.profile_pic || null };
     } catch (e) {
-      return { username: null, name: 'Cliente' };
+      return { username: null, name: 'Cliente', profile_pic: null };
     }
   }
 

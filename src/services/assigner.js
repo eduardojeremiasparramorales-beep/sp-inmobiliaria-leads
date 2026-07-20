@@ -82,6 +82,14 @@ function notificarPanel(vendedorId, leadId, tipo) {
       }).catch(e => console.error('Error notify mensaje_cliente:', e.message));
     } catch (e) { /* notify opcional */ }
   }
+  if (tipo === 'respuesta_vendedor') {
+    try {
+      const { notify } = require('./notify');
+      notify({ vendedorId: 0, tipo: 'respuesta_vendedor', leadId, push: true,
+        titulo: '📤 Vendedor respondió', cuerpo: 'Un vendedor respondió a un lead.',
+      }).catch(e => console.error('Error notify respuesta_vendedor:', e.message));
+    } catch (e) { /* notify opcional */ }
+  }
 }
 
 function assignLead(customerPhone, customerName, messageBody) {
