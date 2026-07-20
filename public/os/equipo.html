@@ -254,7 +254,8 @@
           cargar();
         } else {
           const errores = { no_puedes_eliminar_tu_propia_cuenta:'No puedes eliminar tu propia cuenta', no_se_puede_eliminar_una_cuenta_admin:'Las cuentas admin no se pueden eliminar', vendedor_no_existe:'Ese asesor ya no existe' };
-          toast((r?.error && errores[r.error]) || r?.error || 'Error al eliminar','err');
+          const base = (r?.error && errores[r.error]) || r?.error || 'Error al eliminar';
+          toast(r?.detalle ? `${base}: ${r.detalle}` : base, 'err');
         }
       } catch(err){ toast('Error de conexión','err'); }
     }));

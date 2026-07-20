@@ -2879,9 +2879,14 @@ app.delete('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
   if (usuarioVinculado && usuarioVinculado.rol === 'admin') {
     return res.status(400).json({ error: 'no_se_puede_eliminar_una_cuenta_admin' });
   }
-  const reasignadoA = deleteVendedor(id);
-  events.emitToAdmins('vendedor_eliminado', { vendedorId: id, reasignadoA: reasignadoA ? reasignadoA.nombre : null, ts: Date.now() });
-  res.json({ ok: true, reasignadoA: reasignadoA ? { id: reasignadoA.id, nombre: reasignadoA.nombre } : null });
+  try {
+    const reasignadoA = deleteVendedor(id);
+    events.emitToAdmins('vendedor_eliminado', { vendedorId: id, reasignadoA: reasignadoA ? reasignadoA.nombre : null, ts: Date.now() });
+    res.json({ ok: true, reasignadoA: reasignadoA ? { id: reasignadoA.id, nombre: reasignadoA.nombre } : null });
+  } catch (e) {
+    logger.logError('delete-vendedor', e, { vendedorId: id });
+    res.status(500).json({ error: 'error_interno', detalle: e.message });
+  }
 });
 
 // ===================== EXPORTAR LEADS (CSV) =====================
