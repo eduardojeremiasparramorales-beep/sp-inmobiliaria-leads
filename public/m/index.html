@@ -154,6 +154,14 @@
   .c-act svg{ width:20px; height:20px; }
 
   .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px 6px; display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
+  .c-msgs.c-msgs--patron{
+    background:
+      linear-gradient(180deg, rgba(10,10,10,.7), rgba(12,12,12,.8)),
+      url('/images/chat-bg.jpg');
+    background-size: auto, 420px 420px;
+    background-repeat: repeat;
+    background-attachment: fixed;
+  }
   .c-date{ align-self:center; flex-shrink:0; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:8px 0; }
   .bub{ width:fit-content; max-width:80%; padding:9px 13px; border-radius:18px; font-size:14.5px; line-height:1.42; word-wrap:break-word; position:relative; animation:bubIn .28s var(--spring); }
   .bub--in{ margin-right:auto; background:var(--bg-3); border-bottom-left-radius:6px; border-left:2px solid var(--gold-line); }
@@ -444,6 +452,19 @@
   .sec-btn{ width:100%; height:44px; border:none; background:none; color:var(--text-2); font-size:14px; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; padding:0 16px; }
   .sec-btn:active{ background:var(--bg-3); }
   .sec-btn.danger{ color:var(--red); }
+  .bg-opt{ display:flex; flex-direction:column; align-items:center; gap:5px; cursor:pointer; padding:6px 4px; border-radius:12px; flex:1; transition:background .2s; }
+  .bg-opt.active{ background:rgba(200,164,90,.1); }
+  .bg-preview{ width:100%; height:52px; border-radius:10px; border:1.5px solid var(--border-strong); overflow:hidden; transition:border-color .2s; }
+  .bg-opt.active .bg-preview{ border-color:var(--gold-line); }
+  .bg-preview--none{ background:linear-gradient(135deg,#0A0A0A,#0C0C0C); }
+  .bg-preview--leones{
+    background:
+      linear-gradient(135deg, rgba(10,10,10,.6), rgba(12,12,12,.7)),
+      url('/images/chat-bg.jpg');
+    background-size: auto, 90px 90px;
+  }
+  .bg-opt span{ font-size:11px; color:var(--text-3); text-align:center; }
+  .bg-opt.active span{ color:var(--gold); }
   .toggle-sw{ position:relative; width:44px; height:26px; border-radius:13px; background:var(--bg-4); border:2px solid var(--border-soft); cursor:pointer; transition:all .25s var(--spring); flex-shrink:0; padding:0; }
   .toggle-sw.on{ background:var(--green); border-color:var(--green); }
   .toggle-sw::after{ content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .25s var(--spring); }
@@ -1309,7 +1330,10 @@ async function abrirChat(id){ let l; let msgs;
     }
   }catch(e){ console.error('abrirChat/api',e); msgs=msgs||[]; }
   try{
-    currentMsgs=msgs||[]; renderChat(current,currentMsgs); $('#scChat').classList.add('show');
+    currentMsgs=msgs||[]; renderChat(current,currentMsgs);
+    const _cm=document.getElementById('cMsgs');
+    if(_cm&&localStorage.getItem('sp_chat_bg')==='leones') _cm.classList.add('c-msgs--patron');
+    $('#scChat').classList.add('show');
   }catch(e){ console.error('abrirChat/render',e); toast('Error al abrir'); return; }
   try{ if(l){ l.unread_count=0; renderList(); } }catch(e){ console.error('abrirChat/list',e); }
 }
@@ -2530,6 +2554,22 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         </div>
 
         <div class="sec">
+          <div class="sec-label">Fondo de chat</div>
+          <div class="sec-body">
+            <div style="display:flex;gap:8px;padding:6px 16px 10px">
+              <div class="bg-opt${!localStorage.getItem('sp_chat_bg')||localStorage.getItem('sp_chat_bg')==='none'?' active':''}" data-bg="none">
+                <div class="bg-preview bg-preview--none"></div>
+                <span>Ninguno</span>
+              </div>
+              <div class="bg-opt${localStorage.getItem('sp_chat_bg')==='leones'?' active':''}" data-bg="leones">
+                <div class="bg-preview bg-preview--leones"></div>
+                <span>Leones</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
           <div class="sec-label">Mis respuestas</div>
           <div class="sec-body" id="secMisTpl">
             <div style="padding:10px 16px;text-align:center;color:var(--text-3);font-size:13px">Cargando...</div>
@@ -2576,6 +2616,16 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         const key=this.dataset.key; const cur=this.classList.contains('on');
         this.classList.toggle('on'); localStorage.setItem(key,cur?'false':'true'); haptic(6);
         if(key==='sp_push_fcm_enabled'&&!cur) suscribirPushNativo();
+      }));
+      document.querySelectorAll('.bg-opt').forEach(el=>el.addEventListener('click',function(){
+        const bg=this.dataset.bg;
+        document.querySelectorAll('.bg-opt').forEach(x=>x.classList.remove('active'));
+        this.classList.add('active');
+        if(bg==='none') localStorage.removeItem('sp_chat_bg');
+        else localStorage.setItem('sp_chat_bg',bg);
+        haptic(6);
+        const cMsgs=document.getElementById('cMsgs');
+        if(cMsgs) cMsgs.classList.toggle('c-msgs--patron',bg==='leones');
       }));
       const inp=document.getElementById('inpAbout');
       if(inp) inp.addEventListener('change',function(){
