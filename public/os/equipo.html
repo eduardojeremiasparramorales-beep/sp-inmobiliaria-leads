@@ -87,6 +87,20 @@
         }).join('') || `<div class="empty" style="grid-column:1/-1">${ICONS.team}<div>Aún no hay asesores</div></div>`}
       </div>
 
+      <!-- Monitoreo del chat interno (solo lectura) -->
+      <div class="card rise rise-2" style="overflow:hidden;margin-bottom:var(--s3)">
+        <div class="card--pad" style="padding-bottom:var(--s2)">
+          <div class="u-between">
+            <div><div class="t-h3">🛡️ Monitoreo del chat interno</div>
+            <div class="t-dim3" style="font-size:12px;margin-top:4px">Canal general y mensajes directos entre asesores — solo lectura</div></div>
+            <button class="btn btn--ghost btn--sm" id="monRefresh">Actualizar</button>
+          </div>
+        </div>
+        <div id="monFeed" style="max-height:340px;overflow-y:auto;padding:0 var(--s3) var(--s3)">
+          <div class="t-dim3" style="text-align:center;padding:var(--s3);font-size:13px">Cargando conversaciones…</div>
+        </div>
+      </div>
+
       ${pendientes.length ? `
       <!-- Pendientes de aprobación (auto-registro desde /login.html) -->
       <div class="card rise rise-2" style="overflow:hidden;margin-bottom:var(--s3);border-color:rgba(200,164,90,.4)">
@@ -189,6 +203,29 @@
         else toast(r?.error || 'Error al rechazar','err');
       } catch(err){ toast('Error de conexión','err'); }
     }));
+
+    // ── Monitoreo del chat interno ──
+    async function cargarMonitor(){
+      const feed = document.getElementById('monFeed'); if(!feed) return;
+      const msgs = await api('/api/equipo/monitor?limit=150');
+      if(!Array.isArray(msgs) || !msgs.length){ feed.innerHTML = '<div class="t-dim3" style="text-align:center;padding:var(--s3);font-size:13px">Sin mensajes internos aún</div>'; return; }
+      feed.innerHTML = msgs.map(m => {
+        const directo = m.to_vendedor_id != null;
+        const quien = m.from_nombre_full || m.from_nombre || (Number(m.from_vendedor_id)===0?'Admin':'Asesor');
+        const destino = directo ? ('→ ' + (m.to_nombre || 'Asesor')) : '· General';
+        const hora = new Date(String(m.created_at).replace(' ','T')).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+        return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-soft)">
+          <div class="avatar avatar--sm" style="background:${avatarColor(quien)};flex-shrink:0">${initials(quien)}</div>
+          <div style="flex:1;min-width:0">
+            <div class="u-row u-gap1" style="font-size:12px"><span style="font-weight:600">${esc(quien)}</span>
+              <span class="badge ${directo?'badge--gold':'badge--mute'}" style="font-size:10px">${directo?'Directo':'General'} ${esc(destino)}</span>
+              <span class="t-dim3" style="margin-left:auto;font-size:11px">${hora}</span></div>
+            <div style="font-size:13px;margin-top:2px;color:var(--txt)">${esc(m.body)}</div>
+          </div></div>`;
+      }).join('');
+    }
+    cargarMonitor();
+    const monBtn = document.getElementById('monRefresh'); if(monBtn) monBtn.addEventListener('click', cargarMonitor);
 
     // ── Acciones de tabla ──
     document.querySelectorAll('[data-action="resetPin"]').forEach(btn => btn.addEventListener('click', ()=>{

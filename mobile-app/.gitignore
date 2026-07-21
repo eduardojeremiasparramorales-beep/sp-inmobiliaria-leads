@@ -19,6 +19,16 @@ android/local.properties
 android/*.iml
 android/.idea/
 
+# Crash dumps de la JVM/Gradle (restos de builds fallidos, se regeneran)
+hs_err_pid*.log
+replay_pid*.log
+android/hs_err_pid*.log
+android/replay_pid*.log
+
+# Proyecto iOS: lo genera el CI (o una Mac) con `npx cap add ios` — no se versiona
+# para no commitear un proyecto Xcode a medio generar desde Windows. Ver IOS.md.
+ios/
+
 # El .gitignore raíz excluye *.png/*.jpg globalmente (pensado para el backend) — se
 # re-incluyen aquí los iconos/splash de Android, que SÍ deben quedar en el repo
 # (generados una vez con `npx capacitor-assets generate`, no triviales de recrear).

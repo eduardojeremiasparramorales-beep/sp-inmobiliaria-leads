@@ -11,6 +11,11 @@
     "backgroundColor": "#0A0A0A",
     "allowMixedContent": false
   },
+  "ios": {
+    "backgroundColor": "#0A0A0A",
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false
+  },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 800,

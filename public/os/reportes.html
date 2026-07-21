@@ -45,7 +45,7 @@
 (async function () {
   const { ICONS, api, fmt, avatarColor, initials } = SPOS;
   const ctx = await SPOS.mount({
-    active: 'reportes', title: 'Reportes', crumb: 'SP Inmobiliaria · Analítica avanzada',
+    active: 'reportes', title: 'Reportes', crumb: 'Leons Group · Analítica avanzada',
     padded: true,
   });
 
@@ -109,6 +109,10 @@
 
   ctx.content.innerHTML = `
     <div class="os-content__max">
+      <div class="u-between" style="margin-bottom:var(--s3);flex-wrap:wrap;gap:10px">
+        <div style="font-size:13px;color:var(--text-3)">Datos en vivo del CRM</div>
+        <a class="btn btn--ghost btn--sm" href="/api/reports/export.csv" download="reporte-leons-group.csv">${ICONS.download||''} Exportar CSV</a>
+      </div>
       <!-- Métricas rápidas -->
       <div class="grid grid--4 rise" style="margin-bottom:var(--s3)">
         <div class="rp-metric rise"><div class="rp-metric__v">${fmt.n(r.totalLeads)}</div><div class="rp-metric__l">Leads totales</div></div>

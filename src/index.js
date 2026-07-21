@@ -701,6 +701,54 @@ app.get('/api/me/metricas', auth.requireAuth, (req, res) => {
   res.json(store.getVendedorMetricas(vendedorId));
 });
 
+// "Mi Día": seguimientos vencidos, citas de hoy, leads calientes y fríos (datos reales)
+app.get('/api/me/mi-dia', auth.requireAuth, (req, res) => {
+  const vendedorId = req.session.vendedorId;
+  if (!vendedorId) return res.json({ tareasVencidas: [], citasHoy: [], calientes: [], frios: [] });
+  try { res.json(store.getMiDia(vendedorId)); }
+  catch (e) { console.error('[MI-DIA] error:', e.message); res.json({ tareasVencidas: [], citasHoy: [], calientes: [], frios: [] }); }
+});
+
+// Insignias del asesor logueado + catálogo completo (para mostrar bloqueadas/desbloqueadas)
+app.get('/api/me/insignias', auth.requireAuth, (req, res) => {
+  const { CATALOGO } = require('./services/insignias');
+  const vendedorId = req.session.vendedorId;
+  const ganadas = vendedorId ? store.getInsignias(vendedorId) : [];
+  res.json({ catalogo: CATALOGO, ganadas });
+});
+
+// Perfil público interno de un asesor (para compañeros/admin): SOLO datos no sensibles.
+app.get('/api/vendedores/:id/perfil', auth.requireAuth, (req, res) => {
+  const v = store.getVendedorById(req.params.id);
+  if (!v) return res.status(404).json({ error: 'no_existe' });
+  const { CATALOGO } = require('./services/insignias');
+  const m = store.getVendedorMetricas(v.id) || {};
+  res.json({
+    id: v.id, nombre: v.nombre, foto: v.foto || null, rol: v.rol, estado: v.estado, about: v.about || '',
+    metricas: { leadsActivos: m.leadsActivos || 0, leadsCerrados: m.leadsCerrados || 0, tasaRespuesta: m.tasaRespuesta || 0 },
+    insignias: store.getInsignias(v.id),
+    catalogo: CATALOGO,
+  });
+});
+
+// Ranking del equipo (para asesores y admin): ventas y tasa de respuesta, datos reales.
+app.get('/api/equipo/ranking', auth.requireAuth, (req, res) => {
+  try {
+    const stats = store.getInsigniaStats();
+    const ranking = stats.map(s => ({
+      vendedorId: s.vendedor_id, nombre: s.nombre,
+      vendidos: Number(s.vendidos) || 0, vendidosMes: Number(s.vendidos_mes) || 0, activos: Number(s.activos) || 0,
+    })).sort((a, b) => b.vendidosMes - a.vendidosMes || b.vendidos - a.vendidos);
+    res.json(ranking);
+  } catch (e) { console.error('[RANKING] error:', e.message); res.json([]); }
+});
+
+// Recalcular insignias manualmente (admin) — el scheduler lo hace a diario de todos modos
+app.post('/api/admin/recalcular-insignias', auth.requireAdmin, (req, res) => {
+  const { recomputeAll } = require('./services/insignias');
+  res.json(recomputeAll());
+});
+
 // ===================== PANEL DEL VENDEDOR =====================
 
 // Leads asignados al vendedor logueado (admin ve todos)
@@ -1435,17 +1483,58 @@ app.delete('/api/programados/:id', auth.requireAuth, (req, res) => {
 // ===================== CHAT INTERNO DEL EQUIPO =====================
 
 app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
+  // ?con=<vendedorId> → hilo directo; sin él → canal general
+  const con = req.query.con ? Number(req.query.con) : null;
+  const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  if (con != null) {
+    store.markTeamDirectRead(yo, con);
+    return res.json(store.getTeamDirectMessages(yo, con, 80));
+  }
   res.json(store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 50));
 });
 
+// Lista de hilos directos + contador de no leídos (para la bandeja del asesor)
+app.get('/api/equipo/directos', auth.requireAuth, (req, res) => {
+  const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  res.json({ threads: store.getTeamDirectThreads(yo), unread: store.countTeamUnread(yo) });
+});
+
 app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
-  const { body } = req.body || {};
+  const { body, to, mentions, leadRef } = req.body || {};
   if (!body || !String(body).trim()) return res.status(400).json({ error: 'body_requerido' });
   const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
   const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
-  const msg = store.saveTeamMessage(fromId, nombre, String(body).trim());
-  events.emitToTodos('equipo_mensaje', msg);
+  const toVendedorId = (to != null && to !== '') ? Number(to) : null;
+  const menciones = Array.isArray(mentions) ? mentions.map(Number).filter(Boolean) : [];
+  const msg = store.saveTeamMessage(fromId, nombre, String(body).trim(), { toVendedorId, mentions: menciones, leadRef });
+
+  if (toVendedorId != null) {
+    // Directo: al destinatario y a los admins (monitoreo transparente)
+    events.emitToVendedor(toVendedorId, 'equipo_directo', msg);
+    events.emitToVendedor(fromId, 'equipo_directo', msg);
+    events.emitToAdmins('equipo_directo', msg);
+    try {
+      const push = require('./services/push');
+      push.sendToVendedor(toVendedorId, { title: `💬 ${nombre}`, body: String(body).slice(0, 120), tipo: 'equipo_directo', from: String(fromId) }).catch(() => {});
+    } catch (e) { console.error('[EQUIPO] push directo falló:', e.message); }
+  } else {
+    events.emitToTodos('equipo_mensaje', msg);
+    // Push a los mencionados en el canal general
+    if (menciones.length) {
+      try {
+        const push = require('./services/push');
+        for (const vid of menciones) {
+          if (vid !== fromId) push.sendToVendedor(vid, { title: `📣 ${nombre} te mencionó`, body: String(body).slice(0, 120), tipo: 'equipo_mencion' }).catch(() => {});
+        }
+      } catch (e) { console.error('[EQUIPO] push mención falló:', e.message); }
+    }
+  }
   res.json({ ok: true, mensaje: msg });
+});
+
+// Monitoreo admin: todas las conversaciones internas (solo lectura)
+app.get('/api/equipo/monitor', auth.requireAdmin, (req, res) => {
+  res.json(store.getAllTeamMessagesForAdmin(req.query.limit ? Number(req.query.limit) : 200));
 });
 
 // Editar mensaje enviado (solo outgoing y reciente)

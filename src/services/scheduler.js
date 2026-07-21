@@ -5,9 +5,12 @@ const store = require('../db/store');
 const { sendMessageSmart } = require('./whatsapp');
 const events = require('./events');
 const { notify } = require('./notify');
+const insignias = require('./insignias');
 
 const TICK_MS = 45000;
 const MAX_INTENTOS = 3;
+const DIARIO_MS = 3600000; // revisa cada hora; ejecuta las tareas diarias 1 vez/día
+let _ultimoDiario = null;   // 'YYYY-MM-DD' del último run diario
 
 let _corriendo = false;
 let _buildFirma = null; // inyectada desde index.js (comparte la firma del asesor)
@@ -94,9 +97,47 @@ async function enviarUno(s) {
   }
 }
 
+// Seguimiento automático: si el asesor mandó el último mensaje y el cliente no responde
+// hace +24h, se crea un recordatorio (tarea con vence_at = ahora) y push. Guard por lead
+// para no duplicar; se limpia cuando el cliente vuelve a escribir.
+function crearSeguimientosAutomaticos() {
+  let creados = 0;
+  try {
+    const leads = store.getLeadsNecesitanSeguimiento();
+    for (const l of leads) {
+      if (!l.assigned_to_id) continue;
+      try {
+        store.createTarea({
+          vendedorId: l.assigned_to_id,
+          leadId: l.id,
+          texto: `Haz seguimiento a ${l.customer_name || 'tu cliente'} — sin respuesta hace +24h`,
+          venceAt: new Date().toISOString(),
+        });
+        store.setFollowupCreated(l.id);
+        creados++;
+        try { notify({ vendedorId: l.assigned_to_id, tipo: 'seguimiento', titulo: '🔔 Seguimiento pendiente', cuerpo: `${l.customer_name || 'Un cliente'} lleva +24h sin responder. Retómalo.`, leadId: l.id, push: true }); } catch (e) { }
+      } catch (e) { console.error('[SCHEDULER] seguimiento auto lead', l.id, e.message); }
+    }
+  } catch (e) { console.error('[SCHEDULER] crearSeguimientosAutomaticos:', e.message); }
+  return creados;
+}
+
+async function tickDiario() {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (_ultimoDiario === hoy) return;
+  _ultimoDiario = hoy;
+  try {
+    const seg = crearSeguimientosAutomaticos();
+    const ins = insignias.recomputeAll();
+    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s) creado(s); insignias`, ins);
+  } catch (e) { console.error('[SCHEDULER] tickDiario:', e.message); }
+}
+
 function start(buildFirmaFn) {
   _buildFirma = buildFirmaFn || null;
   setInterval(tick, TICK_MS);
+  setInterval(tickDiario, DIARIO_MS);
+  setTimeout(tickDiario, 15000); // primer cálculo al arrancar (tras estabilizar la BD)
   console.log('[SCHEDULER] Mensajes programados en servidor: activo (tick ' + TICK_MS / 1000 + 's)');
 }
 

@@ -1,0 +1,57 @@
+name: iOS build (Capacitor)
+
+# Compila la app iOS en la nube (runner macOS) sin necesidad de tener una Mac.
+# Fase actual: build SIN FIRMA — solo valida que el proyecto iOS compila.
+# Para generar un .ipa firmado y subirlo a TestFlight/App Store hace falta una cuenta
+# Apple Developer + certificados (ver mobile-app/IOS.md).
+
+on:
+  push:
+    branches: [ main, master, glow-up-general ]
+    paths:
+      - 'mobile-app/**'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Add iOS platform (si no existe)
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+
+      - name: Sync Capacitor (iOS)
+        run: npx cap sync ios
+
+      - name: Install CocoaPods
+        run: |
+          cd ios/App
+          pod install
+
+      - name: Build (sin firma)
+        run: |
+          cd ios/App
+          xcodebuild \
+            -workspace App.xcodeworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

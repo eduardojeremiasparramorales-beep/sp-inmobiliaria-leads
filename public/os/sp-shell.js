@@ -163,12 +163,11 @@
       <aside class="os-nav" id="osNav">
         <div class="os-brand">
           <div class="os-brand__mark"><img src="/icons/logo.png" alt="SP Leons Group" style="width:100%;height:100%;object-fit:cover;border-radius:8px"></div>
-          <div><div class="os-brand__name">Leons&nbsp;Group</div><div class="os-brand__sub">Enterprise</div></div>
+          <div><div class="os-brand__name">Leons&nbsp;Group</div><div class="os-brand__sub">CRM Inmobiliario</div></div>
         </div>
-        <div class="os-workspace" title="Cambiar workspace">
+        <div class="os-workspace">
           <div class="os-workspace__logo">🏡</div>
-          <div class="u-grow"><div class="os-workspace__name">Leons Group</div><div class="os-workspace__plan">Plan Enterprise</div></div>
-          ${P('<path d="M8 9l4-4 4 4M8 15l4 4 4-4"/>').replace('<svg ', '<svg style="width:14px;height:14px;opacity:.4" ')}
+          <div class="u-grow"><div class="os-workspace__name">Leons Group</div><div class="os-workspace__plan">Inversiones &amp; Finca Raíz</div></div>
         </div>
         <div class="os-nav__scroll">${navHTML}</div>
         <div class="os-nav__foot">

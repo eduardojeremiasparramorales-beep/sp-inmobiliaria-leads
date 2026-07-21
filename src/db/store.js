@@ -133,6 +133,7 @@ async function initDB() {
   ensureColumn('leads', 'presupuesto', 'TEXT');
   ensureColumn('leads', 'pinned_at', 'DATETIME');
   ensureColumn('leads', 'muted_at', 'DATETIME');
+  ensureColumn('leads', 'followup_task_at', 'DATETIME'); // guard del seguimiento automático 24h
   ensureColumn('leads', 'progress_pct', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
@@ -392,6 +393,25 @@ async function initDB() {
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_notif_vendedor ON notifications(vendedor_id, leida)`);
 
+  // Chat de equipo: columnas nuevas para directos monitoreados y menciones.
+  // (to_vendedor_id ya existía: NULL = canal general; un id = mensaje directo)
+  ensureColumn('team_messages', 'mentions', 'TEXT');      // JSON de vendedor_ids mencionados
+  ensureColumn('team_messages', 'read_at', 'DATETIME');   // lectura del destinatario en directos
+  ensureColumn('team_messages', 'lead_ref', 'INTEGER');   // lead compartido como tarjeta
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_team_conv ON team_messages(from_vendedor_id, to_vendedor_id, id)`);
+
+  // Insignias del asesor (gamificación con datos reales; otorgadas por job diario)
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS insignias (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      codigo TEXT NOT NULL,
+      otorgada_at DATETIME DEFAULT (datetime('now')),
+      UNIQUE(vendedor_id, codigo)
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_insignias_vendedor ON insignias(vendedor_id)`);
+
   return adapter.getDB();
 }
 
@@ -615,17 +635,62 @@ function updateScheduled(id, fields) {
 }
 
 // --- Chat interno del equipo ---
-function saveTeamMessage(fromVendedorId, fromNombre, body) {
-  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body) VALUES (?, ?, NULL, ?)',
-    [fromVendedorId, fromNombre || '', String(body).slice(0, 2000)]);
+// toVendedorId NULL/undefined = canal general; un id = mensaje directo (monitoreado por admin).
+function saveTeamMessage(fromVendedorId, fromNombre, body, opts = {}) {
+  const to = opts.toVendedorId != null ? Number(opts.toVendedorId) : null;
+  const mentions = Array.isArray(opts.mentions) && opts.mentions.length ? JSON.stringify(opts.mentions) : null;
+  const leadRef = opts.leadRef != null ? Number(opts.leadRef) : null;
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref) VALUES (?, ?, ?, ?, ?, ?)',
+    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef]);
   return one('SELECT * FROM team_messages ORDER BY id DESC LIMIT 1');
 }
+// Canal general (to_vendedor_id IS NULL)
 function getTeamMessages(beforeId, limit) {
   const lim = Math.min(Number(limit) || 50, 100);
   if (beforeId) {
-    return all('SELECT * FROM team_messages WHERE id < ? ORDER BY id DESC LIMIT ?', [beforeId, lim]).reverse();
+    return all('SELECT * FROM team_messages WHERE to_vendedor_id IS NULL AND id < ? ORDER BY id DESC LIMIT ?', [beforeId, lim]).reverse();
   }
-  return all('SELECT * FROM team_messages ORDER BY id DESC LIMIT ?', [lim]).reverse();
+  return all('SELECT * FROM team_messages WHERE to_vendedor_id IS NULL ORDER BY id DESC LIMIT ?', [lim]).reverse();
+}
+// Conversación directa entre dos asesores (ambos sentidos)
+function getTeamDirectMessages(vendedorA, vendedorB, limit) {
+  const lim = Math.min(Number(limit) || 60, 120);
+  return all(
+    `SELECT * FROM team_messages
+     WHERE (from_vendedor_id = ? AND to_vendedor_id = ?) OR (from_vendedor_id = ? AND to_vendedor_id = ?)
+     ORDER BY id DESC LIMIT ?`,
+    [vendedorA, vendedorB, vendedorB, vendedorA, lim]
+  ).reverse();
+}
+// Lista de hilos directos de un asesor (con el otro interlocutor y último mensaje)
+function getTeamDirectThreads(vendedorId) {
+  return all(
+    `SELECT tm.*,
+            CASE WHEN tm.from_vendedor_id = ? THEN tm.to_vendedor_id ELSE tm.from_vendedor_id END AS otro_id
+     FROM team_messages tm
+     WHERE tm.to_vendedor_id IS NOT NULL AND (tm.from_vendedor_id = ? OR tm.to_vendedor_id = ?)
+     ORDER BY tm.id DESC`,
+    [vendedorId, vendedorId, vendedorId]
+  );
+}
+function markTeamDirectRead(vendedorId, otroId) {
+  run("UPDATE team_messages SET read_at = datetime('now') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
+}
+function countTeamUnread(vendedorId) {
+  const r = one('SELECT COUNT(*) AS n FROM team_messages WHERE to_vendedor_id = ? AND read_at IS NULL', [vendedorId]);
+  return r ? Number(r.n) : 0;
+}
+// Monitoreo admin: TODAS las conversaciones (general + directas), solo lectura
+function getAllTeamMessagesForAdmin(limit) {
+  const lim = Math.min(Number(limit) || 200, 500);
+  return all(
+    `SELECT tm.*, vf.nombre AS from_nombre_full, vt.nombre AS to_nombre
+     FROM team_messages tm
+     LEFT JOIN vendedores vf ON tm.from_vendedor_id = vf.id
+     LEFT JOIN vendedores vt ON tm.to_vendedor_id = vt.id
+     ORDER BY tm.id DESC LIMIT ?`,
+    [lim]
+  ).reverse();
 }
 
 // --- Borrar para mí ---
@@ -678,7 +743,9 @@ function muteLead(leadId, muted) {
 // === 24-HOUR WINDOW TRACKING ===
 
 function updateCustomerMessageTimestamp(leadId) {
-  run('UPDATE leads SET last_customer_message_at = datetime(\'now\') WHERE id = ?', [leadId]);
+  // Al responder el cliente, se limpia el guard para que pueda generarse un nuevo
+  // seguimiento automático si el asesor vuelve a quedar como último en escribir.
+  run('UPDATE leads SET last_customer_message_at = datetime(\'now\'), followup_task_at = NULL WHERE id = ?', [leadId]);
   try {
     const lead = one('SELECT lead_id FROM conversations WHERE lead_id = ?', [leadId]);
     if (lead) {
@@ -2155,6 +2222,98 @@ function getProyectoStats(proyectoId) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// "Mi Día" del asesor — todo derivado de datos reales, sin inventar.
+// ─────────────────────────────────────────────────────────────
+function getMiDia(vendedorId) {
+  // Seguimientos/recordatorios vencidos hoy
+  const tareasVencidas = all(
+    `SELECT id, texto, vence_at FROM tareas
+     WHERE vendedor_id = ? AND (completada IS NULL OR completada = 0)
+       AND vence_at IS NOT NULL AND datetime(vence_at) <= datetime('now')
+     ORDER BY vence_at ASC LIMIT 20`,
+    [vendedorId]
+  );
+  // Citas de hoy pendientes
+  const citasHoy = all(
+    `SELECT id, lead_id, titulo, fecha FROM citas
+     WHERE vendedor_id = ? AND estado = 'pendiente'
+       AND date(fecha) = date('now','localtime')
+     ORDER BY fecha ASC`,
+    [vendedorId]
+  );
+  // Leads calientes sin responder (unread > 0), etiqueta de alto interés primero
+  const calientes = all(
+    `SELECT id, customer_name, etiqueta, unread_count, last_customer_message_at
+     FROM leads
+     WHERE assigned_to_id = ? AND status != 'cerrado' AND COALESCE(unread_count,0) > 0
+     ORDER BY (etiqueta IN ('negociacion','cita')) DESC, last_customer_message_at ASC LIMIT 20`,
+    [vendedorId]
+  );
+  // Leads fríos: sin contacto (del cliente) hace +48h y sin cerrar
+  const frios = all(
+    `SELECT id, customer_name, etiqueta, updated_at, last_customer_message_at
+     FROM leads
+     WHERE assigned_to_id = ? AND status != 'cerrado' AND COALESCE(unread_count,0) = 0
+       AND datetime(COALESCE(last_customer_message_at, updated_at, created_at)) <= datetime('now','-48 hours')
+     ORDER BY COALESCE(last_customer_message_at, updated_at, created_at) ASC LIMIT 20`,
+    [vendedorId]
+  );
+  return { tareasVencidas, citasHoy, calientes, frios };
+}
+
+// Leads que necesitan seguimiento: el asesor mandó el último mensaje y el cliente
+// no responde hace +24h (para crear recordatorio automático desde el scheduler).
+function getLeadsNecesitanSeguimiento() {
+  return all(
+    `SELECT l.id, l.customer_name, l.assigned_to_id,
+            (SELECT direction FROM messages m WHERE m.lead_id = l.id ORDER BY m.id DESC LIMIT 1) AS last_dir,
+            (SELECT timestamp FROM messages m WHERE m.lead_id = l.id ORDER BY m.id DESC LIMIT 1) AS last_ts
+     FROM leads l
+     WHERE l.status != 'cerrado' AND l.assigned_to_id IS NOT NULL AND l.followup_task_at IS NULL`,
+    []
+  ).filter(l => l.last_dir === 'outgoing' && l.last_ts && (Date.now() - new Date(String(l.last_ts).replace(' ', 'T')).getTime()) > 24 * 3600 * 1000);
+}
+function setFollowupCreated(leadId) {
+  run("UPDATE leads SET followup_task_at = datetime('now') WHERE id = ?", [leadId]);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Insignias
+// ─────────────────────────────────────────────────────────────
+function getInsignias(vendedorId) {
+  return all('SELECT codigo, otorgada_at FROM insignias WHERE vendedor_id = ? ORDER BY otorgada_at DESC', [vendedorId]);
+}
+// Agregados por asesor para calcular insignias (todo derivado de datos reales)
+function getInsigniaStats() {
+  return all(
+    `SELECT v.id AS vendedor_id, v.nombre,
+       (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.etiqueta = 'vendido') AS vendidos,
+       (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.etiqueta = 'vendido'
+          AND strftime('%Y-%m', COALESCE(l.updated_at, l.created_at)) = strftime('%Y-%m','now')) AS vendidos_mes,
+       (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.status != 'cerrado') AS activos,
+       (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.status != 'cerrado' AND COALESCE(l.unread_count,0) > 0) AS pendientes,
+       (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.first_response_at IS NOT NULL) AS respondidos
+     FROM vendedores v WHERE v.estado = 'activo'`,
+    []
+  );
+}
+function getInsigniasAll() {
+  const rows = all('SELECT vendedor_id, codigo, otorgada_at FROM insignias', []);
+  const map = {};
+  for (const r of rows) { (map[r.vendedor_id] = map[r.vendedor_id] || []).push(r.codigo); }
+  return map;
+}
+function awardInsignia(vendedorId, codigo) {
+  try {
+    run('INSERT OR IGNORE INTO insignias (vendedor_id, codigo) VALUES (?, ?)', [vendedorId, codigo]);
+    return true;
+  } catch (e) { console.error('[INSIGNIAS] award falló', vendedorId, codigo, e.message); return false; }
+}
+function revokeInsignia(vendedorId, codigo) {
+  run('DELETE FROM insignias WHERE vendedor_id = ? AND codigo = ?', [vendedorId, codigo]);
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -2210,5 +2369,7 @@ module.exports = {
   toggleStarMessage, getStarredMessages, searchMessages,
   setTranscript, setTranslation,
   createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
-  saveTeamMessage, getTeamMessages,
+  saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, countTeamUnread, getAllTeamMessagesForAdmin,
+  getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
+  getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,
 };

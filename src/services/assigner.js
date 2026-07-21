@@ -156,7 +156,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     syncMulticanal(lead.id, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: v.telefono });
     notificarPanel(v.id, lead.id, 'mensaje_cliente');
     triggerWorkflow('message:incoming', lead.id, messageBody);
-    try { require('./progress').evaluateFromMessage(lead.id, messageBody, {}).catch(()=>{}); } catch(e){};
+    try { require('./progress').evaluateFromMessage(lead.id, messageBody, {}).catch(e=>console.error('[ASSIGNER] progress eval async:', e.message)); } catch(e){ console.error('[ASSIGNER] progress eval:', e.message); };
 
     const { sendMessage } = require('./whatsapp');
     const prefix = lead.messages_count <= 1
@@ -192,7 +192,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });
     notificarPanel(vendedorAsignado.id, r.leadId, 'mensaje_cliente');
     triggerWorkflow('message:incoming', r.leadId, messageBody);
-    try { require('./progress').evaluateFromMessage(r.leadId, messageBody, {}).catch(()=>{}); } catch(e){};
+    try { require('./progress').evaluateFromMessage(r.leadId, messageBody, {}).catch(e=>console.error('[ASSIGNER] progress eval async:', e.message)); } catch(e){ console.error('[ASSIGNER] progress eval:', e.message); };
     sendMessage(vendedorAsignado.telefono, `🆕 Nuevo lead\nCliente: ${customerName || 'Cliente'}\nTel: ${fromPhone}\n\n${messageBody}`)
       .then(() => callback(null, { forwarded: true, to: vendedorAsignado.telefono }))
       .catch(callback);
@@ -234,7 +234,7 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
   syncMulticanal(lead.id, { direction: 'incoming', body, media: mediaData, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '' });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
   triggerWorkflow('message:incoming', lead.id, body);
-  try { require('./progress').evaluateFromMessage(lead.id, body, { hasMedia: true }).catch(()=>{}); } catch(e){};
+  try { require('./progress').evaluateFromMessage(lead.id, body, { hasMedia: true }).catch(e=>console.error('[ASSIGNER] progress eval async:', e.message)); } catch(e){ console.error('[ASSIGNER] progress eval:', e.message); };
 
   if (vendedor) {
     sendMessage(vendedor.telefono, `📎 ${customerName || 'Cliente'} te envió ${label}. Ábrelo en tu panel.`)
@@ -278,7 +278,7 @@ function routeIncomingLocation(fromPhone, customerName, locationData, wamid, cal
   });
   notificarPanel(vendedor ? vendedor.id : null, lead.id, 'mensaje_cliente');
   triggerWorkflow('message:incoming', lead.id, displayBody);
-  try { require('./progress').evaluateFromMessage(lead.id, displayBody, { sentLocation: true }).catch(()=>{}); } catch(e){};
+  try { require('./progress').evaluateFromMessage(lead.id, displayBody, { sentLocation: true }).catch(e=>console.error('[ASSIGNER] progress eval async:', e.message)); } catch(e){ console.error('[ASSIGNER] progress eval:', e.message); };
 
   if (vendedor) {
     const locName = locationData.name ? ` (${locationData.name})` : '';
