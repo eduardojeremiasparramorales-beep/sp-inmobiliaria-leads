@@ -273,8 +273,20 @@ Servicios públicos">${project && project.features ? (Array.isArray(project.feat
           <div id="imagesSection">
             <label style="display:block;font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Imágenes del proyecto</label>
             <div id="imageList" style="margin-bottom:8px"></div>
-            <p style="font-size:11px;color:var(--text-3)">Las imágenes deben estar en CAMPAÑAS_SP/projects/<strong id="slugPreview">la-bendicion</strong>/images/</p>
-            <button type="button" class="cp-btn cp-btn--ghost" id="btnScanImages" style="font-size:11px;height:30px">Escanear carpeta</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <label class="cp-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;height:34px">
+                Elegir carpeta
+                <input type="file" webkitdirectory multiple accept="image/*" id="folderPicker" style="display:none">
+              </label>
+              <span style="font-size:11px;color:var(--text-3);align-self:center">o</span>
+              <label class="cp-btn cp-btn--ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;height:34px">
+                Elegir archivos
+                <input type="file" multiple accept="image/*" id="filePicker" style="display:none">
+              </label>
+              <button type="button" class="cp-btn cp-btn--ghost" id="btnScanImages" style="font-size:11px;height:34px">Escanear servidor</button>
+            </div>
+            <div id="uploadProgress" style="font-size:12px;color:var(--text-3);margin-top:6px"></div>
+            <p style="font-size:11px;color:var(--text-3);margin-top:6px">Las imágenes se guardan en CAMPAÑAS_SP/projects/<strong id="slugPreview">la-bendicion</strong>/images/</p>
           </div>
           <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
             <button type="button" class="cp-btn cp-btn--ghost" id="projCancel">Cancelar</button>
@@ -305,20 +317,73 @@ Servicios públicos">${project && project.features ? (Array.isArray(project.feat
     slugInput.addEventListener('input', updateSlugPreview);
     updateSlugPreview();
 
-    // Escanear imágenes
-    document.getElementById('btnScanImages').addEventListener('click', async () => {
+    async function uploadImages(files) {
+      if (!files || !files.length) return;
       const slug = slugInput.value || slugFromName(nameInput.value);
       if (!slug) { toast('Primero ingresa un nombre o slug', 'err'); return; }
+      // Si el proyecto no existe aún, créalo primero con los datos actuales
+      let pId = project ? project.id : null;
+      if (!pId && document.getElementById('fName').value.trim()) {
+        const data = {
+          name: document.getElementById('fName').value.trim(),
+          slug,
+          location: document.getElementById('fLocation').value.trim(),
+          template: document.getElementById('fTemplate').value,
+        };
+        const created = await api('/api/campanas-sp/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        if (created && created.id) {
+          pId = created.id;
+          project = created;
+          toast('Proyecto creado automáticamente', 'ok');
+        }
+      }
+      if (!pId) { toast('Primero guarda el proyecto', 'err'); return; }
+      const prog = document.getElementById('uploadProgress');
+      const form = new FormData();
+      for (const f of files) form.append('images', f);
+      prog.textContent = 'Subiendo ' + files.length + ' imagen(es)…';
+      try {
+        const r = await fetch('/api/campanas-sp/projects/' + pId + '/upload-images', {
+          method: 'POST',
+          body: form,
+          credentials: 'same-origin',
+        });
+        const data = await r.json();
+        if (data.ok) {
+          prog.textContent = '' + data.count + ' imagen(es) subidas';
+          scanImages(slug);
+        } else {
+          prog.textContent = 'Error: ' + (data.error || 'desconocido');
+        }
+      } catch (e) {
+        prog.textContent = 'Error de conexión';
+      }
+    }
+    document.getElementById('folderPicker').addEventListener('change', function() {
+      uploadImages(this.files);
+      this.value = '';
+    });
+    document.getElementById('filePicker').addEventListener('change', function() {
+      uploadImages(this.files);
+      this.value = '';
+    });
+    async function scanImages(slug) {
+      if (!slug) { slug = slugInput.value || slugFromName(nameInput.value); }
+      if (!slug) return;
       const dirs = await api('/api/campanas-sp/projects/dirs?slug=' + encodeURIComponent(slug));
       const list = document.getElementById('imageList');
       const imgs = (dirs && dirs.images) || [];
       if (!imgs.length) {
-        list.innerHTML = '<div style="font-size:12px;color:var(--text-3);margin:6px 0">No se encontraron imágenes. Crea la carpeta <strong>CAMPAÑAS_SP/projects/' + esc(slug) + '/images/</strong> y coloca los archivos allí.</div>';
+        list.innerHTML = '<div style="font-size:12px;color:var(--text-3);margin:6px 0">Sin imágenes aún. Selecciona una carpeta o archivos arriba.</div>';
         return;
       }
-      list.innerHTML = '<div style="font-size:12px;color:var(--green);margin:6px 0">' + imgs.length + ' imagen(es) encontradas:</div>' +
+      list.innerHTML = '<div style="font-size:12px;color:var(--green);margin:6px 0">' + imgs.length + ' imagen(es):</div>' +
         imgs.map(f => '<span style="font-size:11px;color:var(--text-3);display:inline-block;margin:2px 6px 2px 0">' + esc(f) + '</span>').join('');
-      toast(imgs.length + ' imagen(es) encontradas en /' + esc(slug) + '/images/', 'ok');
+    }
+    document.getElementById('btnScanImages').addEventListener('click', async () => {
+      const slug = slugInput.value || slugFromName(nameInput.value);
+      if (!slug) { toast('Primero ingresa un nombre o slug', 'err'); return; }
+      scanImages(slug);
     });
 
     modal.querySelector('#projForm').addEventListener('submit', async e => {

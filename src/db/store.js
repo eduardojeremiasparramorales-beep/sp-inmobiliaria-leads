@@ -138,6 +138,7 @@ async function initDB() {
   ensureColumn('leads', 'temperatura', 'TEXT');            // calificación IA: caliente|tibio|frio
   ensureColumn('leads', 'temperatura_at', 'DATETIME');     // cuándo se calificó por última vez
   ensureColumn('leads', 'snoozed_until', 'DATETIME');      // posponer chat (C2): baja al fondo hasta esta hora
+  ensureColumn('leads', 'awaiting_csat', 'INTEGER DEFAULT 0'); // esperando respuesta de encuesta de satisfacción
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
@@ -1482,6 +1483,11 @@ function setLeadSnooze(leadId, untilIso) {
   run('UPDATE leads SET snoozed_until = ? WHERE id = ?', [untilIso || null, leadId]);
 }
 
+// CSAT: marcar/desmarcar que el lead está esperando la respuesta de la encuesta.
+function setAwaitingCsat(leadId, val) {
+  run('UPDATE leads SET awaiting_csat = ? WHERE id = ?', [val ? 1 : 0, leadId]);
+}
+
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
   return all('SELECT * FROM lead_notes WHERE lead_id = ? ORDER BY created_at DESC, id DESC', [leadId]);
@@ -2423,7 +2429,7 @@ module.exports = {
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
   isOptedOut, addOptout, getOptouts, countSegment, segmentLeads, getSegmentOptions,
-  setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, getNotasByLead, addNota, deleteNota, reassignLead,
+  setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, addNota, deleteNota, reassignLead,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   queuePendingOutbound, getPendingOutbound, clearPendingOutbound,

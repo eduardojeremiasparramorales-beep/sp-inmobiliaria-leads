@@ -10,6 +10,7 @@ const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, getVendedore
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
 const { sendMessage, sendMessageSmart, uploadMedia, sendMedia, sendLocation } = require('./services/whatsapp');
+const multer = require('multer');
 const mediaStore = require('./services/media');
 const { convertToOggOpus, getPlayableAudioPath } = require('./services/audio');
 
@@ -1815,6 +1816,57 @@ app.get('/api/publico/proyecto/:id', catalogoLimiter, (req, res) => {
   if (!p) return res.status(404).json({ error: 'no_existe' });
   res.json(p);
 });
+// Servir fotos de catálogo (públicas y permanentes) — solo archivos con prefijo cat_,
+// nunca los medios privados de los chats.
+app.get('/api/publico/foto/:filename', catalogoLimiter, (req, res) => {
+  const filename = req.params.filename;
+  if (!mediaStore.isCatalogFile(filename)) return res.status(404).end();
+  const filePath = mediaStore.getMediaPath(filename);
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(filePath);
+});
+// Subir la foto principal de un proyecto (admin). Guarda en data/media con prefijo
+// cat_ y deja imagen_url apuntando a la ruta pública same-origin.
+app.post('/api/proyectos/:id/foto', auth.requireAdmin, (req, res) => {
+  const proyecto = store.getProyectoById(req.params.id);
+  if (!proyecto) return res.status(404).json({ error: 'no_existe' });
+  const { dataBase64, mime } = req.body || {};
+  if (!dataBase64) return res.status(400).json({ error: 'sin_imagen' });
+  if (!/^image\//.test(mime || '')) return res.status(400).json({ error: 'tipo_invalido' });
+  let buffer;
+  try { buffer = Buffer.from(dataBase64, 'base64'); } catch (e) { return res.status(400).json({ error: 'base64_invalido' }); }
+  if (!buffer.length || buffer.length > 5 * 1024 * 1024) return res.status(400).json({ error: 'tamano_invalido' });
+  const filename = mediaStore.saveCatalogMedia(buffer, mime, null);
+  const url = `/api/publico/foto/${filename}`;
+  store.updateProyecto(proyecto.id, { imagen_url: url });
+  res.json({ ok: true, imagen_url: url });
+});
+// Landing de un proyecto con OG tags dinámicos → al pegar el link en WhatsApp
+// sale tarjeta con foto + nombre + precio. Sirve el mismo catálogo con <head> inyectado.
+app.get('/catalogo/p/:id', catalogoLimiter, (req, res) => {
+  let html;
+  try { html = fs.readFileSync(path.join(__dirname, '..', 'public', 'catalogo', 'index.html'), 'utf8'); }
+  catch (e) { return res.redirect('/catalogo/'); }
+  const p = store.getProyectoPublicoById(req.params.id);
+  if (p) {
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const base = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers.host}`;
+    const loc = [p.ciudad, p.departamento].filter(Boolean).join(', ') || 'Colombia';
+    let og = `\n<meta property="og:type" content="website">
+<meta property="og:title" content="${esc(p.nombre)} · Leons Group">
+<meta property="og:description" content="${esc('Lotes disponibles en ' + loc + '. Inversión en tierra a nivel nacional.')}">
+<meta property="og:url" content="${base}/catalogo/p/${p.id}">`;
+    if (p.imagen_url) {
+      const img = /^https?:\/\//.test(p.imagen_url) ? p.imagen_url : base + p.imagen_url;
+      og += `\n<meta property="og:image" content="${esc(img)}">\n<meta name="twitter:card" content="summary_large_image">`;
+    }
+    og += `\n<script>window.__CATALOG_PID=${Number(p.id)};</script>`;
+    html = html.replace('</head>', og + '\n</head>');
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
 app.post('/api/proyectos', auth.requireAdmin, (req, res) => {
   const d = req.body || {};
   if (!d.nombre) return res.status(400).json({ error: 'nombre_requerido' });
@@ -2019,6 +2071,26 @@ app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   const adapter = require('./db/adapter');
   adapter.run("UPDATE leads SET status = ?, updated_at = created_at WHERE id = ?", ['cerrado', lead.id]);
   res.json({ ok: true });
+});
+
+// Enviar encuesta de satisfacción (CSAT, F3.2). El asesor la dispara (ej. tras cerrar
+// una venta); la respuesta 1-5 la captura el webhook. No se auto-envía en cada archivado.
+app.post('/api/leads/:id/encuesta', auth.requireAuth, async (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const { sendMessageSmart } = require('./services/whatsapp');
+  const texto = 'Nos encantaría conocer tu opinión 🙏\n¿Cómo calificas la atención de tu asesor en Leons Group? Responde con un número del *1 al 5* (5 = excelente).';
+  try {
+    await sendMessageSmart(lead.customer_phone, texto, lead.id);
+    store.setAwaitingCsat(lead.id, 1);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[CSAT] enviar encuesta:', e.message);
+    res.status(500).json({ error: 'no_enviado' });
+  }
 });
 
 app.post('/api/leads/:id/clear-messages', auth.requireAuth, (req, res) => {
@@ -2739,6 +2811,30 @@ app.post('/api/campanas-sp/projects/:id/generate', auth.requireAdmin, async (req
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+app.post('/api/campanas-sp/projects/:id/upload-images', auth.requireAdmin, upload.array('images', 50), async (req, res) => {
+  const p = store.getCampanasSpProject(Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
+  const slug = p.slug;
+  const imgDir = path.join(campanasSp.getProjectDir(slug), 'images');
+  fs.mkdirSync(imgDir, { recursive: true });
+  const saved = [];
+  for (const file of req.files) {
+    const ext = path.extname(file.originalname) || '.png';
+    const name = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fp = path.join(imgDir, name);
+    fs.writeFileSync(fp, file.buffer);
+    saved.push(name);
+  }
+  // Actualizar images_dir si está vacío
+  if (!p.images_dir) {
+    store.updateCampanasSpProject(p.id, { images_dir: imgDir });
+  }
+  res.json({ ok: true, saved, count: saved.length, dir: imgDir });
 });
 
 app.get('/api/campanas-sp/projects/:id/assets', auth.requireAdmin, (req, res) => {

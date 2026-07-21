@@ -252,8 +252,8 @@ $('#ctaBtn').onclick = () => {
   const cfg = await api('/api/publico/config');
   if(cfg && cfg.whatsapp) CFG = cfg;
   await cargarLista();
-  // Deep-link: ?p=ID abre directamente un proyecto (para compartir por WhatsApp)
-  const pid = new URLSearchParams(location.search).get('p');
+  // Deep-link: /catalogo/p/ID (con OG tags) o ?p=ID abre directamente un proyecto
+  const pid = (typeof window.__CATALOG_PID!=='undefined' && window.__CATALOG_PID) || new URLSearchParams(location.search).get('p');
   if(pid) abrirProyecto(pid);
 })();
 </script>

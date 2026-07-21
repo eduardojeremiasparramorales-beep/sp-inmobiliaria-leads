@@ -47,6 +47,21 @@ function saveOutgoingMedia(buffer, mime, originalFilename) {
   return filename;
 }
 
+// Foto de catálogo (pública y permanente): prefijo cat_ para poder servirla sin
+// token sin exponer los medios privados de los chats. Se guarda en data/media/
+// (gitignored, sobrevive al git clean -fd del deploy).
+function saveCatalogMedia(buffer, mime, originalFilename) {
+  ensureDir();
+  const ext = extFor(mime, originalFilename);
+  const filename = `cat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  fs.writeFileSync(path.join(MEDIA_DIR, filename), buffer);
+  return filename;
+}
+// ¿Es un archivo de catálogo (público)? Solo estos se sirven sin sesión.
+function isCatalogFile(filename) {
+  return /^cat_[A-Za-z0-9_.]+$/.test(path.basename(String(filename || '')));
+}
+
 function getMediaPath(filename) {
   // Evita path traversal: solo el basename
   const safe = path.basename(String(filename || ''));
@@ -84,4 +99,4 @@ function verifyMediaToken(filename, token) {
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { saveMessageMedia, saveOutgoingMedia, getMediaPath, MEDIA_DIR, signMediaToken, verifyMediaToken };
+module.exports = { saveMessageMedia, saveOutgoingMedia, saveCatalogMedia, isCatalogFile, getMediaPath, MEDIA_DIR, signMediaToken, verifyMediaToken };

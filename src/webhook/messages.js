@@ -34,6 +34,43 @@ async function flushPendingOutbound(phone) {
   }
 }
 
+// CSAT (F3.2): si el lead esperaba la encuesta y responde 1-5, registra el evento
+// en el timeline (reports.js lo lee) y deja de rutear como mensaje normal.
+// Devuelve true si el mensaje fue consumido como respuesta de CSAT.
+function tryCaptureCsat(fromPhone, text) {
+  try {
+    const lead = store.getLeadByCustomerPhone(fromPhone);
+    if (!lead || !lead.awaiting_csat) return false;
+    store.setAwaitingCsat(lead.id, 0); // en cualquier caso deja de esperar
+    const m = String(text || '').trim().match(/^[1-5]$/);
+    if (!m) return false; // no era 1-5 → seguir como mensaje normal
+    const score = Number(m[0]);
+    const conv = store.getOrCreateConversationForLead(lead.id);
+    if (conv) store.addTimelineEvent(conv.id, 'csat', { metadata: { score } });
+    sendMessage(fromPhone, '¡Gracias por tu calificación! 🙏 En Leons Group siempre buscamos mejorar.').catch(() => {});
+    console.log(`[CSAT] Lead ${lead.id} calificó con ${score}`);
+    return true;
+  } catch (e) { console.error('[CSAT] capture:', e.message); return false; }
+}
+
+// Auto-calificación de temperatura (F3.2): una sola vez, cuando ya hay contexto.
+// Fire-and-forget; degrada limpio sin API key de IA.
+function autoScoreLead(fromPhone) {
+  try {
+    const nlp = require('../services/nlp');
+    if (!nlp.isAIEnabled()) return;
+    const lead = store.getLeadByCustomerPhone(fromPhone);
+    if (!lead || lead.temperatura_at) return; // ya calificado antes
+    const msgs = store.getMessagesByLead(lead.id) || [];
+    if (msgs.filter(m => m.direction === 'incoming').length < 2) return; // esperar contexto
+    const history = msgs.map(m => ({ role: m.direction === 'incoming' ? 'customer' : 'seller', text: m.body }));
+    nlp.analyzeLead(history, lead.nombre, lead.etiqueta).then(a => {
+      const p = Number(a && a.closeProbability) || 0;
+      store.setLeadTemperatura(lead.id, p >= 66 ? 'caliente' : p >= 33 ? 'tibio' : 'frio');
+    }).catch(e => console.error('[AUTOSCORE]', e.message));
+  } catch (e) { console.error('[AUTOSCORE]', e.message); }
+}
+
 function handleMessage(req, res) {
   res.sendStatus(200);
 
@@ -85,6 +122,9 @@ function handleMessage(req, res) {
               continue;
             }
 
+            // CSAT (F3.2): si es la respuesta a la encuesta de satisfacción, se consume aquí.
+            if (tryCaptureCsat(fromPhone, messageBody)) continue;
+
             routeReply(fromPhone, messageBody, customerName, msg.id || null, (err, result) => {
               if (err) { console.error('Error routing message:', err.message); return; }
               if (result.forwarded) console.log(`Mensaje reenviado a ${result.to}`);
@@ -110,6 +150,7 @@ function handleMessage(req, res) {
                 }
               } catch (e) { console.error('Error guardando origen de referral:', e.message); }
             }
+            autoScoreLead(fromPhone); // F3.2: califica la temperatura una sola vez cuando hay contexto
             continue;
           }
 

@@ -2366,7 +2366,7 @@ async function abrirCompartirProyecto(){
     if(p.precio_min) msg+=`\n💰 Lotes desde ${money(p.precio_min)}`;
     if(p.disponibles) msg+=`\n✅ ${p.disponibles} lotes disponibles`;
     if(p.descripcion) msg+=`\n\n${String(p.descripcion).slice(0,200)}`;
-    msg+=`\n\n👉 Ver fotos y lotes: ${linkBase}/catalogo/?p=${p.id}`;
+    msg+=`\n\n👉 Ver fotos y lotes: ${linkBase}/catalogo/p/${p.id}`;
     msg+=`\n\n¿Te gustaría más información o agendar una visita?`;
     const inp=$('#cInput'); if(inp){ inp.value=msg; inp.dispatchEvent(new Event('input')); }
     enviar();
@@ -2849,10 +2849,12 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="export">${I(SVG.arrowUp,16)} Exportar</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="encuesta">${I(SVG.star||SVG.check,16)} Enviar encuesta</button>
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--red)" data-lp="clear">${I(SVG.trash,16)} Vaciar</button>
     </div>`);
   $('#sheetBody').querySelectorAll('[data-lp]').forEach(b=>b.onclick=()=>{ const k=b.dataset.lp; const p=(l.customer_phone||'').replace(/[^\d+]/g,''); haptic(10);
-    if(k==='call'){ closeSheet(); llamarYRegistrar(p, l&&l.id); } else if(k==='cal'){ closeSheet(); abrirModalCita(null, current); } else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='resumen') abrirResumen(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion(); });
+    if(k==='call'){ closeSheet(); llamarYRegistrar(p, l&&l.id); } else if(k==='cal'){ closeSheet(); abrirModalCita(null, current); } else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='resumen') abrirResumen(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion();
+    else if(k==='encuesta'){ closeSheet(); api('/api/leads/'+(l&&l.id)+'/encuesta',{method:'POST'}).then(r=>{ if(r&&r.ok) toast('Encuesta enviada al cliente'); else toast('No se pudo enviar','err'); }); } });
 }
 
 // "Ponme al día" (A5): resumen IA rápido de la conversación para retomarla.
