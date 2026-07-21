@@ -49,6 +49,15 @@ coverage/
 !public/descargas/leons-group.aab
 !public/descargas/version.json
 
+# Campañas SP — todo viaja en git
+!CAMPAÑAS_SP/
+!CAMPAÑAS_SP/**/*
+CAMPAÑAS_SP/__pycache__/
+CAMPAÑAS_SP/**/__pycache__/
+CAMPAÑAS_SP/test_output/
+CAMPAÑAS_SP/output/
+CAMPAÑAS_SP/projects/
+
 # Build de Capacitor/Android
 mobile-app/**/build/
 mobile-app/android/.gradle/

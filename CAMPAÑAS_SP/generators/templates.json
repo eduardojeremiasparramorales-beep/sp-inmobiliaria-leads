@@ -1,0 +1,89 @@
+{
+  "premium": {
+    "label": "Premium",
+    "desc": "Estilo original SP — oscuro, dorado, sobrio",
+    "colors": {
+      "oro": [200, 164, 90],
+      "oro_hex": "#C8A45A",
+      "verde": [78, 123, 70],
+      "verde_hex": "#4E7B46",
+      "negro": [10, 10, 10],
+      "negro_hex": "#0A0A0A",
+      "marfil": [245, 242, 235],
+      "marfil_hex": "#F5F2EB",
+      "gris": [109, 109, 109],
+      "gris_hex": "#6D6D6D"
+    },
+    "fonts": {
+      "titulo": "Cinzel.ttf",
+      "subtitulo": "Cinzel.ttf",
+      "cuerpo": "Inter.ttf"
+    },
+    "badge_style": "solid",
+    "badge_radius": 4,
+    "cta_radius": 8,
+    "gradient_top": 0.25,
+    "gradient_bottom": 0.4,
+    "logo_size": 80,
+    "accent_lines": true,
+    "shadow_strength": 180
+  },
+  "moderna": {
+    "label": "Moderna",
+    "desc": "Más claro, aire premium contemporáneo",
+    "colors": {
+      "oro": [212, 175, 55],
+      "oro_hex": "#D4AF37",
+      "verde": [90, 143, 82],
+      "verde_hex": "#5A8F52",
+      "negro": [20, 20, 22],
+      "negro_hex": "#141416",
+      "marfil": [250, 248, 245],
+      "marfil_hex": "#FAF8F5",
+      "gris": [140, 140, 145],
+      "gris_hex": "#8C8C91"
+    },
+    "fonts": {
+      "titulo": "CormorantGaramond.ttf",
+      "subtitulo": "Cinzel.ttf",
+      "cuerpo": "Inter.ttf"
+    },
+    "badge_style": "outline",
+    "badge_radius": 6,
+    "cta_radius": 10,
+    "gradient_top": 0.2,
+    "gradient_bottom": 0.35,
+    "logo_size": 70,
+    "accent_lines": true,
+    "shadow_strength": 140
+  },
+  "clasica": {
+    "label": "Clásica",
+    "desc": "Más dorado, bordes marcados, tradicional",
+    "colors": {
+      "oro": [184, 134, 11],
+      "oro_hex": "#B8860B",
+      "verde": [61, 107, 53],
+      "verde_hex": "#3D6B35",
+      "negro": [8, 8, 8],
+      "negro_hex": "#080808",
+      "marfil": [238, 234, 224],
+      "marfil_hex": "#EEEAE0",
+      "gris": [100, 95, 85],
+      "gris_hex": "#645F55"
+    },
+    "fonts": {
+      "titulo": "Cinzel.ttf",
+      "subtitulo": "CormorantGaramond.ttf",
+      "cuerpo": "CormorantGaramond.ttf"
+    },
+    "badge_style": "solid",
+    "badge_radius": 2,
+    "cta_radius": 4,
+    "gradient_top": 0.3,
+    "gradient_bottom": 0.45,
+    "logo_size": 90,
+    "accent_lines": true,
+    "shadow_strength": 220
+  }
+}

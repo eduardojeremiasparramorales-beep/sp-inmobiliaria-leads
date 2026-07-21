@@ -1,21 +1,35 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const store = require('../db/store');
 
-const PYTHON = process.env.PYTHON_PATH || path.join(process.env.LOCALAPPDATA || 'C:\\Users\\eduar\\AppData\\Local',
-  'hermes', 'hermes-agent', 'venv', 'Scripts', 'python.exe');
-const ROOT = 'C:\\Sp Inmobiliaria'; // fallback hardcoded — usaremos deteccion
-const CAMPAÑAS_SP_DIR = path.join(
-  fs.existsSync('C:\\Sp Leons') ? 'C:\\Sp Leons' : 'C:\\Sp Inmobiliaria',
-  'CAMPAÑAS_SP'
-);
-const RUN_API = path.join(CAMPAÑAS_SP_DIR, 'run_api.py');
-const PROJECTS_DIR = path.join(CAMPAÑAS_SP_DIR, 'projects');
+function detectPython() {
+  if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) return process.env.PYTHON_PATH;
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(process.env.LOCALAPPDATA || '', 'hermes', 'hermes-agent', 'venv', 'Scripts', 'python.exe'),
+        path.join(process.env.LOCALAPPDATA || '', 'Python', 'bin', 'python.exe'),
+        'python.exe',
+      ]
+    : ['/usr/bin/python3', '/usr/bin/python', 'python3'];
+  for (const c of candidates) {
+    try { if (c.includes('/') || c.includes('\\')) { if (fs.existsSync(c)) return c; } else { execSync('which ' + c, { stdio: 'ignore' }); return c; } } catch (e) {}
+  }
+  return process.platform === 'win32' ? 'python.exe' : 'python3';
+}
+
+const PYTHON = detectPython();
 
 function detectRoot() {
+  // Linux (VM): /home/ubuntu/sp-crm/app
+  const linuxDefault = '/home/ubuntu/sp-crm/app';
+  if (process.platform !== 'win32' && fs.existsSync(linuxDefault)) return linuxDefault;
+  // Windows
   if (fs.existsSync('C:\\Sp Leons')) return 'C:\\Sp Leons';
-  return 'C:\\Sp Inmobiliaria';
+  if (fs.existsSync('C:\\Sp Inmobiliaria')) return 'C:\\Sp Inmobiliaria';
+  // Fallback: parent of this file
+  return path.resolve(__dirname, '..', '..');
 }
 
 function getCampanasSpDir() {
@@ -33,7 +47,7 @@ async function generateAssets(projectId) {
   store.updateCampanasSpProject(projectId, { status: 'generating' });
 
   const imagesDir = project.images_dir;
-  const outputDir = project.output_dir || path.join(PROJECTS_DIR, project.slug, 'generated');
+  const outputDir = project.output_dir || path.join(getCampanasSpDir(), 'projects', project.slug, 'generated');
   fs.mkdirSync(outputDir, { recursive: true });
 
   const input = {
@@ -106,7 +120,7 @@ function safeParse(val) {
 }
 
 function getProjectDir(slug) {
-  return path.join(PROJECTS_DIR, slug);
+  return path.join(getCampanasSpDir(), 'projects', slug);
 }
 
 function scanProjectImages(slug) {
