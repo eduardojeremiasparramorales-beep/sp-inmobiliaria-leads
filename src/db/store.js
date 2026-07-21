@@ -2356,6 +2356,50 @@ function revokeInsignia(vendedorId, codigo) {
   run('DELETE FROM insignias WHERE vendedor_id = ? AND codigo = ?', [vendedorId, codigo]);
 }
 
+// ===================== CAMPAÑAS SP =====================
+
+function createCampanasSpProject(d = {}) {
+  const slug = d.slug || d.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proyecto-' + Date.now();
+  run(`INSERT INTO campanas_sp_projects (name, slug, location, description, price, price_currency, area,
+       features, highlights, whatsapp, cta, images_dir, output_dir, template, status, assets_result, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [d.name || '', slug, d.location || '', d.description || '', d.price || '', d.price_currency || 'COP',
+     d.area || '', JSON.stringify(d.features || []), JSON.stringify(d.highlights || []),
+     d.whatsapp || '+57 321 462 5618', d.cta || 'SOLICITA INFORMACIÓN',
+     d.images_dir || '', d.output_dir || '', d.template || 'premium', d.status || 'draft', '{}', '']);
+  return one('SELECT * FROM campanas_sp_projects WHERE id = (SELECT last_insert_rowid())');
+}
+
+function getCampanasSpProjects() {
+  return all('SELECT * FROM campanas_sp_projects ORDER BY created_at DESC');
+}
+
+function getCampanasSpProject(id) {
+  return one('SELECT * FROM campanas_sp_projects WHERE id = ?', [id]);
+}
+
+function getCampanasSpProjectBySlug(slug) {
+  return one('SELECT * FROM campanas_sp_projects WHERE slug = ?', [slug]);
+}
+
+function updateCampanasSpProject(id, d = {}) {
+  const p = getCampanasSpProject(id);
+  if (!p) return null;
+  const fields = ['name', 'slug', 'location', 'description', 'price', 'price_currency', 'area',
+    'whatsapp', 'cta', 'images_dir', 'output_dir', 'template', 'status', 'assets_result', 'error'];
+  const sets = fields.filter(f => d[f] !== undefined).map(f => `${f}=?`).join(', ');
+  if (!sets) return p;
+  const vals = fields.filter(f => d[f] !== undefined).map(f => d[f]);
+  run(`UPDATE campanas_sp_projects SET ${sets}, updated_at=datetime('now') WHERE id=?`, [...vals, id]);
+  // Reevaluate parsed JSON fields
+  const updated = one('SELECT * FROM campanas_sp_projects WHERE id = ?', [id]);
+  return updated;
+}
+
+function deleteCampanasSpProject(id) {
+  run('DELETE FROM campanas_sp_projects WHERE id = ?', [id]);
+}
+
 module.exports = {
   initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -2415,4 +2459,7 @@ module.exports = {
   saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, countTeamUnread, getAllTeamMessagesForAdmin,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
   getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,
+  // Campañas SP
+  createCampanasSpProject, getCampanasSpProjects, getCampanasSpProject, getCampanasSpProjectBySlug,
+  updateCampanasSpProject, deleteCampanasSpProject,
 };

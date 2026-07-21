@@ -168,6 +168,32 @@ function createNewTables(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_lotes_proyecto ON lotes(proyecto_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_lotes_estado ON lotes(estado)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_lote_hist_lote ON lote_historial(lote_id)`);
+
+  // Campañas SP — tabla de proyectos publicitarios
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS campanas_sp_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL DEFAULT '',
+      slug TEXT NOT NULL UNIQUE DEFAULT '',
+      location TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      price TEXT DEFAULT '',
+      price_currency TEXT DEFAULT 'COP',
+      area TEXT DEFAULT '',
+      features TEXT DEFAULT '[]',
+      highlights TEXT DEFAULT '[]',
+      whatsapp TEXT DEFAULT '+57 321 462 5618',
+      cta TEXT DEFAULT 'SOLICITA INFORMACIÓN',
+      images_dir TEXT DEFAULT '',
+      output_dir TEXT DEFAULT '',
+      template TEXT DEFAULT 'premium' CHECK (template IN ('premium','moderna','clasica')),
+      status TEXT DEFAULT 'draft' CHECK (status IN ('draft','generating','ready','error')),
+      assets_result TEXT DEFAULT '{}',
+      error TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
 }
 
 function dropNewTables(db) {

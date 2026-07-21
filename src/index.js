@@ -2695,6 +2695,59 @@ app.get('/api/campaigns/meta/quality', auth.requireAdmin, async (req, res) => {
   }
 });
 
+// ===================== CAMPAÑAS SP =====================
+
+const campanasSp = require('./services/campanas-sp');
+
+app.get('/api/campanas-sp/projects', auth.requireAdmin, (req, res) => {
+  res.json(store.getCampanasSpProjects());
+});
+
+app.get('/api/campanas-sp/projects/dirs', auth.requireAdmin, (req, res) => {
+  const { slug } = req.query;
+  const dir = slug ? campanasSp.getProjectDir(slug) : campanasSp.detectRoot();
+  const images = slug ? campanasSp.scanProjectImages(slug) : [];
+  res.json({ root: campanasSp.detectRoot(), projectDir: dir, images });
+});
+
+app.post('/api/campanas-sp/projects', auth.requireAdmin, (req, res) => {
+  const p = store.createCampanasSpProject(req.body);
+  res.json(p);
+});
+
+app.get('/api/campanas-sp/projects/:id', auth.requireAdmin, (req, res) => {
+  const p = store.getCampanasSpProject(Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  res.json(p);
+});
+
+app.put('/api/campanas-sp/projects/:id', auth.requireAdmin, (req, res) => {
+  const p = store.updateCampanasSpProject(Number(req.params.id), req.body);
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  res.json(p);
+});
+
+app.delete('/api/campanas-sp/projects/:id', auth.requireAdmin, (req, res) => {
+  store.deleteCampanasSpProject(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+app.post('/api/campanas-sp/projects/:id/generate', auth.requireAdmin, async (req, res) => {
+  try {
+    const result = await campanasSp.generateAssets(Number(req.params.id));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/campanas-sp/projects/:id/assets', auth.requireAdmin, (req, res) => {
+  const p = store.getCampanasSpProject(Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  const assets = campanasSp.getAssetsBaseUrl(p);
+  res.json(assets);
+});
+
 // ===================== REPORTES Y ANALYTICS =====================
 
 app.get('/api/reports/team-performance', auth.requireAdmin, (req, res) => {
