@@ -2118,6 +2118,14 @@ app.post('/api/cadencia/pasos', auth.requireAdmin, (req, res) => {
   const pasos = Array.isArray(req.body && req.body.pasos) ? req.body.pasos : [];
   res.json({ ok: true, pasos: store.setCadenciaPasos(pasos) });
 });
+// Interruptor de auto-inscripción (opt-in, apagado por defecto).
+app.get('/api/cadencia/config', auth.requireAuth, (req, res) => {
+  res.json({ auto: store.getConfig('cadencia_auto') === '1' });
+});
+app.post('/api/cadencia/config', auth.requireAdmin, (req, res) => {
+  store.setConfig('cadencia_auto', (req.body && req.body.auto) ? '1' : '0');
+  res.json({ ok: true, auto: (req.body && req.body.auto) ? true : false });
+});
 
 app.post('/api/leads/:id/clear-messages', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);

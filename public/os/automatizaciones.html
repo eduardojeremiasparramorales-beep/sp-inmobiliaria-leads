@@ -20,11 +20,14 @@
 
   let flujos = [];
   let cadencia = [];
+  let cadenciaAuto = false;
   async function cargar() {
     const r = await api('/api/workflows');
     flujos = Array.isArray(r) ? r : [];
     const c = await api('/api/cadencia/pasos');
     cadencia = Array.isArray(c) ? c : [];
+    const cc = await api('/api/cadencia/config');
+    cadenciaAuto = !!(cc && cc.auto);
     render();
   }
 
@@ -57,6 +60,10 @@
           <div class="u-row u-gap2"><button class="btn btn--quiet btn--sm" id="cadAdd">${ICONS.plus||'+'} Agregar paso</button><button class="btn btn--gold btn--sm" id="cadSave">Guardar cadencia</button></div>
         </div>
         <div class="card--pad" style="padding-top:0">
+          <label style="display:flex;align-items:center;gap:10px;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:12px;padding:10px 14px;margin-bottom:12px;cursor:pointer">
+            <input type="checkbox" id="cadAuto" ${cadenciaAuto?'checked':''} style="width:18px;height:18px;accent-color:var(--gold);cursor:pointer">
+            <span style="flex:1"><span style="font-size:13px;font-weight:500">Inscribir automáticamente los leads que se enfríen</span><span style="display:block;font-size:11px;color:var(--text-3)">Un lead asignado que lleve +24h sin responder entra solo a la cadencia (una vez por lead). Apagado = solo manual.</span></span>
+          </label>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">Variables disponibles: <code style="color:var(--gold)">{{nombre}}</code> <code style="color:var(--gold)">{{asesor}}</code> <code style="color:var(--gold)">{{proyecto}}</code> — se reemplazan al enviar.</div>
           <div id="cadSteps" style="display:flex;flex-direction:column;gap:10px">${cadRowsHTML()}</div>
         </div>
@@ -175,6 +182,12 @@
     const addBtn = document.getElementById('cadAdd');
     const saveBtn = document.getElementById('cadSave');
     if(addBtn) addBtn.onclick = ()=>{ box.insertAdjacentHTML('beforeend', cadRow(1,'')); };
+    const autoChk = document.getElementById('cadAuto');
+    if(autoChk) autoChk.onchange = async ()=>{
+      const r = await api('/api/cadencia/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ auto: autoChk.checked }) });
+      if(r && r.ok){ cadenciaAuto = autoChk.checked; toast(autoChk.checked?'Auto-inscripción activada':'Auto-inscripción desactivada','ok'); }
+      else { autoChk.checked = !autoChk.checked; toast('No se pudo cambiar','err'); }
+    };
     box.addEventListener('click', e=>{ const d=e.target.closest('.cad-del'); if(d){ const row=d.closest('.cad-row'); if(box.querySelectorAll('.cad-row').length>1) row.remove(); else toast('Debe quedar al menos un paso','err'); } });
     if(saveBtn) saveBtn.onclick = async ()=>{
       const pasos = Array.from(box.querySelectorAll('.cad-row')).map(r=>({

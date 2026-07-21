@@ -168,14 +168,31 @@ function crearSeguimientosAutomaticos() {
   return creados;
 }
 
+// Auto-inscripción en cadencia (opt-in): SOLO si el admin encendió cadencia_auto.
+// Inscribe los leads fríos elegibles (una cadencia por lead en su vida). Apagado por
+// defecto → no envía nada a nadie sin que el admin lo active explícitamente.
+function autoInscribirCadencia() {
+  let n = 0;
+  try {
+    if (store.getConfig('cadencia_auto') !== '1') return 0;
+    if (!store.getCadenciaPasos().length) return 0;
+    const leads = store.getLeadsParaAutoCadencia(50);
+    for (const l of leads) {
+      try { if (store.enrollCadencia(l.id)) n++; } catch (e) { console.error('[CADENCIA] auto-inscribir', l.id, e.message); }
+    }
+  } catch (e) { console.error('[CADENCIA] autoInscribirCadencia:', e.message); }
+  return n;
+}
+
 async function tickDiario() {
   const hoy = new Date().toISOString().slice(0, 10);
   if (_ultimoDiario === hoy) return;
   _ultimoDiario = hoy;
   try {
     const seg = crearSeguimientosAutomaticos();
+    const cad = autoInscribirCadencia();
     const ins = insignias.recomputeAll();
-    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s) creado(s); insignias`, ins);
+    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia; insignias`, ins);
   } catch (e) { console.error('[SCHEDULER] tickDiario:', e.message); }
 }
 

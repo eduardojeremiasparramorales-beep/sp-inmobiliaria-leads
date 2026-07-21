@@ -1556,6 +1556,22 @@ function updateCadenciaLead(leadId, { paso, nextAt, activa } = {}) {
   params.push(leadId);
   run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
 }
+// Auto-inscripción: leads asignados, abiertos, NUNCA inscritos antes (cadencia_inicio
+// nulo → una cadencia por lead en su vida) y fríos (el asesor mandó el último mensaje
+// hace +24h sin respuesta del cliente). Modelado en getLeadsNecesitanSeguimiento.
+function getLeadsParaAutoCadencia(limit = 50) {
+  return all(
+    `SELECT l.id, l.customer_name, l.assigned_to_id,
+            (SELECT direction FROM messages m WHERE m.lead_id = l.id ORDER BY m.id DESC LIMIT 1) AS last_dir,
+            (SELECT timestamp FROM messages m WHERE m.lead_id = l.id ORDER BY m.id DESC LIMIT 1) AS last_ts
+     FROM leads l
+     WHERE COALESCE(l.status, '') != 'cerrado' AND l.assigned_to_id IS NOT NULL
+       AND l.cadencia_inicio IS NULL AND COALESCE(l.cadencia_activa, 0) = 0`,
+    []
+  ).filter(l => l.last_dir === 'outgoing' && l.last_ts &&
+      (Date.now() - new Date(String(l.last_ts).replace(' ', 'T')).getTime()) > 24 * 3600 * 1000)
+   .slice(0, limit);
+}
 
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
@@ -2499,7 +2515,7 @@ module.exports = {
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
   isOptedOut, addOptout, getOptouts, countSegment, segmentLeads, getSegmentOptions,
   setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, addNota, deleteNota, reassignLead,
-  getCadenciaPasos, setCadenciaPasos, enrollCadencia, stopCadencia, getCadenciaDue, updateCadenciaLead,
+  getCadenciaPasos, setCadenciaPasos, enrollCadencia, stopCadencia, getCadenciaDue, updateCadenciaLead, getLeadsParaAutoCadencia,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   queuePendingOutbound, getPendingOutbound, clearPendingOutbound,
