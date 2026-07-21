@@ -150,6 +150,8 @@ function handleMessage(req, res) {
                 }
               } catch (e) { console.error('Error guardando origen de referral:', e.message); }
             }
+            // El cliente respondió → detener la cadencia de seguimiento (F3.3).
+            try { const lcc = store.getLeadByCustomerPhone(fromPhone); if (lcc && lcc.cadencia_activa) store.stopCadencia(lcc.id); } catch (e) {}
             autoScoreLead(fromPhone); // F3.2: califica la temperatura una sola vez cuando hay contexto
             continue;
           }

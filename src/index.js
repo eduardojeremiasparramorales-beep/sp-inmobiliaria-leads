@@ -2093,6 +2093,32 @@ app.post('/api/leads/:id/encuesta', auth.requireAuth, async (req, res) => {
   }
 });
 
+// Inscribir / detener la cadencia de seguimiento de un lead (F3.3).
+app.post('/api/leads/:id/cadencia', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const activar = !(req.body && req.body.activar === false);
+  if (activar) {
+    const ok = store.enrollCadencia(lead.id);
+    if (!ok) return res.status(400).json({ error: 'sin_pasos_configurados' });
+    return res.json({ ok: true, cadencia_activa: 1 });
+  }
+  store.stopCadencia(lead.id);
+  res.json({ ok: true, cadencia_activa: 0 });
+});
+
+// Ver / editar los pasos de la cadencia (admin edita, cualquiera puede ver).
+app.get('/api/cadencia/pasos', auth.requireAuth, (req, res) => {
+  res.json(store.getCadenciaPasos());
+});
+app.post('/api/cadencia/pasos', auth.requireAdmin, (req, res) => {
+  const pasos = Array.isArray(req.body && req.body.pasos) ? req.body.pasos : [];
+  res.json({ ok: true, pasos: store.setCadenciaPasos(pasos) });
+});
+
 app.post('/api/leads/:id/clear-messages', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });

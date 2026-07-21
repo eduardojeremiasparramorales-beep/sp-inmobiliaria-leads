@@ -23,10 +23,56 @@ async function tick() {
     for (const s of due) {
       await enviarUno(s);
     }
+    await procesarCadencias();
   } catch (e) {
     console.error('[SCHEDULER] tick:', e.message);
   } finally {
     _corriendo = false;
+  }
+}
+
+// Cadencia de seguimiento (F3.3): envía el paso vencido a cada lead inscrito y avanza.
+// Se detiene solo cuando el cliente responde (webhook) o el lead se cierra.
+function aplicarVarsCad(txt, lead, asesorNombre) {
+  const primer = s => String(s || '').trim().split(/\s+/)[0] || '';
+  return String(txt || '')
+    .replace(/\{\{\s*nombre\s*\}\}/gi, primer(lead.customer_name) || 'estimado')
+    .replace(/\{\{\s*asesor\s*\}\}/gi, primer(asesorNombre) || '')
+    .replace(/\{\{\s*proyecto\s*\}\}/gi, lead.proyecto || 'nuestro proyecto');
+}
+async function procesarCadencias() {
+  let pasos;
+  try { pasos = store.getCadenciaPasos(); } catch (e) { return; }
+  if (!pasos || !pasos.length) return;
+  let due;
+  try { due = store.getCadenciaDue(); } catch (e) { return; }
+  for (const l of due) {
+    try {
+      const idx = l.cadencia_paso || 0;
+      const paso = pasos[idx];
+      if (!paso) { store.updateCadenciaLead(l.id, { activa: 0 }); continue; }
+      if (!l.assigned_to_id || !l.customer_phone) { store.updateCadenciaLead(l.id, { activa: 0 }); continue; }
+      const vendedor = store.getVendedorById(l.assigned_to_id);
+      const cuerpoBase = aplicarVarsCad(paso.mensaje, l, vendedor && vendedor.nombre);
+      const cuerpo = _buildFirma ? _buildFirma(cuerpoBase, (vendedor && vendedor.nombre) || 'Asesor') : cuerpoBase;
+      const smart = await sendMessageSmart(l.customer_phone, cuerpo, l.id);
+      if (smart && !smart.queued) {
+        const wamid = smart.data && smart.data.messages && smart.data.messages[0] ? smart.data.messages[0].id : null;
+        const fromNumber = l.assigned_to_phone || 'panel';
+        store.saveMessage(l.id, fromNumber, l.customer_phone, cuerpoBase, 'outgoing', null, null, wamid, 'sent');
+        try { store.syncLeadToConversation(store.getLeadById(l.id), { direction: 'outgoing', body: cuerpoBase, fromNumber, toNumber: l.customer_phone }); } catch (e) {}
+        try { events.emitToVendedor(l.assigned_to_id, 'nuevo_mensaje', { leadId: l.id, tipo: 'cadencia', ts: Date.now() }); } catch (e) {}
+      }
+      const nextIdx = idx + 1;
+      if (nextIdx < pasos.length && l.cadencia_inicio) {
+        const inicioMs = new Date(String(l.cadencia_inicio).replace(' ', 'T') + 'Z').getTime();
+        const nextAt = new Date(inicioMs + (Number(pasos[nextIdx].dia) || nextIdx + 1) * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+        store.updateCadenciaLead(l.id, { paso: nextIdx, nextAt });
+      } else {
+        store.updateCadenciaLead(l.id, { paso: nextIdx, activa: 0 });
+      }
+      console.log(`[CADENCIA] Paso ${idx + 1} enviado a lead ${l.id}`);
+    } catch (e) { console.error('[CADENCIA] lead', l.id, e.message); }
   }
 }
 

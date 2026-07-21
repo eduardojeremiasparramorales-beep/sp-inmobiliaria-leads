@@ -139,6 +139,10 @@ async function initDB() {
   ensureColumn('leads', 'temperatura_at', 'DATETIME');     // cuándo se calificó por última vez
   ensureColumn('leads', 'snoozed_until', 'DATETIME');      // posponer chat (C2): baja al fondo hasta esta hora
   ensureColumn('leads', 'awaiting_csat', 'INTEGER DEFAULT 0'); // esperando respuesta de encuesta de satisfacción
+  ensureColumn('leads', 'cadencia_activa', 'INTEGER DEFAULT 0'); // inscrito en la cadencia de seguimiento (F3.3)
+  ensureColumn('leads', 'cadencia_paso', 'INTEGER DEFAULT 0');   // índice del próximo paso a enviar
+  ensureColumn('leads', 'cadencia_inicio', 'DATETIME');          // cuándo se inscribió (base para calcular offsets)
+  ensureColumn('leads', 'cadencia_next_at', 'DATETIME');         // cuándo toca el próximo paso
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
@@ -167,6 +171,31 @@ async function initDB() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_sched_pend ON scheduled_messages(estado, send_at)`);
+
+  // --- Cadencia de seguimiento (F3.3): pasos configurables, día (acumulado desde
+  // la inscripción) + mensaje. Se aplican a los leads inscritos vía scheduler. ---
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS cadencia_pasos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      orden INTEGER NOT NULL,
+      dia INTEGER NOT NULL,
+      mensaje TEXT NOT NULL
+    );
+  `);
+  // Seed por defecto (solo si está vacía): días 1, 3, 7, 15.
+  try {
+    const n = one('SELECT COUNT(*) AS c FROM cadencia_pasos');
+    if (!n || !n.c) {
+      const def = [
+        [1, 1, 'Hola {{nombre}}, soy {{asesor}} de Leons Group 👋 ¿Pudiste revisar la información de los lotes? Con gusto te resuelvo cualquier duda.'],
+        [2, 3, 'Hola {{nombre}}, te escribo para saber si sigues interesado/a en invertir en lote. Tenemos opciones que se ajustan a tu presupuesto. ¿Agendamos una llamada?'],
+        [3, 7, '{{nombre}}, los lotes disponibles se están moviendo rápido. Si quieres asegurar el tuyo con la mejor ubicación, cuéntame y te doy prioridad.'],
+        [4, 15, 'Hola {{nombre}}, última vez que te escribo por ahora 🙂 Si más adelante retomas la idea de invertir en tierra, aquí estaré para ayudarte. ¡Un abrazo!'],
+      ];
+      for (const [orden, dia, mensaje] of def) run('INSERT INTO cadencia_pasos (orden, dia, mensaje) VALUES (?, ?, ?)', [orden, dia, mensaje]);
+    }
+  } catch (e) { console.error('[CADENCIA] seed:', e.message); }
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_leads_cadencia ON leads(cadencia_activa, cadencia_next_at)`);
 
   // --- Chat interno del equipo (to_vendedor_id NULL = canal general) ---
   execSQL(`
@@ -1488,6 +1517,46 @@ function setAwaitingCsat(leadId, val) {
   run('UPDATE leads SET awaiting_csat = ? WHERE id = ?', [val ? 1 : 0, leadId]);
 }
 
+// --- Cadencia de seguimiento (F3.3) ---
+function getCadenciaPasos() {
+  return all('SELECT id, orden, dia, mensaje FROM cadencia_pasos ORDER BY orden ASC, dia ASC');
+}
+function setCadenciaPasos(pasos) {
+  const arr = Array.isArray(pasos) ? pasos : [];
+  run('DELETE FROM cadencia_pasos');
+  arr.forEach((p, i) => {
+    if (!p || !p.mensaje) return;
+    run('INSERT INTO cadencia_pasos (orden, dia, mensaje) VALUES (?, ?, ?)', [i + 1, Number(p.dia) || (i + 1), String(p.mensaje)]);
+  });
+  return getCadenciaPasos();
+}
+function enrollCadencia(leadId) {
+  const pasos = getCadenciaPasos();
+  if (!pasos.length) return false;
+  const inicio = new Date();
+  const next = new Date(inicio.getTime() + (Number(pasos[0].dia) || 1) * 86400000);
+  const iso = d => d.toISOString().slice(0, 19).replace('T', ' ');
+  run('UPDATE leads SET cadencia_activa = 1, cadencia_paso = 0, cadencia_inicio = ?, cadencia_next_at = ? WHERE id = ?',
+    [iso(inicio), iso(next), leadId]);
+  return true;
+}
+function stopCadencia(leadId) {
+  run('UPDATE leads SET cadencia_activa = 0 WHERE id = ?', [leadId]);
+}
+function getCadenciaDue() {
+  return all(`SELECT * FROM leads WHERE cadencia_activa = 1 AND COALESCE(status, '') != 'cerrado'
+              AND cadencia_next_at IS NOT NULL AND cadencia_next_at <= datetime('now')`);
+}
+function updateCadenciaLead(leadId, { paso, nextAt, activa } = {}) {
+  const sets = [], params = [];
+  if (paso != null) { sets.push('cadencia_paso = ?'); params.push(paso); }
+  if (nextAt !== undefined) { sets.push('cadencia_next_at = ?'); params.push(nextAt); }
+  if (activa != null) { sets.push('cadencia_activa = ?'); params.push(activa ? 1 : 0); }
+  if (!sets.length) return;
+  params.push(leadId);
+  run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
+}
+
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
   return all('SELECT * FROM lead_notes WHERE lead_id = ? ORDER BY created_at DESC, id DESC', [leadId]);
@@ -2430,6 +2499,7 @@ module.exports = {
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
   isOptedOut, addOptout, getOptouts, countSegment, segmentLeads, getSegmentOptions,
   setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, addNota, deleteNota, reassignLead,
+  getCadenciaPasos, setCadenciaPasos, enrollCadencia, stopCadencia, getCadenciaDue, updateCadenciaLead,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   queuePendingOutbound, getPendingOutbound, clearPendingOutbound,
