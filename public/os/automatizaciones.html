@@ -19,9 +19,12 @@
     action:`<button class="btn btn--gold btn--sm" id="new">${ICONS.plus}Nuevo flujo</button>` });
 
   let flujos = [];
+  let cadencia = [];
   async function cargar() {
     const r = await api('/api/workflows');
     flujos = Array.isArray(r) ? r : [];
+    const c = await api('/api/cadencia/pasos');
+    cadencia = Array.isArray(c) ? c : [];
     render();
   }
 
@@ -46,9 +49,22 @@
           </tr>`).join('')}</tbody>
         </table>` : `<div class="card--pad t-dim3" style="font-size:13px;padding-top:0">Aún no hay flujos. Crea el primero con "Nuevo flujo" — por ejemplo: si un lead lleva 30 minutos sin respuesta, avisar al admin.</div>`}
       </div>
+
+      <!-- Cadencia de seguimiento -->
+      <div class="card rise rise-3" style="overflow:hidden;margin-top:var(--s3)">
+        <div class="u-between card--pad" style="padding-bottom:var(--s2);flex-wrap:wrap;gap:8px">
+          <div><div class="t-h3">Cadencia de seguimiento</div><div class="t-dim3" style="font-size:12px">Mensajes automáticos a los leads inscritos. Se detiene si el cliente responde o el lead se cierra.</div></div>
+          <div class="u-row u-gap2"><button class="btn btn--quiet btn--sm" id="cadAdd">${ICONS.plus||'+'} Agregar paso</button><button class="btn btn--gold btn--sm" id="cadSave">Guardar cadencia</button></div>
+        </div>
+        <div class="card--pad" style="padding-top:0">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">Variables disponibles: <code style="color:var(--gold)">{{nombre}}</code> <code style="color:var(--gold)">{{asesor}}</code> <code style="color:var(--gold)">{{proyecto}}</code> — se reemplazan al enviar.</div>
+          <div id="cadSteps" style="display:flex;flex-direction:column;gap:10px">${cadRowsHTML()}</div>
+        </div>
+      </div>
     </div>`;
 
     document.getElementById('new').addEventListener('click', crearFlujo);
+    wireCadencia();
     ctx.content.querySelectorAll('[data-id]').forEach(b=>b.addEventListener('click', async ()=>{
       const r = await api('/api/workflows/'+b.dataset.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ activo: b.dataset.a === '1' }) });
       if (r) { toast('Estado del flujo actualizado','ok'); await cargar(); }
@@ -138,6 +154,41 @@
   }
 
   await cargar();
+
+  // ── Editor de cadencia de seguimiento ──
+  function cadRow(dia, msg){
+    const esc = s => String(s==null?'':s).replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    return `<div class="cad-row" style="display:flex;gap:10px;align-items:flex-start;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:12px;padding:10px">
+      <div style="flex-shrink:0"><label style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Día</label>
+        <input class="cad-dia" type="number" min="0" value="${Number(dia)||1}" style="width:64px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:14px;text-align:center"></div>
+      <div style="flex:1"><label style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Mensaje</label>
+        <textarea class="cad-msg" rows="2" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:13px;resize:vertical">${esc(msg)}</textarea></div>
+      <button class="cad-del btn btn--quiet btn--sm" title="Quitar paso" style="flex-shrink:0;margin-top:18px;color:var(--red)">✕</button>
+    </div>`;
+  }
+  function cadRowsHTML(){
+    const arr = cadencia.length ? cadencia : [{dia:1,mensaje:''}];
+    return arr.map(p=>cadRow(p.dia, p.mensaje)).join('');
+  }
+  function wireCadencia(){
+    const box = document.getElementById('cadSteps'); if(!box) return;
+    const addBtn = document.getElementById('cadAdd');
+    const saveBtn = document.getElementById('cadSave');
+    if(addBtn) addBtn.onclick = ()=>{ box.insertAdjacentHTML('beforeend', cadRow(1,'')); };
+    box.addEventListener('click', e=>{ const d=e.target.closest('.cad-del'); if(d){ const row=d.closest('.cad-row'); if(box.querySelectorAll('.cad-row').length>1) row.remove(); else toast('Debe quedar al menos un paso','err'); } });
+    if(saveBtn) saveBtn.onclick = async ()=>{
+      const pasos = Array.from(box.querySelectorAll('.cad-row')).map(r=>({
+        dia: Number(r.querySelector('.cad-dia').value)||1,
+        mensaje: r.querySelector('.cad-msg').value.trim(),
+      })).filter(p=>p.mensaje);
+      if(!pasos.length){ toast('Escribe al menos un mensaje','err'); return; }
+      saveBtn.disabled = true; saveBtn.textContent = 'Guardando…';
+      const r = await api('/api/cadencia/pasos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pasos }) });
+      saveBtn.disabled = false; saveBtn.textContent = 'Guardar cadencia';
+      if(r && r.ok){ cadencia = r.pasos || pasos; toast('Cadencia guardada','ok'); }
+      else toast('Error al guardar la cadencia','err');
+    };
+  }
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
 })();
