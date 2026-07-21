@@ -103,6 +103,9 @@ const messageLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MESSAGE_MAX_PER
 // Registro público de asesores (sin sesión) — límite estricto anti-abuso, no reutiliza loginLimiter
 // porque es una acción de escritura (crea filas), no solo intentos de autenticación.
 const registroLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos_intenta_mas_tarde' } });
+// Catálogo público (sin sesión): lectura, pero expuesto a internet. Límite generoso
+// para navegación normal, pero acotado para frenar scraping masivo.
+const catalogoLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
 // Paraguas general para el resto de /api/* (login/media/webhook/responder ya tienen el suyo propio,
 // más estricto). No aplica a /api/stream: es una sola conexión SSE de larga duración, no ráfagas.
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.API_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/stream', message: { error: 'demasiadas_peticiones' } });
@@ -266,6 +269,77 @@ app.post('/api/nlp/analyze-lead', auth.requireAuth, async (req, res) => {
     console.error('[NLP] analyze-lead error:', e.message);
     res.json({ ok: true, analysis: null });
   }
+});
+
+// Calificación de temperatura del lead (A2): deriva 🔥/🌤️/❄️ de la probabilidad
+// de cierre que estima la IA y la guarda en el lead.
+function tempFromProb(p) { const n = Number(p) || 0; return n >= 66 ? 'caliente' : n >= 33 ? 'tibio' : 'frio'; }
+app.post('/api/leads/:id/calificar', auth.requireAuth, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    const lead = store.getLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'no_existe' });
+    if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+      return res.status(403).json({ error: 'sin_permiso' });
+    }
+    if (!nlp.isAIEnabled()) return res.json({ ok: true, temperatura: lead.temperatura || null, analysis: null, aiOff: true });
+    const mensajes = store.getMessagesByLead(lead.id) || [];
+    const history = mensajes.map(m => ({ role: m.direction === 'incoming' ? 'customer' : 'seller', text: m.body }));
+    const analysis = await nlp.analyzeLead(history, lead.nombre, lead.etiqueta);
+    const temperatura = tempFromProb(analysis && analysis.closeProbability);
+    store.setLeadTemperatura(lead.id, temperatura);
+    res.json({ ok: true, temperatura, analysis });
+  } catch (e) {
+    console.error('[NLP] calificar error:', e.message);
+    res.json({ ok: true, temperatura: null, analysis: null });
+  }
+});
+
+// Resumen "Ponme al día" (A5): resume la conversación para ponerse al corriente rápido.
+app.post('/api/leads/:id/resumen', auth.requireAuth, async (req, res) => {
+  try {
+    const nlp = require('./services/nlp');
+    const lead = store.getLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'no_existe' });
+    if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+      return res.status(403).json({ error: 'sin_permiso' });
+    }
+    if (!nlp.isAIEnabled()) return res.json({ ok: true, resumen: null, aiOff: true });
+    const mensajes = store.getMessagesByLead(lead.id) || [];
+    const history = mensajes.map(m => ({ role: m.direction === 'incoming' ? 'customer' : 'seller', text: m.body }));
+    const resumen = await nlp.summarizeConversation(history, lead.nombre);
+    res.json({ ok: true, resumen });
+  } catch (e) {
+    console.error('[NLP] resumen error:', e.message);
+    res.json({ ok: true, resumen: null });
+  }
+});
+
+// Posponer / reactivar un chat (C2). Body: { minutos } o { until: ISO } o {} para reactivar.
+app.post('/api/leads/:id/snooze', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const { minutos, until } = req.body || {};
+  let iso = null;
+  if (until) iso = new Date(until).toISOString();
+  else if (minutos) iso = new Date(Date.now() + Number(minutos) * 60000).toISOString();
+  store.setLeadSnooze(lead.id, iso);
+  res.json({ ok: true, snoozed_until: iso });
+});
+
+// Transcripción on-demand de una nota de voz (A3): reencola si aún no tiene texto.
+app.post('/api/messages/:id/transcribir', auth.requireAuth, (req, res) => {
+  const msg = store.getMessageById(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'no_existe' });
+  if (msg.transcript) return res.json({ ok: true, transcript: msg.transcript });
+  if (msg.media_type !== 'audio') return res.status(400).json({ error: 'no_es_audio' });
+  const nlp = require('./services/nlp');
+  if (!nlp.isAIEnabled()) return res.json({ ok: true, queued: false, aiOff: true });
+  require('./services/transcribe').enqueue({ wamid: msg.wamid, filename: msg.media_filename, mime: msg.media_mime });
+  res.json({ ok: true, queued: true });
 });
 
 app.post('/api/nlp/daily-briefing', auth.requireAuth, async (req, res) => {
@@ -1724,6 +1798,22 @@ app.get('/api/proyectos/:id/stats', auth.requireAuth, (req, res) => {
 app.get('/api/proyectos/:id/lotes', auth.requireAuth, (req, res) => {
   if (!store.getProyectoById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
   res.json(store.getLotesByProyecto(req.params.id));
+});
+
+// ===================== CATÁLOGO PÚBLICO (sin sesión) =====================
+// Para compartir el inventario con clientes por link (WhatsApp), sin exponer
+// datos internos. Solo lectura, saneado en el store, con rate-limit propio.
+const WA_PUBLIC_NUMBER = (process.env.WHATSAPP_PUBLIC_NUMBER || '573214625618').replace(/\D/g, '');
+app.get('/api/publico/config', catalogoLimiter, (req, res) => {
+  res.json({ whatsapp: WA_PUBLIC_NUMBER, empresa: 'Leons Group' });
+});
+app.get('/api/publico/proyectos', catalogoLimiter, (req, res) => {
+  res.json(store.getProyectosPublicos());
+});
+app.get('/api/publico/proyecto/:id', catalogoLimiter, (req, res) => {
+  const p = store.getProyectoPublicoById(req.params.id);
+  if (!p) return res.status(404).json({ error: 'no_existe' });
+  res.json(p);
 });
 app.post('/api/proyectos', auth.requireAdmin, (req, res) => {
   const d = req.body || {};

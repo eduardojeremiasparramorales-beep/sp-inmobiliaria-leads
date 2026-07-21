@@ -1287,9 +1287,11 @@ function leadsArchivados(){ let a = archivedLeads; if(term){ const t=term.toLowe
 const FILTROS = [['todos','Todos'],['sin_clasificar','Nuevos'],['interesado','Interesados'],['negociacion','Negociación'],['cita','Citas'],['vendido','Vendidos']];
 function renderFilters(){ $('#filters').innerHTML = FILTROS.map(([k,l])=>{ const n = k==='todos'?leads.length:leads.filter(x=>(x.etiqueta||'sin_clasificar')===k).length; return `<button class="m-chip ${k===filtro?'active':''}" data-f="${k}">${l}${n?` <b>${n}</b>`:''}</button>`; }).join(''); }
 
+function estaPospuesto(l){ return l.snoozed_until && new Date(l.snoozed_until)>new Date(); }
 function leadsFiltrados(){ let a=leads; if(filtro!=='todos') a=a.filter(l=>(l.etiqueta||'sin_clasificar')===filtro); if(term){ const t=term.toLowerCase(); a=a.filter(l=>(l.customer_name||'').toLowerCase().includes(t)||(l.customer_phone||'').includes(t)||(l.last_message||'').toLowerCase().includes(t)); }
-  if(ordenPrioridad) return a.sort((x,y)=>(y.score||0)-(x.score||0));
-  return a.sort((x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at)); }
+  const base=ordenPrioridad?(x,y)=>(y.score||0)-(x.score||0):(x,y)=>new Date(y.updated_at||y.created_at)-new Date(x.updated_at||x.created_at);
+  // Los pospuestos (C2) bajan al fondo, sin ocultarse — nunca se pierde un lead.
+  return a.sort((x,y)=>{ const sx=estaPospuesto(x)?1:0, sy=estaPospuesto(y)?1:0; if(sx!==sy) return sx-sy; return base(x,y); }); }
 
 /* ════════ Lista ════════ */
 let _msgResults=[];
@@ -1352,6 +1354,32 @@ function renderList(){ renderFilters(); const box=$('#list'); const ptr='<div cl
 function updateCardBadges(){ document.querySelectorAll('.m-row').forEach(row=>{ const id=Number(row.dataset.id); const l=findLead(id); if(!l) return; const card=row.querySelector('.m-card'); if(!card) return; const unread=Number(l.unread_count||0); card.classList.toggle('unread',unread>0); const prio=card.querySelector('.m-card__prio'); if(prio) prio.style.background=unread?'var(--gold)':'transparent'; const badge=card.querySelector('.m-badge'); if(badge) badge.textContent=unread>9?'9+':unread||''; const dot=card.querySelector('.m-unread-dot'); if(dot) dot.style.display=unread?'':'none'; }); }
 
 function toggleArchivados(){ haptic(8); showArchivados = !showArchivados; renderList(); }
+// Badge de temperatura del lead (A2) — calificación IA 🔥/🌤️/❄️
+function tempBadge(t){
+  if(!t) return '';
+  const map={caliente:['🔥','Caliente','rgba(220,80,50,.16)','#e08a6b'],tibio:['🌤️','Tibio','rgba(200,164,90,.16)','var(--gold)'],frio:['❄️','Frío','rgba(90,140,200,.14)','#7fa8d8']};
+  const c=map[t]; if(!c) return '';
+  return `<span class="m-temp" title="${c[1]}" style="font-size:10px;padding:1px 6px;border-radius:999px;background:${c[2]};color:${c[3]};display:inline-flex;align-items:center;gap:2px;flex-shrink:0">${c[0]}</span>`;
+}
+// C3: llama por el marcador nativo Y registra la llamada como nota en el timeline,
+// con opción rápida de anotar el resultado (contestó / no contestó / agendó).
+function llamarYRegistrar(phone, leadId){
+  const p=(phone||'').replace(/[^\d+]/g,'');
+  if(!p){ toast('Sin número'); return; }
+  const hora=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+  if(leadId){
+    openSheet('Registrar llamada', `<div style="font-size:13px;color:var(--text-3);margin-bottom:12px">Iniciando llamada… cuando termines, marca cómo te fue:</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${[['contestó','✅ Contestó'],['no contestó','📵 No contestó'],['agendó cita','📅 Agendó cita'],['','No registrar']].map(([k,l])=>`<button class="lp-cell wide" data-callres="${k}" style="text-align:left;width:100%;color:var(--text)">${l}</button>`).join('')}
+      </div>`);
+    $('#sheetBody').querySelectorAll('[data-callres]').forEach(b=>b.onclick=()=>{
+      const res=b.dataset.callres; closeSheet();
+      if(!res) return;
+      api('/api/leads/'+leadId+'/notas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota:'📞 Llamada saliente '+hora+' — '+res})}).then(r=>{ if(r) toast('Llamada registrada'); });
+    });
+  }
+  location.href='tel:'+p;
+}
 function cardHTML(l,idx){
   const nombre=l.customer_name||'Cliente'; const unread=Number(l.unread_count||0); const st=estado(l); const e=ETQ[l.etiqueta||'sin_clasificar']||ETQ.sin_clasificar; const pct=l.progress_pct!=null?l.progress_pct:leadScore(l); const prio=unread?'var(--gold)':pct>=85?'var(--red)':pct>=60?'var(--gold)':'transparent';
   const archived=showArchivados;
@@ -1360,10 +1388,11 @@ function cardHTML(l,idx){
     <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
       ${l.pinned_at?`<span class="m-card__pin">${I(SVG.pin,11)} Fijado</span>`:''}
+      ${estaPospuesto(l)?`<span class="m-card__pin" style="color:var(--text-3)">😴 Pospuesto ${horaCorta(l.snoozed_until)}</span>`:''}
       ${l.muted_at?`<span class="m-card__mute"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/><path d="M14.5 6.5a2.5 2.5 0 0 0-3.26-1.12"/></svg> Silenciado</span>`:''}
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread&&!archived?greenDot:''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
-        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span><span class="m-tag t-${e.cls}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
+        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span>${tempBadge(l.temperatura)}<span class="m-tag t-${e.cls}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
         <div class="m-card__l2"><span class="m-card__msg">${(()=>{ let dr=''; try{ dr=localStorage.getItem('sp_draft_'+l.id)||''; }catch(e){} return dr?`<span style="color:var(--gold);font-weight:600">Borrador:</span> ${esc(dr.slice(0,40))}`:esc(l.last_message||l.first_message||'—'); })()}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
         <div class="m-card__l3">
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
@@ -1402,6 +1431,7 @@ function cardMenu(id){
       ['unread','Marcar no leído',SVG.chat||SVG.tag,''],
       ['pin',l.pinned_at?'Quitar fijado':'Fijar',SVG.pin,''],
       ['mute',l.muted_at?'Activar notificaciones':'Silenciar',SVG.bell,''],
+      ['snooze',estaPospuesto(l)?'Reactivar chat':'Posponer',SVG.clock,''],
       ['arch','Archivar',SVG.archive,'danger'],
     ]),
   ];
@@ -1409,7 +1439,7 @@ function cardMenu(id){
   document.querySelectorAll('[data-cm]').forEach(el=>el.onclick=()=>{ closeSheet(); swipeAction(el.dataset.cm, {dataset:{id:String(l.id), phone:l.customer_phone||''}}); });
 }
 function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.dataset.phone||'').replace(/[^\d+]/g,''); const l=findLead(id); haptic(12);
-  if(a==='call'){ if(phone) location.href='tel:'+phone; else toast('Sin número'); }
+  if(a==='call'){ llamarYRegistrar(phone, id); }
   else if(a==='note'){ current=l; abrirNota(); }
   else if(a==='tag'){ current=l; abrirEtapa(); }
   else if(a==='arch'){
@@ -1423,6 +1453,24 @@ function swipeAction(a,row){ const id=Number(row.dataset.id); const phone=(row.d
   }
   else if(a==='pin'){ togglePinLead(id); }
   else if(a==='mute'){ current=l; toggleMuteLead(); }
+  else if(a==='snooze'){ abrirSnooze(l); }
+}
+// Posponer un chat (C2): baja al fondo hasta la hora elegida; o reactivar si ya está pospuesto.
+function abrirSnooze(l){
+  if(!l) return;
+  if(estaPospuesto(l)){
+    api('/api/leads/'+l.id+'/snooze',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>{ if(r){ l.snoozed_until=null; renderList(); toast('Chat reactivado'); } });
+    return;
+  }
+  const opts=[['60','En 1 hora'],['180','En 3 horas'],['mañana','Mañana 8:00 a.m.']];
+  openSheet('Posponer chat', `<div style="display:flex;flex-direction:column;gap:8px">${opts.map(([k,t])=>`<button class="lp-cell wide" data-snz="${k}" style="text-align:left;width:100%;color:var(--text)">😴 ${t}</button>`).join('')}</div>`);
+  $('#sheetBody').querySelectorAll('[data-snz]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.snz; closeSheet();
+    let body;
+    if(k==='mañana'){ const d=new Date(); d.setDate(d.getDate()+1); d.setHours(8,0,0,0); body={until:d.toISOString()}; }
+    else body={minutos:Number(k)};
+    api('/api/leads/'+l.id+'/snooze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>{ if(r&&r.snoozed_until){ l.snoozed_until=r.snoozed_until; renderList(); toast('Pospuesto'); haptic(10); } });
+  });
 }
 function findLead(id){ return leads.find(x=>x.id===id) || archivedLeads.find(x=>x.id===id); }
 
@@ -1542,6 +1590,18 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       if(span){ span.innerHTML=esc(span.dataset.full); span.classList.remove('bub-body--trunc'); }
       return;
     }
+    // Transcribir nota de voz on-demand (A3) — el resultado llega por SSE 'transcripcion'
+    const trBtn=e.target.closest('[data-transcribe]');
+    if(trBtn){
+      const mid=trBtn.dataset.transcribe; trBtn.textContent='⏳ Transcribiendo…'; trBtn.disabled=true; haptic(8);
+      api('/api/messages/'+mid+'/transcribir',{method:'POST'}).then(r=>{
+        if(!r){ trBtn.textContent='📝 Transcribir'; trBtn.disabled=false; return; }
+        if(r.transcript){ const m=currentMsgs.find(x=>String(x.id)===String(mid)); if(m){ m.transcript=r.transcript; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }
+        else if(r.aiOff){ toast('IA no configurada para transcribir'); trBtn.textContent='📝 Transcribir'; trBtn.disabled=false; }
+        else if(!r.queued){ trBtn.textContent='📝 Transcribir'; trBtn.disabled=false; }
+      });
+      return;
+    }
     // Tap text body → copy
     const bub=e.target.closest('.bub');
     if(bub&&!e.target.closest('.bub__t')&&!e.target.closest('.bub-reactions')&&!e.target.closest('button')&&!e.target.closest('img')&&!e.target.closest('video')&&!e.target.closest('audio')&&!e.target.closest('a')&&!e.target.closest('.link-preview')){
@@ -1586,7 +1646,9 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   // Botones de respaldo en la barra de grabación (delegación: sobrevive al innerHTML de wireHoldRecord)
   $('#recBar').addEventListener('click',e=>{
     if(e.target.closest('.rec-cancel')){ cancelarGrabacion(); toast('Grabación cancelada'); }
-    else if(e.target.closest('.rec-send')){ enviarGrabacion(); }
+    else if(e.target.closest('.rec-send')){ enviarGrabacion(); }          // detiene y muestra preview
+    else if(e.target.closest('.rec-discard')){ descartarPreviewAudio(); } // descarta la nota en preview
+    else if(e.target.closest('.rec-confirm')){ subirAudioPendiente(); }   // envía la nota en preview
   });
   $('#replyX').onclick=cancelarReply;
   // Chat search
@@ -1644,12 +1706,13 @@ function startGrabacion(){
 }
 function detenerGrabacion(){ if(!_rec) return; _rec.stop(); clearInterval(_recTimer); _rec=null; }
 function cancelarGrabacion(){ _recCancelling=true; detenerGrabacion(); _recChunks=[]; _recSec=0; limpiarRecUI(); }
-async function enviarGrabacion(){ if(!_rec) return; haptic([10,20]); const dot=$('#recDot'); if(dot) dot.style.background='var(--gold)';
+let _pendingAudio=null; // { blob, recMime, ext, url, dur } — nota grabada a la espera de confirmación
+// C1: al soltar/enviar, detiene la grabación y muestra un PREVIEW (reproducir/descartar/enviar)
+// en vez de mandar de una — evita audios enviados por error o vacíos.
+async function enviarGrabacion(){ if(!_rec) return; haptic([10,20]);
+  const secs=_recSec;
   clearInterval(_recTimer); _recTimer=null;
   const recMime=_rec.mimeType||'audio/webm';
-  // Esperar onstop ANTES de armar el blob: ahí llega el último chunk.
-  // Si el recorder ya está inactive (doble release / detenerGrabacion previo), stop() lanzaría
-  // InvalidStateError y la promesa jamás resolvería — la UI quedaría colgada en modo grabación.
   try{
     await new Promise(r=>{
       if(_rec.state!=='recording'){ r(); return; }
@@ -1657,15 +1720,42 @@ async function enviarGrabacion(){ if(!_rec) return; haptic([10,20]); const dot=$
     });
   }catch(e){ console.error('enviarGrabacion stop',e); limpiarRecUI(); toast('Error al detener la grabación'); return; }
   const blob=new Blob(_recChunks,{type:recMime});
+  _rec=null;
   if(_recChunks.length===0||blob.size<100){ limpiarRecUI(); toast('Audio muy corto — mantén presionado para grabar'); return; }
-  // Usar el formato REAL que grabó el navegador (Chrome: webm, Safari: mp4); el servidor lo convierte a OGG/Opus
   const ext=recMime.includes('ogg')?'ogg':recMime.includes('mp4')?'m4a':'webm';
+  if(_pendingAudio&&_pendingAudio.url){ try{ URL.revokeObjectURL(_pendingAudio.url); }catch(e){} }
+  _pendingAudio={ blob, recMime, ext, url:URL.createObjectURL(blob), dur:secs };
+  mostrarPreviewAudio();
+}
+function mmss(s){ const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); }
+function mostrarPreviewAudio(){
+  const bar=$('#recBar'); if(!bar||!_pendingAudio) return;
+  bar.classList.add('show'); $('#cInput__row').classList.add('recording');
+  bar.innerHTML=`<button class="rec-play" id="recPlay" title="Reproducir" style="background:none;border:none;color:var(--gold);display:flex;align-items:center">${I(SVG.play||SVG.mic,20)}</button>
+    <span class="rec-time" id="recPrevTime">${mmss(_pendingAudio.dur)}</span>
+    <span style="flex:1;height:3px;background:var(--bg-4);border-radius:2px;overflow:hidden;margin:0 4px"><i id="recPrevProg" style="display:block;height:100%;width:0;background:var(--gold);transition:width .1s linear"></i></span>
+    <button class="rec-discard" id="recDiscard" title="Descartar" style="background:none;border:none;color:var(--red);display:flex;align-items:center">${I(SVG.trash||SVG.x,18)}</button>
+    <button class="rec-confirm" id="recConfirm" title="Enviar" style="background:var(--gold);border:none;color:#1a1400;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center">${I(SVG.send,16)}</button>`;
+  const audio=new Audio(_pendingAudio.url); _pendingAudio.audio=audio;
+  const playBtn=$('#recPlay'), prog=$('#recPrevProg');
+  audio.ontimeupdate=()=>{ if(prog&&audio.duration) prog.style.width=(audio.currentTime/audio.duration*100)+'%'; };
+  const pauseIco='<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+  audio.onended=()=>{ if(playBtn) playBtn.innerHTML=I(SVG.play,20); if(prog) prog.style.width='0'; };
+  if(playBtn) playBtn.onclick=()=>{ if(audio.paused){ audio.play(); playBtn.innerHTML=pauseIco; } else { audio.pause(); playBtn.innerHTML=I(SVG.play,20); } haptic(6); };
+}
+function descartarPreviewAudio(){ if(_pendingAudio){ try{ _pendingAudio.audio&&_pendingAudio.audio.pause(); URL.revokeObjectURL(_pendingAudio.url); }catch(e){} } _pendingAudio=null; limpiarRecUI(); haptic(8); }
+async function subirAudioPendiente(){
+  if(!_pendingAudio||!current){ limpiarRecUI(); return; }
+  const p=_pendingAudio; try{ p.audio&&p.audio.pause(); }catch(e){}
+  const btn=$('#recConfirm'); if(btn){ btn.disabled=true; btn.innerHTML='…'; }
   const toBase64=f=>new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(f); });
-  const dataBase64=await toBase64(blob); const mediaBody={mime:recMime,filename:'nota-voz.'+ext,dataBase64,caption:''};
+  const dataBase64=await toBase64(p.blob); const mediaBody={mime:p.recMime,filename:'nota-voz.'+p.ext,dataBase64,caption:''};
   if(replyTo) mediaBody.replyTo=replyTo.id;
   const r=await api(`/api/leads/${current.id}/responder-media`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(mediaBody)});
+  try{ URL.revokeObjectURL(p.url); }catch(e){} _pendingAudio=null;
   cancelarReply(); _recChunks=[]; _recSec=0; limpiarRecUI();
-  if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Audio enviado'); } else toast('Error al enviar audio');
+  if(r!==null){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } cargar(); toast('Audio enviado'); }
+  else{ toast('Error al enviar — reintenta','err'); }
 }
 function limpiarRecUI(){ _rec=null; _recChunks=[]; _recSec=0; _recCancelling=false; _recLocked=false; $('#recBar').classList.remove('show'); $('#cInput__row').classList.remove('recording'); if(_recTimer){ clearInterval(_recTimer); _recTimer=null; } }
 // Hold-to-record en el botón de micrófono (solo cuando no hay texto)
@@ -2065,7 +2155,14 @@ function msgInner(m){
   const starHTML=m.starred_at?'<span class="bub-star" style="font-size:10px;margin-left:4px;opacity:.85">⭐</span>':'';
   const transHTML=m.translated_body?`<div class="bub-translated" style="margin-top:5px;padding-top:5px;border-top:1px solid var(--border-soft);font-size:12.5px;font-style:italic;color:var(--text-2)"><span style="font-size:9.5px;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);display:block;margin-bottom:1px">Traducción</span>${esc(m.translated_body)}</div>`:'';
   if(m.media_type){
-    const transcriptHTML=(m.media_type==='audio'&&m.transcript)?`<div class="audio-transcript" style="margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.4"><span style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);display:block;margin-bottom:1px">Transcripción</span>${esc(m.transcript)}</div>`:'';
+    let transcriptHTML='';
+    if(m.media_type==='audio'){
+      if(m.transcript){
+        transcriptHTML=`<div class="audio-transcript" style="margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.4"><span style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);display:block;margin-bottom:1px">Transcripción</span>${esc(m.transcript)}</div>`;
+      } else {
+        transcriptHTML=`<button class="audio-transcribe-btn" data-transcribe="${m.id}" style="margin-top:5px;font-size:11px;color:var(--gold);background:none;border:none;padding:2px 0;display:flex;align-items:center;gap:4px;cursor:pointer">📝 Transcribir</button>`;
+      }
+    }
     return quoteHTML+renderMedia(m)+transcriptHTML+starHTML;
   }
   const body=m.body||''; const long=body.length>200;
@@ -2213,7 +2310,7 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
   window._sending=false; if(sendBtn) sendBtn.disabled=false;
 }
 function chatAccion(a){ haptic(10); const p=(current.customer_phone||'').replace(/[^\d+]/g,'');
-  if(a==='call'){ if(p) location.href='tel:'+p; }
+  if(a==='call'){ llamarYRegistrar(p, current&&current.id); }
   else if(a==='search'){ const s=$('#cSearch'); if(s){ s.classList.toggle('show'); if(s.classList.contains('show')){ const i=$('#cSearchInput'); if(i){ i.focus(); i.value=''; } } else { const i=$('#cSearchInput'); if(i) i.value=''; if($('#cMsgs')) $('#cMsgs').innerHTML=msgsHTML(currentMsgs||[]); } } }
   else if(a==='more'){ abrirPerfil(); }
 }
@@ -2243,20 +2340,33 @@ async function abrirCompartirProyecto(){
   if(!current){ toast('Selecciona un lead primero'); return; }
   const proyectos=await api('/api/proyectos');
   if(!proyectos||!proyectos.length){ toast('No hay proyectos cargados aún','err'); return; }
-  openSheet('Compartir proyecto', `<div id="shareProjList" style="display:flex;flex-direction:column;gap:8px">${proyectos.map(p=>`
+  const linkBase=(location.origin||'https://spcrm.duckdns.org');
+  openSheet('Compartir proyecto', `
+    <button id="shareCatalogoFull" class="lp-cell wide" style="display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:12px;background:var(--gold-soft,rgba(200,164,90,.12));border:1px solid var(--gold);border-radius:14px;color:var(--gold);margin-bottom:10px;font-weight:600">
+      <span style="width:40px;height:40px;border-radius:12px;background:rgba(200,164,90,.18);display:grid;place-items:center;flex-shrink:0">${I(SVG.link||SVG.building,20)}</span>
+      <span style="flex:1">Enviar catálogo completo<span style="display:block;font-size:12px;color:var(--text-3);font-weight:400">Link a todos los proyectos disponibles</span></span>
+    </button>
+    <div id="shareProjList" style="display:flex;flex-direction:column;gap:8px">${proyectos.map(p=>`
     <button class="lp-cell wide" data-sp="${p.id}" style="display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:12px;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:14px;color:var(--text)">
       <span style="width:40px;height:40px;border-radius:12px;background:var(--gold-soft,rgba(200,164,90,.12));display:grid;place-items:center;color:var(--gold);flex-shrink:0">${I(SVG.building,20)}</span>
       <span style="flex:1;min-width:0"><span style="display:block;font-weight:600;font-size:14px">${esc(p.nombre)}</span><span style="display:block;font-size:12px;color:var(--text-3)">${esc(p.ciudad||p.ubicacion||'')} · ${p.disponibles||0} disponibles${p.precio_min?' · desde '+money(p.precio_min):''}</span></span>
     </button>`).join('')}</div>`);
+  const btnFull=$('#shareCatalogoFull');
+  if(btnFull) btnFull.onclick=()=>{
+    haptic(10); closeSheet();
+    const msg=`🏡 *Leons Group — Catálogo de lotes*\n\nMira nuestros proyectos disponibles con fotos, ubicación y precios aquí:\n${linkBase}/catalogo/\n\n¿Cuál te interesa? Con gusto te doy más detalles.`;
+    const inp=$('#cInput'); if(inp){ inp.value=msg; inp.dispatchEvent(new Event('input')); }
+    enviar();
+  };
   $('#shareProjList').querySelectorAll('[data-sp]').forEach(b=>b.onclick=async()=>{
     const p=proyectos.find(x=>Number(x.id)===Number(b.dataset.sp)); if(!p) return;
     haptic(10); closeSheet();
-    // Mensaje de ficha en texto (llega al WhatsApp del cliente como texto normal)
-    const linkBase=(location.origin||'https://spcrm.duckdns.org');
+    // Ficha en texto + link al catálogo público del proyecto (deep-link ?p=id)
     let msg=`🏡 *${p.nombre}*\n📍 ${p.ciudad||p.ubicacion||'Colombia'}`;
     if(p.precio_min) msg+=`\n💰 Lotes desde ${money(p.precio_min)}`;
     if(p.disponibles) msg+=`\n✅ ${p.disponibles} lotes disponibles`;
     if(p.descripcion) msg+=`\n\n${String(p.descripcion).slice(0,200)}`;
+    msg+=`\n\n👉 Ver fotos y lotes: ${linkBase}/catalogo/?p=${p.id}`;
     msg+=`\n\n¿Te gustaría más información o agendar una visita?`;
     const inp=$('#cInput'); if(inp){ inp.value=msg; inp.dispatchEvent(new Event('input')); }
     enviar();
@@ -2670,6 +2780,19 @@ async function tomarFotoNativa(){
   }
 }
 
+// Sustituye variables de plantilla con datos reales del lead/asesor al insertar.
+// Soporta {{nombre}} (cliente), {{asesor}} (usuario logueado) y {{proyecto}}.
+function aplicarVars(txt){
+  if(!txt) return txt;
+  const primerNombre=s=>String(s||'').trim().split(/\s+/)[0]||'';
+  const cli=primerNombre(current&&current.customer_name)||'estimado';
+  const ase=primerNombre(me&&me.nombre)||'';
+  return String(txt)
+    .replace(/\{\{\s*nombre\s*\}\}/gi, cli)
+    .replace(/\{\{\s*asesor\s*\}\}/gi, ase)
+    .replace(/\{\{\s*proyecto\s*\}\}/gi, (current&&current.proyecto_nombre)||'nuestro proyecto');
+}
+
 function abrirPlantillas(){
   const cats=[['Saludos',['Saludo']],['Precio',['Precio']],['Ubicación',['Ubicación']],['Agenda',['Agenda']],['Financiación',['Financiación']],['Catálogo',['Catálogo']],['Despedida',['Despedida']]];
   const qs = QUICK;
@@ -2687,9 +2810,9 @@ function abrirPlantillas(){
       extra+=tpls.map(t=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><button class="lp-cell wide" style="flex:1;text-align:left;color:var(--text-2)" data-tpl="${esc(t.cuerpo)}">${esc(t.titulo)}: ${esc(t.cuerpo)}</button></div>`).join('');
     }
     if(extra){ h.innerHTML='<div style="border-top:1px solid var(--bg-4);padding-top:10px;margin-top:8px">'+extra+'</div>'; $('#sheetBody').appendChild(h); }
-    $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.tpl; updateSend(); closeSheet(); haptic(8); i.focus(); });
+    $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=aplicarVars(b.dataset.tpl); updateSend(); closeSheet(); haptic(8); i.focus(); });
   });
-  $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.tpl; updateSend(); closeSheet(); haptic(8); i.focus(); });
+  $('#sheetBody').querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=aplicarVars(b.dataset.tpl); updateSend(); closeSheet(); haptic(8); i.focus(); });
 }
 
 function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'; const st=estado(l); const pct=l.progress_pct!=null?l.progress_pct:leadScore(l); const stageDots=[0,25,50,75,100].map(t=>`<span${pct>=t?' class="done"':''}></span>`).join('');
@@ -2719,14 +2842,34 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
     </div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="cop-use" style="flex:1" data-lp="cop">${I(SVG.sparkles,16)} Copiloto SP</button>
-      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="tl2">${I(SVG.clock,16)} Timeline</button>
+      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="resumen">${I(SVG.chat,16)} Ponme al día</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="tl2">${I(SVG.clock,16)} Timeline</button>
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--text)" data-lp="export">${I(SVG.arrowUp,16)} Exportar</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
       <button class="cop-use" style="flex:1;background:var(--bg-3);color:var(--red)" data-lp="clear">${I(SVG.trash,16)} Vaciar</button>
     </div>`);
   $('#sheetBody').querySelectorAll('[data-lp]').forEach(b=>b.onclick=()=>{ const k=b.dataset.lp; const p=(l.customer_phone||'').replace(/[^\d+]/g,''); haptic(10);
-    if(k==='call'&&p) location.href='tel:'+p; else if(k==='cal'){ closeSheet(); abrirModalCita(null, current); } else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion(); });
+    if(k==='call'){ closeSheet(); llamarYRegistrar(p, l&&l.id); } else if(k==='cal'){ closeSheet(); abrirModalCita(null, current); } else if(k==='tl'||k==='tl2') abrirTimeline(); else if(k==='cop') abrirCopiloto(); else if(k==='resumen') abrirResumen(); else if(k==='mute') toggleMuteLead(); else if(k==='export') exportarConversacion(); else if(k==='clear') vaciarConversacion(); });
+}
+
+// "Ponme al día" (A5): resumen IA rápido de la conversación para retomarla.
+async function abrirResumen(){
+  const l=current; if(!l){ toast('Selecciona un lead'); return; }
+  openSheet('Ponme al día', `<div id="resLoad" style="text-align:center;padding:26px;color:var(--text-3)"><div class="spin" style="margin:0 auto 12px"></div>Resumiendo la conversación…</div>`);
+  let d=null;
+  try{ const r=await fetch('/api/leads/'+l.id+'/resumen',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:'{}'}); d=await r.json(); }catch(e){}
+  const body=$('#sheetBody'); if(!body) return;
+  if(!d || d.aiOff){ body.innerHTML=`<div class="cop-card"><h5>${I(SVG.sparkles,14)} IA no configurada</h5><p style="font-size:13px">Pide al admin conectar una API de IA en Chat IA → Proveedores para usar el resumen automático.</p></div>`; return; }
+  const r=d.resumen||{};
+  const puntos=(r.puntos&&r.puntos.length)?`<div class="cop-card"><h5>${I(SVG.target,14)} Puntos clave</h5>${r.puntos.map(p=>`<div class="cop-obj">${esc(p)}</div>`).join('')}</div>`:'';
+  const pend=r.pendiente?`<div class="cop-card"><h5>${I(SVG.zap,14)} Qué hacer ahora</h5><p style="font-size:13px">${esc(r.pendiente)}</p></div>`:'';
+  body.innerHTML=`
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><span style="font-size:10px;padding:3px 10px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">IA activa</span></div>
+    <div class="cop-card"><h5>${I(SVG.user,14)} Resumen</h5><p>${esc(r.resumen||'Sin datos suficientes.')}</p></div>
+    ${puntos}${pend}`;
 }
 
 function abrirTimeline(){ const l=current;
@@ -2741,11 +2884,13 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
   let analysis = null; let propsRecom = [];
   try {
     const [rAna, rProp] = await Promise.all([
-      fetch('/api/nlp/analyze-lead', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id, customerName: nombre }) }),
+      // calificar = analyze-lead + persiste la temperatura 🔥/🌤️/❄️ en el lead
+      fetch('/api/leads/'+l.id+'/calificar', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}' }),
       fetch('/api/propiedades/recomendar', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id }) })
     ]);
     const dAna = await rAna.json();
     analysis = dAna.ok ? dAna.analysis : null;
+    if(dAna.temperatura && current && current.id===l.id){ current.temperatura=dAna.temperatura; }
     const dProp = await rProp.json();
     if (dProp.ok && dProp.propiedades) propsRecom = dProp.propiedades;
   } catch(e) {}
@@ -3368,8 +3513,19 @@ async function cargarMisTpl(){
       <div style="display:flex;flex-direction:column;gap:10px">
         <input id="ntTitulo" placeholder="Título (Ej: Precio lote)" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
         <textarea id="ntCuerpo" placeholder="Mensaje de respuesta..." style="width:100%;min-height:80px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none;resize:none"></textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--text-3)">Insertar:</span>
+          ${['{{nombre}}','{{asesor}}','{{proyecto}}'].map(v=>`<button type="button" class="nt-var" data-var="${v}" style="font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--gold);background:var(--gold-soft,rgba(200,164,90,.12));color:var(--gold)">${v}</button>`).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:-2px">Se reemplazan con el nombre real del cliente y tuyo al enviar.</div>
         <button class="cop-use" id="ntSave">Guardar</button>
       </div>`);
+    $('#sheetBody').querySelectorAll('.nt-var').forEach(b=>b.onclick=()=>{
+      const ta=$('#ntCuerpo'); if(!ta) return;
+      const s=ta.selectionStart||ta.value.length, e=ta.selectionEnd||ta.value.length;
+      ta.value=ta.value.slice(0,s)+b.dataset.var+ta.value.slice(e);
+      ta.focus(); ta.selectionStart=ta.selectionEnd=s+b.dataset.var.length; haptic(6);
+    });
     $('#ntSave').onclick=async()=>{
       const titulo=$('#ntTitulo').value.trim(); const cuerpo=$('#ntCuerpo').value.trim();
       if(!titulo||!cuerpo){ toast('Completa título y mensaje'); return; }

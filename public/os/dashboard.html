@@ -17,7 +17,7 @@
   const { ICONS, api, fmt, avatarColor, initials } = SPOS;
 
   const ctx = await SPOS.mount({
-    active: 'dashboard', title: 'Centro de Control', crumb: 'SP Inmobiliaria · Vista general',
+    active: 'dashboard', title: 'Centro de Control', crumb: 'Leons Group · Vista general',
     padded: true,
     action: `<a class="btn btn--sm" href="/os/ia-chat.html" style="margin-right:8px">${(ICONS.spark||'').replace('<svg ','<svg style="width:15px;height:15px" ')}Chat IA</a><button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
   });
@@ -49,6 +49,28 @@
     </div>`;
 
   const respRate = m.total ? Math.round((m.respondidos / m.total) * 100) : 0;
+
+  // Dona SVG de distribución del pipeline (datos reales de porEtiqueta) — sin librerías externas.
+  function donutChart(segments, size = 168, stroke = 24) {
+    const r = (size - stroke) / 2, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r;
+    const total = segments.reduce((a, s) => a + s.value, 0);
+    let offset = 0;
+    const arcs = total > 0 ? segments.filter(s => s.value > 0).map(s => {
+      const len = (s.value / total) * circ;
+      const el = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${stroke}" stroke-dasharray="${len} ${circ - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"><title>${s.label}: ${s.value}</title></circle>`;
+      offset += len; return el;
+    }).join('') : `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--bg-4)" stroke-width="${stroke}"></circle>`;
+    return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="display:block;margin:0 auto">
+      ${arcs}
+      <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="t-num" style="font-size:30px;font-weight:700;fill:var(--text)">${total}</text>
+      <text x="${cx}" y="${cy + 18}" text-anchor="middle" style="font-size:11px;fill:var(--text-3);letter-spacing:.05em">LEADS</text>
+    </svg>`;
+  }
+  const donutSegs = pipeline.map(p => ({ label: p.label, value: etq[p.k] || 0, color: p.color }));
+  const donutLegend = donutSegs.map(s => `<div class="u-row u-gap2" style="font-size:12px">
+      <span style="width:10px;height:10px;border-radius:3px;background:${s.color};flex-shrink:0"></span>
+      <span style="flex:1">${s.label}</span><span class="t-num t-dim">${fmt.n(s.value)}</span>
+    </div>`).join('');
 
   ctx.content.innerHTML = `
    <div class="os-content__max">
@@ -113,6 +135,12 @@
 
       <!-- Columna derecha -->
       <div class="u-col u-gap3">
+        <!-- Distribución del pipeline (dona) -->
+        <div class="card card--pad rise rise-1">
+          <div class="t-label" style="margin-bottom:var(--s2)">Distribución del pipeline</div>
+          <div style="margin:var(--s2) 0 var(--s3)">${donutChart(donutSegs)}</div>
+          <div class="u-col u-gap1">${donutLegend}</div>
+        </div>
         <!-- Estado del negocio -->
         <div class="card card--pad rise rise-2">
           <div class="t-label" style="margin-bottom:var(--s2)">Estado del negocio</div>

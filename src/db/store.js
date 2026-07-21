@@ -135,6 +135,9 @@ async function initDB() {
   ensureColumn('leads', 'muted_at', 'DATETIME');
   ensureColumn('leads', 'followup_task_at', 'DATETIME'); // guard del seguimiento automático 24h
   ensureColumn('leads', 'progress_pct', 'INTEGER DEFAULT 0');
+  ensureColumn('leads', 'temperatura', 'TEXT');            // calificación IA: caliente|tibio|frio
+  ensureColumn('leads', 'temperatura_at', 'DATETIME');     // cuándo se calificó por última vez
+  ensureColumn('leads', 'snoozed_until', 'DATETIME');      // posponer chat (C2): baja al fondo hasta esta hora
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
@@ -1468,6 +1471,17 @@ function updateLeadProgress(leadId, pct) {
   run('UPDATE leads SET progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [clamped, leadId]);
 }
 
+// Calificación IA de temperatura del lead (caliente|tibio|frio).
+function setLeadTemperatura(leadId, temp) {
+  if (!['caliente', 'tibio', 'frio'].includes(temp)) return;
+  run('UPDATE leads SET temperatura = ?, temperatura_at = datetime(\'now\') WHERE id = ?', [temp, leadId]);
+}
+
+// Posponer chat (C2): guarda hasta cuándo queda pospuesto (ISO o null para reactivar).
+function setLeadSnooze(leadId, untilIso) {
+  run('UPDATE leads SET snoozed_until = ? WHERE id = ?', [untilIso || null, leadId]);
+}
+
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
   return all('SELECT * FROM lead_notes WHERE lead_id = ? ORDER BY created_at DESC, id DESC', [leadId]);
@@ -2104,6 +2118,34 @@ function getLoteById(id) {
   `, [id]);
 }
 
+// ===== Catálogo PÚBLICO (sin sesión) =====
+// Devuelve SOLO datos vendibles. Nunca expone cliente_id, lead_id, asesor,
+// observaciones internas, documentos ni historial. Solo proyectos comercializables.
+function getProyectosPublicos() {
+  return all(`
+    SELECT p.id, p.nombre, p.ciudad, p.departamento, p.descripcion, p.imagen_url, p.estado,
+      (SELECT COUNT(*) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'disponible') AS disponibles,
+      (SELECT MIN(l.precio) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'disponible' AND l.precio > 0) AS precio_min,
+      (SELECT MAX(l.precio) FROM lotes l WHERE l.proyecto_id = p.id AND l.estado = 'disponible') AS precio_max
+    FROM proyectos p
+    WHERE p.estado IN ('preventa','en_venta')
+    ORDER BY p.created_at DESC
+  `);
+}
+
+function getProyectoPublicoById(id) {
+  const p = one(`SELECT id, nombre, ciudad, departamento, descripcion, imagen_url, estado, plano_url, plano_bounds
+                 FROM proyectos WHERE id = ? AND estado IN ('preventa','en_venta')`, [id]);
+  if (!p) return null;
+  // Solo lotes disponibles, sin datos internos.
+  p.lotes = all(`
+    SELECT id, numero, manzana, area, dimensiones, precio, estado, poligono, fotografias
+    FROM lotes WHERE proyecto_id = ? AND estado = 'disponible'
+    ORDER BY manzana ASC, numero ASC
+  `, [id]);
+  return p;
+}
+
 function _loteInsert(proyectoId, d = {}) {
   run(`INSERT INTO lotes (proyecto_id, numero, manzana, area, dimensiones, precio, estado, cliente_id, lead_id, asesor_id, poligono, observaciones)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2337,7 +2379,7 @@ module.exports = {
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
   isOptedOut, addOptout, getOptouts, countSegment, segmentLeads, getSegmentOptions,
-  setLeadEtiqueta, updateLeadProgress, getNotasByLead, addNota, deleteNota, reassignLead,
+  setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, getNotasByLead, addNota, deleteNota, reassignLead,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
   queuePendingOutbound, getPendingOutbound, clearPendingOutbound,
@@ -2365,6 +2407,7 @@ module.exports = {
   getProyectos, getProyectoById, createProyecto, updateProyecto, deleteProyecto, getProyectoStats,
   getLotesByProyecto, getLoteById, createLote, bulkCreateLotes, updateLote, updateLoteEstado, deleteLote,
   setLoteObservacion, setLotePrecio, addLoteMedia, addLoteHistorial, getLoteHistorial,
+  getProyectosPublicos, getProyectoPublicoById,
   // Chat Pro / IA / programados / equipo
   toggleStarMessage, getStarredMessages, searchMessages,
   setTranscript, setTranslation,

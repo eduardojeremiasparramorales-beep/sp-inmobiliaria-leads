@@ -329,6 +329,29 @@ async function analyzeLead(conversationHistory, customerName, leadStage) {
   }
 }
 
+// Resume una conversación para que el asesor se ponga al día rápido ("Ponme al día").
+async function summarizeConversation(conversationHistory, customerName) {
+  try {
+    const historyText = (conversationHistory || []).slice(-25).map(m => `${m.role === 'customer' ? 'Cliente' : 'Vendedor'}: ${m.text}`).join('\n');
+    if (!historyText) return { resumen: 'Aún no hay mensajes en esta conversación.', pendiente: '', puntos: [] };
+    const result = await chatJSON(
+      `Eres asistente de un asesor inmobiliario de Leons Group. Resume esta conversación con un cliente de forma breve y útil para retomarla.
+      Responde SOLO JSON:
+      {
+        "resumen": "2-3 líneas de qué ha pasado y qué quiere el cliente",
+        "puntos": ["dato clave 1", "dato clave 2"],
+        "pendiente": "qué debe hacer el asesor ahora"
+      }`,
+      `Cliente: ${customerName || 'Cliente'}\n\nConversación:\n${historyText}`,
+      15000
+    );
+    return result;
+  } catch (e) {
+    console.error('summarizeConversation error:', e.message);
+    return { resumen: 'No se pudo generar el resumen.', pendiente: '', puntos: [] };
+  }
+}
+
 async function extractEntities(text) {
   const cacheKey = `entities:${text}`;
   const cached = getFromCache(cacheKey);
@@ -382,6 +405,6 @@ async function dailyBriefing(vendedor, stats) {
 
 module.exports = {
   analyzeSentiment, classifyIntent, suggestResponse, extractEntities, shouldAutoRespond,
-  analyzeLead, dailyBriefing, chatText, chatJSON, isAIEnabled, getModel, getApiKey,
+  analyzeLead, summarizeConversation, dailyBriefing, chatText, chatJSON, isAIEnabled, getModel, getApiKey,
   getProviders, getProviderById, getDefaultProviderId, saveProviders, fetchModels, PRESET_PROVIDERS,
 };
