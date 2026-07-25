@@ -14,6 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<script src="/os/theme.js"></script>
 <link rel="stylesheet" href="/os/sp-os.css">
 <style>
   /* ══════════ SP OS · Mobile Experience ══════════ */
@@ -34,12 +35,14 @@
 
   #app{ position:fixed; inset:0; overflow:hidden; }
   .screen{ position:absolute; inset:0; display:flex; flex-direction:column;
+    /* Aurora con los mismos tokens --aurora-* de sp-os.css (heredados) — se invierte
+       sola en tema claro, sin duplicar overrides acá. */
     background:
-      radial-gradient(circle 260px at 16% 14%, rgba(248,248,248,.09), rgba(248,248,248,.028) 52%, transparent 62%),
-      radial-gradient(circle 200px at 86% 44%, rgba(248,248,248,.06), rgba(248,248,248,.02) 54%, transparent 64%),
-      radial-gradient(circle 320px at 50% 106%, rgba(248,248,248,.05), rgba(248,248,248,.017) 54%, transparent 64%),
-      radial-gradient(600px 400px at 90% -8%, rgba(212,175,55,.08), transparent 60%),
-      radial-gradient(550px 480px at -10% 104%, rgba(78,123,70,.04), transparent 60%),
+      radial-gradient(circle 260px at 16% 14%, var(--aurora-1a), var(--aurora-1b) 52%, transparent 62%),
+      radial-gradient(circle 200px at 86% 44%, var(--aurora-2a), var(--aurora-2b) 54%, transparent 64%),
+      radial-gradient(circle 320px at 50% 106%, var(--aurora-3a), var(--aurora-3b) 54%, transparent 64%),
+      radial-gradient(600px 400px at 90% -8%, var(--aurora-gold-1), transparent 60%),
+      radial-gradient(550px 480px at -10% 104%, var(--aurora-green), transparent 60%),
       var(--bg-0); }
 
   /* ── Transiciones de pantalla ── */
@@ -3128,6 +3131,23 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         </div>
 
         <div class="sec">
+          <div class="sec-label">Apariencia</div>
+          <div class="sec-body">
+            <div style="display:flex;gap:8px;padding:6px 16px 10px">
+              ${[
+                ['system','Sistema','<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'],
+                ['light','Claro','<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'],
+                ['dark','Oscuro','<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'],
+              ].map(([v,label,path]) => `
+              <div class="bg-opt m-theme-opt" data-theme-opt="${v}">
+                <div class="bg-preview" style="display:grid;place-items:center;background:var(--bg-2)">${I(path,20)}</div>
+                <span>${label}</span>
+              </div>`).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
           <div class="sec-label">Permisos</div>
           <div class="sec-body">
             <div class="sec-row" id="rowPermisos"><label>Permisos de la app</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Revisar</button></div>
@@ -3222,6 +3242,18 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         haptic(6);
         const cMsgs=document.getElementById('cMsgs');
         if(cMsgs) cMsgs.classList.toggle('c-msgs--patron',bg==='leones');
+      }));
+      // Apariencia: Sistema/Claro/Oscuro — motor real en /os/theme.js
+      const marcarThemeActivo=()=>{
+        const actual=window.VidaTheme?window.VidaTheme.get():'system';
+        document.querySelectorAll('.m-theme-opt').forEach(x=>x.classList.toggle('active',x.dataset.themeOpt===actual));
+      };
+      marcarThemeActivo();
+      document.querySelectorAll('.m-theme-opt').forEach(el=>el.addEventListener('click',function(){
+        if(!window.VidaTheme) return;
+        window.VidaTheme.set(this.dataset.themeOpt);
+        marcarThemeActivo();
+        haptic(6);
       }));
       const inp=document.getElementById('inpAbout');
       if(inp) inp.addEventListener('change',function(){

@@ -13,9 +13,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<script src="/os/theme.js"></script>
 <style>
   :root{
-    --bg:#0A0A0A; --gold:#D4AF37; --gold-2:#8E7028; --gold-3:#EDCC60;
+    --bg:#0A0A0A; --gold:#D4AF37; --gold-ink:#D4AF37; --gold-2:#8E7028; --gold-3:#EDCC60;
     --green:#4E7B46; --txt:#F8F8F8; --txt-2:rgba(248,248,248,.5);
     --txt-3:rgba(248,248,248,.22); --border:#1A1A1A; --surface:#111;
     --red:#E5484D; --ease:cubic-bezier(.22,1,.36,1);
@@ -24,6 +25,20 @@
     --glass-border:rgba(248,248,248,.08); --blur-sm:saturate(1.4) blur(24px);
     --grad-gold:linear-gradient(140deg,#EDCC60,var(--gold) 60%,#A08028);
     --grad-gold-text:linear-gradient(135deg,#EDCC60,var(--gold) 55%,#8E7028);
+    /* Aurora tokenizada — ver nota igual en sp-os.css §1B */
+    --aurora-1a:rgba(248,248,248,.09); --aurora-1b:rgba(248,248,248,.028);
+    --aurora-2a:rgba(248,248,248,.06); --aurora-2b:rgba(248,248,248,.02);
+    --aurora-gold-1:rgba(212,175,55,.14); --aurora-green:rgba(78,123,70,.08); --aurora-gold-2:rgba(212,175,55,.05);
+  }
+  :root[data-theme="light"]{
+    --bg:#F5F2EB; --gold-ink:#7D5F24; --green:#3F6538;
+    --txt:#17150F; --txt-2:rgba(23,21,15,.64); --txt-3:rgba(23,21,15,.42);
+    --border:#E2DDD1; --surface:#FFFFFF; --red:#C6383D;
+    --glass:rgba(255,255,255,.55); --glass-2:rgba(255,255,255,.70);
+    --glass-border:rgba(23,21,15,.07);
+    --aurora-1a:rgba(23,21,15,.05); --aurora-1b:rgba(23,21,15,.012);
+    --aurora-2a:rgba(23,21,15,.035); --aurora-2b:rgba(23,21,15,.008);
+    --aurora-gold-1:rgba(200,164,90,.16); --aurora-green:rgba(63,101,56,.07); --aurora-gold-2:rgba(200,164,90,.07);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow:hidden}
@@ -31,11 +46,11 @@
     font-family:'Inter',system-ui,sans-serif;color:var(--txt);
     font-optical-sizing:auto;letter-spacing:-0.011em;
     background:
-      radial-gradient(circle 260px at 15% 18%, rgba(248,248,248,.09), rgba(248,248,248,.028) 52%, transparent 62%),
-      radial-gradient(circle 200px at 85% 60%, rgba(248,248,248,.06), rgba(248,248,248,.02) 54%, transparent 64%),
-      radial-gradient(700px 500px at 80% -15%, rgba(212,175,55,.14), transparent 60%),
-      radial-gradient(600px 550px at -10% 105%, rgba(78,123,70,.08), transparent 60%),
-      radial-gradient(500px 400px at 50% 50%, rgba(212,175,55,.05), transparent 70%),
+      radial-gradient(circle 260px at 15% 18%, var(--aurora-1a), var(--aurora-1b) 52%, transparent 62%),
+      radial-gradient(circle 200px at 85% 60%, var(--aurora-2a), var(--aurora-2b) 54%, transparent 64%),
+      radial-gradient(700px 500px at 80% -15%, var(--aurora-gold-1), transparent 60%),
+      radial-gradient(600px 550px at -10% 105%, var(--aurora-green), transparent 60%),
+      radial-gradient(500px 400px at 50% 50%, var(--aurora-gold-2), transparent 70%),
       var(--bg);
     display:flex;flex-direction:column;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;

@@ -87,6 +87,98 @@
   --nav-w-collapsed: 72px;
   --panel-w: 340px;
   --topbar-h: 60px;
+
+  /* Aurora — orbes difusos detrás del vidrio (ver body{background} en §2).
+     Tokenizados para que el tema claro pueda invertirlos sin duplicar el gradiente
+     completo: mismas 6 formas/posiciones, solo cambian los colores. */
+  --aurora-1a: rgba(248,248,248,.10); --aurora-1b: rgba(248,248,248,.03);
+  --aurora-2a: rgba(248,248,248,.065); --aurora-2b: rgba(248,248,248,.02);
+  --aurora-3a: rgba(248,248,248,.055); --aurora-3b: rgba(248,248,248,.018);
+  --aurora-gold-1: rgba(212,175,55,.14);
+  --aurora-green: rgba(78,123,70,.08);
+  --aurora-gold-2: rgba(212,175,55,.05);
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------------------------
+   1B. TEMA CLARO — mismo lenguaje "glass premium", superficies invertidas.
+   Se activa con <html data-theme="light"> (ver /os/theme.js — decide Sistema/
+   Claro/Oscuro y fija el atributo ANTES del primer paint para no parpadear).
+   Sin el atributo, :root de arriba sigue siendo la única fuente de verdad
+   (oscuro), así que esto es 100% aditivo — nada cambia si nunca se activa.
+   ---------------------------------------------------------------------------- */
+:root[data-theme="light"] {
+  /* Superficies — Marfil Corporativo como base, capas hacia blanco puro */
+  --bg-0: #F5F2EB;
+  --bg-1: #FFFFFF;
+  --bg-2: #FAF8F3;
+  --bg-3: #F0EDE5;
+  --bg-4: #E8E3D6;
+  --border: #E2DDD1;
+  --border-soft: #EAE5D9;
+  --border-strong: #D4CCBA;
+
+  /* Marca — el oro en sí "se mantiene" (fondos/acentos/gradientes no cambian);
+     gold-ink es la variante de texto con contraste AA sobre marfil (ver §7/§8
+     más abajo, los selectores que sí lo necesitan). */
+  --gold-ink: #7D5F24; /* verificado: 5.3:1 sobre --bg-0 y 5.9:1 sobre --bg-1, ambos > 4.5:1 AA */
+  --green: #3F6538;
+  --green-soft: rgba(63, 101, 56, .12);
+
+  /* Texto — Negro Patrimonial con opacidades */
+  --text: #17150F;
+  --text-2: rgba(23, 21, 15, .64);
+  --text-3: rgba(23, 21, 15, .42);
+  --text-4: rgba(23, 21, 15, .22);
+
+  /* Semántica — mismo matiz, afinado para que el texto sobre marfil pase AA */
+  --red: #C6383D;
+  --red-soft: rgba(198, 56, 61, .12);
+  --amber: #946213; /* verificado: 4.68:1 sobre --bg-0 (AA) — el valor inicial daba 3.7:1 */
+  --amber-soft: rgba(169, 112, 31, .12);
+  --blue: #3563C9;
+  --blue-soft: rgba(53, 99, 201, .12);
+
+  /* Sombras — 8-12% en vez de 30-45%: sobre marfil, sombras oscuras fuertes
+     se ven sucias en vez de premium. */
+  --sh-1: 0 1px 2px rgba(23,21,15,.08);
+  --sh-2: 0 4px 16px rgba(23,21,15,.10);
+  --sh-3: 0 12px 40px rgba(23,21,15,.12);
+  --sh-pop: 0 8px 30px rgba(23,21,15,.14), 0 0 0 1px var(--border);
+
+  /* Glass — velo blanco en vez de negro; mismo blur, misma doble-edge */
+  --glass:        rgba(255, 255, 255, .55);
+  --glass-2:      rgba(255, 255, 255, .70);
+  --glass-border: rgba(23, 21, 15, .07);
+  --glass-edge:   inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(23,21,15,.03);
+  --glass-gold:   rgba(212, 175, 55, .10);
+
+  --grad-surface: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0) 45%);
+
+  /* Aurora — mismas formas, orbes oscuros/dorados sutiles en vez de blancos
+     (blanco-sobre-marfil sería invisible; esto da la misma sensación de
+     profundidad "esmerilada" que el original tiene sobre negro). */
+  --aurora-1a: rgba(23,21,15,.05); --aurora-1b: rgba(23,21,15,.012);
+  --aurora-2a: rgba(23,21,15,.035); --aurora-2b: rgba(23,21,15,.008);
+  --aurora-3a: rgba(23,21,15,.03); --aurora-3b: rgba(23,21,15,.007);
+  --aurora-gold-1: rgba(200,164,90,.16);
+  --aurora-green: rgba(63,101,56,.07);
+  --aurora-gold-2: rgba(200,164,90,.07);
+
+  color-scheme: light;
+}
+
+/* Oro como texto plano sobre marfil no pasa AA (ver --gold-ink arriba) — estos son
+   los puntos donde --gold se usa como color de TEXTO directo, no de fondo/acento
+   (--gold-soft, --gold-line, --grad-gold* siguen igual: son fondos/degradados
+   translúcidos, no letras, y ahí el --gold original sigue leyéndose bien). */
+:root[data-theme="light"] .t-gold,
+:root[data-theme="light"] .os-workspace__plan,
+:root[data-theme="light"] .os-nav__badge,
+:root[data-theme="light"] .metric__icon,
+:root[data-theme="light"] .chip.active,
+:root[data-theme="light"] .badge--gold {
+  color: var(--gold-ink);
 }
 
 /* ----------------------------------------------------------------------------
@@ -99,12 +191,12 @@ body {
   /* Aurora + orbes: formas grandes y difusas detrás del vidrio (estilo
      glassmorphism minimal) — le dan al frosted algo que esmerilar. */
   background:
-    radial-gradient(circle 420px at 14% 16%, rgba(248,248,248,.10), rgba(248,248,248,.03) 52%, transparent 62%),
-    radial-gradient(circle 300px at 78% 38%, rgba(248,248,248,.065), rgba(248,248,248,.02) 54%, transparent 64%),
-    radial-gradient(circle 500px at 55% 108%, rgba(248,248,248,.055), rgba(248,248,248,.018) 54%, transparent 64%),
-    radial-gradient(800px 600px at 80% -15%, rgba(212,175,55,.14), transparent 60%),
-    radial-gradient(700px 650px at -10% 100%, rgba(78,123,70,.08), transparent 60%),
-    radial-gradient(600px 500px at 50% 50%, rgba(212,175,55,.05), transparent 70%),
+    radial-gradient(circle 420px at 14% 16%, var(--aurora-1a), var(--aurora-1b) 52%, transparent 62%),
+    radial-gradient(circle 300px at 78% 38%, var(--aurora-2a), var(--aurora-2b) 54%, transparent 64%),
+    radial-gradient(circle 500px at 55% 108%, var(--aurora-3a), var(--aurora-3b) 54%, transparent 64%),
+    radial-gradient(800px 600px at 80% -15%, var(--aurora-gold-1), transparent 60%),
+    radial-gradient(700px 650px at -10% 100%, var(--aurora-green), transparent 60%),
+    radial-gradient(600px 500px at 50% 50%, var(--aurora-gold-2), transparent 70%),
     var(--bg-0);
   background-attachment: fixed;
   color: var(--text);
@@ -115,6 +207,13 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
+}
+/* Alternar tema: transición suave de 200ms SOLO mientras dura el cambio (clase
+   temporal que pone/quita theme.js) — un transition permanente en background-color
+   penaliza scroll en móviles de gama baja, por eso no vive en la regla base de body. */
+body.theming, body.theming .card, body.theming .surface, body.theming .metric,
+body.theming .os-nav, body.theming .os-topbar, body.theming .os-panel, body.theming .input {
+  transition: background-color 200ms var(--ease), border-color 200ms var(--ease), color 200ms var(--ease);
 }
 ::selection { background: var(--gold-soft); color: var(--text); }
 a { color: inherit; text-decoration: none; }

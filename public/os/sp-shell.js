@@ -53,6 +53,9 @@
     target: P('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'),
     zap: P('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
     refresh: P('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
+    sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+    moon: P('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+    monitor: P('<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'),
   };
 
   /* --- Navegación (una sola verdad) --- */
@@ -180,6 +183,7 @@
           <button class="btn btn--icon btn--quiet u-hide" id="osMenuBtn" style="margin-left:-8px">${ICONS.menu}</button>
           <div><div class="os-topbar__title">${opts.title || 'Dashboard'}</div>${opts.crumb ? `<div class="os-topbar__crumb">${opts.crumb}</div>` : ''}</div>
           <div class="u-grow"></div>
+          <button class="btn btn--icon btn--ghost" id="osThemeBtn" title="Tema"></button>
           <button class="btn btn--icon btn--ghost" id="osNotifBtn" title="Notificaciones" style="position:relative">${ICONS.notifications}<span id="osNotifBadge" style="display:none;position:absolute;top:4px;right:4px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold,#D4AF37);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center"></span></button>
           <div class="avatar avatar--sm" style="background:${avatarColor(me.nombre)}" title="${me.nombre}">${initials(me.nombre)}</div>
           ${opts.action || ''}
@@ -208,6 +212,7 @@
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
     window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
 
+    initThemeToggle();
     initNotificaciones();
     initStream();
 
@@ -239,6 +244,50 @@
       });
       _es.onerror = () => { try { _es.close(); } catch (e) {} _es = null; setTimeout(initStream, 5000); };
     } catch (e) { /* SSE no disponible */ }
+  }
+
+  /* ── Selector de tema (Sistema/Claro/Oscuro) — motor real en /os/theme.js,
+     esto solo dibuja el botón + dropdown y llama VidaTheme.set(). ── */
+  function themeIcon(pref) {
+    return pref === 'light' ? ICONS.sun : pref === 'dark' ? ICONS.moon : ICONS.monitor;
+  }
+  function initThemeToggle() {
+    const btn = document.getElementById('osThemeBtn');
+    if (!btn || !window.VidaTheme) return;
+    const render = () => { btn.innerHTML = themeIcon(window.VidaTheme.get()); };
+    render();
+
+    const OPTS = [
+      { v: 'system', label: 'Sistema', icon: 'monitor' },
+      { v: 'light', label: 'Claro', icon: 'sun' },
+      { v: 'dark', label: 'Oscuro', icon: 'moon' },
+    ];
+    let panel = null;
+    const cerrar = () => { if (panel) { panel.remove(); panel = null; } };
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (panel) { cerrar(); return; }
+      const actual = window.VidaTheme.get();
+      panel = document.createElement('div');
+      panel.style.cssText = 'position:fixed;top:56px;right:16px;width:180px;background:var(--bg-1);border:1px solid var(--border);border-radius:12px;z-index:9999;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden';
+      panel.innerHTML = OPTS.map(o => `
+        <div class="os-theme-opt" data-v="${o.v}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;font-weight:500;${o.v === actual ? 'color:var(--gold,#D4AF37);background:var(--gold-soft,rgba(212,175,55,.1))' : 'color:var(--text)'}">
+          <span style="width:16px;height:16px;display:flex">${ICONS[o.icon].replace('<svg ', '<svg style="width:16px;height:16px" ')}</span>
+          <span>${o.label}</span>
+        </div>`).join('');
+      document.body.appendChild(panel);
+      panel.querySelectorAll('.os-theme-opt').forEach(el => {
+        el.addEventListener('mouseenter', () => { if (el.dataset.v !== actual) el.style.background = 'var(--bg-2)'; });
+        el.addEventListener('mouseleave', () => { if (el.dataset.v !== actual) el.style.background = ''; });
+        el.addEventListener('click', () => { window.VidaTheme.set(el.getAttribute('data-v')); cerrar(); });
+      });
+      setTimeout(() => document.addEventListener('click', function onDoc(ev) {
+        if (panel && !panel.contains(ev.target) && ev.target !== btn && !btn.contains(ev.target)) { cerrar(); document.removeEventListener('click', onDoc); }
+      }), 50);
+    });
+    // El sistema puede cambiar en vivo (pref='system' y cambia el modo del SO) — mantener
+    // el ícono del botón sincronizado sin que el usuario tenga que reabrir nada.
+    document.addEventListener('vida:theme-changed', render);
   }
 
   /* ── Centro de notificaciones (campana del topbar) ── */
