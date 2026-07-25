@@ -3,15 +3,28 @@ import random
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance, ImageOps, ImageChops
 from .brand import Brand
 
-def load_and_crop(path, width, height, enhance=True, vignette=True, grain=True):
+def load_and_crop(path, width, height, enhance=True, vignette=True, grain=True, seed=None):
     """Carga, recorta a llenar (width,height) y aplica el acabado premium por defecto.
     Se usa igual para fotos crudas del cliente que para fondos generados por IA —
-    el 'enhance' es deliberadamente suave para no sobre-procesar un fondo ya bueno."""
+    el 'enhance' es deliberadamente suave para no sobre-procesar un fondo ya bueno.
+    seed: si se da (típicamente f"{slug}:{pieza}"), el recorte se desplaza de forma
+    determinista dentro del margen disponible en vez de quedar siempre centrado — evita
+    que un lote de 27 piezas de la misma foto se sienta repetido. Sin seed, centrado
+    de siempre (comportamiento sin cambios)."""
     img = Image.open(path).convert("RGB")
     ratio = max(width / img.width, height / img.height)
     img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
-    left = (img.width - width) // 2
-    top = (img.height - height) // 2
+    max_left = img.width - width
+    max_top = img.height - height
+    left, top = max_left // 2, max_top // 2
+    if seed is not None:
+        rnd = random.Random(seed)
+        # Jitter dentro del 70% central del margen disponible: suficiente para notarse,
+        # nunca tan agresivo como para recortar contenido que el centrado sí conservaba.
+        if max_left > 0:
+            left = int(max_left * rnd.uniform(0.15, 0.85))
+        if max_top > 0:
+            top = int(max_top * rnd.uniform(0.15, 0.85))
     img = img.crop((left, top, left + width, top + height))
     if enhance:
         img = auto_enhance(img)
@@ -55,21 +68,6 @@ def add_grain(img, opacity=0.05):
         _grain_cache[key] = noise.filter(ImageFilter.GaussianBlur(0.4))
     noise_rgb = Image.merge("RGB", (_grain_cache[key], _grain_cache[key], _grain_cache[key]))
     return ImageChops.overlay(img, Image.blend(img, noise_rgb, opacity))
-
-def draw_text_tracked(draw, text, pos, font, color, tracking=0.06, shadow=True):
-    """Dibuja texto con tracking (espaciado entre letras) — Cinzel se ve mucho más 'premium'
-    con letter-spacing generoso en mayúsculas; Pillow no lo soporta nativamente."""
-    x, y = pos
-    for ch in text:
-        if shadow:
-            for dx in (-2, -1, 0, 1, 2):
-                for dy in (-2, -1, 0, 1, 2):
-                    if dx or dy:
-                        draw.text((x + dx, y + dy), ch, font=font, fill=(0, 0, 0, 140))
-        draw.text((x, y), ch, font=font, fill=color)
-        bb = draw.textbbox((0, 0), ch, font=font)
-        x += (bb[2] - bb[0]) + int(font.size * tracking)
-    return x
 
 def _luminance_factor(img, box):
     """Brillo medio (0-255) de una región del fondo — usado para reforzar el gradiente
@@ -146,9 +144,23 @@ def add_logo(img, size=80, x=40, y=40, center=False):
     img.paste(logo, (x, y), logo)
     return img
 
-def text_with_shadow(draw, text, pos, font, color=Brand.MARFIL, shadow_blur=4, shadow_offset=(2, 3)):
-    """Texto con sombra suave."""
+def text_with_shadow(draw, text, pos, font, color=Brand.MARFIL, shadow_blur=4, shadow_offset=(2, 3), tracking=0):
+    """Texto con sombra suave. tracking>0 (fracción del tamaño de fuente, ej. 0.07): dibuja
+    carácter por carácter con letter-spacing — el acabado 'luxury' de Cinzel que draw.text
+    no da nativamente. Con tracking=0 (default) el comportamiento es exactamente el de
+    siempre: una sola llamada a draw.text para todo el string."""
     x, y = pos
+    if tracking:
+        for ch in text:
+            for dx in range(-shadow_offset[0], shadow_offset[0] + 1):
+                for dy in range(-shadow_offset[1], shadow_offset[1] + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    draw.text((x + dx, y + dy), ch, font=font, fill=(0, 0, 0, 140))
+            draw.text((x, y), ch, font=font, fill=color)
+            bb = draw.textbbox((0, 0), ch, font=font)
+            x += (bb[2] - bb[0]) + int(font.size * tracking)
+        return
     # Sombra: offset con color negro translúcido
     for dx in range(-shadow_offset[0], shadow_offset[0] + 1):
         for dy in range(-shadow_offset[1], shadow_offset[1] + 1):
@@ -158,12 +170,17 @@ def text_with_shadow(draw, text, pos, font, color=Brand.MARFIL, shadow_blur=4, s
     # Texto principal
     draw.text((x, y), text, font=font, fill=color)
 
-def draw_badge(draw, text, pos, font=None, bg=Brand.ORO, fg=Brand.NEGRO, radius=4):
+def draw_badge(draw, text, pos, font=None, bg=Brand.ORO, fg=Brand.NEGRO, radius=4, seed=None):
+    """seed: jitter determinista chico en X (±10px) para que el badge no caiga siempre
+    en el mismo pixel exacto entre piezas — puramente cosmético, nunca mueve Y ni el
+    tamaño, así que no puede desalinear nada del layout que depende de esta función."""
     font = font or Brand.font_cinzel(14)
     bb = draw.textbbox((0, 0), text, font=font)
     w = bb[2] - bb[0] + 24
     h = bb[3] - bb[1] + 12
     x, y = pos
+    if seed is not None:
+        x += int(random.Random(seed).uniform(-10, 10))
     draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=bg)
     draw.text((x + 12, y + 4), text, font=font, fill=fg)
     return h
@@ -186,13 +203,19 @@ def draw_cta(draw, text, pos, font=None, bg=Brand.VERDE, fg=Brand.MARFIL, radius
     draw.text((tx, ty), text, font=font, fill=fg)
     return h
 
-def draw_diagonal_gold(img, color=Brand.ORO, width=3):
-    """Línea diagonal dorada estilo Porvenir — de arriba-centro a abajo-derecha."""
+def draw_diagonal_gold(img, color=Brand.ORO, width=3, seed=None):
+    """Línea diagonal dorada estilo Porvenir — de arriba-centro a abajo-derecha.
+    seed: desplaza el punto de cruce ±5% del ancho sin cambiar la inclinación, para que
+    proyectos distintos no salgan con la diagonal en el pixel idéntico."""
     draw = ImageDraw.Draw(img)
     w, h = img.size
+    x1_frac, x2_frac = 0.65, 0.35
+    if seed is not None:
+        jitter = random.Random(seed).uniform(-0.05, 0.05)
+        x1_frac, x2_frac = x1_frac + jitter, x2_frac + jitter
     # Diagonal desde arriba-derecha hacia abajo-izquierda
-    x1, y1 = int(w * 0.65), 0
-    x2, y2 = int(w * 0.35), h
+    x1, y1 = int(w * x1_frac), 0
+    x2, y2 = int(w * x2_frac), h
     draw.line([(x1, y1), (x2, y2)], fill=color, width=width)
     return img
 

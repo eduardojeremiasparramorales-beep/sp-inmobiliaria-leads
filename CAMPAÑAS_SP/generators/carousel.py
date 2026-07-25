@@ -30,19 +30,19 @@ def add_pagination(draw, current, total):
 def gen_slide_portada(project, idx, total):
     path = project.get_image("destacado")
     if path:
-        img = load_and_crop(path, W, H)
+        img = load_and_crop(path, W, H, seed=f"{project.slug}:slide-{idx}-portada")
         img = add_gradient(img, 0.25, 0.4)
     else:
         img = make_radial_bg((W, H), (W // 2, H // 2 - 100), 450, 18)
     draw = ImageDraw.Draw(img)
     add_logo(img, 130, (W - 130) // 2, 140, center=True)
     draw_gold_line_center(draw, W // 2, 350, 80)
-    text_with_shadow(draw, project.name.upper(), (80, 380), Brand.font_cinzel(56), shadow_blur=6)
+    text_with_shadow(draw, project.name.upper(), (80, 380), Brand.font_cinzel(56), shadow_blur=6, tracking=0.07)
     if project.location:
         lines = project.location.split(",")
         y = 460
         for line in lines:
-            text_with_shadow(draw, line.strip(), (80, y), Brand.font_cinzel(28), Brand.ORO, shadow_blur=3)
+            text_with_shadow(draw, line.strip(), (80, y), Brand.font_cinzel(28), Brand.ORO, shadow_blur=3, tracking=0.07)
             y += 40
         y += 10
         draw_gold_line_center(draw, W // 2, y, 80)
@@ -55,15 +55,15 @@ def gen_slide_ubicacion(project, idx, total):
     path = project.get_image("ubicacion") or project.get_image("destacado")
     if not path:
         return None
-    img = load_and_crop(path, W, H)
+    img = load_and_crop(path, W, H, seed=f"{project.slug}:slide-{idx}-ubicacion")
     img = add_gradient(img, 0.3, 0.35)
     draw = ImageDraw.Draw(img)
     add_logo(img, 65, 40, 35)
     draw_gold_lines(draw, img.size)
     y = H - 200
-    draw_badge(draw, "UBICACIÓN", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "UBICACIÓN", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:slide-{idx}-badge")
     y += 50
-    text_with_shadow(draw, project.location or "UBICACIÓN PRIVILEGIADA", (60, y), Brand.font_cinzel(38), shadow_blur=6)
+    text_with_shadow(draw, project.location or "UBICACIÓN PRIVILEGIADA", (60, y), Brand.font_cinzel(38), shadow_blur=6, tracking=0.07)
     y += 50
     if project.highlights:
         text_with_shadow(draw, "  ·  ".join(project.highlights[:2]), (60, y), Brand.font_inter(15), Brand.GRIS)
@@ -75,7 +75,7 @@ def gen_slide_ubicacion(project, idx, total):
 def gen_slide_beneficios(project, idx, total):
     path = project.get_image("beneficios") or project.get_image("destacado")
     if path:
-        img = load_and_crop(path, W, H)
+        img = load_and_crop(path, W, H, seed=f"{project.slug}:slide-{idx}-beneficios")
         img = add_gradient(img, 0.2, 0.5)
     else:
         img = make_radial_bg((W, H), (W // 2, 150), 400, 12)
@@ -83,9 +83,9 @@ def gen_slide_beneficios(project, idx, total):
     add_logo(img, 60, 40, 30)
     draw_gold_lines(draw, img.size)
     y = 120
-    draw_badge(draw, "BENEFICIOS", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "BENEFICIOS", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:slide-{idx}-badge")
     y += 50
-    text_with_shadow(draw, "¿Por qué invertir aquí?", (60, y), Brand.font_cinzel(36), shadow_blur=6)
+    text_with_shadow(draw, "¿Por qué invertir aquí?", (60, y), Brand.font_cinzel(36), shadow_blur=6, tracking=0.07)
     features = (project.features or ["Urbanizado", "Vía pavimentada", "Escritura pública", "Portería"])[:4]
     y = 240
     for feat in features:
@@ -101,13 +101,13 @@ def gen_slide_precio(project, idx, total):
     path = project.get_image("precio") or project.get_image("destacado")
     if not path:
         return None
-    img = load_and_crop(path, W, H)
+    img = load_and_crop(path, W, H, seed=f"{project.slug}:slide-{idx}-precio")
     img = add_gradient(img, 0.25, 0.45)
     draw = ImageDraw.Draw(img)
     add_logo(img, 65, 40, 35)
     cx = W // 2
-    draw_badge(draw, "PRECIO", (60, 140), Brand.font_cinzel(14))
-    text_with_shadow(draw, project.price or "CONSULTA PRECIO", (60, 210), Brand.font_cinzel(72), Brand.ORO, shadow_blur=7)
+    draw_badge(draw, "PRECIO", (60, 140), Brand.font_cinzel(14), seed=f"{project.slug}:slide-{idx}-badge")
+    text_with_shadow(draw, project.price or "CONSULTA PRECIO", (60, 210), Brand.font_cinzel(72), Brand.ORO, shadow_blur=7, tracking=0.07)
     y = 310
     text_with_shadow(draw, "Separación inmediata", (60, y), Brand.font_inter(20))
     if project.area:
@@ -123,16 +123,16 @@ def gen_slide_caracteristicas(project, idx, total):
     path = project.get_image("beneficios") or project.get_image("destacado")
     if not path:
         return None
-    img = load_and_crop(path, W, H)
+    img = load_and_crop(path, W, H, seed=f"{project.slug}:slide-{idx}-caracteristicas")
     img = add_gradient(img, 0.2, 0.3)
     draw = ImageDraw.Draw(img)
     add_logo(img, 65, 40, 35)
     draw_gold_lines(draw, img.size)
     y = 140
-    draw_badge(draw, "CARACTERÍSTICAS", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "CARACTERÍSTICAS", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:slide-{idx}-badge")
     if project.area:
         y += 55
-        text_with_shadow(draw, project.area, (60, y), Brand.font_cinzel(56), Brand.ORO, shadow_blur=5)
+        text_with_shadow(draw, project.area, (60, y), Brand.font_cinzel(56), Brand.ORO, shadow_blur=5, tracking=0.07)
         y += 65
         text_with_shadow(draw, "de tu lote", (60, y), Brand.font_inter(22))
         y += 35
@@ -153,7 +153,7 @@ def gen_slide_caracteristicas(project, idx, total):
 def gen_slide_cta(project, idx, total):
     path = project.get_image("destacado")
     if path:
-        img = load_and_crop(path, W, H)
+        img = load_and_crop(path, W, H, seed=f"{project.slug}:slide-{idx}-cta")
         img = img.filter(ImageFilter.GaussianBlur(radius=15))
         img = add_gradient(img, 0.3, 0.5)
     else:
@@ -161,7 +161,7 @@ def gen_slide_cta(project, idx, total):
     draw = ImageDraw.Draw(img)
     add_logo(img, 100, (W - 100) // 2, 120, center=True)
     y = 310
-    text_with_shadow(draw, "Agenda tu Visita", (200, y), Brand.font_cinzel(48), shadow_blur=6)
+    text_with_shadow(draw, "Agenda tu Visita", (200, y), Brand.font_cinzel(48), shadow_blur=6, tracking=0.07)
     y += 60
     text_with_shadow(draw, "Conoce el proyecto en persona.", (180, y), Brand.font_inter(18))
     y += 35

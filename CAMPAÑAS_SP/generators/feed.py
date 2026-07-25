@@ -26,7 +26,7 @@ def base_con_fondo(project, img_key):
     path = project.get_image(img_key)
     if not path:
         return None
-    img = load_and_crop(path, W, H)
+    img = load_and_crop(path, W, H, seed=f"{project.slug}:{img_key}")
     img = add_gradient(img, 0.3, 0.45)
     draw = ImageDraw.Draw(img)
     add_logo(img, 70, 40, 35)
@@ -38,16 +38,16 @@ def gen_destacado(project):
     if not r: return None
     img, draw = r
     y = H - 340
-    draw_badge(draw, "PROYECTO DESTACADO", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "PROYECTO DESTACADO", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:destacado-badge")
     y += 45
-    text_with_shadow(draw, project.name.upper(), (60, y), Brand.font_cinzel(60), shadow_blur=6)
+    text_with_shadow(draw, project.name.upper(), (60, y), Brand.font_cinzel(60), shadow_blur=6, tracking=0.07)
     y += 75
     if project.location:
-        text_with_shadow(draw, project.location.upper(), (60, y), Brand.font_cinzel(22), Brand.ORO, shadow_blur=3)
+        text_with_shadow(draw, project.location.upper(), (60, y), Brand.font_cinzel(22), Brand.ORO, shadow_blur=3, tracking=0.07)
         y += 35
     y += 10
     if project.price:
-        text_with_shadow(draw, project.price, (60, y), Brand.font_cinzel(56), Brand.ORO, shadow_blur=5)
+        text_with_shadow(draw, project.price, (60, y), Brand.font_cinzel(56), Brand.ORO, shadow_blur=5, tracking=0.07)
         y += 72
     if project.area:
         text_with_shadow(draw, f"LOTES DESDE {project.area}", (60, y), Brand.font_inter(18))
@@ -66,11 +66,11 @@ def gen_inversionistas(project):
     if not r: return None
     img, draw = r
     y = H - 300
-    draw_badge(draw, "INVERSIONISTAS", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "INVERSIONISTAS", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:inversionistas-badge")
     y += 50
-    text_with_shadow(draw, "Invertir en tierra", (60, y), Brand.font_cinzel(48), shadow_blur=6)
+    text_with_shadow(draw, "Invertir en tierra", (60, y), Brand.font_cinzel(48), shadow_blur=6, tracking=0.07)
     y += 58
-    text_with_shadow(draw, "nunca pasa de moda", (60, y), Brand.font_cinzel(48), shadow_blur=6)
+    text_with_shadow(draw, "nunca pasa de moda", (60, y), Brand.font_cinzel(48), shadow_blur=6, tracking=0.07)
     y += 70
     draw_gold_lines(draw, (W, H), top=y - 10, right=60)
     y += 10
@@ -84,11 +84,11 @@ def gen_familias(project):
     if not r: return None
     img, draw = r
     y = H - 320
-    draw_badge(draw, "FAMILIAS", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "FAMILIAS", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:familias-badge")
     y += 45
-    text_with_shadow(draw, "El lugar donde crecerán", (60, y), Brand.font_cinzel(44), shadow_blur=6)
+    text_with_shadow(draw, "El lugar donde crecerán", (60, y), Brand.font_cinzel(44), shadow_blur=6, tracking=0.07)
     y += 54
-    text_with_shadow(draw, "tus mejores recuerdos", (60, y), Brand.font_cinzel(44), shadow_blur=6)
+    text_with_shadow(draw, "tus mejores recuerdos", (60, y), Brand.font_cinzel(44), shadow_blur=6, tracking=0.07)
     y += 70
     specs = f"{project.area or 'Área por definir'} · Desde {project.price or 'consultar'}"
     text_with_shadow(draw, specs.upper(), (60, y), Brand.font_inter(16), Brand.ORO)
@@ -101,11 +101,11 @@ def gen_confianza(project):
     if not r: return None
     img, draw = r
     y = H - 320
-    draw_badge(draw, "CONFIANZA", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "CONFIANZA", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:confianza-badge")
     y += 45
-    text_with_shadow(draw, "Ellos ya confiaron", (60, y), Brand.font_cinzel(48), shadow_blur=6)
+    text_with_shadow(draw, "Ellos ya confiaron", (60, y), Brand.font_cinzel(48), shadow_blur=6, tracking=0.07)
     y += 58
-    text_with_shadow(draw, "en nosotros", (60, y), Brand.font_cinzel(48), shadow_blur=6)
+    text_with_shadow(draw, "en nosotros", (60, y), Brand.font_cinzel(48), shadow_blur=6, tracking=0.07)
     y += 70
     specs = "  ·  ".join((project.highlights or ["Obra activa", "Escritura pública", "Respaldo"])[:3])
     text_with_shadow(draw, specs, (60, y), Brand.font_inter(16))
@@ -118,9 +118,9 @@ def gen_precio(project):
     if not r: return None
     img, draw = r
     y = H - 350
-    draw_badge(draw, "OFERTA / PRECIO", (60, y), Brand.font_cinzel(14))
+    draw_badge(draw, "OFERTA / PRECIO", (60, y), Brand.font_cinzel(14), seed=f"{project.slug}:precio-badge")
     y += 55
-    text_with_shadow(draw, project.price or "CONSULTA PRECIO", (60, y), Brand.font_cinzel(80), Brand.ORO, shadow_blur=7)
+    text_with_shadow(draw, project.price or "CONSULTA PRECIO", (60, y), Brand.font_cinzel(80), Brand.ORO, shadow_blur=7, tracking=0.07)
     y += 100
     text_with_shadow(draw, "Separación inmediata", (60, y), Brand.font_inter(22))
     y += 35
@@ -139,14 +139,14 @@ def gen_escasez(project):
     if not r: return None
     img, draw = r
     y = H - 350
-    draw_badge(draw, "ESCASEZ", (60, y), Brand.font_cinzel(14), bg=Brand.ORO, fg=Brand.NEGRO)
+    draw_badge(draw, "ESCASEZ", (60, y), Brand.font_cinzel(14), bg=Brand.ORO, fg=Brand.NEGRO, seed=f"{project.slug}:escasez-badge")
     y += 50
-    text_with_shadow(draw, "Últimas unidades", (60, y), Brand.font_cinzel(52), shadow_blur=6)
+    text_with_shadow(draw, "Últimas unidades", (60, y), Brand.font_cinzel(52), shadow_blur=6, tracking=0.07)
     y += 62
-    text_with_shadow(draw, "disponibles", (60, y), Brand.font_cinzel(52), shadow_blur=6)
+    text_with_shadow(draw, "disponibles", (60, y), Brand.font_cinzel(52), shadow_blur=6, tracking=0.07)
     y += 75
     if project.price:
-        text_with_shadow(draw, project.price, (60, y), Brand.font_cinzel(56), Brand.ORO, shadow_blur=5)
+        text_with_shadow(draw, project.price, (60, y), Brand.font_cinzel(56), Brand.ORO, shadow_blur=5, tracking=0.07)
         y += 70
     text_with_shadow(draw, "Separación inmediata · No dejes pasar esta oportunidad", (60, y), Brand.font_inter(15))
     y += 40

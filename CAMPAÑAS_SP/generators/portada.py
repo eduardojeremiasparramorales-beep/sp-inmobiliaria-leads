@@ -45,13 +45,13 @@ def gen_vertical(project, out_dir, template_name=None):
     # Fondo: foto del proyecto con gradiente sutil
     path = project.get_image("portada") or project.get_image("destacado")
     if path:
-        img = load_and_crop(path, W, H)
+        img = load_and_crop(path, W, H, seed=f"{project.slug}:portada-vertical")
         img = add_gradient(img, 0.3, 0.45)
     else:
         img = Image.new("RGB", (W, H), NEGRO)
 
     # Línea diagonal dorada (estilo Porvenir)
-    img = draw_diagonal_gold(img, ORO, width=3)
+    img = draw_diagonal_gold(img, ORO, width=3, seed=project.slug)
 
     draw = ImageDraw.Draw(img)
 
@@ -65,21 +65,23 @@ def gen_vertical(project, out_dir, template_name=None):
     badge_w = draw.textbbox((0, 0), badge_text, font=badge_font)[2] + 24
     badge_x = W - badge_w - 50
     badge_y = 35
-    draw_badge(draw, badge_text, (badge_x, badge_y), badge_font, bg=ORO, fg=NEGRO, radius=12)
+    draw_badge(draw, badge_text, (badge_x, badge_y), badge_font, bg=ORO, fg=NEGRO, radius=12,
+               seed=f"{project.slug}:portada-vertical-badge")
 
     cx = W // 2
 
     # Línea dorada decorativa
     draw_gold_line_center(draw, cx, 160, 60)
 
-    # Nombre del proyecto — grande y dorado
+    # Nombre del proyecto — grande y dorado. tracking: el sello "luxury" de Cinzel en el
+    # título más visible de toda la pieza.
     title_font = get_font(tpl, "titulo", 72)
-    text_with_shadow(draw, project.name.upper(), (60, 185), title_font, MARFIL, shadow_blur=6)
+    text_with_shadow(draw, project.name.upper(), (60, 185), title_font, MARFIL, shadow_blur=6, tracking=0.07)
 
     # Subtítulo
     if project.location:
         sub_font = get_font(tpl, "subtitulo", 24)
-        text_with_shadow(draw, project.location.upper(), (60, 275), sub_font, ORO, shadow_blur=3)
+        text_with_shadow(draw, project.location.upper(), (60, 275), sub_font, ORO, shadow_blur=3, tracking=0.07)
 
     # Línea separadora
     draw_gold_line_center(draw, cx, 320, 100)
@@ -88,7 +90,7 @@ def gen_vertical(project, out_dir, template_name=None):
     y = 350
     if project.price:
         price_font = get_font(tpl, "titulo", 64)
-        text_with_shadow(draw, project.price, (60, y), price_font, ORO, shadow_blur=5)
+        text_with_shadow(draw, project.price, (60, y), price_font, ORO, shadow_blur=5, tracking=0.07)
         y += 80
 
     # Área
@@ -158,7 +160,7 @@ def gen_horizontal(project, out_dir, template_name=None):
     # Fondo: foto del proyecto con gradiente izquierda
     path = project.get_image("portada") or project.get_image("destacado")
     if path:
-        img = load_and_crop(path, W, H)
+        img = load_and_crop(path, W, H, seed=f"{project.slug}:portada-horizontal")
         img = add_gradient_left(img, 800, 220)
     else:
         img = Image.new("RGB", (W, H), NEGRO)
@@ -172,22 +174,23 @@ def gen_horizontal(project, out_dir, template_name=None):
     badge_font_h = Brand.font_cinzel(11)
     badge_text_h = "RESPALDO LEONS GROUP"
     badge_w_h = draw.textbbox((0, 0), badge_text_h, font=badge_font_h)[2] + 24
-    draw_badge(draw, badge_text_h, (W - badge_w_h - 50, 30), badge_font_h, bg=ORO, fg=NEGRO, radius=12)
+    draw_badge(draw, badge_text_h, (W - badge_w_h - 50, 30), badge_font_h, bg=ORO, fg=NEGRO, radius=12,
+               seed=f"{project.slug}:portada-horizontal-badge")
 
     # Nombre del proyecto
     title_font = get_font(tpl, "titulo", 64)
-    text_with_shadow(draw, project.name.upper(), (60, 140), title_font, MARFIL, shadow_blur=6)
+    text_with_shadow(draw, project.name.upper(), (60, 140), title_font, MARFIL, shadow_blur=6, tracking=0.07)
 
     # Ubicación
     if project.location:
         sub_font = get_font(tpl, "subtitulo", 26)
-        text_with_shadow(draw, project.location.upper(), (60, 220), sub_font, ORO)
+        text_with_shadow(draw, project.location.upper(), (60, 220), sub_font, ORO, tracking=0.07)
 
     # Precio
     y = 300
     if project.price:
         price_font = get_font(tpl, "titulo", 72)
-        text_with_shadow(draw, project.price, (60, y), price_font, ORO, shadow_blur=5)
+        text_with_shadow(draw, project.price, (60, y), price_font, ORO, shadow_blur=5, tracking=0.07)
         y += 85
 
     # Área
