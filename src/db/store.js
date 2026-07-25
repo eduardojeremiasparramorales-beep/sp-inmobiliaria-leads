@@ -259,6 +259,12 @@ async function initDB() {
       created_at INTEGER NOT NULL
     );
   `);
+  // user_agent: capturado solo al crear la sesión (login), no se actualiza después —
+  // suficiente para identificar el dispositivo en "Sesiones activas" sin escribir en
+  // cada request. last_seen_at si se actualiza en cada request (con throttle, ver
+  // touchSessionLastSeen) porque es lo que realmente responde "¿sigue viva de verdad?".
+  ensureColumn('sessions', 'user_agent', 'TEXT');
+  ensureColumn('sessions', 'last_seen_at', 'INTEGER');
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS wa_templates (
@@ -1204,14 +1210,17 @@ function setVendedorPin(id, pinHash) {
 
 // --- Sesiones persistentes en DB ---
 function createDBSession(token, data) {
-  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+  const now = Date.now();
+  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at, user_agent, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
     token,
     data.userId != null ? Number(data.userId) : null,
     data.vendedorId != null ? Number(data.vendedorId) : null,
     data.rol || 'vendedor',
     data.nombre || '',
     data.email || '',
-    Date.now(),
+    now,
+    String(data.userAgent || '').slice(0, 255),
+    now,
   ]);
 }
 
@@ -1235,6 +1244,31 @@ function expireSessionSoon(token, graceMs) {
 
 function cleanExpiredSessions(ttlMs) {
   run('DELETE FROM sessions WHERE created_at < ?', [Date.now() - ttlMs]);
+}
+
+// Todas las sesiones activas de la cuenta que pide la lista ("Sesiones activas" en
+// Cuenta) — se filtra por vendedor_id o user_id, lo que corresponda a esa cuenta.
+function getSessionsByOwner(vendedorId, userId) {
+  if (vendedorId != null) return all('SELECT * FROM sessions WHERE vendedor_id = ? ORDER BY last_seen_at DESC', [Number(vendedorId)]);
+  if (userId != null) return all('SELECT * FROM sessions WHERE user_id = ? AND vendedor_id IS NULL ORDER BY last_seen_at DESC', [Number(userId)]);
+  return [];
+}
+
+// Throttled: evita un UPDATE en cada request — solo escribe si pasaron >5 min desde
+// el último touch. last_seen_at es lo que se muestra como "última actividad" en la UI.
+function touchSessionLastSeen(token) {
+  const s = one('SELECT last_seen_at FROM sessions WHERE token = ?', [token]);
+  if (!s) return;
+  const now = Date.now();
+  if (now - (s.last_seen_at || 0) > 5 * 60 * 1000) run('UPDATE sessions SET last_seen_at = ? WHERE token = ?', [now, token]);
+}
+
+// Pánico: cerrar todo excepto la sesión actual. Acotado por vendedor_id/user_id — nunca
+// puede borrar sesiones de otra cuenta aunque alguien manipule el body del request.
+function deleteOtherSessions(currentToken, vendedorId, userId) {
+  if (vendedorId != null) return run('DELETE FROM sessions WHERE vendedor_id = ? AND token != ?', [Number(vendedorId), currentToken]).changes;
+  if (userId != null) return run('DELETE FROM sessions WHERE user_id = ? AND vendedor_id IS NULL AND token != ?', [Number(userId), currentToken]).changes;
+  return 0;
 }
 
 // --- Tareas / recordatorios (por vendedor; lead_id = 0 → tarea suelta) ---
@@ -1943,19 +1977,25 @@ function syncLeadToConversation(lead, data = {}) {
     if (!lead || !lead.id) return null;
     const phone = lead.customer_phone || '';
 
+    // Detectar canal real desde el prefijo del teléfono del lead
+    let channel = 'whatsapp';
+    if (phone.startsWith('messenger_')) channel = 'messenger';
+    else if (phone.startsWith('instagram_')) channel = 'instagram';
+
     // 1. Conversación existente ligada a este lead
     let conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
 
     if (!conv) {
-      // 2. Customer por canal whatsapp/teléfono (o crearlo)
-      let customer = findCustomerByChannel('whatsapp', phone);
+      // 2. Customer por canal (o crearlo)
+      const channelUserId = channel === 'whatsapp' ? phone : phone.replace(/^(messenger_|instagram_)/, '');
+      let customer = findCustomerByChannel(channel, channelUserId);
       if (!customer) {
-        customer = createCustomer(lead.customer_name || 'Cliente', phone);
-        linkChannelToCustomer(customer.id, 'whatsapp', phone, lead.customer_name || '');
+        customer = createCustomer(lead.customer_name || 'Cliente', channel === 'whatsapp' ? phone : '');
+        linkChannelToCustomer(customer.id, channel, channelUserId, lead.customer_name || '');
       }
       const pct = PROGRESS_MAP[lead.etiqueta || 'sin_clasificar'] || 5;
       run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta, progress_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null, lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'), lead.etiqueta || 'sin_clasificar', pct]);
+        [channel, channelUserId, customer.id, lead.id, lead.assigned_to_id || null, lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'), lead.etiqueta || 'sin_clasificar', pct]);
       conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
     }
     if (!conv) return null;
@@ -1974,7 +2014,7 @@ function syncLeadToConversation(lead, data = {}) {
     if (data.body || data.media) {
       const m = data.media || {};
       addTimelineEvent(conv.id, 'message', {
-        channel: 'whatsapp',
+        channel: channel,
         body: data.body || '',
         direction: data.direction || 'incoming',
         from_number: data.fromNumber || '',

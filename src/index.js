@@ -1286,8 +1286,12 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
   }
 
   // Detectar canal
-  const conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
-  const channel = conversation ? conversation.channel : 'whatsapp';
+  let conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
+  let channel = conversation ? conversation.channel : 'whatsapp';
+  if (!conversation && lead.customer_phone) {
+    if (lead.customer_phone.startsWith('messenger_')) channel = 'messenger';
+    else if (lead.customer_phone.startsWith('instagram_')) channel = 'instagram';
+  }
 
   let tipo = 'document';
   if (mime.startsWith('image/')) tipo = 'image';
@@ -1372,7 +1376,25 @@ app.post('/api/leads/:id/send-location', auth.requireAuth, async (req, res) => {
     const locBody = JSON.stringify(locData);
     const displayBody = `📍 [Ubicación]${name ? ' ' + name : ''}${address ? ' - ' + address : ''}`;
 
-    await sendLocation(lead.customer_phone, Number(latitude), Number(longitude), name, address);
+    // Detectar canal
+    let convLoc = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
+    let channelLoc = convLoc ? convLoc.channel : 'whatsapp';
+    if (!convLoc && lead.customer_phone) {
+      if (lead.customer_phone.startsWith('messenger_')) channelLoc = 'messenger';
+      else if (lead.customer_phone.startsWith('instagram_')) channelLoc = 'instagram';
+    }
+
+    if (channelLoc === 'whatsapp') {
+      await sendLocation(lead.customer_phone, Number(latitude), Number(longitude), name, address);
+    } else {
+      // Messenger/Instagram: enviar ubicación como texto formateado
+      const { getAdapter } = require('./channels');
+      const adapter = getAdapter(channelLoc);
+      if (!adapter) throw new Error(`Canal ${channelLoc} no configurado`);
+      const channelUserId = store.getChannelUserIdForLead(lead.id, channelLoc);
+      if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channelLoc}`);
+      await adapter.sendMessage(channelUserId, displayBody);
+    }
     store.saveMessage(lead.id, fromNumber, lead.customer_phone, locBody, 'outgoing', {
       media_type: 'location', media_id: null, media_mime: null, media_filename: null,
     }, null, null, 'sent');
@@ -1387,7 +1409,7 @@ app.post('/api/leads/:id/send-location', auth.requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('Error enviando ubicación:', e.message);
-    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+    res.status(502).json({ error: 'error_envio', detalle: e.message });
   }
 });
 
