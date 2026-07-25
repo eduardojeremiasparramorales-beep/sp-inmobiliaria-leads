@@ -92,10 +92,6 @@ class MessageRouter {
           store.saveMessage(leadId, fromUserId, assignedVendedor.telefono || '', messageBody || '[archivo]', 'incoming');
           // Vincular conversación al lead
           require('../db/adapter').run('UPDATE conversations SET lead_id = ? WHERE id = ?', [leadId, conversation.id]);
-          // Sync a la conversación
-          store.syncLeadToConversation(store.getLeadById(leadId), {
-            direction: 'incoming', body: messageBody || '[archivo]', fromNumber: fromUserId, toNumber: assignedVendedor.telefono || '',
-          });
         } catch (e) {
           console.error(`[ROUTER] Error creando lead para ${channel}:`, e.message);
         }
