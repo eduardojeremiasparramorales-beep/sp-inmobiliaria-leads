@@ -58,10 +58,14 @@ def gen_vertical(project, out_dir, template_name=None):
     # Logo arriba-centro
     add_logo(img, 80, (W - 80) // 2, 35, center=True)
 
-    # Badge "RESPALDO SP" arriba-derecha (si el proyecto lo tiene)
-    badge_x = W - 170
+    # Badge de respaldo de marca, arriba-derecha — ancho calculado (no fijo) para que
+    # el nombre de la marca nunca se desborde del lienzo, sea cual sea su longitud.
+    badge_font = Brand.font_cinzel(11)
+    badge_text = "RESPALDO LEONS GROUP"
+    badge_w = draw.textbbox((0, 0), badge_text, font=badge_font)[2] + 24
+    badge_x = W - badge_w - 50
     badge_y = 35
-    draw_badge(draw, "RESPALDO SP", (badge_x, badge_y), Brand.font_cinzel(11), bg=ORO, fg=NEGRO, radius=12)
+    draw_badge(draw, badge_text, (badge_x, badge_y), badge_font, bg=ORO, fg=NEGRO, radius=12)
 
     cx = W // 2
 
@@ -164,8 +168,11 @@ def gen_horizontal(project, out_dir, template_name=None):
     # Logo arriba-izquierda
     add_logo(img, 70, 50, 30)
 
-    # Badge
-    draw_badge(draw, "RESPALDO SP", (W - 180, 30), Brand.font_cinzel(11), bg=ORO, fg=NEGRO, radius=12)
+    # Badge de respaldo — ancho calculado, ver nota en gen_vertical.
+    badge_font_h = Brand.font_cinzel(11)
+    badge_text_h = "RESPALDO LEONS GROUP"
+    badge_w_h = draw.textbbox((0, 0), badge_text_h, font=badge_font_h)[2] + 24
+    draw_badge(draw, badge_text_h, (W - badge_w_h - 50, 30), badge_font_h, bg=ORO, fg=NEGRO, radius=12)
 
     # Nombre del proyecto
     title_font = get_font(tpl, "titulo", 64)
@@ -199,7 +206,7 @@ def gen_horizontal(project, out_dir, template_name=None):
 
     # CTA
     cta_y = H - 70
-    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, cta_y), get_font(tpl, "cuerpo", 18), bg=VERDE, fg=MARFIL)
+    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, cta_y), get_font(tpl, "cuerpo", 18), bg=VERDE, fg=MARFIL, max_y=H - 15)
     wa_font = get_font(tpl, "cuerpo", 18)
     text_with_shadow(draw, project.whatsapp or "+57 321 462 5618", (320, cta_y + 8), wa_font, ORO)
 

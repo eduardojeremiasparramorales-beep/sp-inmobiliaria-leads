@@ -82,6 +82,18 @@
   let campaigns = [], templates = [], segmentOptions = { proyectos: [], ciudades: [] }, vendedores = [];
   let currentTab = 'generar';
   let projectImagesCache = {};
+  let crmProyectos = null; // proyectos reales del CRM (F2: puente catálogo→campaña), cargados una vez
+
+  async function loadCrmProyectos() {
+    if (crmProyectos) return crmProyectos;
+    crmProyectos = await api('/api/proyectos') || [];
+    return crmProyectos;
+  }
+  function nombreProyectoCrm(id) {
+    if (!id || !crmProyectos) return null;
+    const p = crmProyectos.find(x => Number(x.id) === Number(id));
+    return p ? p.nombre : null;
+  }
 
   // ===== TABS =====
   function renderTabs() {
@@ -116,7 +128,7 @@
         <button class="cp-btn" id="btnNewProject" style="margin-bottom:14px">Nuevo proyecto</button>
         <div id="projectList"></div>
       </div>`;
-    await loadProjects();
+    await Promise.all([loadProjects(), loadCrmProyectos()]);
     renderProjectList();
     document.getElementById('btnNewProject').addEventListener('click', openNewProjectModal);
   }
@@ -144,10 +156,14 @@
       const total = assets && assets.total ? assets.total : 0;
       const statusBadge = `cp-badge cp-badge--${p.status === 'ready' ? 'done' : p.status === 'generating' ? 'generating' : p.status === 'error' ? 'error' : 'draft'}`;
       const statusLabel = { draft: 'Borrador', generating: 'Generando…', ready: 'Listo', error: 'Error' }[p.status] || p.status;
+      const crmNombre = nombreProyectoCrm(p.proyecto_id);
+      const vinculoBadge = crmNombre
+        ? `<span class="cp-badge" style="background:rgba(200,164,90,.15);color:var(--gold)" title="Datos y fotos importados de este proyecto del CRM">📦 Vinculado a ${esc(crmNombre)}</span>`
+        : '';
       return `<div class="cp-proyect" data-id="${p.id}">
         <div class="cp-proyect__header">
           <div>
-            <div class="cp-proyect__name">${esc(p.name)} <span class="${statusBadge}">${statusLabel}</span></div>
+            <div class="cp-proyect__name">${esc(p.name)} <span class="${statusBadge}">${statusLabel}</span> ${vinculoBadge}</div>
             <div class="cp-proyect__meta">${esc(p.location || '')} ${p.template ? '· Plantilla: ' + esc(p.template) : ''}</div>
           </div>
         </div>
@@ -247,7 +263,17 @@
     modal.innerHTML = `
       <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:92%;max-width:560px;max-height:90vh;overflow:auto;border:1px solid var(--border-soft)">
         <h3 style="margin:0 0 16px;color:var(--text-1)">${isNew ? 'Nuevo proyecto' : 'Editar: ' + esc(project.name)}</h3>
+        ${isNew ? `
+        <div class="cp-field" style="background:var(--bg-3);border:1px solid var(--border-soft);border-radius:var(--r-sm);padding:12px;margin-bottom:16px">
+          <label style="margin-bottom:8px">📦 Importar desde un proyecto existente del CRM (opcional)</label>
+          <select id="fImportCrm">
+            <option value="">— Escribir todo a mano —</option>
+            ${(crmProyectos || []).map(cp => `<option value="${cp.id}">${esc(cp.nombre)}${cp.ciudad ? ' · ' + esc(cp.ciudad) : ''}</option>`).join('')}
+          </select>
+          <div id="importCrmInfo" style="font-size:11.5px;color:var(--text-3);margin-top:6px"></div>
+        </div>` : ''}
         <form id="projForm">
+          <input type="hidden" id="fProyectoId" value="${project && project.proyecto_id ? project.proyecto_id : ''}">
           <div class="cp-row">
             <div class="cp-field" style="flex:2"><label>Nombre del proyecto</label><input id="fName" required value="${esc(project ? project.name : '')}" placeholder="Ej: La Bendición"></div>
             <div class="cp-field" style="flex:1"><label>Ubicación</label><input id="fLocation" value="${esc(project ? project.location || '' : '')}" placeholder="Tocaima, Cundinamarca"></div>
@@ -300,7 +326,10 @@ Servicios públicos">${project && project.features ? (Array.isArray(project.feat
 
     // Slug auto desde nombre
     function slugFromName(name) {
-      return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      // Normaliza tildes/eñes ANTES de filtrar (si no, "Bendición" → "bendici-n" en vez de
+      // "bendicion") — importante ahora que los nombres suelen venir importados del CRM real.
+      const sinTildes = name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/gi, 'n');
+      return sinTildes.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
     const nameInput = document.getElementById('fName');
     const slugInput = document.getElementById('fSlug');
@@ -316,6 +345,31 @@ Servicios públicos">${project && project.features ? (Array.isArray(project.feat
     }
     slugInput.addEventListener('input', updateSlugPreview);
     updateSlugPreview();
+
+    // Importar desde proyecto real del CRM: autocompleta el formulario (editable) y
+    // guarda el proyecto_id para que, al crear, el servidor copie sus fotos reales.
+    const importSel = document.getElementById('fImportCrm');
+    if (importSel) {
+      importSel.addEventListener('change', async () => {
+        const info = document.getElementById('importCrmInfo');
+        const pid = importSel.value;
+        document.getElementById('fProyectoId').value = pid || '';
+        if (!pid) { info.textContent = ''; return; }
+        info.textContent = 'Cargando datos del proyecto…';
+        const fill = await api('/api/campanas-sp/auto-fill/' + pid);
+        if (!fill) { info.textContent = 'No se pudo cargar el proyecto.'; return; }
+        if (fill.name) nameInput.value = fill.name;
+        if (fill.location) document.getElementById('fLocation').value = fill.location;
+        if (fill.description) document.getElementById('fDesc').value = fill.description;
+        if (fill.price) document.getElementById('fPrice').value = fill.price;
+        if (fill.area) document.getElementById('fArea').value = fill.area;
+        if (fill.highlights && fill.highlights.length) {
+          document.getElementById('fFeatures').value = fill.highlights.join('\n');
+        }
+        if (!slugInput.value) { slugInput.value = slugFromName(fill.name || ''); updateSlugPreview(); }
+        info.innerHTML = `✓ Datos cargados${fill.disponibles ? ' · <b style="color:var(--gold)">' + fill.disponibles + ' lotes disponibles</b>' : ''} — revisa y ajusta antes de guardar. Sus fotos se copiarán automáticamente.`;
+      });
+    }
 
     async function uploadImages(files) {
       if (!files || !files.length) return;
@@ -403,6 +457,8 @@ Servicios públicos">${project && project.features ? (Array.isArray(project.feat
         features: document.getElementById('fFeatures').value.split('\n').map(s => s.trim()).filter(Boolean),
         highlights: [],
       };
+      const proyectoIdVal = document.getElementById('fProyectoId') ? document.getElementById('fProyectoId').value : '';
+      if (proyectoIdVal) data.proyecto_id = Number(proyectoIdVal);
       const submitBtn = modal.querySelector('button[type="submit"]');
       submitBtn.disabled = true;
       let r;

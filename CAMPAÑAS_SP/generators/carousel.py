@@ -68,7 +68,7 @@ def gen_slide_ubicacion(project, idx, total):
     if project.highlights:
         text_with_shadow(draw, "  ·  ".join(project.highlights[:2]), (60, y), Brand.font_inter(15), Brand.GRIS)
         y += 30
-    draw_cta(draw, "CONOCE LA UBICACIÓN", (60, y + 10), Brand.font_inter(15))
+    draw_cta(draw, "CONOCE LA UBICACIÓN", (60, y + 10), Brand.font_inter(15), max_y=H - 40)
     add_pagination(draw, idx, total)
     return img
 
@@ -93,7 +93,7 @@ def gen_slide_beneficios(project, idx, total):
                                fill=(10, 10, 10, 160), outline=Brand.ORO)
         text_with_shadow(draw, f"  {feat}", (90, y + 14), Brand.font_inter(18))
         y += 70
-    draw_cta(draw, project.cta_secondary or "MÁS BENEFICIOS", (60, y + 10), Brand.font_inter(15))
+    draw_cta(draw, project.cta_secondary or "MÁS BENEFICIOS", (60, y + 10), Brand.font_inter(15), max_y=H - 40)
     add_pagination(draw, idx, total)
     return img
 
@@ -146,7 +146,7 @@ def gen_slide_caracteristicas(project, idx, total):
                                fill=(10, 10, 10, 150), outline=Brand.ORO)
         text_with_shadow(draw, f"✓  {h}", (90, y + 16), Brand.font_inter(20))
         y += card_h + gap
-    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, y + 15), Brand.font_inter(15))
+    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, y + 15), Brand.font_inter(15), max_y=H - 40)
     add_pagination(draw, idx, total)
     return img
 
@@ -167,7 +167,7 @@ def gen_slide_cta(project, idx, total):
     y += 35
     text_with_shadow(draw, "Un asesor te espera.", (360, y), Brand.font_inter(18))
     y += 60
-    draw_cta(draw, "ESCRÍBENOS AHORA", (W // 2 - 170, y), Brand.font_inter(17), bg=(37, 211, 102), fg=(255, 255, 255))
+    draw_cta(draw, "ESCRÍBENOS AHORA", (W // 2 - 170, y), Brand.font_inter(17), bg=(37, 211, 102), fg=(255, 255, 255), max_y=H - 40)
     y += 80
     draw_gold_line_center(draw, W // 2, y, 200)
     y += 20

@@ -45,7 +45,10 @@ class Project:
 
     def get_image(self, key):
         if key in self.images:
-            candidate = os.path.join(self.image_dir, self.images[key])
+            val = self.images[key]
+            # Soporta ruta absoluta (fondos generados por IA, viven fuera de image_dir)
+            # o relativa (foto cruda subida, comportamiento original sin cambios).
+            candidate = val if os.path.isabs(val) else os.path.join(self.image_dir, val)
             if os.path.exists(candidate):
                 return candidate
         return None

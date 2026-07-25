@@ -35,7 +35,9 @@ def gen_bienvenido(project):
     draw = ImageDraw.Draw(img)
     add_logo(img, 100, (W - 100) // 2, 60, center=True)
     cx = W // 2
-    draw_badge(draw, "SP INMOBILIARIA", (cx - 90, 680))
+    badge_font = Brand.font_cinzel(14)
+    badge_w = draw.textbbox((0, 0), "LEONS GROUP", font=badge_font)[2] + 24
+    draw_badge(draw, "LEONS GROUP", (cx - badge_w // 2, 680), badge_font)
     text_with_shadow(draw, "Bienvenido a", (cx - 220, 740), Brand.font_cinzel(60))
     text_with_shadow(draw, "tu próximo", (cx - 200, 810), Brand.font_cinzel(60))
     text_with_shadow(draw, "proyecto", (cx - 180, 880), Brand.font_cinzel(60))
@@ -114,5 +116,5 @@ def gen_cta(project):
     draw_gold_line_center(draw, W // 2, 830, 200)
     text_with_shadow(draw, project.whatsapp, (W // 2 - 200, 860), Brand.font_inter(26))
     text_with_shadow(draw, project.name, (W // 2 - 150, 920), Brand.font_inter(18), Brand.ORO)
-    text_with_shadow(draw, "SP INMOBILIARIA", (360, 1750), Brand.font_cinzel(18), Brand.ORO)
+    text_with_shadow(draw, "LEONS GROUP", (360, 1750), Brand.font_cinzel(18), Brand.ORO)
     return img

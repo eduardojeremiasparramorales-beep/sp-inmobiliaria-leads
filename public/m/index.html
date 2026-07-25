@@ -2835,7 +2835,7 @@ function abrirPerfil(){ const l=current; const nombre=l.customer_name||'Cliente'
     <div class="lp-grid">
       <div class="lp-cell"><span>Estado</span><strong style="color:var(--gold)">${etqLabel(l.etiqueta||'sin_clasificar')}</strong></div>
       <div class="lp-cell"><span>Proyecto</span><strong>${l.proyecto || '—'}</strong></div>
-      <div class="lp-cell"><span>Origen</span><strong>${l.origen || '—'}</strong></div>
+      <div class="lp-cell"><span>${l.ad_name?'Anuncio de origen':'Origen'}</span><strong${l.ad_name?' style="color:var(--gold)" title="Este lead llegó desde este anuncio de Meta Ads"':''}>${esc(l.ad_name || l.origen || '—')}</strong></div>
       <div class="lp-cell"><span>Asesor</span><strong>${esc(l.assigned_to_nombre||me.nombre||'—')}</strong></div>
       <div class="lp-cell"><span>Mensajes</span><strong>${(currentMsgs||[]).filter(m=>m.direction==='incoming').length}</strong></div>
       <div class="lp-cell"><span>Creado</span><strong>${horaCorta(l.created_at)}</strong></div>

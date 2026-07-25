@@ -144,9 +144,22 @@ function handleMessage(req, res) {
             if (msg.referral) {
               try {
                 const origen = msg.referral.headline || msg.referral.body || msg.referral.source_url || null;
-                if (origen) {
-                  const lead = store.getLeadByCustomerPhone(fromPhone);
-                  if (lead && !lead.origen) store.setLeadOrigen(lead.id, origen);
+                const lead = store.getLeadByCustomerPhone(fromPhone);
+                if (lead) {
+                  if (origen && !lead.origen) store.setLeadOrigen(lead.id, origen);
+                  // F1: además del texto libre de arriba, guarda los IDs estructurados que
+                  // Meta manda en referral — es lo que permite a reportes agrupar por
+                  // anuncio/campaña real (source_id) en vez de por un headline repetible.
+                  // Solo la primera vez (guard dentro de setLeadAdAttribution vía !lead.ad_id
+                  // se hace aquí para no pisar la atribución original de un lead reabierto).
+                  if (!lead.ad_id) {
+                    store.setLeadAdAttribution(lead.id, {
+                      adId: msg.referral.source_id,
+                      adName: msg.referral.headline,
+                      sourceUrl: msg.referral.source_url,
+                      ctwaClid: msg.referral.ctwa_clid,
+                    });
+                  }
                 }
               } catch (e) { console.error('Error guardando origen de referral:', e.message); }
             }

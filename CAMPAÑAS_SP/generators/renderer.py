@@ -1,18 +1,108 @@
 import os
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import random
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance, ImageOps, ImageChops
 from .brand import Brand
 
-def load_and_crop(path, width, height):
+def load_and_crop(path, width, height, enhance=True, vignette=True, grain=True):
+    """Carga, recorta a llenar (width,height) y aplica el acabado premium por defecto.
+    Se usa igual para fotos crudas del cliente que para fondos generados por IA —
+    el 'enhance' es deliberadamente suave para no sobre-procesar un fondo ya bueno."""
     img = Image.open(path).convert("RGB")
     ratio = max(width / img.width, height / img.height)
     img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
     left = (img.width - width) // 2
     top = (img.height - height) // 2
-    return img.crop((left, top, left + width, top + height))
+    img = img.crop((left, top, left + width, top + height))
+    if enhance:
+        img = auto_enhance(img)
+    if vignette:
+        img = add_vignette(img)
+    if grain:
+        img = add_grain(img)
+    return img
 
-def add_gradient(img, top_intensity=0.35, bottom_intensity=0.5):
-    """Gradiente vertical suave: oscuro arriba, translúcido en medio, oscuro abajo."""
+def auto_enhance(img, contrast=1.08, saturation=1.06, sharpen=1.15):
+    """Corrección ligera: autocontraste por percentiles + contraste/saturación/nitidez suaves.
+    Sube la percepción de calidad de una foto de celular sin verse artificial."""
+    img = ImageOps.autocontrast(img, cutoff=1)
+    img = ImageEnhance.Contrast(img).enhance(contrast)
+    img = ImageEnhance.Color(img).enhance(saturation)
+    img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=int(50 * sharpen), threshold=3))
+    return img
+
+def add_vignette(img, strength=0.32):
+    """Viñeta radial sutil: oscurece las esquinas para dar aire editorial/premium."""
+    w, h = img.size
+    mask = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(mask)
+    # Elipse blanca (centro visible) sobre fondo negro (esquinas oscuras), difuminada.
+    pad = int(min(w, h) * 0.18)
+    draw.ellipse((-pad, -pad, w + pad, h + pad), fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(min(w, h) * 0.22))
+    dark = Image.new("RGB", (w, h), (0, 0, 0))
+    vign = Image.composite(img, dark, mask)
+    return Image.blend(img, vign, strength)
+
+_grain_cache = {}
+def add_grain(img, opacity=0.05):
+    """Grano procedural fino (determinista por tamaño, cacheado) — acabado editorial, no ruido visible."""
+    w, h = img.size
+    key = (w, h)
+    if key not in _grain_cache:
+        rnd = random.Random(42)  # semilla fija: mismo grano en cada corrida, reproducible
+        noise = Image.new("L", (w, h))
+        noise.putdata([rnd.randint(0, 255) for _ in range(w * h)])
+        _grain_cache[key] = noise.filter(ImageFilter.GaussianBlur(0.4))
+    noise_rgb = Image.merge("RGB", (_grain_cache[key], _grain_cache[key], _grain_cache[key]))
+    return ImageChops.overlay(img, Image.blend(img, noise_rgb, opacity))
+
+def draw_text_tracked(draw, text, pos, font, color, tracking=0.06, shadow=True):
+    """Dibuja texto con tracking (espaciado entre letras) — Cinzel se ve mucho más 'premium'
+    con letter-spacing generoso en mayúsculas; Pillow no lo soporta nativamente."""
+    x, y = pos
+    for ch in text:
+        if shadow:
+            for dx in (-2, -1, 0, 1, 2):
+                for dy in (-2, -1, 0, 1, 2):
+                    if dx or dy:
+                        draw.text((x + dx, y + dy), ch, font=font, fill=(0, 0, 0, 140))
+        draw.text((x, y), ch, font=font, fill=color)
+        bb = draw.textbbox((0, 0), ch, font=font)
+        x += (bb[2] - bb[0]) + int(font.size * tracking)
+    return x
+
+def _luminance_factor(img, box):
+    """Brillo medio (0-255) de una región del fondo — usado para reforzar el gradiente
+    cuando la foto es más clara de lo normal. Crítico con fondos de IA: a diferencia de
+    una foto conocida del cliente, un fondo generado puede salir mucho más claro u oscuro
+    de lo esperado, y el texto blanco encima perdería legibilidad sin este ajuste."""
+    try:
+        region = img.convert("L").crop(box)
+        hist = region.histogram()
+        total = sum(hist) or 1
+        return sum(i * c for i, c in enumerate(hist)) / total
+    except Exception:
+        return 128  # valor neutro si algo falla — no bloquea la generación
+
+def add_gradient(img, top_intensity=0.35, bottom_intensity=0.5, adaptive=True):
+    """Gradiente vertical suave: oscuro arriba, translúcido en medio, oscuro abajo.
+    adaptive=True (default): mide el brillo de donde va el texto (tercio inferior) y
+    refuerza automáticamente la intensidad si la foto es clara — nunca la debilita
+    por debajo de lo pedido, solo la reduce un poco si la foto ya es muy oscura."""
     h, w = img.size[1], img.size[0]
+    if adaptive:
+        avg = _luminance_factor(img, (0, int(h * 0.65), w, h))
+        if avg > 150:      # foto clara: el texto blanco se perdería sin más oscurecimiento
+            scale = 1.0 + min((avg - 150) / 105, 1.0) * 0.35  # hasta +35% en el extremo
+        elif avg < 60:     # foto ya muy oscura: no hace falta oscurecer tanto más
+            scale = 0.85
+        else:
+            scale = 1.0
+        top_intensity = min(top_intensity * scale, 0.95)
+        bottom_intensity = min(bottom_intensity * scale, 0.95)
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    # Parte superior: de fuerte a suave
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     # Parte superior: de fuerte a suave
@@ -78,12 +168,17 @@ def draw_badge(draw, text, pos, font=None, bg=Brand.ORO, fg=Brand.NEGRO, radius=
     draw.text((x + 12, y + 4), text, font=font, fill=fg)
     return h
 
-def draw_cta(draw, text, pos, font=None, bg=Brand.VERDE, fg=Brand.MARFIL, radius=8):
+def draw_cta(draw, text, pos, font=None, bg=Brand.VERDE, fg=Brand.MARFIL, radius=8, max_y=None):
+    """Botón CTA. Si se pasa max_y (borde inferior seguro del lienzo), el botón
+    NUNCA queda fuera del cuadro — sin importar cuánto texto se haya apilado arriba
+    (título largo, muchos highlights, etc.). El CTA es la acción de venta: no puede cortarse."""
     font = font or Brand.font_inter(18)
     bb = draw.textbbox((0, 0), text, font=font)
     w = bb[2] - bb[0] + 48
     h = bb[3] - bb[1] + 24
     x, y = pos
+    if max_y is not None:
+        y = min(y, max_y - h)
     draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=bg)
     tw = draw.textbbox((0, 0), text, font=font)
     tx = x + (w - (tw[2] - tw[0])) // 2

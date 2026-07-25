@@ -52,8 +52,17 @@ def main():
     proj.whatsapp = project_data.get("whatsapp", "+57 321 462 5618")
     proj.cta = project_data.get("cta", "SOLICITA INFORMACIÓN")
     proj.cta_secondary = project_data.get("cta_secondary", "CONOCE EL PROYECTO")
-    proj.assign_images_auto(images_dir)
-    proj.image_dir = images_dir
+
+    # image_assignments: {key: ruta_absoluta} — viene del análisis de Gemini (categorización
+    # por contenido) o de un fondo generado por IA. Si no llega (o llega vacío), se mantiene
+    # el comportamiento original: asignación automática por orden alfabético del archivo.
+    image_assignments = data.get("image_assignments") or {}
+    if image_assignments:
+        proj.images = image_assignments
+        proj.image_dir = images_dir
+    else:
+        proj.assign_images_auto(images_dir)
+        proj.image_dir = images_dir
 
     start = time.time()
     errors = []

@@ -143,6 +143,14 @@ async function initDB() {
   ensureColumn('leads', 'cadencia_paso', 'INTEGER DEFAULT 0');   // índice del próximo paso a enviar
   ensureColumn('leads', 'cadencia_inicio', 'DATETIME');          // cuándo se inscribió (base para calcular offsets)
   ensureColumn('leads', 'cadencia_next_at', 'DATETIME');         // cuándo toca el próximo paso
+  ensureColumn('campanas_sp_projects', 'proyecto_id', 'INTEGER'); // vínculo con proyectos reales del CRM (F2)
+  // Atribución estructurada de campaña (F1) — antes solo se guardaba el headline como texto
+  // libre en `origen`; esto captura los IDs reales que Meta manda en `referral` para que
+  // reportes pueda agrupar por anuncio/campaña real, no por un texto que puede repetirse.
+  ensureColumn('leads', 'ad_id', 'TEXT');
+  ensureColumn('leads', 'ad_name', 'TEXT');
+  ensureColumn('leads', 'ad_source_url', 'TEXT');
+  ensureColumn('leads', 'ctwa_clid', 'TEXT');
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
@@ -992,6 +1000,19 @@ function setLeadNombre(leadId, nombre) {
 
 function setLeadOrigen(leadId, origen) {
   run('UPDATE leads SET origen = ? WHERE id = ?', [String(origen).slice(0, 255), Number(leadId)]);
+}
+
+// Atribución estructurada del anuncio que trajo el lead (F1). Solo escribe los campos que
+// vengan con valor — un mensaje sin ctwa_clid no debe borrar uno que ya se había guardado.
+function setLeadAdAttribution(leadId, { adId, adName, sourceUrl, ctwaClid } = {}) {
+  const sets = [], params = [];
+  if (adId) { sets.push('ad_id = ?'); params.push(String(adId).slice(0, 255)); }
+  if (adName) { sets.push('ad_name = ?'); params.push(String(adName).slice(0, 255)); }
+  if (sourceUrl) { sets.push('ad_source_url = ?'); params.push(String(sourceUrl).slice(0, 500)); }
+  if (ctwaClid) { sets.push('ctwa_clid = ?'); params.push(String(ctwaClid).slice(0, 255)); }
+  if (!sets.length) return;
+  params.push(Number(leadId));
+  run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
 function getLeadCount() {
@@ -2452,12 +2473,13 @@ function revokeInsignia(vendedorId, codigo) {
 function createCampanasSpProject(d = {}) {
   const slug = d.slug || d.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proyecto-' + Date.now();
   run(`INSERT INTO campanas_sp_projects (name, slug, location, description, price, price_currency, area,
-       features, highlights, whatsapp, cta, images_dir, output_dir, template, status, assets_result, error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       features, highlights, whatsapp, cta, images_dir, output_dir, template, status, assets_result, error, proyecto_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [d.name || '', slug, d.location || '', d.description || '', d.price || '', d.price_currency || 'COP',
      d.area || '', JSON.stringify(d.features || []), JSON.stringify(d.highlights || []),
      d.whatsapp || '+57 321 462 5618', d.cta || 'SOLICITA INFORMACIÓN',
-     d.images_dir || '', d.output_dir || '', d.template || 'premium', d.status || 'draft', '{}', '']);
+     d.images_dir || '', d.output_dir || '', d.template || 'premium', d.status || 'draft', '{}', '',
+     d.proyecto_id || null]);
   return one('SELECT * FROM campanas_sp_projects WHERE id = (SELECT last_insert_rowid())');
 }
 
@@ -2476,13 +2498,18 @@ function getCampanasSpProjectBySlug(slug) {
 function updateCampanasSpProject(id, d = {}) {
   const p = getCampanasSpProject(id);
   if (!p) return null;
+  // features/highlights llegan como array desde el frontend — se guardan serializados,
+  // igual que en createCampanasSpProject (antes se excluían aquí y quedaban sin poder editarse).
+  const input = { ...d };
+  if (input.features !== undefined) input.features = JSON.stringify(input.features || []);
+  if (input.highlights !== undefined) input.highlights = JSON.stringify(input.highlights || []);
   const fields = ['name', 'slug', 'location', 'description', 'price', 'price_currency', 'area',
-    'whatsapp', 'cta', 'images_dir', 'output_dir', 'template', 'status', 'assets_result', 'error'];
-  const sets = fields.filter(f => d[f] !== undefined).map(f => `${f}=?`).join(', ');
+    'features', 'highlights', 'whatsapp', 'cta', 'images_dir', 'output_dir', 'template', 'status',
+    'assets_result', 'error', 'proyecto_id'];
+  const sets = fields.filter(f => input[f] !== undefined).map(f => `${f}=?`).join(', ');
   if (!sets) return p;
-  const vals = fields.filter(f => d[f] !== undefined).map(f => d[f]);
+  const vals = fields.filter(f => input[f] !== undefined).map(f => input[f]);
   run(`UPDATE campanas_sp_projects SET ${sets}, updated_at=datetime('now') WHERE id=?`, [...vals, id]);
-  // Reevaluate parsed JSON fields
   const updated = one('SELECT * FROM campanas_sp_projects WHERE id = ?', [id]);
   return updated;
 }
@@ -2496,7 +2523,7 @@ module.exports = {
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse, resetLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
-  marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen,
+  marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,

@@ -188,40 +188,64 @@ function getCSAT(from, to, vendedorId) {
 }
 
 // --- Origen de leads (campañas Meta Ads) ---
+// F1: la fuente principal es `leads.ad_id` (poblado por el webhook /webhook, el que
+// realmente recibe tráfico de WhatsApp — ver messages.js). Antes esta función solo leía
+// `timeline.metadata`, que depende del webhook multicanal /webhook/:channel y en producción
+// estaba prácticamente siempre vacía para el número principal. Se suma Messenger/Instagram
+// desde `timeline` (sí usan ese flujo) filtrando fuera 'whatsapp' para no contar dos veces.
 function getLeadSources(from, to) {
-  const { conditions, params } = dateFilter('conv', from, to);
-  conditions.push(`conv.id IN (SELECT DISTINCT conversation_id FROM timeline WHERE direction = 'incoming')`);
-  const whereStr = 'WHERE ' + conditions.join(' AND ');
+  const { conditions, params } = dateFilter('l', from, to);
+  const whereStr = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-  const convs = adapter.all(`SELECT conv.id FROM conversations conv ${whereStr}`, params);
+  const leads = adapter.all(`SELECT ad_id, ad_name, etiqueta FROM leads l ${whereStr}`, params);
 
-  const campanas = {};
+  const campanas = {}; // ad_id/nombre -> { campaign, leads, vendidos }
   let organico = 0;
   let pagado = 0;
+  const bump = (key, nombre, vendido) => {
+    if (!campanas[key]) campanas[key] = { campaign: nombre || 'Anuncio sin nombre', leads: 0, vendidos: 0 };
+    campanas[key].leads++;
+    if (vendido) campanas[key].vendidos++;
+  };
 
-  for (const c of convs) {
-    const primerMsg = adapter.one(
-      `SELECT metadata FROM timeline WHERE conversation_id = ? AND direction = 'incoming' ORDER BY created_at ASC LIMIT 1`,
-      [c.id]
-    );
-    if (!primerMsg) continue;
-    let meta = {};
-    try { meta = JSON.parse(primerMsg.metadata || '{}'); } catch (e) { meta = {}; }
-
-    if (meta.ad_id) {
+  for (const l of leads) {
+    if (l.ad_id) {
       pagado++;
-      const campaign = meta.campaign_name || meta.ad_name || 'Campaña sin nombre';
-      campanas[campaign] = (campanas[campaign] || 0) + 1;
+      bump(l.ad_id, l.ad_name, l.etiqueta === 'vendido');
     } else {
       organico++;
     }
   }
 
-  return {
-    campanas: Object.entries(campanas).map(([campaign, leads]) => ({ campaign, leads })),
-    organico,
-    pagado,
-  };
+  // Messenger/Instagram (flujo multicanal) — mismo criterio, sin duplicar WhatsApp.
+  try {
+    const { conditions: cc, params: cp } = dateFilter('conv', from, to);
+    cc.push(`conv.channel != 'whatsapp'`);
+    cc.push(`conv.id IN (SELECT DISTINCT conversation_id FROM timeline WHERE direction = 'incoming')`);
+    const convs = adapter.all(`SELECT conv.id FROM conversations conv WHERE ${cc.join(' AND ')}`, cp);
+    for (const c of convs) {
+      const primerMsg = adapter.one(
+        `SELECT metadata FROM timeline WHERE conversation_id = ? AND direction = 'incoming' ORDER BY created_at ASC LIMIT 1`,
+        [c.id]
+      );
+      if (!primerMsg) continue;
+      let meta = {};
+      try { meta = JSON.parse(primerMsg.metadata || '{}'); } catch (e) { meta = {}; }
+      if (meta.ad_id) {
+        pagado++;
+        bump(meta.ad_id, meta.campaign_name || meta.ad_name, false); // sin cruce de venta en este flujo aún
+      } else {
+        organico++;
+      }
+    }
+  } catch (e) { /* multicanal sin datos aún — no bloquea el resto del reporte */ }
+
+  const campanasList = Object.values(campanas).map((c) => ({
+    ...c,
+    conversion_pct: c.leads ? Math.round((c.vendidos / c.leads) * 100) : 0,
+  })).sort((a, b) => b.leads - a.leads);
+
+  return { campanas: campanasList, organico, pagado };
 }
 
 // --- Distribución horaria ---

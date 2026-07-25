@@ -53,10 +53,12 @@ def gen_destacado(project):
         text_with_shadow(draw, f"LOTES DESDE {project.area}", (60, y), Brand.font_inter(18))
         y += 35
     y += 10
-    if project.highlights:
+    # Se omite si no hay espacio seguro antes del CTA — mejor omitir un dato secundario
+    # que dibujarlo debajo del botón (el CTA nunca se tapa, es la acción de venta).
+    if project.highlights and y <= H - 100:
         text_with_shadow(draw, "  ·  ".join(project.highlights), (60, y), Brand.font_inter(14), Brand.GRIS)
         y += 35
-    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, y))
+    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, y), max_y=H - 40)
     return img
 
 def gen_inversionistas(project):
@@ -74,7 +76,7 @@ def gen_inversionistas(project):
     y += 10
     text_with_shadow(draw, "Precios desde " + (project.price or "consultar"), (60, y), Brand.font_inter(20), Brand.ORO)
     y += 50
-    draw_cta(draw, project.cta_secondary or "CONOCE EL PROYECTO", (60, y))
+    draw_cta(draw, project.cta_secondary or "CONOCE EL PROYECTO", (60, y), max_y=H - 40)
     return img
 
 def gen_familias(project):
@@ -91,7 +93,7 @@ def gen_familias(project):
     specs = f"{project.area or 'Área por definir'} · Desde {project.price or 'consultar'}"
     text_with_shadow(draw, specs.upper(), (60, y), Brand.font_inter(16), Brand.ORO)
     y += 40
-    draw_cta(draw, "MÁS INFORMACIÓN", (60, y))
+    draw_cta(draw, "MÁS INFORMACIÓN", (60, y), max_y=H - 40)
     return img
 
 def gen_confianza(project):
@@ -108,7 +110,7 @@ def gen_confianza(project):
     specs = "  ·  ".join((project.highlights or ["Obra activa", "Escritura pública", "Respaldo"])[:3])
     text_with_shadow(draw, specs, (60, y), Brand.font_inter(16))
     y += 40
-    draw_cta(draw, project.cta_secondary or "SOLICITA INFORMACIÓN", (60, y))
+    draw_cta(draw, project.cta_secondary or "SOLICITA INFORMACIÓN", (60, y), max_y=H - 40)
     return img
 
 def gen_precio(project):
@@ -126,10 +128,10 @@ def gen_precio(project):
         text_with_shadow(draw, f"Lotes desde {project.area}", (60, y), Brand.font_inter(16), Brand.GRIS)
         y += 30
     y += 10
-    if project.highlights:
+    if project.highlights and y <= H - 100:
         text_with_shadow(draw, "  ·  ".join(project.highlights), (60, y), Brand.font_inter(14), Brand.GRIS)
         y += 35
-    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, y))
+    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, y), max_y=H - 40)
     return img
 
 def gen_escasez(project):
@@ -148,5 +150,5 @@ def gen_escasez(project):
         y += 70
     text_with_shadow(draw, "Separación inmediata · No dejes pasar esta oportunidad", (60, y), Brand.font_inter(15))
     y += 40
-    draw_cta(draw, "AGENDA TU VISITA", (60, y), Brand.font_inter(17), bg=Brand.ORO, fg=Brand.NEGRO)
+    draw_cta(draw, "AGENDA TU VISITA", (60, y), Brand.font_inter(17), bg=Brand.ORO, fg=Brand.NEGRO, max_y=H - 40)
     return img

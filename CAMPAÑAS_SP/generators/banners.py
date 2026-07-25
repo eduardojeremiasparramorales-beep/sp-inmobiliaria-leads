@@ -26,7 +26,7 @@ def gen_facebook(project):
     img = add_gradient_left(img, 600, 230)
     draw = ImageDraw.Draw(img)
     add_logo(img, 60, 50, 30)
-    draw_badge(draw, "SP INMOBILIARIA", (50, 100))
+    draw_badge(draw, "LEONS GROUP", (50, 100))
     text_with_shadow(draw, "Lotes desde", (50, 150), Brand.font_cinzel(36))
     text_with_shadow(draw, project.price, (50, 200), Brand.font_cinzel(48), Brand.ORO)
     if project.location:
@@ -51,5 +51,5 @@ def gen_instagram(project):
     text_with_shadow(draw, project.area, (100, 400), Brand.font_inter(24))
     features = " | ".join(project.highlights[:3] if project.highlights else ["Urbanizado", "Escritura", "Valorización"])
     text_with_shadow(draw, features, (100, 460), Brand.font_inter(16), Brand.GRIS)
-    draw_cta(draw, project.cta, (100, 520))
+    draw_cta(draw, project.cta, (100, 520), max_y=H - 30)
     return img

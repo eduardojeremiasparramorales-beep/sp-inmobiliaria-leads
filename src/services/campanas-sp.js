@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -21,6 +21,19 @@ function detectPython() {
 
 const PYTHON = detectPython();
 
+// Chequeo al arranque del server (no perezoso): si Python no está disponible en el
+// contenedor, `docker logs` lo dice de inmediato en vez de esperar a que un admin genere
+// una campaña y reciba un error de spawn poco claro. Mismo patrón que isFfmpegAvailable()
+// de audio.js — spawnSync corto y cacheado, solo que este corre una vez al cargar el módulo.
+try {
+  const r = spawnSync(PYTHON, ['--version'], { timeout: 5000 });
+  if (r.status !== 0 || r.error) {
+    console.warn(`[CAMPANAS-SP] Python no disponible ("${PYTHON}") — el generador de creativos fallará hasta corregirlo. Revisar Dockerfile (python3/py3-pillow) o PYTHON_PATH.`);
+  }
+} catch (e) {
+  console.warn(`[CAMPANAS-SP] Python no disponible ("${PYTHON}") — el generador de creativos fallará hasta corregirlo. Revisar Dockerfile (python3/py3-pillow) o PYTHON_PATH.`);
+}
+
 function detectRoot() {
   // Linux (VM): /home/ubuntu/sp-crm/app
   const linuxDefault = '/home/ubuntu/sp-crm/app';
@@ -40,6 +53,106 @@ function getRunApiPath() {
   return path.join(getCampanasSpDir(), 'run_api.py');
 }
 
+// Prompts de fondo por sección — enfoque de venta de lotes/tierra en Colombia.
+// Se usan para generate_background() (Gemini), con la foto real del cliente como referencia
+// de estilo (nunca se inventa un lugar de la nada).
+const BACKGROUND_PROMPTS = {
+  portada: 'Fotografía aérea cinematográfica de un lote de tierra rural colombiano al atardecer, luz dorada cálida, composición amplia y épica, estilo editorial premium de bienes raíces de lujo.',
+  destacado: 'Fotografía de un terreno destacado con vegetación verde exuberante, cielo despejado, ángulo que transmite amplitud y oportunidad de inversión.',
+  inversionistas: 'Fotografía de terreno rural colombiano de gran extensión, luz natural cálida, composición que transmite solidez y potencial de valorización.',
+  familias: 'Fotografía cálida y acogedora de un entorno natural rural al atardecer, colores cálidos, sensación de hogar futuro y tranquilidad.',
+  confianza: 'Fotografía profesional de terreno con vías de acceso visibles y entorno cuidado, transmite seriedad, avance de obra y confiabilidad.',
+  precio: 'Fotografía atractiva y limpia de un lote de tierra, buena luz natural, colores tierra y verdes, composición que resalta valor.',
+  escasez: 'Fotografía dramática de terreno con luz intensa de atardecer, pocos elementos, foco en el paisaje, sensación de exclusividad.',
+  ubicacion: 'Fotografía de contexto geográfico y paisaje de la región, vías de acceso, entorno natural circundante, luz de día clara.',
+  beneficios: 'Fotografía de entorno natural con vegetación abundante, transmite amenidades y calidad de vida alrededor del proyecto.',
+};
+const IMAGE_KEYS = ['portada', 'destacado', 'inversionistas', 'familias', 'confianza', 'precio', 'escasez', 'ubicacion', 'beneficios'];
+const AI_BG_SIZE = { width: 1080, height: 1080 }; // base cuadrada: segura para recortar a 4:5/16:9/9:16 después
+
+function isAIEnabled() {
+  return !!(process.env.GOOGLE_API_KEY && process.env.GOOGLE_API_KEY.trim());
+}
+
+function generateBackground(prompt, outputPath, refImagePath, width, height) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(PYTHON, [getAiGeneratorPath()], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', (d) => { stdout += d.toString('utf-8'); });
+    proc.stderr.on('data', (d) => { stderr += d.toString('utf-8'); });
+    proc.on('close', (code) => {
+      if (code !== 0) return reject(new Error(stderr.slice(0, 400) || `exit ${code}`));
+      try {
+        const r = JSON.parse(stdout.trim());
+        if (r.ok) resolve(r.path); else reject(new Error(r.error || 'sin datos de imagen'));
+      } catch (e) { reject(new Error(`JSON parse: ${e.message}`)); }
+    });
+    proc.on('error', reject);
+    proc.stdin.write(JSON.stringify({
+      action: 'generate_background', prompt, output_path: outputPath,
+      width, height, ref_image: refImagePath,
+    }));
+    proc.stdin.end();
+  });
+}
+
+// Construye {key: rutaAbsoluta} para el pipeline de Pillow: primero categoriza las fotos
+// por contenido con Gemini (analyzeImages, ya existente) en vez de confiar en el orden
+// alfabético; luego intenta generar un fondo premium por sección con generate_background.
+// Nunca revienta la generación: cualquier fallo de IA cae en la foto real del cliente,
+// y si Gemini no está configurado, devuelve {} (Python usa su asignación alfabética original).
+async function buildImageAssignments(imagesDir, outputDir) {
+  if (!isAIEnabled() || !imagesDir || !fs.existsSync(imagesDir)) return {};
+  const files = fs.readdirSync(imagesDir).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
+  if (!files.length) return {};
+
+  const rawByKey = {};
+  try {
+    const fullPaths = files.map((f) => path.join(imagesDir, f));
+    const analysis = await analyzeImages(fullPaths);
+    const cat = (analysis && analysis.categorias) || {};
+    const used = new Set();
+    for (const k of IMAGE_KEYS) {
+      const arr = cat[k] || (k === 'beneficios' ? cat.amenidades : null);
+      const filename = Array.isArray(arr) ? arr[0] : null;
+      if (filename && files.includes(filename)) {
+        rawByKey[k] = path.join(imagesDir, filename);
+        used.add(filename);
+      }
+    }
+    // Fotos que Gemini no categorizó en ninguna sección: repartirlas entre los keys vacíos
+    // (mejor que dejarlos sin foto, y evita repetir una foto ya usada en otra sección).
+    const leftovers = files.filter((f) => !used.has(f));
+    let li = 0;
+    for (const k of IMAGE_KEYS) {
+      if (!rawByKey[k] && leftovers[li]) { rawByKey[k] = path.join(imagesDir, leftovers[li]); li++; }
+    }
+  } catch (e) {
+    console.error('[CAMPANAS-SP] analyzeImages falló, se usará asignación alfabética:', e.message);
+    return {};
+  }
+  if (!Object.keys(rawByKey).length) return {};
+
+  const aiDir = path.join(outputDir, '.ai');
+  fs.mkdirSync(aiDir, { recursive: true });
+  const finalByKey = {};
+  for (const k of Object.keys(rawByKey)) {
+    const outPath = path.join(aiDir, `${k}.png`);
+    if (fs.existsSync(outPath)) { finalByKey[k] = outPath; continue; } // cache: no regenerar si ya existe
+    try {
+      await generateBackground(BACKGROUND_PROMPTS[k] || BACKGROUND_PROMPTS.portada, outPath, rawByKey[k], AI_BG_SIZE.width, AI_BG_SIZE.height);
+      finalByKey[k] = fs.existsSync(outPath) ? outPath : rawByKey[k];
+    } catch (e) {
+      console.error(`[CAMPANAS-SP] fondo IA falló para "${k}", se usa la foto original:`, e.message);
+      finalByKey[k] = rawByKey[k];
+    }
+  }
+  return finalByKey;
+}
+
 async function generateAssets(projectId) {
   const project = store.getCampanasSpProject(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
@@ -49,6 +162,13 @@ async function generateAssets(projectId) {
   const imagesDir = project.images_dir;
   const outputDir = project.output_dir || path.join(getCampanasSpDir(), 'projects', project.slug, 'generated');
   fs.mkdirSync(outputDir, { recursive: true });
+
+  let imageAssignments = {};
+  try {
+    imageAssignments = await buildImageAssignments(imagesDir, outputDir);
+  } catch (e) {
+    console.error('[CAMPANAS-SP] buildImageAssignments falló, se usa asignación alfabética:', e.message);
+  }
 
   const input = {
     project: {
@@ -66,6 +186,7 @@ async function generateAssets(projectId) {
     images_dir: imagesDir,
     output_dir: outputDir,
     template: project.template || 'premium',
+    image_assignments: imageAssignments,
   };
 
   return new Promise((resolve, reject) => {
@@ -160,17 +281,87 @@ async function analyzeImages(imagePaths) {
   });
 }
 
+// Auto-completa el formulario de Campañas SP con datos REALES del proyecto/lotes del CRM
+// (nunca inventa nada — si un dato no existe en la BD, se deja vacío para que el admin lo
+// complete a mano). Es solo lectura: la copia de fotos ocurre al crear el proyecto (POST).
 function autoFillFromCRM(proyectoId) {
   const p = store.getProyectoById ? store.getProyectoById(Number(proyectoId)) : null;
-  if (!p) return { price: '', area: '', features: [] };
+  if (!p) return { price: '', area: '', features: [], highlights: [], disponibles: 0 };
+
+  const lotes = (store.getLotesByProyecto ? store.getLotesByProyecto(Number(proyectoId)) : []) || [];
+  const disponibles = lotes.filter((l) => l.estado === 'disponible');
+  const precios = disponibles.map((l) => Number(l.precio)).filter((n) => n > 0);
+  const priceMin = precios.length ? Math.min(...precios) : null;
+
+  // Área "típica": la moda de los lotes disponibles, no un promedio que podría no
+  // corresponder a ningún lote real (ej. dos lotes de 400m2 y uno de 900m2 → 400, no 566).
+  const areaCounts = {};
+  disponibles.forEach((l) => { if (l.area) areaCounts[l.area] = (areaCounts[l.area] || 0) + 1; });
+  const areaKeys = Object.keys(areaCounts);
+  const areaModa = areaKeys.length ? areaKeys.sort((a, b) => areaCounts[b] - areaCounts[a])[0] : null;
+
+  const highlights = [];
+  if (disponibles.length > 0 && disponibles.length <= 15) {
+    highlights.push(`Solo ${disponibles.length} lote${disponibles.length > 1 ? 's' : ''} disponible${disponibles.length > 1 ? 's' : ''}`);
+  }
+
   return {
+    proyecto_id: p.id,
     name: p.nombre || '',
     location: [p.ciudad, p.departamento].filter(Boolean).join(', '),
     description: p.descripcion || '',
-    price: p.precio_min ? '$' + Number(p.precio_min).toLocaleString('es-CO') : '',
-    area: '',
+    price: priceMin ? 'Desde $' + Math.round(priceMin).toLocaleString('es-CO') : '',
+    area: areaModa ? `${areaModa}m²` : '',
     features: [],
+    highlights,
+    disponibles: disponibles.length,
   };
+}
+
+// Resuelve una URL/entrada interna de foto (imagen_url de proyectos, item de
+// lotes.fotografias) a una ruta real en disco. Nunca lanza: devuelve null ante
+// cualquier formato desconocido, foto externa (http) o archivo inexistente —
+// una foto que no se puede resolver simplemente se omite, no rompe la importación.
+function resolveCrmPhotoPath(entry) {
+  try {
+    const mediaStore = require('./media');
+    const str = typeof entry === 'string' ? entry : (entry && (entry.url || entry.filename)) || '';
+    if (!str || /^https?:\/\//i.test(str)) return null;
+    const filename = path.basename(str.split('?')[0]);
+    const fp = mediaStore.getMediaPath(filename);
+    return fs.existsSync(fp) ? fp : null;
+  } catch (e) { return null; }
+}
+
+// Copia (nunca mueve) las fotos reales de un proyecto/lotes del CRM hacia la carpeta de
+// imágenes del proyecto publicitario — para no tener que resubirlas a mano. Devuelve
+// cuántas se copiaron; cualquier foto individual que falle se omite sin abortar el resto.
+function copyRealProjectPhotos(proyectoId, destDir) {
+  if (!store.getProyectoById) return 0;
+  const proyecto = store.getProyectoById(Number(proyectoId));
+  if (!proyecto) return 0;
+  fs.mkdirSync(destDir, { recursive: true });
+
+  const sources = [];
+  if (proyecto.imagen_url) sources.push(proyecto.imagen_url);
+  const lotes = (store.getLotesByProyecto ? store.getLotesByProyecto(Number(proyectoId)) : []) || [];
+  for (const lote of lotes) {
+    let fotos = [];
+    try { fotos = JSON.parse(lote.fotografias || '[]'); } catch (e) { fotos = []; }
+    for (const f of fotos) sources.push(f);
+  }
+
+  let copied = 0;
+  for (const src of sources) {
+    const fp = resolveCrmPhotoPath(src);
+    if (!fp) continue;
+    try {
+      const destName = `crm_${copied}_${path.basename(fp)}`;
+      fs.copyFileSync(fp, path.join(destDir, destName));
+      copied++;
+    } catch (e) { console.error('[CAMPANAS-SP] copiar foto del CRM falló:', e.message); }
+  }
+  return copied;
 }
 
 module.exports = {
@@ -182,4 +373,5 @@ module.exports = {
   getCampanasSpDir,
   analyzeImages,
   autoFillFromCRM,
+  copyRealProjectPhotos,
 };

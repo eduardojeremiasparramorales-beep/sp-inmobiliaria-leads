@@ -2817,7 +2817,19 @@ app.get('/api/campanas-sp/projects/dirs', auth.requireAdmin, (req, res) => {
 });
 
 app.post('/api/campanas-sp/projects', auth.requireAdmin, (req, res) => {
-  const p = store.createCampanasSpProject(req.body);
+  let p = store.createCampanasSpProject(req.body);
+  // Si viene vinculado a un proyecto real del CRM, copiar sus fotos (portada + lotes) para
+  // no tener que resubirlas a mano. Nunca bloquea la creación: si falla, el proyecto queda
+  // creado igual, solo sin fotos pre-cargadas (el admin puede subirlas manualmente después).
+  if (req.body && req.body.proyecto_id) {
+    try {
+      const imgDir = path.join(campanasSp.getProjectDir(p.slug), 'images');
+      const copiadas = campanasSp.copyRealProjectPhotos(req.body.proyecto_id, imgDir);
+      if (copiadas > 0 && !p.images_dir) {
+        p = store.updateCampanasSpProject(p.id, { images_dir: imgDir });
+      }
+    } catch (e) { console.error('[CAMPANAS-SP] copia de fotos del CRM falló:', e.message); }
+  }
   res.json(p);
 });
 
@@ -3160,10 +3172,27 @@ app.post('/api/admin/cleanup-orphans', auth.requireAdmin, (req, res) => {
 // Test webhook simulator (solo en desarrollo)
 app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
   if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'no_disponible' });
-  const { phone, name, message } = req.body;
+  const { phone, name, message, referral } = req.body;
   const customerPhone = phone || '+573001234500';
   const customerName = name || 'Cliente Prueba';
   const messageBody = message || 'Hola, me interesa recibir información sobre los lotes.';
+
+  const fakeMessage = {
+    from: customerPhone,
+    id: 'test_' + Date.now(),
+    type: 'text',
+    text: { body: messageBody },
+  };
+  // referral (F1, solo pruebas): simula un clic en anuncio de Meta Ads para verificar la
+  // atribución sin esperar tráfico real. { ad_id, ad_name, source_url, ctwa_clid } opcionales.
+  if (referral) {
+    fakeMessage.referral = {
+      source_id: referral.ad_id,
+      headline: referral.ad_name,
+      source_url: referral.source_url,
+      ctwa_clid: referral.ctwa_clid,
+    };
+  }
 
   const fakePayload = {
     object: 'whatsapp_business_account',
@@ -3174,12 +3203,7 @@ app.post('/api/test-webhook', auth.requireAdmin, (req, res) => {
           messaging_product: 'whatsapp',
           metadata: { phone_number_id: process.env.PHONE_NUMBER_ID },
           contacts: [{ profile: { name: customerName }, wa_id: customerPhone }],
-          messages: [{
-            from: customerPhone,
-            id: 'test_' + Date.now(),
-            type: 'text',
-            text: { body: messageBody },
-          }],
+          messages: [fakeMessage],
         },
       }],
     }],

@@ -25,9 +25,11 @@
   // --- Datos reales ---
   let m = await api('/api/metricas');
   let stats = await api('/api/stats');
+  let leadSources = await api('/api/reports/lead-sources'); // F1: atribución real de campaña
 
   if (!m) m = { total: 0, vendidos: 0, conversionGlobal: 0, tiempoRespuestaPromedio: null, respondidos: 0, sinResponder: 0, totalMensajes: 0, mensajesEntrantes: 0, porEtiqueta: {}, porEstado: {}, porVendedor: [] };
   if (!stats) stats = { totalVendedores: 0, vendedoresActivos: 0 };
+  if (!leadSources) leadSources = { campanas: [], organico: 0, pagado: 0 };
 
   const etq = m.porEtiqueta || {};
   const pipeline = [
@@ -130,6 +132,29 @@
                 </tr>`).join('') || `<tr><td colspan="5" class="t-dim3" style="text-align:center;padding:var(--s4)">Sin asesores aún</td></tr>`}
             </tbody>
           </table>
+        </div>
+
+        <!-- Top anuncios (F1: atribución real de campaña — de qué anuncio vienen los leads) -->
+        <div class="card rise rise-3" style="overflow:hidden">
+          <div class="u-between card--pad" style="padding-bottom:var(--s2)">
+            <div><div class="t-h3">Top anuncios</div><div class="t-dim3" style="font-size:12px">Qué anuncio trae más leads y cuáles venden de verdad</div></div>
+            <a class="btn btn--quiet btn--sm" href="/os/reportes.html">Ver reportes</a>
+          </div>
+          ${leadSources.campanas.length ? `
+          <table class="table">
+            <thead><tr><th>Anuncio</th><th>Leads</th><th>Vendidos</th><th>Conversión</th></tr></thead>
+            <tbody>
+              ${leadSources.campanas.slice(0, 6).map(c => `
+                <tr>
+                  <td style="font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.campaign.replace(/"/g,'&quot;')}">${c.campaign}</td>
+                  <td class="t-num">${fmt.n(c.leads)}</td>
+                  <td class="t-num t-dim">${fmt.n(c.vendidos)}</td>
+                  <td><span class="badge badge--${c.conversion_pct>=15?'green':c.conversion_pct>=5?'gold':'mute'}">${c.conversion_pct}%</span></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+          <div class="t-dim3" style="font-size:11.5px;padding:0 var(--s3) var(--s3)">${fmt.n(leadSources.pagado)} leads de campañas pagadas · ${fmt.n(leadSources.organico)} orgánicos</div>
+          ` : `<div class="t-dim3" style="font-size:13px;padding:0 var(--s3) var(--s3)">Aún no hay leads con anuncio identificado. Aparecerán aquí en cuanto lleguen clics desde Meta Ads.</div>`}
         </div>
       </div>
 
