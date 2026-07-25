@@ -1814,6 +1814,27 @@ function getConversationByChannelUser(channel, userId) {
   `, [channel, userId]);
 }
 
+function getConversationByLeadId(leadId) {
+  return one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
+}
+
+function getChannelUserIdForLead(leadId, channel) {
+  const lead = one('SELECT customer_phone FROM leads WHERE id = ?', [leadId]);
+  if (!lead) return null;
+  // Primero buscar en customer_channels por el canal específico
+  const ch = one(`
+    SELECT cc.channel_user_id
+    FROM conversations conv
+    JOIN customer_channels cc ON cc.customer_id = conv.customer_id AND cc.channel = conv.channel
+    WHERE conv.lead_id = ? AND conv.channel = ?
+    LIMIT 1
+  `, [leadId, channel]);
+  if (ch) return ch.channel_user_id;
+  // Fallback: si el canal es whatsapp, usar el teléfono del lead
+  if (channel === 'whatsapp') return lead.customer_phone;
+  return null;
+}
+
 function updateConversationStatus(id, status) {
   run('UPDATE conversations SET status = ?, updated_at = datetime(\'now\') WHERE id = ?', [status, id]);
 }
@@ -2551,7 +2572,7 @@ module.exports = {
   linkChannelToCustomer, getCustomerChannels, getCustomers, updateCustomer, deleteCustomer,
   getActiveConversationsByCustomer,
   createConversation, getConversationById, getConversationsByVendedorId,
-  getConversationByChannelUser, updateConversationStatus, updateConversationTag,
+   getConversationByChannelUser, getConversationByLeadId, getChannelUserIdForLead, updateConversationStatus, updateConversationTag,
   updateConversationPriority, getConversations, getConversationCount,
   addTimelineEvent, getTimelineByConversation, getLastMessageByConversation,
   syncLeadToConversation,

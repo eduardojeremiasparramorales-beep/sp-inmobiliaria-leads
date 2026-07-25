@@ -48,6 +48,7 @@ class MessageRouter {
     }
 
     // 5. Asignar vendedor si no tiene
+    let assignedVendedor = null;
     if (!conversation.assigned_to_id) {
       const activos = store.getVendedoresActivos();
       if (activos.length > 0) {
@@ -57,6 +58,47 @@ class MessageRouter {
           [siguiente.id, 'asignado', conversation.id]
         );
         conversation = store.getConversationById(conversation.id);
+        assignedVendedor = siguiente;
+      }
+    } else {
+      assignedVendedor = store.getVendedores().find(v => v.id === conversation.assigned_to_id) || null;
+    }
+
+    // 5b. Para canales no-WhatsApp: crear lead en tabla legacy para que el vendedor lo vea en su panel
+    let leadId = conversation.lead_id || null;
+    if (channel !== 'whatsapp') {
+      // Buscar si ya hay un lead vinculado a esta conversación o por teléfono del cliente
+      const customerPhone = customer.phone || '';
+      const existingLead = customerPhone
+        ? store.getLeadByCustomerPhone(customerPhone)
+        : null;
+      if (existingLead) {
+        leadId = existingLead.id;
+        // Vincular conversación al lead si no estaba
+        if (!conversation.lead_id) {
+          require('../db/adapter').run('UPDATE conversations SET lead_id = ? WHERE id = ?', [leadId, conversation.id]);
+        }
+      } else if (assignedVendedor) {
+        // Crear lead nuevo para que el vendedor lo vea
+        const nombreCliente = meta.name || customer.name || 'Cliente';
+        try {
+          const phoneForLead = customerPhone || `messenger_${fromUserId}`;
+          const result = store.saveLead(phoneForLead, nombreCliente, messageBody || '[archivo]');
+          leadId = result.leadId;
+          if (result.isNew) {
+            store.assignLeadToVendedor(leadId, assignedVendedor);
+          }
+          // Guardar también en tabla messages (legacy) para consistencia
+          store.saveMessage(leadId, fromUserId, assignedVendedor.telefono || '', messageBody || '[archivo]', 'incoming');
+          // Vincular conversación al lead
+          require('../db/adapter').run('UPDATE conversations SET lead_id = ? WHERE id = ?', [leadId, conversation.id]);
+          // Sync a la conversación
+          store.syncLeadToConversation(store.getLeadById(leadId), {
+            direction: 'incoming', body: messageBody || '[archivo]', fromNumber: fromUserId, toNumber: assignedVendedor.telefono || '',
+          });
+        } catch (e) {
+          console.error(`[ROUTER] Error creando lead para ${channel}:`, e.message);
+        }
       }
     }
 
@@ -82,36 +124,46 @@ class MessageRouter {
     );
     conversation = store.getConversationById(conversation.id);
 
-    // 7-8. Emitir Socket.IO / SSE al vendedor asignado
+    // 7-8. Emitir SSE al vendedor asignado (evento 'nuevo_mensaje' para que el panel del vendedor lo detecte)
     const payload = {
       conversationId: conversation.id,
+      leadId: leadId,
+      channel,
+      body: messageBody,
+      customerName: customer.name,
+      tipo: 'mensaje_cliente',
+      ts: Date.now(),
+    };
+    const payloadAdmin = {
+      conversationId: conversation.id,
+      leadId: leadId,
       channel,
       body: messageBody,
       customerName: customer.name,
       ts: Date.now(),
     };
     if (conversation.assigned_to_id) {
-      emit('vendedor', conversation.assigned_to_id, 'message:new', payload);
+      emit('vendedor', conversation.assigned_to_id, 'nuevo_mensaje', payload);
       // Notificación persistente + push (los mensajes de WhatsApp ya notifican
       // por el camino legacy assigner.notificarPanel — no duplicar)
       if (channel !== 'whatsapp') {
         try {
           const canal = channel === 'messenger' ? 'Messenger' : channel === 'instagram' ? 'Instagram' : channel;
           require('./notify').notify({
-            vendedorId: conversation.assigned_to_id, tipo: 'mensaje_cliente', leadId: conversation.lead_id || null, push: true,
+            vendedorId: conversation.assigned_to_id, tipo: 'mensaje_cliente', leadId: leadId, push: true,
             titulo: `💬 ${customer.name || 'Cliente'} (${canal})`,
             cuerpo: String(messageBody || '[archivo]').slice(0, 120),
           }).catch(() => {});
         } catch (e) { /* notify opcional */ }
       }
     }
-    emit('admins', null, 'message:new', payload);
+    emit('admins', null, 'nuevo_mensaje', payloadAdmin);
 
     // 9. Workflow
     evaluateWorkflow('message:incoming', { conversation, message, customer });
 
     // 10. Retornar
-    return { conversation, message };
+    return { conversation, message, leadId };
   }
 
   static async routeOutgoing(conversationId, vendedorId, text) {
@@ -160,8 +212,11 @@ class MessageRouter {
     }
 
     // 6. Emitir SSE
-    const payload = { conversationId: conversation.id, channel: conversation.channel, body: text, ts: Date.now() };
-    emit('admins', null, 'message:new', payload);
+    const payload = { conversationId: conversation.id, leadId: conversation.lead_id || null, channel: conversation.channel, body: text, tipo: 'respuesta_panel', ts: Date.now() };
+    if (conversation.assigned_to_id) {
+      emit('vendedor', conversation.assigned_to_id, 'nuevo_mensaje', payload);
+    }
+    emit('admins', null, 'nuevo_mensaje', payload);
 
     // 6b. Notificar push al admin cuando el vendedor responde
     try {

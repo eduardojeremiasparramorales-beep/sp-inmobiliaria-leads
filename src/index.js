@@ -1146,25 +1146,46 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
     return res.status(403).json({ error: 'sin_permiso' });
   }
 
+  // Detectar el canal del lead: buscar la conversación asociada
+  const conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
+  const channel = conversation ? conversation.channel : 'whatsapp';
+
   try {
-    const mensajeConFirma = buildMensajeConFirma(String(mensaje), req.session.nombre);
-    const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
-    const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
-    store.saveMessage(lead.id, fromNumber, lead.customer_phone, String(mensaje), 'outgoing', null, replyToId, wamid, 'sent');
+    const textoParaEnviar = String(mensaje);
+
+    if (channel === 'whatsapp') {
+      // WhatsApp: usar sendMessageSmart (ventana 24h + template auto)
+      const mensajeConFirma = buildMensajeConFirma(textoParaEnviar, req.session.nombre);
+      const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
+      const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
+      store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, wamid, 'sent');
+    } else {
+      // Messenger / Instagram: usar el adapter del canal
+      const { getAdapter } = require('./channels');
+      const adapter = getAdapter(channel);
+      if (!adapter) throw new Error(`Canal ${channel} no configurado`);
+
+      const channelUserId = store.getChannelUserIdForLead ? store.getChannelUserIdForLead(lead.id, channel) : null;
+      if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channel}`);
+
+      await adapter.sendMessage(channelUserId, textoParaEnviar);
+      store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, null, 'sent');
+    }
+
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') {
       store.updateLeadStatus(lead.id, 'contactado');
     }
-    store.syncLeadToConversation(store.getLeadById(lead.id), { direction: 'outgoing', body: String(mensaje), fromNumber, toNumber: lead.customer_phone });
+    store.syncLeadToConversation(store.getLeadById(lead.id), { direction: 'outgoing', body: textoParaEnviar, fromNumber, toNumber: lead.customer_phone });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
-    res.json({ ok: true, templateSent: smartResult.templateSent || false });
+    res.json({ ok: true, templateSent: false });
   } catch (e) {
     console.error('Error enviando respuesta desde panel:', e.message);
     const detail = e.windowClosed ? 'window_closed_no_template' : e.message;
-    res.status(502).json({ error: 'error_whatsapp', detalle: detail });
+    res.status(502).json({ error: 'error_envio', detalle: detail });
   }
 });
 
@@ -1249,54 +1270,73 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
     return res.status(403).json({ error: 'sin_permiso' });
   }
 
+  // Detectar canal
+  const conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
+  const channel = conversation ? conversation.channel : 'whatsapp';
+
   let tipo = 'document';
   if (mime.startsWith('image/')) tipo = 'image';
   else if (mime.startsWith('audio/')) tipo = 'audio';
   else if (mime.startsWith('video/')) tipo = 'video';
-  // Stickers: webp marcado explícitamente desde el panel (WhatsApp: 512x512 estático <100KB)
   if (req.body.sticker === true && mime === 'image/webp') tipo = 'sticker';
 
   try {
     let buffer = Buffer.from(dataBase64, 'base64');
     if (buffer.length > CFG.MAX_FILE_SIZE) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
-    let displayMime = mime, displayFilename = filename, sendMime = mime, sendFilename = filename;
-    if (tipo === 'audio') {
-      // Guardar el formato ORIGINAL del navegador (webm/mp4) para reproducción en el CRM
-      // WhatsApp solo acepta OGG/Opus; convertimos solo para el envío
-      displayFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
-      const conv2 = await convertToOggOpus(buffer, mime);
-      buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
-      displayMime = mime; // El CRM reproduce el formato original del navegador
-    }
     const displayBody = caption || `[${tipo}]`;
-    const storedFilename = tipo === 'audio' ? displayFilename : mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
-    const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
-    if (!mediaId) return res.status(502).json({ error: 'error_upload', detalle: 'WhatsApp no retornó media ID' });
-    await new Promise(r => setTimeout(r, CFG.MEDIA_PROPAGATION_DELAY));
-    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, sendFilename);
-    if (!mediaResult || !mediaResult.messages || !mediaResult.messages[0]) {
-      console.error('sendMedia no retornó wamid:', JSON.stringify(mediaResult));
-      return res.status(502).json({ error: 'error_envio_whatsapp' });
-    }
-    const wamid = mediaResult.messages[0].id;
-
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
-    store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
-      media_type: tipo, media_id: mediaId, media_mime: displayMime, media_filename: storedFilename,
-    }, replyToId, wamid, 'sent');
+
+    if (channel === 'whatsapp') {
+      let displayMime = mime, displayFilename = filename, sendMime = mime, sendFilename = filename;
+      if (tipo === 'audio') {
+        displayFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
+        const conv2 = await convertToOggOpus(buffer, mime);
+        buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
+        displayMime = mime;
+      }
+      const storedFilename = tipo === 'audio' ? displayFilename : mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
+      const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
+      if (!mediaId) return res.status(502).json({ error: 'error_upload', detalle: 'WhatsApp no retornó media ID' });
+      await new Promise(r => setTimeout(r, CFG.MEDIA_PROPAGATION_DELAY));
+      const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, sendFilename);
+      if (!mediaResult || !mediaResult.messages || !mediaResult.messages[0]) {
+        return res.status(502).json({ error: 'error_envio_whatsapp' });
+      }
+      const wamid = mediaResult.messages[0].id;
+      store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
+        media_type: tipo, media_id: mediaId, media_mime: displayMime, media_filename: storedFilename,
+      }, replyToId, wamid, 'sent');
+    } else {
+      // Messenger / Instagram: usar adapter
+      const { getAdapter } = require('./channels');
+      const adapter = getAdapter(channel);
+      if (!adapter) throw new Error(`Canal ${channel} no configurado`);
+      const channelUserId = store.getChannelUserIdForLead(lead.id, channel);
+      if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channel}`);
+
+      // Subir media: Messenger/Instagram aceptan URLs, no media_ids como WhatsApp.
+      // Guardamos en disco y servimos vía URL pública firmada.
+      const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename || `media-${Date.now()}`);
+      const publicUrl = `${process.env.BASE_URL || 'https://spcrm.duckdns.org'}/api/public/media/${storedFilename}?token=${mediaStore.signMediaToken(storedFilename)}`;
+      await adapter.sendMedia(channelUserId, publicUrl, tipo, caption);
+      store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
+        media_type: tipo, media_id: null, media_mime: mime, media_filename: storedFilename,
+      }, replyToId, null, 'sent');
+    }
+
     store.setFirstResponse(lead.id);
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
     store.syncLeadToConversation(store.getLeadById(lead.id), {
       direction: 'outgoing', body: displayBody, fromNumber, toNumber: lead.customer_phone,
-      media: { media_type: tipo, media_id: mediaId, media_mime: displayMime, media_filename: storedFilename },
+      media: { media_type: tipo, media_id: null, media_mime: mime, media_filename: null },
     });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     res.json({ ok: true });
   } catch (e) {
     console.error('Error enviando media desde panel:', e.message);
-    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+    res.status(502).json({ error: 'error_envio', detalle: e.message });
   }
 });
 
