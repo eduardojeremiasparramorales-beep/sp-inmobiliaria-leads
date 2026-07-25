@@ -203,7 +203,18 @@ async function generateAssets(projectId) {
 
     proc.on('close', (code) => {
       if (code !== 0) {
-        const errMsg = `Python exit code ${code}: ${stderr.slice(0, 500)}`;
+        // run_api.py, en sus validaciones tempranas (images_dir/output_dir faltante, JSON
+        // inválido), imprime un JSON claro por STDOUT antes de salir con código != 0 — no
+        // es un traceback por stderr. Priorizar ese mensaje evita errores mudos como
+        // "Python exit code 1: " sin nada más cuando stderr viene vacío.
+        let pyError = null;
+        try {
+          const parsed = JSON.parse(stdout.trim());
+          if (parsed && parsed.error) pyError = parsed.error;
+        } catch (e) { /* stdout no era JSON — nos quedamos con stderr */ }
+        const errMsg = pyError
+          ? `Python: ${pyError}`
+          : `Python exit code ${code}: ${stderr.slice(0, 500) || '(sin salida de error — revisar docker logs)'}`;
         store.updateCampanasSpProject(projectId, { status: 'error', error: errMsg });
         return reject(new Error(errMsg));
       }
