@@ -35,8 +35,15 @@ class MessageRouter {
     if (!customer) {
       customer = store.createCustomer(meta.name || 'Cliente', channel === 'whatsapp' ? fromUserId : '', meta.profile_pic || '');
       store.linkChannelToCustomer(customer.id, channel, fromUserId, meta.username || '');
-    } else if (meta.profile_pic) {
-      store.setCustomerAvatarIfEmpty(customer.id, meta.profile_pic);
+    } else {
+      // Actualizar nombre y avatar si el customer tiene nombre genérico y recibimos uno real
+      const realName = meta.name || null;
+      if (realName && realName !== 'Cliente' && (!customer.name || customer.name === 'Cliente')) {
+        store.updateCustomer(customer.id, { name: realName });
+      }
+      if (meta.profile_pic) {
+        store.setCustomerAvatarIfEmpty(customer.id, meta.profile_pic);
+      }
     }
 
     // 3. Buscar conversación activa
@@ -74,6 +81,11 @@ class MessageRouter {
         : null;
       if (existingLead) {
         leadId = existingLead.id;
+        // Actualizar nombre si el lead tiene nombre genérico y recibimos uno real
+        const realName = meta.name || customer.name;
+        if (realName && realName !== 'Cliente' && (!existingLead.customer_name || existingLead.customer_name === 'Cliente')) {
+          store.setLeadNombre(leadId, realName);
+        }
         // Vincular conversación al lead si no estaba
         if (!conversation.lead_id) {
           require('../db/adapter').run('UPDATE conversations SET lead_id = ? WHERE id = ?', [leadId, conversation.id]);
@@ -87,6 +99,10 @@ class MessageRouter {
           leadId = result.leadId;
           if (result.isNew) {
             store.assignLeadToVendedor(leadId, assignedVendedor);
+          }
+          // Actualizar nombre si el lead ya existía con nombre genérico
+          if (!result.isNew && nombreCliente !== 'Cliente') {
+            store.setLeadNombre(leadId, nombreCliente);
           }
           // Guardar también en tabla messages (legacy) para consistencia
           store.saveMessage(leadId, fromUserId, assignedVendedor.telefono || '', messageBody || '[archivo]', 'incoming');
@@ -171,6 +187,7 @@ class MessageRouter {
     const channels = store.getCustomerChannels(conversation.customer_id)
       .filter(c => c.channel === conversation.channel);
     const channelUserId = channels.length > 0 ? channels[0].channel_user_id : (customer ? customer.phone : null);
+    console.log(`[ROUTER out] conv=${conversationId} channel=${conversation.channel} channelUserId=${channelUserId} channels_found=${channels.length}`);
     if (!channelUserId) throw new Error('No se encontró channel_user_id para la conversación');
 
     // 2. Obtener adapter del canal
@@ -185,7 +202,14 @@ class MessageRouter {
       const smartResult = await sendMessageSmart(channelUserId, text, leadId);
       templateSent = smartResult.templateSent || false;
     } else {
-      await adapter.sendMessage(channelUserId, text);
+      try {
+        console.log(`[ROUTER out] Enviando por ${conversation.channel} a ${channelUserId}...`);
+        await adapter.sendMessage(channelUserId, text);
+        console.log(`[ROUTER out] Enviado OK por ${conversation.channel}`);
+      } catch (e) {
+        console.error(`[ROUTER out] Error enviando por ${conversation.channel}:`, e.response ? JSON.stringify(e.response.data) : e.message);
+        throw e;
+      }
     }
 
     // 4. Guardar en timeline

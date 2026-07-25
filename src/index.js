@@ -1147,8 +1147,15 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
   }
 
   // Detectar el canal del lead: buscar la conversación asociada
-  const conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
-  const channel = conversation ? conversation.channel : 'whatsapp';
+  let conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
+  let channel = conversation ? conversation.channel : 'whatsapp';
+
+  // Fallback: si no hay conversación vinculada, detectar por el prefijo del teléfono
+  if (!conversation && lead.customer_phone) {
+    if (lead.customer_phone.startsWith('messenger_')) channel = 'messenger';
+    else if (lead.customer_phone.startsWith('instagram_')) channel = 'instagram';
+  }
+  console.log(`[RESponder] lead=${lead.id} channel=${channel} convId=${conversation ? conversation.id : 'N/A'} lead_phone=${lead.customer_phone}`);
 
   try {
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
@@ -1168,9 +1175,17 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
       if (!adapter) throw new Error(`Canal ${channel} no configurado`);
 
       const channelUserId = store.getChannelUserIdForLead ? store.getChannelUserIdForLead(lead.id, channel) : null;
+      console.log(`[RESPONDER] lead=${lead.id} channel=${channel} channelUserId=${channelUserId}`);
       if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channel}`);
 
-      await adapter.sendMessage(channelUserId, textoParaEnviar);
+      try {
+        await adapter.sendMessage(channelUserId, textoParaEnviar);
+        console.log(`[RESPONDER] Enviado OK por ${channel} a ${channelUserId}`);
+      } catch (e) {
+        const errDetail = e.response ? JSON.stringify(e.response.data) : e.message;
+        console.error(`[RESPONDER] Error enviando por ${channel}:`, errDetail);
+        throw e;
+      }
       store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, null, 'sent');
     }
 

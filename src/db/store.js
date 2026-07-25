@@ -1830,6 +1830,15 @@ function getChannelUserIdForLead(leadId, channel) {
     LIMIT 1
   `, [leadId, channel]);
   if (ch) return ch.channel_user_id;
+  // Fallback: buscar directamente en customer_channels sin depender de conversations.lead_id
+  if (lead.customer_phone && lead.customer_phone.startsWith('messenger_')) {
+    const psid = lead.customer_phone.replace('messenger_', '');
+    if (psid) return psid;
+  }
+  if (lead.customer_phone && lead.customer_phone.startsWith('instagram_')) {
+    const igId = lead.customer_phone.replace('instagram_', '');
+    if (igId) return igId;
+  }
   // Fallback: si el canal es whatsapp, usar el teléfono del lead
   if (channel === 'whatsapp') return lead.customer_phone;
   return null;
