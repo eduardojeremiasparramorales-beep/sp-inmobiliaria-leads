@@ -1,10 +1,11 @@
 import os
 import json
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 from .brand import Brand
 from .renderer import (
-    load_and_crop, add_gradient, add_logo, text_with_shadow,
-    draw_badge, draw_cta, draw_gold_line_center
+    load_and_crop, add_gradient, add_gradient_left, add_logo, text_with_shadow,
+    draw_badge, draw_cta, draw_gold_line_center, draw_diagonal_gold,
+    draw_feature_card
 )
 
 def generar_todas(project, out_dir, template=None):
@@ -20,118 +21,187 @@ def load_template(name):
             return tpls[name]
     return None
 
-def apply_template_colors(template, draw, project):
-    if not template:
-        return Brand.ORO, Brand.VERDE, Brand.MARFIL, Brand.NEGRO, Brand.GRIS
-    c = template["colors"]
-    return tuple(c["oro"]), tuple(c["verde"]), tuple(c["marfil"]), tuple(c["negro"]), tuple(c["gris"])
+def get_colors(template):
+    if template:
+        c = template["colors"]
+        return tuple(c["oro"]), tuple(c["verde"]), tuple(c["marfil"]), tuple(c["negro"]), tuple(c["gris"])
+    return Brand.ORO, Brand.VERDE, Brand.MARFIL, Brand.NEGRO, Brand.GRIS
 
 def get_font(template, key, size):
     if template:
         fname = template["fonts"].get(key, "Cinzel.ttf")
         return Brand.get_font(fname, size)
-    return Brand.font_cinzel(size)
+    if key == "titulo":
+        return Brand.font_cinzel(size)
+    elif key == "subtitulo":
+        return Brand.font_cinzel(size)
+    return Brand.font_inter(size)
 
 def gen_vertical(project, out_dir, template_name=None):
     W, H = 1080, 1350
     tpl = load_template(template_name) if template_name else None
-    ORO, VERDE, MARFIL, NEGRO, GRIS = apply_template_colors(tpl, None, project)
+    ORO, VERDE, MARFIL, NEGRO, GRIS = get_colors(tpl)
 
+    # Fondo: foto del proyecto con gradiente sutil
     path = project.get_image("portada") or project.get_image("destacado")
-    if not path:
-        img = Image.new("RGB", (W, H), tuple(tpl["colors"]["negro"]) if tpl else Brand.NEGRO)
-    else:
+    if path:
         img = load_and_crop(path, W, H)
-    img = add_gradient(img, 0.2, 0.5)
+        img = add_gradient(img, 0.3, 0.45)
+    else:
+        img = Image.new("RGB", (W, H), NEGRO)
+
+    # Línea diagonal dorada (estilo Porvenir)
+    img = draw_diagonal_gold(img, ORO, width=3)
+
     draw = ImageDraw.Draw(img)
 
-    add_logo(img, 100, (W - 100) // 2, 50, center=True)
+    # Logo arriba-centro
+    add_logo(img, 80, (W - 80) // 2, 35, center=True)
+
+    # Badge "RESPALDO SP" arriba-derecha (si el proyecto lo tiene)
+    badge_x = W - 170
+    badge_y = 35
+    draw_badge(draw, "RESPALDO SP", (badge_x, badge_y), Brand.font_cinzel(11), bg=ORO, fg=NEGRO, radius=12)
 
     cx = W // 2
-    draw_gold_line_center(draw, cx, 175, 80)
 
-    text_with_shadow(draw, project.name, (60, 200), get_font(tpl, "titulo", 56), MARFIL)
+    # Línea dorada decorativa
+    draw_gold_line_center(draw, cx, 160, 60)
+
+    # Nombre del proyecto — grande y dorado
+    title_font = get_font(tpl, "titulo", 72)
+    text_with_shadow(draw, project.name.upper(), (60, 185), title_font, MARFIL, shadow_blur=6)
+
+    # Subtítulo
     if project.location:
-        text_with_shadow(draw, project.location, (60, 270), get_font(tpl, "subtitulo", 26), ORO)
+        sub_font = get_font(tpl, "subtitulo", 24)
+        text_with_shadow(draw, project.location.upper(), (60, 275), sub_font, ORO, shadow_blur=3)
 
-    draw_gold_line_center(draw, cx, 330, 120)
+    # Línea separadora
+    draw_gold_line_center(draw, cx, 320, 100)
 
-    y = 370
+    # Precio — grande
+    y = 350
     if project.price:
-        text_with_shadow(draw, project.price, (60, y), get_font(tpl, "titulo", 72), ORO)
-        y += 85
+        price_font = get_font(tpl, "titulo", 64)
+        text_with_shadow(draw, project.price, (60, y), price_font, ORO, shadow_blur=5)
+        y += 80
+
+    # Área
     if project.area:
-        text_with_shadow(draw, project.area, (60, y), get_font(tpl, "cuerpo", 22), MARFIL)
+        area_font = get_font(tpl, "cuerpo", 22)
+        text_with_shadow(draw, f"LOTES DESDE {project.area}", (60, y), area_font, MARFIL)
         y += 35
 
+    # Highlights como texto
     if project.highlights:
-        text_with_shadow(draw, "  |  ".join(project.highlights), (60, y), get_font(tpl, "cuerpo", 16), GRIS)
-        y += 50
+        hl_font = get_font(tpl, "cuerpo", 16)
+        text_with_shadow(draw, "  ·  ".join(project.highlights), (60, y), hl_font, GRIS)
+        y += 45
 
-    y += 30
-    draw_gold_line_center(draw, cx, y, 60)
-    y += 30
-    text_with_shadow(draw, "BENEFICIOS", (60, y), get_font(tpl, "subtitulo", 16), ORO)
-    y += 35
-
-    features = project.features[:6] if project.features else [
-        "Urbanización completa", "Vías pavimentadas",
-        "Servicios públicos", "Ubicación privilegiada",
-        "Alta valorización", "Escritura pública"
+    # Features como cards estilo Porvenir (fila de 4)
+    y += 20
+    features = project.features[:4] if project.features else [
+        "URBANIZADO", "VÍAS PAVIMENTADAS", "ESCRITURAS", "AMENIDADES"
     ]
-    col_x = [60, 60 + W // 2]
-    for i, feat in enumerate(features):
-        x = col_x[i % 2]
-        fy = y + (i // 2) * 55
-        draw.rounded_rectangle([x, fy, x + W // 2 - 30, fy + 42], radius=8,
-                               fill=(*ORO[:3], 25) if tpl else (200, 164, 90, 25),
-                               outline=ORO)
-        text_with_shadow(draw, f"  {feat}", (x + 10, fy + 10), get_font(tpl, "cuerpo", 18), MARFIL)
+    icon_symbols = ["●", "■", "◆", "★"]
+    card_w = (W - 120 - 30) // 4  # 4 cards con gaps
+    for i, feat in enumerate(features[:4]):
+        x = 60 + i * (card_w + 10)
+        draw_feature_card(draw, feat, (x, y), Brand.font_inter(12), icon_symbols[i], card_w, 70)
 
-    y_bottom = H - 110
-    draw_gold_line_center(draw, cx, y_bottom, 200)
-    y_bottom += 20
-    draw_cta(draw, project.cta, (cx - 160, y_bottom), get_font(tpl, "cuerpo", 20),
-             bg=VERDE, fg=MARFIL)
-    y_bottom += 50
-    text_with_shadow(draw, project.whatsapp, (cx - 140, y_bottom), get_font(tpl, "cuerpo", 18), ORO)
+    # Sección inferior oscura
+    y_bottom = H - 200
+    draw.line([(0, y_bottom), (W, y_bottom)], fill=ORO, width=1)
+
+    # Tagline
+    tagline_font = get_font(tpl, "cuerpo", 16)
+    tagline = "UN ESPACIO DISEÑADO PARA TU TRANQUILIDAD,\nTU INVERSIÓN Y TU FUTURO."
+    for i, line in enumerate(tagline.split("\n")):
+        text_with_shadow(draw, line, (60, y_bottom + 25 + i * 24), tagline_font, MARFIL)
+
+    # Logo grande abajo-centro
+    logo_y = y_bottom + 90
+    add_logo(img, 100, (W - 100) // 2, logo_y, center=True)
+
+    # Sub-logo text
+    sublogo_font = get_font(tpl, "cuerpo", 12)
+    text_with_shadow(draw, "ASESORES COMERCIALES", (cx - 85, logo_y + 110), sublogo_font, GRIS)
+
+    # CTAs abajo
+    cta_y = H - 60
+    # WhatsApp izquierda
+    wa_font = get_font(tpl, "cuerpo", 13)
+    text_with_shadow(draw, "AGENDA TU VISITA", (60, cta_y - 25), wa_font, MARFIL)
+    text_with_shadow(draw, "Y CONOCE " + project.name.upper(), (60, cta_y - 5), wa_font, GRIS)
+
+    # Instagram derecha
+    text_with_shadow(draw, "ASESORÍA PERSONALIZADA", (W - 280, cta_y - 25), wa_font, MARFIL)
+    text_with_shadow(draw, "DURANTE TODO EL PROCESO.", (W - 280, cta_y - 5), wa_font, GRIS)
+
+    # Iconos de WhatsApp e Instagram
+    icon_font = get_font(tpl, "cuerpo", 18)
+    text_with_shadow(draw, "✉", (40, cta_y - 15), icon_font, MARFIL)
+    text_with_shadow(draw, "◎", (W - 50, cta_y - 15), icon_font, MARFIL)
 
     img.convert("RGB").save(os.path.join(out_dir, "portada-vertical.png"), "PNG", quality=95)
 
 def gen_horizontal(project, out_dir, template_name=None):
     W, H = 1920, 1080
     tpl = load_template(template_name) if template_name else None
-    ORO, VERDE, MARFIL, NEGRO, GRIS = apply_template_colors(tpl, None, project)
+    ORO, VERDE, MARFIL, NEGRO, GRIS = get_colors(tpl)
 
+    # Fondo: foto del proyecto con gradiente izquierda
     path = project.get_image("portada") or project.get_image("destacado")
-    if not path:
-        img = Image.new("RGB", (W, H), tuple(tpl["colors"]["negro"]) if tpl else Brand.NEGRO)
-    else:
+    if path:
         img = load_and_crop(path, W, H)
-    from .renderer import add_gradient_left
-    img = add_gradient_left(img, 800, 220)
+        img = add_gradient_left(img, 800, 220)
+    else:
+        img = Image.new("RGB", (W, H), NEGRO)
+
     draw = ImageDraw.Draw(img)
 
-    add_logo(img, 90, 60, 40)
+    # Logo arriba-izquierda
+    add_logo(img, 70, 50, 30)
 
-    text_with_shadow(draw, project.name, (60, 160), get_font(tpl, "titulo", 50), MARFIL)
+    # Badge
+    draw_badge(draw, "RESPALDO SP", (W - 180, 30), Brand.font_cinzel(11), bg=ORO, fg=NEGRO, radius=12)
+
+    # Nombre del proyecto
+    title_font = get_font(tpl, "titulo", 64)
+    text_with_shadow(draw, project.name.upper(), (60, 140), title_font, MARFIL, shadow_blur=6)
+
+    # Ubicación
     if project.location:
-        text_with_shadow(draw, project.location, (60, 225), get_font(tpl, "subtitulo", 24), ORO)
+        sub_font = get_font(tpl, "subtitulo", 26)
+        text_with_shadow(draw, project.location.upper(), (60, 220), sub_font, ORO)
 
-    y = 310
+    # Precio
+    y = 300
     if project.price:
-        text_with_shadow(draw, project.price, (60, y), get_font(tpl, "titulo", 64), ORO)
-        y += 80
+        price_font = get_font(tpl, "titulo", 72)
+        text_with_shadow(draw, project.price, (60, y), price_font, ORO, shadow_blur=5)
+        y += 85
+
+    # Área
     if project.area:
-        text_with_shadow(draw, f"Desde {project.area}", (60, y), get_font(tpl, "cuerpo", 20), MARFIL)
-        y += 35
+        area_font = get_font(tpl, "cuerpo", 22)
+        text_with_shadow(draw, f"LOTES DESDE {project.area}", (60, y), area_font, MARFIL)
 
-    if project.highlights:
-        text_with_shadow(draw, "  ·  ".join(project.highlights), (60, y), get_font(tpl, "cuerpo", 16), GRIS)
+    # Features abajo
+    y_feat = H - 180
+    features = project.features[:4] if project.features else ["URBANIZADO", "VÍAS", "ESCRITURAS", "AMENIDADES"]
+    icon_symbols = ["●", "■", "◆", "★"]
+    card_w = 250
+    for i, feat in enumerate(features[:4]):
+        x = 60 + i * (card_w + 15)
+        draw_feature_card(draw, feat, (x, y_feat), Brand.font_inter(13), icon_symbols[i], card_w, 65)
 
-    y_bottom = H - 100
-    draw_cta(draw, project.cta, (60, y_bottom), get_font(tpl, "cuerpo", 20), bg=VERDE, fg=MARFIL)
-    text_with_shadow(draw, project.whatsapp, (350, y_bottom + 8), get_font(tpl, "cuerpo", 18), ORO)
+    # CTA
+    cta_y = H - 70
+    draw_cta(draw, project.cta or "SOLICITA INFORMACIÓN", (60, cta_y), get_font(tpl, "cuerpo", 18), bg=VERDE, fg=MARFIL)
+    wa_font = get_font(tpl, "cuerpo", 18)
+    text_with_shadow(draw, project.whatsapp or "+57 321 462 5618", (320, cta_y + 8), wa_font, ORO)
 
     img.convert("RGB").save(os.path.join(out_dir, "portada-horizontal.png"), "PNG", quality=95)
 

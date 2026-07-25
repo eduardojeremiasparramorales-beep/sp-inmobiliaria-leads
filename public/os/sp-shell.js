@@ -67,6 +67,7 @@
     { title: 'Negocio', items: [
       { id: 'proyectos', label: 'Proyectos', icon: 'properties', href: '/os/proyectos.html' },
       { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: '/os/campanas.html' },
+      { id: 'campanas-sp', label: 'Campañas SP', icon: 'spark', href: '/os/campanas-sp.html' },
       { id: 'automations', label: 'Automatizaciones', icon: 'automations', href: '/os/automatizaciones.html' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar', href: '/os/calendario.html' },
       { id: 'reportes', label: 'Reportes', icon: 'analytics', href: '/os/reportes.html' },

@@ -2878,6 +2878,31 @@ app.get('/api/campanas-sp/projects/:id/assets', auth.requireAdmin, (req, res) =>
   res.json(assets);
 });
 
+app.post('/api/campanas-sp/analyze-images', auth.requireAdmin, upload.array('images', 10), async (req, res) => {
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
+  try {
+    const tmpDir = path.join(process.cwd(), 'data', 'uploads');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const savedPaths = [];
+    for (const file of req.files) {
+      const name = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fp = path.join(tmpDir, name);
+      fs.writeFileSync(fp, file.buffer);
+      savedPaths.push(fp);
+    }
+    const result = await campanasSp.analyzeImages(savedPaths);
+    res.json(result);
+  } catch (e) {
+    console.error('[VISION]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.get('/api/campanas-sp/auto-fill/:proyectoId', auth.requireAdmin, (req, res) => {
+  const data = campanasSp.autoFillFromCRM(req.params.proyectoId);
+  res.json(data);
+});
+
 // ===================== REPORTES Y ANALYTICS =====================
 
 app.get('/api/reports/team-performance', auth.requireAdmin, (req, res) => {

@@ -134,6 +134,45 @@ function getAssetsBaseUrl(project) {
   return assets;
 }
 
+function getAiGeneratorPath() {
+  return path.join(getCampanasSpDir(), 'generators', 'ai_generator.py');
+}
+
+async function analyzeImages(imagePaths) {
+  if (!imagePaths || !imagePaths.length) throw new Error('No hay imágenes para analizar');
+  return new Promise((resolve, reject) => {
+    const proc = spawn(PYTHON, [getAiGeneratorPath()], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString('utf-8'); });
+    proc.stderr.on('data', (data) => { stderr += data.toString('utf-8'); });
+    proc.on('close', (code) => {
+      if (code !== 0) return reject(new Error(stderr.slice(0, 500)));
+      try { resolve(JSON.parse(stdout.trim())); }
+      catch (e) { reject(new Error(`JSON parse: ${e.message}. Output: ${stdout.slice(0, 300)}`)); }
+    });
+    proc.on('error', reject);
+    proc.stdin.write(JSON.stringify({ action: 'analyze', images: imagePaths }));
+    proc.stdin.end();
+  });
+}
+
+function autoFillFromCRM(proyectoId) {
+  const p = store.getProyectoById ? store.getProyectoById(Number(proyectoId)) : null;
+  if (!p) return { price: '', area: '', features: [] };
+  return {
+    name: p.nombre || '',
+    location: [p.ciudad, p.departamento].filter(Boolean).join(', '),
+    description: p.descripcion || '',
+    price: p.precio_min ? '$' + Number(p.precio_min).toLocaleString('es-CO') : '',
+    area: '',
+    features: [],
+  };
+}
+
 module.exports = {
   generateAssets,
   getProjectDir,
@@ -141,4 +180,6 @@ module.exports = {
   getAssetsBaseUrl,
   detectRoot,
   getCampanasSpDir,
+  analyzeImages,
+  autoFillFromCRM,
 };
