@@ -56,7 +56,9 @@
           </div>
           <div><div class="t-h3">${i.n}</div><div class="t-dim3" style="font-size:12px;margin-top:2px">${i.d}</div></div>
           ${i.on
-            ? `<a class="btn btn--ghost btn--sm btn--block" href="${i.cfg||'#'}">${i.cfg?'Configurar':'Gestionar'}</a>`
+            ? i.cfg
+            ? `<a class="btn btn--ghost btn--sm btn--block" href="${i.cfg}">Configurar</a>`
+            : `<button class="btn btn--ghost btn--sm btn--block" data-manage="${i.k}">Gestionar</button>`
             : i.soon
             ? `<button class="btn btn--ghost btn--sm btn--block" disabled style="opacity:.6;cursor:default">En desarrollo</button>`
             : `<button class="btn btn--gold btn--sm btn--block" data-k="${i.k}">Conectar</button>`}
@@ -76,16 +78,21 @@
     else toast('La conexión de '+b.textContent+' se habilita en Configuración','ok');
   }));
 
+  ctx.content.querySelectorAll('[data-manage]').forEach(b=>b.addEventListener('click',()=>{
+    abrirConectarModal(b.dataset.manage);
+  }));
+
   function abrirConectarModal(k){
     const c = TOKEN_CHANNELS[k];
-    abrirModal('Conectar '+c.label, `
+    const accion = conn(k) ? 'Actualizar token de' : 'Conectar';
+    abrirModal(accion+' '+c.label, `
       <form id="connForm" style="display:flex;flex-direction:column;gap:14px">
         <div class="t-dim3" style="font-size:12px">Pega el token de acceso de página (Meta for Developers → tu app → Messenger/Instagram → Generar token).</div>
         <input name="token" placeholder="Token de acceso" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
         <input name="id" placeholder="${c.idPlaceholder}" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
         <div style="display:flex;gap:10px;margin-top:6px">
           <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
-          <button type="submit" class="btn btn--gold">Guardar</button>
+          <button type="submit" class="btn btn--gold">${conn(k)?'Actualizar':'Guardar'}</button>
         </div>
       </form>`);
     document.getElementById('modalCancel').addEventListener('click', cerrarModal);
