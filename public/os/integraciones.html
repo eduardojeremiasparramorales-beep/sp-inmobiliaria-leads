@@ -28,8 +28,8 @@
 
   const INTS = [
     { k:'whatsapp', n:'WhatsApp', e:'🟢', bg:'rgba(87,193,104,.14)', on:conn('whatsapp'), cfg:'/os/whatsapp.html', d:'Número oficial de la empresa' },
-    { k:'instagram', n:'Instagram', e:'🟣', bg:'rgba(200,164,90,.14)', on:conn('instagram'), d:'Mensajes directos de IG' },
-    { k:'messenger', n:'Messenger', e:'🔵', bg:'rgba(91,141,239,.14)', on:conn('messenger'), d:'Facebook Messenger' },
+    { k:'instagram', n:'Instagram', e:'🟣', bg:'rgba(200,164,90,.14)', on:conn('instagram'), cfg:'/os/instagram.html', d:'Mensajes directos de IG' },
+    { k:'messenger', n:'Messenger', e:'🔵', bg:'rgba(91,141,239,.14)', on:conn('messenger'), cfg:'/os/messenger.html', d:'Facebook Messenger' },
     { k:'facebook', n:'Facebook', e:'📘', bg:'rgba(91,141,239,.14)', on:false, soon:true, d:'Comentarios y páginas' },
     { k:'email', n:'Email', e:'✉️', bg:'rgba(248,248,248,.08)', on:false, soon:true, d:'Correo entrante y saliente' },
     { k:'telegram', n:'Telegram', e:'🛩️', bg:'rgba(91,141,239,.14)', on:false, soon:true, d:'Bot de Telegram' },
@@ -56,76 +56,13 @@
           </div>
           <div><div class="t-h3">${i.n}</div><div class="t-dim3" style="font-size:12px;margin-top:2px">${i.d}</div></div>
           ${i.on
-            ? i.cfg
-            ? `<a class="btn btn--ghost btn--sm btn--block" href="${i.cfg}">Configurar</a>`
-            : `<button class="btn btn--ghost btn--sm btn--block" data-manage="${i.k}">Gestionar</button>`
+            ? `<a class="btn btn--ghost btn--sm btn--block" href="${i.cfg||'#'}">${i.cfg?'Configurar':'Gestionar'}</a>`
             : i.soon
             ? `<button class="btn btn--ghost btn--sm btn--block" disabled style="opacity:.6;cursor:default">En desarrollo</button>`
-            : `<button class="btn btn--gold btn--sm btn--block" data-k="${i.k}">Conectar</button>`}
+            : `<a class="btn btn--gold btn--sm btn--block" href="${i.cfg||'#'}">Conectar</a>`}
         </div>`).join('')}
     </div>
   </div>`;
-
-  const TOKEN_CHANNELS = {
-    messenger: { label:'Messenger', idField:'pageId', idPlaceholder:'ID de la página de Facebook' },
-    instagram: { label:'Instagram', idField:'igUserId', idPlaceholder:'ID de la cuenta de Instagram Business' },
-  };
-
-  ctx.content.querySelectorAll('[data-k]').forEach(b=>b.addEventListener('click',()=>{
-    const k = b.dataset.k;
-    if(k==='whatsapp') location.href='/os/whatsapp.html';
-    else if(TOKEN_CHANNELS[k]) abrirConectarModal(k);
-    else toast('La conexión de '+b.textContent+' se habilita en Configuración','ok');
-  }));
-
-  ctx.content.querySelectorAll('[data-manage]').forEach(b=>b.addEventListener('click',()=>{
-    abrirConectarModal(b.dataset.manage);
-  }));
-
-  function abrirConectarModal(k){
-    const c = TOKEN_CHANNELS[k];
-    const accion = conn(k) ? 'Actualizar token de' : 'Conectar';
-    abrirModal(accion+' '+c.label, `
-      <form id="connForm" style="display:flex;flex-direction:column;gap:14px">
-        <div class="t-dim3" style="font-size:12px">Pega el token de acceso de página (Meta for Developers → tu app → Messenger/Instagram → Generar token).</div>
-        <input name="token" placeholder="Token de acceso" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
-        <input name="id" placeholder="${c.idPlaceholder}" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
-        <div style="display:flex;gap:10px;margin-top:6px">
-          <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
-          <button type="submit" class="btn btn--gold">${conn(k)?'Actualizar':'Guardar'}</button>
-        </div>
-      </form>`);
-    document.getElementById('modalCancel').addEventListener('click', cerrarModal);
-    document.getElementById('connForm').addEventListener('submit', async e=>{
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const token = fd.get('token').trim();
-      const id = fd.get('id').trim();
-      if(!token || !id){ toast('Campos requeridos','err'); return; }
-      try{
-        const body = { token }; body[c.idField] = id;
-        const r = await api('/api/channels/'+k+'/token', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        if(r && r.ok){ toast(c.label+' conectado'); cerrarModal(); setTimeout(()=>location.reload(), 600); }
-        else toast(r?.error || 'Error al conectar','err');
-      }catch(err){ toast('Error de conexión','err'); }
-    });
-  }
-
-  // Modal helper (mismo patrón que equipo.html)
-  const modalBg = document.createElement('div');
-  modalBg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:999;display:grid;place-items:center;animation:fadeIn .2s ease';
-  let modalActive = null;
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function abrirModal(titulo, html){
-    if(modalActive) cerrarModal();
-    modalActive = document.createElement('div');
-    modalActive.style.cssText = 'background:var(--bg-1);border:1px solid var(--border-soft);border-radius:16px;padding:28px;width:90%;max-width:400px;animation:slideUp .25s var(--ease);max-height:90vh;overflow-y:auto';
-    modalActive.innerHTML = `<div style="font-size:16px;font-weight:600;margin-bottom:20px">${esc(titulo)}</div>${html}`;
-    modalBg.innerHTML = '';
-    modalBg.appendChild(modalActive);
-    document.body.appendChild(modalBg);
-  }
-  function cerrarModal(){ modalBg.remove(); modalActive = null; }
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
 })();
