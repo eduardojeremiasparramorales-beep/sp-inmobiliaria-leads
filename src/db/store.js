@@ -21,7 +21,16 @@ function ensureColumn(table, column, type) {
 
 async function initDB() {
   await adapter.initDB();
+  createSchema();
+  return adapter.getDB();
+}
 
+// Todo el CREATE TABLE IF NOT EXISTS / ensureColumn de la app, separado de initDB()
+// para Vid.a V2: aprovisionar un negocio nuevo es correr ESTA función (síncrona, sin
+// abrir conexión — eso ya lo hace adapter.js solo, la primera vez que algo consulta
+// dentro del tenantContext.run() de esa empresa) dentro del contexto del tenant nuevo.
+// Es exactamente "correr initSchema tal cual sobre BD vacía" que pedía el plan.
+function createSchema() {
   execSQL(`
     CREATE TABLE IF NOT EXISTS vendedores (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,7 +152,6 @@ async function initDB() {
   ensureColumn('leads', 'cadencia_paso', 'INTEGER DEFAULT 0');   // índice del próximo paso a enviar
   ensureColumn('leads', 'cadencia_inicio', 'DATETIME');          // cuándo se inscribió (base para calcular offsets)
   ensureColumn('leads', 'cadencia_next_at', 'DATETIME');         // cuándo toca el próximo paso
-  ensureColumn('campanas_sp_projects', 'proyecto_id', 'INTEGER'); // vínculo con proyectos reales del CRM (F2)
   // Atribución estructurada de campaña (F1) — antes solo se guardaba el headline como texto
   // libre en `origen`; esto captura los IDs reales que Meta manda en `referral` para que
   // reportes pueda agrupar por anuncio/campaña real, no por un texto que puede repetirse.
@@ -160,7 +168,6 @@ async function initDB() {
   ensureColumn('messages', 'starred_at', 'DATETIME');       // mensajes destacados ⭐
   ensureColumn('messages', 'transcript', 'TEXT');           // transcripción IA de notas de voz
   ensureColumn('messages', 'translated_body', 'TEXT');      // traducción IA bajo demanda (cache)
-  ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
   // --- Mensajes programados en SERVIDOR (salen aunque la app esté cerrada) ---
   execSQL(`
@@ -393,6 +400,14 @@ async function initDB() {
 
   createNewTables(adapter.getDB());
 
+  // Estas dos van AQUÍ, no antes: apuntan a tablas que recién existen desde la línea
+  // anterior (createNewTables). Antes de Vid.a V2 nunca se notó que estuvieran mal
+  // ubicadas más arriba porque siempre corrían sobre una BD que ya tenía las tablas
+  // de una corrida anterior — solo se rompe (en silencio, ensureColumn atrapa el
+  // error) al provisionar un negocio nuevo desde cero por primera vez.
+  ensureColumn('campanas_sp_projects', 'proyecto_id', 'INTEGER'); // vínculo con proyectos reales del CRM (F2)
+  ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
+
   // Puente legacy → multicanal: cada conversación puede apuntar a su lead
   ensureColumn('conversations', 'lead_id', 'INTEGER');
   execSQL(`CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id)`);
@@ -471,8 +486,6 @@ async function initDB() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_insignias_vendedor ON insignias(vendedor_id)`);
-
-  return adapter.getDB();
 }
 
 function getDB() { return adapter.getDB(); }
@@ -2657,7 +2670,7 @@ function deleteCampanasSpProject(id) {
 }
 
 module.exports = {
-  initDB, getDB, saveLead, assignLeadToVendedor, saveMessage,
+  initDB, createSchema, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse, resetLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
