@@ -38,10 +38,11 @@ function detectRoot() {
   // Linux (VM): /home/ubuntu/sp-crm/app
   const linuxDefault = '/home/ubuntu/sp-crm/app';
   if (process.platform !== 'win32' && fs.existsSync(linuxDefault)) return linuxDefault;
-  // Windows
-  if (fs.existsSync('C:\\Sp Leons')) return 'C:\\Sp Leons';
-  if (fs.existsSync('C:\\Sp Inmobiliaria')) return 'C:\\Sp Inmobiliaria';
-  // Fallback: parent of this file
+  // Windows: raíz del propio repo (src/services/../.. = raíz), no una carpeta hermana
+  // adivinada por nombre. Los checks viejos a "C:\Sp Leons"/"C:\Sp Inmobiliaria" quedaron
+  // de antes de que el proyecto se organizara dentro de sp-leons-crm/ — "C:\Sp Inmobiliaria"
+  // sigue existiendo como carpeta padre y hacía matchear una copia vieja de CAMPAÑAS_SP
+  // ahí en vez del repo real, silenciosamente sirviendo generadores desactualizados.
   return path.resolve(__dirname, '..', '..');
 }
 
@@ -201,7 +202,7 @@ async function generateAssets(projectId) {
     proc.stdout.on('data', (data) => { stdout += data.toString('utf-8'); });
     proc.stderr.on('data', (data) => { stderr += data.toString('utf-8'); });
 
-    proc.on('close', (code) => {
+    proc.on('close', async (code) => {
       if (code !== 0) {
         // run_api.py, en sus validaciones tempranas (images_dir/output_dir faltante, JSON
         // inválido), imprime un JSON claro por STDOUT antes de salir con código != 0 — no
@@ -218,20 +219,36 @@ async function generateAssets(projectId) {
         store.updateCampanasSpProject(projectId, { status: 'error', error: errMsg });
         return reject(new Error(errMsg));
       }
+      let result;
       try {
-        const result = JSON.parse(stdout.trim());
-        store.updateCampanasSpProject(projectId, {
-          status: result.ok ? 'ready' : 'error',
-          assets_result: JSON.stringify(result),
-          error: result.errors ? result.errors.join('; ') : '',
-          output_dir: outputDir,
-        });
-        resolve(result);
+        result = JSON.parse(stdout.trim());
       } catch (e) {
         const errMsg = `JSON parse error: ${e.message}. Output: ${stdout.slice(0, 500)}`;
         store.updateCampanasSpProject(projectId, { status: 'error', error: errMsg });
-        reject(new Error(errMsg));
+        return reject(new Error(errMsg));
       }
+
+      // Reel en video real (Fase 3): corre DESPUÉS de que los 27 assets ya están
+      // guardados — si ffmpeg falla, los estáticos quedan intactos, solo se anota el
+      // motivo (mismo espíritu tolerante-a-fallos que el resto de run_api.py).
+      const frames = (result.assets && result.assets.reel_frames) || [];
+      if (frames.length === 5) {
+        try {
+          const reelDir = path.join(outputDir, 'reel');
+          result.reel_video = await assembleReelVideo(reelDir, frames);
+        } catch (e) {
+          console.error('[CAMPANAS-SP] Ensamblado de reel falló, quedan los 5 frames estáticos:', e.message);
+          result.reel_video_error = e.message.slice(0, 300);
+        }
+      }
+
+      store.updateCampanasSpProject(projectId, {
+        status: result.ok ? 'ready' : 'error',
+        assets_result: JSON.stringify(result),
+        error: result.errors ? result.errors.join('; ') : '',
+        output_dir: outputDir,
+      });
+      resolve(result);
     });
 
     proc.on('error', (err) => {
@@ -241,6 +258,48 @@ async function generateAssets(projectId) {
 
     proc.stdin.write(JSON.stringify(input));
     proc.stdin.end();
+  });
+}
+
+// Ensambla los 5 frames estáticos del reel en un .mp4 real con crossfade — Fase 3.
+// Mismo patrón spawn que audio.js (stderr acotado a 8KB, timeout de seguridad).
+// Offsets del xfade encadenado: cada frame dura 5s en pantalla (incluido el propio
+// crossfade de 0.3s hacia el siguiente), así que el offset del xfade i-ésimo es
+// i*(5-0.3)=i*4.7 medido sobre la salida acumulada de los xfade anteriores — es
+// exactamente el patrón que ya trae REEL_GUION.md (offsets 4.7/9.4/14.1/18.8, ~24-25s).
+function assembleReelVideo(reelDir, frameFiles) {
+  return new Promise((resolve, reject) => {
+    const outPath = path.join(reelDir, 'reel.mp4');
+    const DUR = 5, XFADE = 0.3;
+    const inputArgs = [];
+    frameFiles.forEach((f) => { inputArgs.push('-loop', '1', '-t', String(DUR), '-r', '30', '-i', path.join(reelDir, f)); });
+
+    const filters = [];
+    let prev = '0:v';
+    for (let i = 1; i < frameFiles.length; i++) {
+      const offset = (i * (DUR - XFADE)).toFixed(1);
+      const out = i === frameFiles.length - 1 ? 'vout' : `v${i}`;
+      filters.push(`[${prev}][${i}:v]xfade=transition=fade:duration=${XFADE}:offset=${offset}[${out}]`);
+      prev = out;
+    }
+
+    const args = [
+      '-y', ...inputArgs,
+      '-filter_complex', filters.join(';'),
+      '-map', '[vout]',
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30', '-movflags', '+faststart',
+      outPath,
+    ];
+    const p = spawn('ffmpeg', args);
+    let stderr = '';
+    p.stderr.on('data', (d) => { stderr += d; if (stderr.length > 8192) stderr = stderr.slice(-8192); });
+    p.on('error', reject);
+    p.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 0) resolve('reel/reel.mp4');
+      else reject(new Error('ffmpeg salió con código ' + code + ': ' + stderr.slice(-500)));
+    });
+    // 25s de video a 1080x1920 en la e2-micro puede tardar ~20-60s (ver plan) — 120s de margen.
+    setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} }, 120000).unref();
   });
 }
 

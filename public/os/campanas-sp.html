@@ -145,6 +145,10 @@
     render();
   }
 
+  function fileUrl(projectId, category, filename) {
+    return `/api/campanas-sp/projects/${projectId}/file/${encodeURIComponent(category)}/${encodeURIComponent(filename)}`;
+  }
+
   async function togglePreview(id) {
     const box = document.getElementById('preview-' + id);
     if (!box) return;
@@ -155,13 +159,38 @@
     if (!assets || !assets.assets) { box.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:8px">Sin datos</div>'; return; }
     box.dataset.open = '1';
     let html = '';
+
+    // Reel en video real (Fase 3) — si el ensamblado con ffmpeg funcionó, va primero
+    // y con reproductor propio; si falló, se avisa pero los frames siguen abajo igual.
+    if (assets.reel_video) {
+      const videoUrl = fileUrl(id, 'reel', 'reel.mp4');
+      html += `<div style="margin-top:8px">
+        <strong style="font-size:11px;color:var(--gold);text-transform:uppercase">Reel (video)</strong>
+        <div style="margin-top:6px"><video controls playsinline preload="metadata" style="width:100%;max-width:280px;border-radius:10px;background:#000" src="${videoUrl}"></video></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <a class="csp-btn csp-btn--ghost" href="${videoUrl}" download="reel-${esc(p.slug)}.mp4">Descargar</a>
+          <button class="csp-btn csp-btn--ghost" data-compartir-reel="${id}">Compartir al chat</button>
+        </div>
+      </div>`;
+    } else if (assets.reel_video_error) {
+      html += `<div style="margin-top:8px;font-size:11.5px;color:var(--text-3)">⚠️ El reel en video no se pudo generar (${esc(assets.reel_video_error)}) — quedan los frames estáticos abajo.</div>`;
+    }
+
     for (const [cat, files] of Object.entries(assets.assets)) {
-      const imgs = (files || []).filter(f => /\.(png|jpg|jpeg)$/i.test(f));
+      const imgs = (files || []).filter(f => /\.(png|jpe?g)$/i.test(f));
       if (!imgs.length) continue;
       html += `<div style="margin-top:8px"><strong style="font-size:11px;color:var(--gold);text-transform:uppercase">${esc(cat)}</strong>`;
-      html += '<div class="csp-grid">' + imgs.map(f => `<div class="csp-asset"><span style="font-size:10px;color:var(--text-3)">${esc(f)}</span></div>`).join('') + '</div></div>';
+      html += '<div class="csp-grid">' + imgs.map(f => `
+        <a class="csp-asset" href="${fileUrl(id, cat, f)}" download="${esc(f)}" style="display:block;text-decoration:none">
+          <img src="${fileUrl(id, cat, f)}" loading="lazy" alt="${esc(f)}">
+          <span style="font-size:9.5px;color:var(--text-3);display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f)}</span>
+        </a>`).join('') + '</div></div>';
     }
     box.innerHTML = html || '<div style="font-size:12px;color:var(--text-3);padding:8px">Sin assets</div>';
+
+    box.querySelector('[data-compartir-reel]')?.addEventListener('click', () => {
+      toast('Adjunta el video desde "Descargar" en el chat del lead por ahora — compartir directo llega con el glow-up del chat.', 'ok');
+    });
   }
 
   // ===== WIZARD =====

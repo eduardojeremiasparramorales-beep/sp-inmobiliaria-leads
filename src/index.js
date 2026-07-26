@@ -3135,6 +3135,22 @@ app.get('/api/campanas-sp/projects/:id/assets', auth.requireAdmin, (req, res) =>
   res.json(assets);
 });
 
+// Sirve un archivo generado individual (imagen o reel.mp4) — antes no existía NINGUNA
+// forma de ver los 27 assets ni el reel desde el navegador, solo quedaban en disco.
+// category/filename vienen de la URL (no confiar): regex estricto + Express sendFile
+// con {root} como segunda capa de protección contra path traversal.
+const CSP_FILE_SAFE = /^[a-zA-Z0-9_.-]+$/;
+app.get('/api/campanas-sp/projects/:id/file/:category/:filename', auth.requireAdmin, (req, res) => {
+  const p = store.getCampanasSpProject(Number(req.params.id));
+  if (!p || !p.output_dir) return res.status(404).json({ error: 'not_found' });
+  const { category, filename } = req.params;
+  if (!CSP_FILE_SAFE.test(category) || !CSP_FILE_SAFE.test(filename)) return res.status(400).json({ error: 'nombre_invalido' });
+  const root = path.resolve(p.output_dir);
+  res.sendFile(path.join(category, filename), { root }, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'archivo_no_encontrado' });
+  });
+});
+
 app.post('/api/campanas-sp/analyze-images', auth.requireAdmin, upload.array('images', 10), async (req, res) => {
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
   try {
