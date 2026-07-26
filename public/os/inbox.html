@@ -97,6 +97,18 @@
   .media-file { color: var(--text-2); text-decoration: none; border-bottom: 1px solid var(--border-soft); word-break: break-all; }
   .media-cap { margin-top: 4px; font-size: 12.5px; }
 
+  /* Reacciones */
+  .bub-reactions { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .bub-reaction { display: inline-flex; align-items: center; gap: 3px; background: rgba(200,164,90,.12); border: 1px solid rgba(200,164,90,.25); border-radius: 999px; padding: 1px 7px; font-size: 13px; cursor: pointer; transition: background .15s; }
+  .bub-reaction:hover { background: rgba(200,164,90,.25); }
+  .bub-reaction.mine { border-color: var(--gold); background: rgba(200,164,90,.2); }
+  .bub-reaction .r-count { font-size: 10px; color: var(--text-2); }
+  .emoji-trigger { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-3); border: 1px solid var(--border); cursor: pointer; font-size: 14px; transition: background .15s; margin-top: 4px; }
+  .emoji-trigger:hover { background: var(--bg-2); }
+  .emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 8px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; position: absolute; bottom: 100%; right: 0; z-index: 50; min-width: 200px; box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+  .emoji-grid button { background: none; border: none; font-size: 20px; padding: 6px; cursor: pointer; border-radius: 8px; transition: background .12s; }
+  .emoji-grid button:hover { background: rgba(200,164,90,.15); }
+
   /* Skeleton */
   .sk { background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
@@ -955,6 +967,22 @@
   }, 500);
 
   /* ── Render mensajes ── */
+  const EMOJIS = ['👍','❤️','😂','😮','😢','🙏','🔥','🎉','💯','⭐','👏','💪'];
+  let emojiPickerTarget = null;
+
+  function renderReactions(reactions) {
+    if (!reactions || !reactions.length) return '';
+    const grouped = {};
+    for (const r of reactions) {
+      if (!grouped[r.emoji]) grouped[r.emoji] = { emoji: r.emoji, count: 0, mine: false };
+      grouped[r.emoji].count++;
+      if (r.direction === 'outgoing') grouped[r.emoji].mine = true;
+    }
+    return `<div class="bub-reactions">${Object.values(grouped).map(g =>
+      `<span class="bub-reaction${g.mine ? ' mine' : ''}" data-emoji="${g.emoji}">${g.emoji}${g.count > 1 ? `<span class="r-count">${g.count}</span>` : ''}</span>`
+    ).join('')}</div>`;
+  }
+
   function renderMsgs(msgs) {
     const box = document.getElementById('ibxMsgs'); if (!box) return;
     let lastDay = '';
@@ -964,9 +992,56 @@
       if (m.event_type === 'note') return sep + `<div class="bubble bubble--note">📝 ${esc(m.body)}</div>`;
       const out = m.direction === 'outgoing';
       const media = renderMedia(m);
-      return sep + `<div class="bubble bubble--${out ? 'out' : 'in'}">${media || esc(m.body || '')}<span class="bubble__time">${hhmm(m.created_at || m.timestamp)}${out ? ' <span style="opacity:.45;font-size:9.5px">✓✓</span>' : ''}</span></div>`;
+      const reacHTML = renderReactions(m.reactions);
+      const msgId = m.id || m._msgId || '';
+      return sep + `<div class="bubble-wrap" data-msgid="${msgId}" style="position:relative;display:flex;flex-direction:column;align-items:${out?'flex-end':'flex-start'};max-width:70%;align-self:${out?'flex-end':'flex-start'}">
+        <div class="bubble bubble--${out ? 'out' : 'in'}">${media || esc(m.body || '')}<span class="bubble__time">${hhmm(m.created_at || m.timestamp)}${out ? ' <span style="opacity:.45;font-size:9.5px">✓✓</span>' : ''}</span></div>
+        ${reacHTML}
+        <button class="emoji-trigger" data-msgid="${msgId}" title="Reaccionar">😀</button>
+      </div>`;
     }).join('') || `<div style="margin:auto;color:var(--text-3);font-size:13.5px">Sin mensajes todavía.</div>`;
     box.scrollTop = box.scrollHeight;
+
+    // Wire emoji triggers
+    box.querySelectorAll('.emoji-trigger').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        emojiPickerTarget = btn.dataset.msgid;
+        let grid = box.querySelector('.emoji-grid');
+        if (!grid) {
+          grid = document.createElement('div');
+          grid.className = 'emoji-grid';
+          grid.innerHTML = EMOJIS.map(em => `<button data-em="${em}">${em}</button>`).join('');
+          grid.addEventListener('click', async (ev2) => {
+            const em = ev2.target.closest('[data-em]');
+            if (!em || !emojiPickerTarget) return;
+            await toggleReaction(emojiPickerTarget, em.dataset.em);
+            grid.remove();
+            emojiPickerTarget = null;
+          });
+          btn.parentElement.appendChild(grid);
+        }
+      };
+    });
+
+    // Wire reaction pill clicks
+    box.querySelectorAll('.bub-reaction').forEach(pill => {
+      pill.onclick = async () => {
+        const wrap = pill.closest('.bubble-wrap');
+        if (wrap && wrap.dataset.msgid) await toggleReaction(wrap.dataset.msgid, pill.dataset.emoji);
+      };
+    });
+  }
+
+  async function toggleReaction(msgId, emoji) {
+    if (!msgId) return;
+    try {
+      const r = await api('/api/messages/' + msgId + '/react', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji }),
+      });
+      if (r && r.ok) await recargarMensajes(current);
+    } catch (e) { console.error('Reaction error:', e); }
   }
 
   function renderMedia(m) {
@@ -1233,6 +1308,14 @@
           try { if (navigator.vibrate) navigator.vibrate([100, 50, 100]); } catch (e) { }
         }
       } catch (e) { console.error('SSE error:', e); }
+    });
+    es.addEventListener('reaccion', async ev => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (current && (data.leadId == current || data.conversationId == current)) {
+          await recargarMensajes(current);
+        }
+      } catch (e) { console.error('SSE reaccion error:', e); }
     });
     es.onerror = () => { dot()?.classList.remove('on'); es.close(); setTimeout(conectarStream, 5000); };
   }

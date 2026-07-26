@@ -52,40 +52,117 @@ class MessengerAdapter extends ChannelAdapter {
     }
   }
 
+  // --- Sender Actions: typing, mark seen ---
+  async sendSenderAction(to, action) {
+    const { token, pageId } = this.getConfig();
+    const res = await axios.post(`${GRAPH}/${pageId}/messages`, {
+      recipient: { id: to },
+      sender_action: action,
+    }, { params: { access_token: token } });
+    return res.data;
+  }
+
+  async sendTyping(to) {
+    return this.sendSenderAction(to, 'typing_on');
+  }
+
+  async stopTyping(to) {
+    return this.sendSenderAction(to, 'typing_off');
+  }
+
+  async markSeen(to) {
+    return this.sendSenderAction(to, 'mark_seen');
+  }
+
   parseWebhookPayload(body) {
     if (!body || body.object !== 'page') return null;
 
     const entry = (body.entry || [])[0];
     if (!entry) return null;
-    const messaging = (entry.messaging || [])[0];
-    if (!messaging || !messaging.sender) return null;
 
-    const from = messaging.sender.id;
-    const message = messaging.message || {};
-    let type = 'text';
-    let text = message.text || null;
-    let media = null;
+    const results = [];
+    const messagingEvents = entry.messaging || [];
 
-    if (Array.isArray(message.attachments) && message.attachments.length > 0) {
-      const att = message.attachments[0];
-      type = att.type || 'document';
-      media = { id: att.payload && att.payload.url, mime: null, filename: null };
+    for (const messaging of messagingEvents) {
+      if (!messaging || !messaging.sender) continue;
+      const from = messaging.sender.id;
+
+      // --- Reacción del cliente a un mensaje ---
+      if (messaging.reaction) {
+        const reaction = messaging.reaction;
+        const mid = reaction.mid || (reaction.reaction && reaction.reaction.mid) || null;
+        const emoji = (reaction.reaction && reaction.reaction.emoji) || reaction.emoji || '';
+        const action = (reaction.reaction && reaction.reaction.action) || reaction.action || 'react';
+        results.push({
+          _type: 'reaction',
+          channel: 'messenger',
+          from,
+          mid,
+          emoji,
+          action, // 'react' o 'unreact'
+        });
+        continue;
+      }
+
+      // --- Read receipt (el cliente leyó un mensaje nuestro) ---
+      if (messaging.read) {
+        results.push({
+          _type: 'read',
+          channel: 'messenger',
+          from,
+          mid: messaging.read.mid || null,
+          watermark: messaging.read.watermark || null,
+          ts: messaging.timestamp || null,
+        });
+        continue;
+      }
+
+      // --- Delivery confirmation (el cliente recibió un mensaje nuestro) ---
+      if (messaging.delivery) {
+        const delivery = messaging.delivery;
+        const mids = delivery.mids || [];
+        results.push({
+          _type: 'delivery',
+          channel: 'messenger',
+          from,
+          mids,
+          watermark: delivery.watermark || null,
+          ts: messaging.timestamp || null,
+        });
+        continue;
+      }
+
+      // --- Mensaje de texto o media ---
+      const message = messaging.message || {};
+      let type = 'text';
+      let text = message.text || null;
+      let media = null;
+
+      if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+        const att = message.attachments[0];
+        type = att.type || 'document';
+        media = { id: att.payload && att.payload.url, mime: null, filename: null };
+      }
+
+      results.push({
+        _type: 'message',
+        channel: 'messenger',
+        from,
+        type,
+        body: text,
+        media,
+        mid: message.mid || null,
+        metadata: {
+          name: null,
+          username: null,
+          campaign_id: null,
+          ad_id: (messaging.referral && messaging.referral.ad_id) || null,
+          ad_name: null,
+        },
+      });
     }
 
-    return {
-      channel: 'messenger',
-      from,
-      type,
-      body: text,
-      media,
-      metadata: {
-        name: null, // se obtiene aparte con getUserName(from)
-        username: null,
-        campaign_id: null,
-        ad_id: (messaging.referral && messaging.referral.ad_id) || null,
-        ad_name: null,
-      },
-    };
+    return results.length === 1 ? results[0] : (results.length > 0 ? results : null);
   }
 
   verifySignature(req) {

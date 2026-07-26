@@ -116,6 +116,8 @@ class MessageRouter {
 
     // 6. Guardar en timeline
     const media = options.media || null;
+    // Agregar mid al metadata para vincular reacciones/estados de Messenger
+    if (options.mid) meta.mid = options.mid;
     const message = store.addTimelineEvent(conversation.id, 'message', {
       channel,
       body: messageBody || '',
@@ -292,6 +294,106 @@ class MessageRouter {
     evaluateWorkflow('conversation:closed', { conversation });
 
     return conversation;
+  }
+
+  // --- Reacción entrante (Messenger/Instagram) ---
+  static async handleReaction(channel, fromUserId, mid, emoji, action) {
+    // Buscar conversación y customer
+    const conversation = store.getConversationByChannelUser(channel, fromUserId);
+    if (!conversation) {
+      console.warn(`[ROUTER reaction] No se encontró conversación para ${channel}:${fromUserId}`);
+      return;
+    }
+    const leadId = conversation.lead_id || null;
+
+    // Buscar el mensaje por mid (Messenger usa "mid.$..." como identificador)
+    let targetMessage = null;
+    if (mid) {
+      // Buscar en timeline por metadata que contenga el mid
+      const adapter = require('../db/adapter');
+      const rows = adapter.all(
+        "SELECT * FROM timeline WHERE conversation_id = ? AND event_type = 'message' ORDER BY id DESC LIMIT 100",
+        [conversation.id]
+      );
+      for (const row of rows) {
+        try {
+          const md = row.metadata ? JSON.parse(row.metadata) : {};
+          if (md.mid === mid || md.wamid === mid) {
+            targetMessage = row;
+            break;
+          }
+        } catch (e) { /* skip */ }
+      }
+      // Fallback: buscar por wamid en tabla messages legacy
+      if (!targetMessage && leadId) {
+        const msg = store.getMessageByWamid(mid);
+        if (msg) targetMessage = msg;
+      }
+    }
+
+    if (!targetMessage) {
+      console.warn(`[ROUTER reaction] No se encontró mensaje con mid=${mid}`);
+      return;
+    }
+
+    // Guardar/quitar reacción en DB
+    if (action === 'unreact' || !emoji) {
+      // Quitar todas las reacciones de este usuario en este mensaje
+      for (const r of store.getReactionsForMessage(targetMessage.id)) {
+        if (r.sender_number === fromUserId) {
+          store.removeReaction(targetMessage.id, r.emoji, fromUserId);
+        }
+      }
+    } else {
+      store.addReaction(targetMessage.id, emoji, fromUserId, 'incoming');
+    }
+
+    // Emitir SSE
+    if (leadId) {
+      const lead = store.getLeadById(leadId);
+      if (lead) {
+        emit('vendedor', lead.assigned_to_id, 'reaccion', { leadId, messageId: targetMessage.id, emoji, ts: Date.now() });
+      }
+    }
+    emit('admins', null, 'reaccion', { leadId, messageId: targetMessage.id, emoji, ts: Date.now() });
+    console.log(`[ROUTER reaction] ${channel} ${fromUserId}: ${emoji || '(quitada)'} → msg ${targetMessage.id}`);
+  }
+
+  // --- Read receipt (Messenger/Instagram) ---
+  static async handleReadReceipt(channel, fromUserId, mid, watermark) {
+    const conversation = store.getConversationByChannelUser(channel, fromUserId);
+    if (!conversation) return;
+    const leadId = conversation.lead_id || null;
+
+    // Marcar mensajes salientes como leídos
+    if (leadId) {
+      const adapter = require('../db/adapter');
+      adapter.run(
+        "UPDATE messages SET status = 'read', read_at = datetime('now') WHERE lead_id = ? AND direction = 'outgoing' AND (status IS NULL OR status != 'read')",
+        [leadId]
+      );
+    }
+    console.log(`[ROUTER read] ${channel} from=${fromUserId} watermark=${watermark}`);
+  }
+
+  // --- Delivery confirmation (Messenger/Instagram) ---
+  static async handleDelivery(channel, fromUserId, mid) {
+    const conversation = store.getConversationByChannelUser(channel, fromUserId);
+    if (!conversation) return;
+
+    // Marcar mensaje como entregado
+    const msg = store.getMessageByWamid(mid);
+    if (msg) {
+      store.updateMessageStatus(mid, 'delivered');
+      const leadId = msg.lead_id || conversation.lead_id;
+      if (leadId) {
+        const lead = store.getLeadById(leadId);
+        if (lead) {
+          emit('vendedor', lead.assigned_to_id, 'status_update', { leadId, messageId: msg.id, status: 'delivered', ts: Date.now() });
+        }
+      }
+    }
+    console.log(`[ROUTER delivery] ${channel} from=${fromUserId} mid=${mid}`);
   }
 }
 

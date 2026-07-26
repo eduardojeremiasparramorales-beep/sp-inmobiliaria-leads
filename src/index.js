@@ -1039,7 +1039,32 @@ app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) =>
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
     return res.status(403).json({ error: 'sin_permiso' });
-  res.json({ conversation: conv, messages: store.getTimelineByConversation(conv.id) });
+  const messages = store.getTimelineByConversation(conv.id);
+  // Enriquecer con reacciones: buscar mensajes en la tabla messages que coincidan
+  // con los eventos de timeline (por wamid/mid en metadata) y adjuntar sus reacciones
+  const msgIds = [];
+  for (const m of messages) {
+    if (m.event_type !== 'message') continue;
+    try {
+      const md = m.metadata ? JSON.parse(m.metadata) : {};
+      // Buscar por wamid (WhatsApp) o mid (Messenger)
+      const lookup = md.wamid || md.mid || null;
+      if (lookup) {
+        const msg = store.getMessageByWamid(lookup);
+        if (msg) { msgIds.push(msg.id); m._msgId = msg.id; }
+      }
+    } catch (e) { /* skip */ }
+  }
+  // Agregar reacciones a cada mensaje
+  if (msgIds.length > 0) {
+    const reactionsMap = store.getReactionsForMessages(msgIds);
+    for (const m of messages) {
+      if (m._msgId && reactionsMap[m._msgId]) {
+        m.reactions = reactionsMap[m._msgId];
+      }
+    }
+  }
+  res.json({ conversation: conv, messages });
 });
 
 app.post('/api/inbox/conversations/:id/send', auth.requireAuth, async (req, res) => {
@@ -1548,32 +1573,42 @@ app.post('/api/leads/:id/send-location', auth.requireAuth, async (req, res) => {
 
 // ===================== MENSAJES: reacciones, editar, borrar =====================
 
-// Reaccionar a un mensaje (toggle)
+// Reaccionar a un mensaje (toggle) — multi-canal
 app.post('/api/messages/:id/react', auth.requireAuth, (req, res) => {
   const msgId = req.params.id;
   const { emoji } = req.body || {};
   if (!msgId || isNaN(Number(msgId)) || !emoji) return res.status(400).json({ error: 'id_y_emoji_requeridos' });
-  const store = require('./db/store');
-  const row = store.getMessageById(msgId);
+  const store2 = require('./db/store');
+  const row = store2.getMessageById(msgId);
   if (!row) return res.status(404).json({ error: 'mensaje_no_existe' });
-  const lead = store.getLeadById(row.lead_id);
+  const lead = store2.getLeadById(row.lead_id);
   if (req.session.rol !== 'admin' && (!lead || Number(lead.assigned_to_id) !== Number(req.session.vendedorId))) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   const sender = req.session.telefono || 'self';
   const dir = row.direction === 'outgoing' ? 'outgoing' : 'incoming';
   // Toggle: si ya existe, la quita
-  const existing = store.getReactionsForMessage(msgId);
+  const existing = store2.getReactionsForMessage(msgId);
   const found = existing.find(r => r.emoji === emoji && r.sender_number === sender);
-  if (found) store.removeReaction(msgId, emoji, sender);
-  else store.addReaction(msgId, emoji, sender, dir);
-  // Enviar la reacción real a WhatsApp (el cliente la ve sobre su mensaje)
-  if (row.wamid && lead && lead.customer_phone) {
+  if (found) store2.removeReaction(msgId, emoji, sender);
+  else store2.addReaction(msgId, emoji, sender, dir);
+
+  // Determinar canal del lead
+  const phone = (lead && lead.customer_phone) || '';
+  let channel = 'whatsapp';
+  if (phone.startsWith('messenger_')) channel = 'messenger';
+  else if (phone.startsWith('instagram_')) channel = 'instagram';
+
+  // Enviar la reacción real al canal (WhatsApp SÍ soporta, Messenger/Instagram NO)
+  if (channel === 'whatsapp' && row.wamid && lead && lead.customer_phone) {
     const { sendReaction } = require('./services/whatsapp');
     sendReaction(lead.customer_phone, row.wamid, found ? '' : emoji)
       .catch(e => console.error('[REACT] Error enviando reacción a WhatsApp:', e.message));
   }
-  const reactions = store.getReactionsForMessage(msgId);
+  // Para Messenger/Instagram: la reacción se guarda en DB pero no se puede enviar al API
+  // (limitación de plataforma — Messenger no soporta reacciones salientes desde Pages)
+
+  const reactions = store2.getReactionsForMessage(msgId);
   res.json({ ok: true, reactions });
 });
 
@@ -2408,18 +2443,35 @@ app.post('/api/leads/:id/leido', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Indicador "escribiendo…" en el WhatsApp del cliente (también marca leído)
+// Indicador "escribiendo…" en el WhatsApp/Messenger del cliente (también marca leído)
 app.post('/api/leads/:id/typing', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
-  const adapter = require('./db/adapter');
-  const last = adapter.one("SELECT wamid FROM messages WHERE lead_id = ? AND direction = 'incoming' AND wamid IS NOT NULL ORDER BY id DESC LIMIT 1", [lead.id]);
-  if (last && last.wamid) {
-    const { sendTyping } = require('./services/whatsapp');
-    sendTyping(last.wamid).catch(e => console.error('[TYPING]', e.message));
+  // Determinar canal del lead
+  const phone = lead.customer_phone || '';
+  let channel = 'whatsapp';
+  if (phone.startsWith('messenger_')) channel = 'messenger';
+  else if (phone.startsWith('instagram_')) channel = 'instagram';
+
+  const { getAdapter } = require('./channels');
+  const adapter = getAdapter(channel);
+
+  if (channel === 'whatsapp') {
+    const adapter2 = require('./db/adapter');
+    const last = adapter2.one("SELECT wamid FROM messages WHERE lead_id = ? AND direction = 'incoming' AND wamid IS NOT NULL ORDER BY id DESC LIMIT 1", [lead.id]);
+    if (last && last.wamid) {
+      const { sendTyping } = require('./services/whatsapp');
+      sendTyping(last.wamid).catch(e => console.error('[TYPING]', e.message));
+    }
+  } else if (adapter && typeof adapter.sendTyping === 'function') {
+    // Messenger/Instagram: usar sender action con el PSID del customer
+    const psid = phone.replace(/^(messenger_|instagram_)/, '');
+    if (psid) {
+      adapter.sendTyping(psid).catch(e => console.error('[TYPING]', channel, e.message));
+    }
   }
   res.json({ ok: true });
 });
@@ -3764,8 +3816,121 @@ function ensureAdminUser() {
   }
 }
 
+// ===================== VID.A — PANEL DE PLATAFORMA (V2) =====================
+// Separado a propósito de la autenticación de cada negocio (auth.js/sessions): un
+// platform_admin puede ver/crear/suspender TODOS los negocios, así que su sesión NO
+// puede vivir en la misma tabla que usa cualquier admin de un solo negocio.
+const platformDb = require('./db/platform');
+const vidaProvision = require('./services/vida-provision');
+const PLATFORM_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 días — panel de uso esporádico
+
+function requirePlatformAdmin(req, res, next) {
+  const cookie = req.headers['cookie'] || '';
+  const match = cookie.match(/(?:^|;\s*)sp_platform_session=([^;]+)/);
+  const token = match ? decodeURIComponent(match[1]) : null;
+  const session = token ? platformDb.getPlatformSession(token) : null;
+  if (!session || Date.now() - session.created_at > PLATFORM_SESSION_TTL_MS) {
+    return res.status(401).json({ error: 'no_autenticado' });
+  }
+  req.platformAdminId = session.admin_id;
+  next();
+}
+
+app.post('/api/plataforma/login', (req, res) => {
+  const { email, password } = req.body || {};
+  const admin = email ? platformDb.getPlatformAdminByEmail(email) : null;
+  if (!admin || !auth.verifyPassword(password, admin.password)) {
+    return res.status(401).json({ error: 'credenciales_invalidas' });
+  }
+  const token = require('crypto').randomBytes(32).toString('hex');
+  platformDb.createPlatformSession(token, admin.id);
+  const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https') ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `sp_platform_session=${token}; HttpOnly; Path=/; Max-Age=${Math.floor(PLATFORM_SESSION_TTL_MS / 1000)}; SameSite=Lax${secure}`);
+  res.json({ ok: true, nombre: admin.nombre });
+});
+
+app.post('/api/plataforma/logout', requirePlatformAdmin, (req, res) => {
+  const cookie = req.headers['cookie'] || '';
+  const match = cookie.match(/(?:^|;\s*)sp_platform_session=([^;]+)/);
+  if (match) platformDb.deletePlatformSession(decodeURIComponent(match[1]));
+  res.setHeader('Set-Cookie', 'sp_platform_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
+  res.json({ ok: true });
+});
+
+// Lista de negocios + salud básica (último mensaje, tamaño de BD) — sin credenciales.
+app.get('/api/plataforma/empresas', requirePlatformAdmin, (req, res) => {
+  const empresas = platformDb.getEmpresas();
+  const conSalud = empresas.map(e => {
+    let dbSizeBytes = 0;
+    try { dbSizeBytes = fs.statSync(e.db_path).size; } catch (err) { /* aún no tiene .db propio (no debería pasar tras provisionar) */ }
+    return { ...e, db_size_bytes: dbSizeBytes };
+  });
+  res.json(conSalud);
+});
+
+app.post('/api/plataforma/empresas', requirePlatformAdmin, async (req, res) => {
+  const { nombre, admin_telefono, admin_pin, admin_nombre } = req.body || {};
+  if (!nombre || !admin_telefono || !/^\d{4}$/.test(String(admin_pin || ''))) {
+    return res.status(400).json({ error: 'faltan_datos', detalle: 'nombre, admin_telefono y admin_pin (4 dígitos) son requeridos' });
+  }
+  try {
+    const empresa = await vidaProvision.provisionEmpresa(nombre, { telefono: admin_telefono, pin: admin_pin, nombre: admin_nombre });
+    res.json({ ok: true, empresa });
+  } catch (e) {
+    console.error('[PLATAFORMA] Error aprovisionando empresa:', e.message);
+    res.status(500).json({ error: 'error_aprovisionando', detalle: e.message });
+  }
+});
+
+app.post('/api/plataforma/empresas/:id/estado', requirePlatformAdmin, (req, res) => {
+  platformDb.setEmpresaActivo(req.params.id, !!(req.body && req.body.activo));
+  res.json({ ok: true });
+});
+
+// Conectar un canal (WhatsApp/Messenger/Instagram) a un negocio — el token se cifra
+// antes de tocar disco, nunca se guarda en claro (ver services/crypto-vault).
+app.post('/api/plataforma/empresas/:id/canales', requirePlatformAdmin, (req, res) => {
+  const { canal, canal_id, token, extra } = req.body || {};
+  if (!canal || !canal_id || !token) return res.status(400).json({ error: 'faltan_datos' });
+  try {
+    const cryptoVault = require('./services/crypto-vault');
+    platformDb.addEmpresaCanal(req.params.id, canal, canal_id, cryptoVault.encrypt(token), extra);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'error_guardando', detalle: e.message });
+  }
+});
+
+app.get('/api/plataforma/empresas/:id/canales', requirePlatformAdmin, (req, res) => {
+  res.json(platformDb.getCanalesByEmpresa(req.params.id)); // sin token — solo metadata
+});
+
+app.get('/api/plataforma/me', requirePlatformAdmin, (req, res) => {
+  res.json({ ok: true, adminId: req.platformAdminId });
+});
+
+// Bootstrap: primer platform_admin, igual de patrón que ensureAdminUser() pero en su
+// propia tabla — VIDA_PLATFORM_EMAIL/VIDA_PLATFORM_PASSWORD en .env, o un default con
+// warning (mismo espíritu que ADMIN_PASSWORD).
+function ensurePlatformAdmin() {
+  if (platformDb.countPlatformAdmins() > 0) return;
+  const email = (process.env.VIDA_PLATFORM_EMAIL || 'fundador@vida.app').toLowerCase();
+  const password = process.env.VIDA_PLATFORM_PASSWORD || 'cambiar-vida-123';
+  if (password === 'cambiar-vida-123') {
+    console.warn('⚠ VIDA_PLATFORM_PASSWORD sigue en el valor por defecto — cámbialo en .env');
+  }
+  platformDb.createPlatformAdmin(email, auth.hashPassword(password), 'Fundador');
+  console.log('===========================================');
+  console.log('Platform admin (Vid.a) inicial creado:');
+  console.log(`  Email:    ${email}`);
+  console.log(`  Password: ${password}`);
+  console.log('===========================================');
+}
+
 (async () => {
   await initDB();
+  await platformDb.initPlatformDB(); // Vid.a V2 — control plane, BD separada
+  ensurePlatformAdmin();
   ensureAdminUser();
   // Backfill inbox: re-vincular leads legacy que no tienen conversación en el
   // schema multicanal (p.ej. insertados por scripts). Migra sus mensajes al timeline
