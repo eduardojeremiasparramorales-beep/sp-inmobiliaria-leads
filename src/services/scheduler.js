@@ -221,11 +221,15 @@ async function tickDiario() {
   } catch (e) { console.error('[SCHEDULER] tickDiario:', e.message); }
 }
 
-function start(buildFirmaFn) {
+function start(buildFirmaFn, runAsTenant) {
   _buildFirma = buildFirmaFn || null;
-  setInterval(tick, TICK_MS);
-  setInterval(tickDiario, DIARIO_MS);
-  setTimeout(tickDiario, 15000); // primer cálculo al arrancar (tras estabilizar la BD)
+  // Vid.a V1: tick/tickDiario corren por setInterval, fuera de cualquier request — sin
+  // contexto de tenant (ver adapter.js). runAsTenant, inyectado desde index.js, los
+  // corre dentro del mismo contexto empresa #1 que usa cada request HTTP.
+  const wrap = runAsTenant || ((fn) => fn());
+  setInterval(() => wrap(tick), TICK_MS);
+  setInterval(() => wrap(tickDiario), DIARIO_MS);
+  setTimeout(() => wrap(tickDiario), 15000); // primer cálculo al arrancar (tras estabilizar la BD)
   console.log('[SCHEDULER] Mensajes programados en servidor: activo (tick ' + TICK_MS / 1000 + 's)');
 }
 

@@ -43,6 +43,16 @@ const CFG = require('./config');
 
 const app = express();
 app.set('trust proxy', 1);
+
+// Vid.a V1 — cada request corre dentro del contexto del tenant activo (hoy siempre
+// empresa #1 hardcodeada; V2 es quien resolverá el tenant real por dominio/canal).
+// Va primero, antes que cualquier otro middleware, para que TODO lo que siga
+// (parseo de body, rutas, auth) tenga acceso a la conexión de BD correcta.
+const dbAdapter = require('./db/adapter');
+app.use((req, res, next) => {
+  dbAdapter.tenantContext.run({ empresaId: dbAdapter.DEFAULT_EMPRESA_ID, dbPath: dbAdapter.DEFAULT_DB_PATH }, next);
+});
+
 // Guardar el body crudo para verificar la firma del webhook de Meta.
 // Límite de payload por tipo de ruta: las de media (base64) aceptan hasta 25mb;
 // el resto 1mb — evita que un JSON gigante presione la RAM del contenedor (700MB).
@@ -3792,9 +3802,13 @@ function ensureAdminUser() {
   httpServer.listen(PORT, () => {
     console.log(`Leons Group CRM corriendo en puerto ${PORT}`);
   });
-  setInterval(checkEscalation, CFG.ESCALATION_CHECK_INTERVAL);
-  setInterval(checkRecordatorios, 60000);
-  setInterval(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS), CFG.SESSION_CLEANUP_INTERVAL);
+  // Vid.a V1: estos jobs corren por setInterval, fuera de cualquier request — sin
+  // envolverlos perderían acceso a la BD en cuanto adapter.js empiece a exigir contexto
+  // de tenant. runAsTenant() los mete en el mismo contexto empresa #1 que usa cada request.
+  const runAsTenant = (fn) => dbAdapter.tenantContext.run({ empresaId: dbAdapter.DEFAULT_EMPRESA_ID, dbPath: dbAdapter.DEFAULT_DB_PATH }, fn);
+  setInterval(() => runAsTenant(checkEscalation), CFG.ESCALATION_CHECK_INTERVAL);
+  setInterval(() => runAsTenant(checkRecordatorios), 60000);
+  setInterval(() => runAsTenant(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS)), CFG.SESSION_CLEANUP_INTERVAL);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
-  require('./services/scheduler').start(buildMensajeConFirma);
+  require('./services/scheduler').start(buildMensajeConFirma, runAsTenant);
 })();
