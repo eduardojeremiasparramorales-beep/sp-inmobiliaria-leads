@@ -178,6 +178,80 @@ app.get('/api/channels/status', auth.requireAdmin, (req, res) => {
   });
 });
 
+// Mapa honesto del sistema (sección "Capacidades") — consolida checks que hoy están
+// dispersos en varios servicios/endpoints, para no tener que adivinar "¿esto está
+// encendido?" función por función. status: 'on' | 'warn' | 'off'.
+app.get('/api/capacidades', auth.requireAdmin, (req, res) => {
+  const nlp = require('./services/nlp');
+  const push = require('./services/push');
+  const transcribe = require('./services/transcribe');
+  const campanasSp = require('./services/campanas-sp');
+
+  const whatsappOk = !!process.env.WHATSAPP_TOKEN;
+  const messengerOk = !!(store.getConfig('channel_messenger_token') || process.env.FACEBOOK_PAGE_TOKEN);
+  const instagramOk = !!(store.getConfig('channel_instagram_token') || process.env.INSTAGRAM_TOKEN);
+  const iaOk = nlp.isAIEnabled();
+  const transcribeOk = transcribe.isEnabled();
+  const pushInfo = { enabled: push.isEnabled(), fcm: push.isFcmEnabled() };
+  const cadenciaOn = store.getConfig('cadencia_auto') === '1';
+  const pythonOk = campanasSp.pythonAvailable();
+  const geminiOk = campanasSp.aiEnabled();
+
+  res.json([
+    { id: 'whatsapp', label: 'WhatsApp', status: whatsappOk ? 'on' : 'off', detail: whatsappOk ? 'Token configurado' : 'Falta WHATSAPP_TOKEN', link: '/os/integraciones.html' },
+    { id: 'messenger', label: 'Messenger', status: messengerOk ? 'on' : 'off', detail: messengerOk ? 'Conectado' : 'No conectado', link: '/os/integraciones.html' },
+    { id: 'instagram', label: 'Instagram', status: instagramOk ? 'on' : 'off', detail: instagramOk ? 'Conectado' : 'No conectado', link: '/os/integraciones.html' },
+    { id: 'ia_copiloto', label: 'IA Copiloto', status: iaOk ? 'on' : 'off', detail: iaOk ? 'Proveedor configurado' : 'Sin proveedor con API Key', link: '/os/configuracion.html' },
+    { id: 'transcripcion', label: 'Transcripción de voz', status: transcribeOk ? 'on' : 'off', detail: transcribeOk ? 'Whisper disponible' : 'Requiere proveedor Groq/OpenAI en IA Copiloto', link: '/os/configuracion.html' },
+    { id: 'push', label: 'Notificaciones push', status: pushInfo.enabled ? 'on' : 'off', detail: pushInfo.enabled ? (pushInfo.fcm ? 'Web Push + FCM nativo' : 'Web Push (sin FCM nativo)') : 'Sin credenciales VAPID', link: null },
+    { id: 'catalogo', label: 'Catálogo público', status: 'on', detail: 'Activo — proyectos en preventa/venta se publican automáticamente', link: '/catalogo/' },
+    { id: 'cadencia', label: 'Cadencia automática', status: cadenciaOn ? 'on' : 'warn', detail: cadenciaOn ? 'Activa' : 'Apagada (opt-in)', link: '/os/automatizaciones.html' },
+    { id: 'campanas_sp', label: 'Generador de creativos', status: pythonOk ? (geminiOk ? 'on' : 'warn') : 'off', detail: !pythonOk ? 'Python no disponible en el contenedor' : (geminiOk ? 'Python + IA Gemini' : 'Python OK, sin GOOGLE_API_KEY (fondos IA desactivados, cae a Pillow)'), link: '/os/campanas-sp.html' },
+    { id: 'meta_ads', label: 'Meta Ads', status: 'off', detail: 'Pendiente de implementar (Fase 4)', link: null },
+    { id: 'calendario', label: 'Calendario', status: 'on', detail: 'Activo', link: '/os/calendario.html' },
+    { id: 'insignias', label: 'Insignias', status: 'on', detail: 'Activo', link: '/os/equipo.html' },
+    { id: 'webhook_firma', label: 'Firma del webhook', status: process.env.APP_SECRET ? 'on' : 'off', detail: process.env.APP_SECRET ? 'Verificación de firma activa (APP_SECRET configurado)' : 'Sin APP_SECRET — el webhook acepta requests sin verificar firma', link: null },
+  ]);
+});
+
+function tamanoMediaDir() {
+  try {
+    const { MEDIA_DIR } = require('./services/media');
+    if (!fs.existsSync(MEDIA_DIR)) return 0;
+    return fs.readdirSync(MEDIA_DIR).reduce((sum, f) => {
+      try { return sum + fs.statSync(path.join(MEDIA_DIR, f)).size; } catch (e) { return sum; }
+    }, 0);
+  } catch (e) { return 0; }
+}
+
+// Sección "Uso" — mes en curso + serie de 6 meses para el mini-gráfico.
+app.get('/api/uso', auth.requireAdmin, async (req, res) => {
+  const claves = ['mensajes_enviados', 'mensajes_recibidos', 'generaciones_ia', 'campanas_enviadas'];
+  const actual = store.getUsage();
+  const serie = store.getUsageRange(claves, 6);
+  const campaignRunner = require('./services/campaign-runner');
+
+  let tierWhatsapp = null;
+  try {
+    const q = await require('./services/whatsapp').getPhoneQuality();
+    tierWhatsapp = { calidad: q.quality_rating, tier: q.messaging_limit_tier };
+  } catch (e) { /* Meta puede estar caída/sin credenciales — el resto de "Uso" no depende de esto */ }
+
+  res.json({
+    periodo: new Date().toISOString().slice(0, 7),
+    mensajes_enviados: actual.mensajes_enviados || 0,
+    mensajes_recibidos: actual.mensajes_recibidos || 0,
+    generaciones_ia: actual.generaciones_ia || 0,
+    campanas_enviadas: actual.campanas_enviadas || 0,
+    conversaciones_activas: store.getLeadCount ? store.getLeadCount() : null,
+    almacenamiento_media_bytes: tamanoMediaDir(),
+    campanas_hoy: campaignRunner.sentToday(),
+    campanas_limite_diario: campaignRunner.getDailyLimit(),
+    whatsapp_tier: tierWhatsapp,
+    serie_6_meses: serie,
+  });
+});
+
 // Guarda el token (+ id de página/cuenta) de un canal desde la UI de Integraciones,
 // sin tener que editar el .env del servidor. Se persiste en la tabla config.
 const CHANNEL_TOKEN_FIELDS = {
@@ -698,7 +772,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
     // Verificar si tiene rol admin
     const usuario = store.getUsuarioByVendedorId(vendedor.id);
     const rol = usuario && usuario.rol === 'admin' ? 'admin' : 'vendedor';
-    const token = auth.createSession({ vendedorId: vendedor.id, userId: usuario ? usuario.id : null, rol, nombre: vendedor.nombre });
+    const token = auth.createSession({ vendedorId: vendedor.id, userId: usuario ? usuario.id : null, rol, nombre: vendedor.nombre, userAgent: req.headers['user-agent'] });
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
     // PIN de fábrica: obligar a cambiarlo antes de usar el panel
     const mustChange = String(pin) === '0000';
@@ -711,7 +785,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
     if (!usuario || !auth.verifyPassword(password, usuario.password)) {
       return res.status(401).json({ error: 'credenciales_invalidas' });
     }
-    const token = auth.createSession(usuario);
+    const token = auth.createSession({ ...usuario, userAgent: req.headers['user-agent'] });
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
     const mustChange = ['changeme123', 'cambiar123'].includes(String(password));
     return res.json({ ok: true, token, must_change: mustChange, usuario: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, vendedorId: usuario.vendedor_id } });
@@ -729,6 +803,55 @@ app.post('/api/mi-pin', auth.requireAuth, (req, res) => {
   store.setVendedorPin(req.session.vendedorId, auth.hashPassword(String(pin)));
   console.log(`[PIN] Vendedor ${req.session.vendedorId} cambió su PIN`);
   res.json({ ok: true });
+});
+
+// Etiqueta legible de dispositivo a partir del User-Agent — no es un parser completo
+// (no hace falta una librería para esto), solo lo suficiente para que la lista de
+// sesiones diga "Chrome en Windows" en vez de pegar el user-agent crudo.
+function dispositivoLegible(ua) {
+  ua = String(ua || '');
+  if (!ua) return 'Dispositivo desconocido';
+  let so = 'Dispositivo';
+  if (/iPhone/.test(ua)) so = 'iPhone';
+  else if (/iPad/.test(ua)) so = 'iPad';
+  else if (/Android/.test(ua)) so = 'Android';
+  else if (/Windows/.test(ua)) so = 'Windows';
+  else if (/Macintosh|Mac OS X/.test(ua)) so = 'Mac';
+  else if (/Linux/.test(ua)) so = 'Linux';
+  let nav = '';
+  if (/EdgA|Edge\//.test(ua)) nav = 'Edge';
+  else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) nav = 'Chrome';
+  else if (/CriOS/.test(ua)) nav = 'Chrome';
+  else if (/Firefox\//.test(ua)) nav = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) nav = 'Safari';
+  return nav ? `${nav} en ${so}` : so;
+}
+
+app.get('/api/me/sesiones', auth.requireAuth, (req, res) => {
+  const rows = store.getSessionsByOwner(req.session.vendedorId, req.session.vendedorId ? null : req.session.userId);
+  res.json(rows.map(s => ({
+    token: s.token,
+    dispositivo: dispositivoLegible(s.user_agent),
+    ultima_actividad: s.last_seen_at || s.created_at,
+    actual: s.token === req.token,
+  })));
+});
+
+app.delete('/api/me/sesiones/:token', auth.requireAuth, (req, res) => {
+  const target = store.getDBSession(req.params.token);
+  // Nunca cerrar una sesión ajena: el token debe pertenecer a la misma cuenta que pide el cierre.
+  const esMia = target && (
+    (req.session.vendedorId != null && target.vendedor_id === req.session.vendedorId) ||
+    (req.session.vendedorId == null && target.user_id === req.session.userId)
+  );
+  if (!esMia) return res.status(404).json({ error: 'sesion_no_encontrada' });
+  store.deleteDBSession(req.params.token);
+  res.json({ ok: true });
+});
+
+app.post('/api/me/cerrar-todas', auth.requireAuth, (req, res) => {
+  const n = store.deleteOtherSessions(req.token, req.session.vendedorId, req.session.vendedorId ? null : req.session.userId);
+  res.json({ ok: true, cerradas: n });
 });
 
 app.post('/api/logout', auth.requireAuth, (req, res) => {
@@ -2671,6 +2794,12 @@ const CONFIG_KEYS = [
   'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
   'escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas',
   'campaign_mps', 'campaign_daily_limit',
+  // Parte 3B — General
+  'timezone', 'currency_format', 'default_theme', 'company_logo',
+  // Parte 3B — Privacidad
+  'media_retention_enabled', 'media_retention_days',
+  // Parte 3B — Facturación (estructura lista, cobro real desactivado — ver Parte 3B del plan)
+  'billing_razon_social', 'billing_nit', 'billing_direccion', 'billing_email',
 ];
 
 app.get('/api/config', auth.requireAdmin, (req, res) => {
@@ -2865,6 +2994,45 @@ app.delete('/api/campaigns/:id', auth.requireAdmin, (req, res) => {
 
 app.get('/api/optouts', auth.requireAdmin, (req, res) => {
   res.json(store.getOptouts());
+});
+
+app.delete('/api/optouts/:phone', auth.requireAdmin, (req, res) => {
+  store.deleteOptout(req.params.phone);
+  res.json({ ok: true });
+});
+
+// Exportar mis datos (Privacidad) — ZIP con leads (reutiliza reports.getExportCSV,
+// el más completo de los 3 export de leads que hay en el sistema), notas internas y
+// plantillas de respuesta rápida. archiver arma el ZIP como stream directo a la
+// response — nada se escribe a disco temporal.
+app.post('/api/privacidad/exportar', auth.requireAdmin, async (req, res) => {
+  try {
+    const archiver = require('archiver');
+    const leadsCsv = require('./services/reports').getExportCSV();
+
+    const notas = store.getAllNotas();
+    const notasCsv = ['ID,Lead,Cliente,Telefono,Autor,Nota,Fecha']
+      .concat(notas.map(n => [n.id, n.lead_id, n.customer_name || '', n.customer_phone || '', n.autor || '', String(n.nota || '').replace(/"/g, '""'), n.created_at]
+        .map(v => `"${v}"`).join(',')))
+      .join('\n');
+
+    const plantillas = store.getWATemplates ? store.getWATemplates() : [];
+    const plantillasJson = JSON.stringify(plantillas, null, 2);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="exportacion-datos-sp.zip"');
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (e) => { console.error('[EXPORT] archiver:', e.message); if (!res.headersSent) res.status(500).end(); });
+    archive.pipe(res);
+    archive.append(leadsCsv, { name: 'leads.csv' });
+    archive.append(notasCsv, { name: 'notas.csv' });
+    archive.append(plantillasJson, { name: 'plantillas.json' });
+    archive.append(`Exportación generada: ${new Date().toISOString()}\nSolicitada por: ${req.session.nombre || req.session.email || 'admin'}\n`, { name: 'README.txt' });
+    await archive.finalize();
+  } catch (e) {
+    console.error('[EXPORT] Error generando ZIP:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: 'error_exportando' });
+  }
 });
 
 // Calidad y tier del número — el admin lo revisa antes de lanzar campañas grandes.

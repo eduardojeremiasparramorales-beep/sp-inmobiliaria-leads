@@ -25,12 +25,12 @@ const PYTHON = detectPython();
 // contenedor, `docker logs` lo dice de inmediato en vez de esperar a que un admin genere
 // una campaña y reciba un error de spawn poco claro. Mismo patrón que isFfmpegAvailable()
 // de audio.js — spawnSync corto y cacheado, solo que este corre una vez al cargar el módulo.
+let _pythonOk = false;
 try {
   const r = spawnSync(PYTHON, ['--version'], { timeout: 5000 });
-  if (r.status !== 0 || r.error) {
-    console.warn(`[CAMPANAS-SP] Python no disponible ("${PYTHON}") — el generador de creativos fallará hasta corregirlo. Revisar Dockerfile (python3/py3-pillow) o PYTHON_PATH.`);
-  }
-} catch (e) {
+  _pythonOk = r.status === 0 && !r.error;
+} catch (e) { _pythonOk = false; }
+if (!_pythonOk) {
   console.warn(`[CAMPANAS-SP] Python no disponible ("${PYTHON}") — el generador de creativos fallará hasta corregirlo. Revisar Dockerfile (python3/py3-pillow) o PYTHON_PATH.`);
 }
 
@@ -87,7 +87,7 @@ function generateBackground(prompt, outputPath, refImagePath, width, height) {
       if (code !== 0) return reject(new Error(stderr.slice(0, 400) || `exit ${code}`));
       try {
         const r = JSON.parse(stdout.trim());
-        if (r.ok) resolve(r.path); else reject(new Error(r.error || 'sin datos de imagen'));
+        if (r.ok) { try { store.bumpUsage('generaciones_ia'); } catch (e) {} resolve(r.path); } else reject(new Error(r.error || 'sin datos de imagen'));
       } catch (e) { reject(new Error(`JSON parse: ${e.message}`)); }
     });
     proc.on('error', reject);
@@ -385,4 +385,6 @@ module.exports = {
   analyzeImages,
   autoFillFromCRM,
   copyRealProjectPhotos,
+  pythonAvailable: () => _pythonOk,
+  aiEnabled: isAIEnabled,
 };

@@ -342,6 +342,19 @@ async function initDB() {
     );
   `);
 
+  // Contadores de uso mensual (sección "Uso" de Configuración) — un UPSERT barato por
+  // evento en vez de contar filas de otras tablas en caliente cada vez que alguien abre
+  // el panel. periodo = 'YYYY-MM', clave = 'mensajes_enviados' | 'mensajes_recibidos' |
+  // 'generaciones_ia' | 'campanas_enviadas', etc.
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS usage_counters (
+      periodo TEXT NOT NULL,
+      clave TEXT NOT NULL,
+      valor INTEGER DEFAULT 0,
+      PRIMARY KEY (periodo, clave)
+    );
+  `);
+
   execSQL(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1265,10 +1278,16 @@ function touchSessionLastSeen(token) {
 
 // Pánico: cerrar todo excepto la sesión actual. Acotado por vendedor_id/user_id — nunca
 // puede borrar sesiones de otra cuenta aunque alguien manipule el body del request.
+// run() de este adapter no devuelve conteo de filas (a diferencia de better-sqlite3
+// crudo) — se cuenta antes de borrar en vez de leer .changes.
 function deleteOtherSessions(currentToken, vendedorId, userId) {
-  if (vendedorId != null) return run('DELETE FROM sessions WHERE vendedor_id = ? AND token != ?', [Number(vendedorId), currentToken]).changes;
-  if (userId != null) return run('DELETE FROM sessions WHERE user_id = ? AND vendedor_id IS NULL AND token != ?', [Number(userId), currentToken]).changes;
-  return 0;
+  let where = null, params = null;
+  if (vendedorId != null) { where = 'vendedor_id = ? AND token != ?'; params = [Number(vendedorId), currentToken]; }
+  else if (userId != null) { where = 'user_id = ? AND vendedor_id IS NULL AND token != ?'; params = [Number(userId), currentToken]; }
+  else return 0;
+  const n = (one(`SELECT COUNT(*) as c FROM sessions WHERE ${where}`, params) || {}).c || 0;
+  run(`DELETE FROM sessions WHERE ${where}`, params);
+  return n;
 }
 
 // --- Tareas / recordatorios (por vendedor; lead_id = 0 → tarea suelta) ---
@@ -1474,6 +1493,47 @@ function getOptouts() {
   return all('SELECT * FROM optout ORDER BY created_at DESC');
 }
 
+// Revertir un opt-out manual (el cliente pidió que lo reactiven, o fue un error).
+function deleteOptout(phone) {
+  run('DELETE FROM optout WHERE phone = ?', [phone]);
+}
+
+// --- Contadores de uso (sección "Uso") ---
+function periodoActual() { return new Date().toISOString().slice(0, 7); } // 'YYYY-MM'
+
+// UPSERT +1 (o +n). Nunca debe romper el flujo que lo llama (enviar un mensaje no
+// puede fallar porque falló un contador) — quien llame esto en un punto de negocio
+// real debe envolverlo en try/catch, igual que el resto de la telemetría del sistema.
+function bumpUsage(clave, n = 1) {
+  const periodo = periodoActual();
+  run(`INSERT INTO usage_counters (periodo, clave, valor) VALUES (?, ?, ?)
+       ON CONFLICT(periodo, clave) DO UPDATE SET valor = valor + excluded.valor`, [periodo, clave, n]);
+}
+
+function getUsage(periodo) {
+  const rows = all('SELECT clave, valor FROM usage_counters WHERE periodo = ?', [periodo || periodoActual()]);
+  const out = {};
+  rows.forEach(r => { out[r.clave] = r.valor; });
+  return out;
+}
+
+// Últimos N periodos (para el mini-gráfico de 6 meses) — incluye meses en cero, no
+// solo los que tienen filas, para que el gráfico no salte periodos vacíos.
+function getUsageRange(claves, meses = 6) {
+  const out = [];
+  const d = new Date();
+  for (let i = meses - 1; i >= 0; i--) {
+    const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    const periodo = dt.toISOString().slice(0, 7);
+    const rows = all('SELECT clave, valor FROM usage_counters WHERE periodo = ? AND clave IN (' + claves.map(() => '?').join(',') + ')', [periodo, ...claves]);
+    const punto = { periodo };
+    claves.forEach(c => { punto[c] = 0; });
+    rows.forEach(r => { punto[r.clave] = r.valor; });
+    out.push(punto);
+  }
+  return out;
+}
+
 // --- Segmentación de audiencia para campañas ---
 // Construye el WHERE dinámicamente a partir de filtros opcionales. Excluye SIEMPRE
 // los leads con status='cerrado' (no se hace broadcast a leads inactivos) y los
@@ -1631,6 +1691,14 @@ function getLeadsParaAutoCadencia(limit = 50) {
 // --- Notas internas por lead ---
 function getNotasByLead(leadId) {
   return all('SELECT * FROM lead_notes WHERE lead_id = ? ORDER BY created_at DESC, id DESC', [leadId]);
+}
+
+// Todas las notas del negocio, con el teléfono/nombre del lead — usado en la
+// exportación de datos de Privacidad, no en la UI normal de un lead individual.
+function getAllNotas() {
+  return all(`SELECT n.id, n.lead_id, l.customer_name, l.customer_phone, n.autor, n.nota, n.created_at
+              FROM lead_notes n LEFT JOIN leads l ON l.id = n.lead_id
+              ORDER BY n.created_at DESC`);
 }
 
 function addNota(leadId, autor, nota) {
@@ -2603,6 +2671,7 @@ module.exports = {
   getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken,
   createDBSession, getDBSession, deleteDBSession, refreshSession, expireSessionSoon, cleanExpiredSessions,
+  getSessionsByOwner, touchSessionLastSeen, deleteOtherSessions,
   createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,
   getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout,
   countMessagesByLead, getLeadAggregates,
@@ -2610,8 +2679,9 @@ module.exports = {
   getWATemplates, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName, upsertWATemplateFull, setWATemplateMapping,
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
-  isOptedOut, addOptout, getOptouts, countSegment, segmentLeads, getSegmentOptions,
-  setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, addNota, deleteNota, reassignLead,
+  isOptedOut, addOptout, getOptouts, deleteOptout, countSegment, segmentLeads, getSegmentOptions,
+  bumpUsage, getUsage, getUsageRange,
+  setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, getAllNotas, addNota, deleteNota, reassignLead,
   getCadenciaPasos, setCadenciaPasos, enrollCadencia, stopCadencia, getCadenciaDue, updateCadenciaLead, getLeadsParaAutoCadencia,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,

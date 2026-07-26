@@ -195,6 +195,7 @@ async function chatJSON(systemPrompt, userText, timeoutMs) {
     clearTimeout(timer);
     const content = completion.choices[0].message.content;
     if (!content) throw new Error('Respuesta vacía del modelo');
+    try { store.bumpUsage('generaciones_ia'); } catch (e) {}
     return JSON.parse(content);
   } catch (e) {
     clearTimeout(timer);
@@ -234,6 +235,7 @@ async function chatText(systemPrompt, userText, timeoutMs, opts = {}) {
       }, { signal: controller.signal });
       clearTimeout(timer);
       const text = (completion.choices[0] && completion.choices[0].message.content) || '';
+      try { store.bumpUsage('generaciones_ia'); } catch (e) {}
       return { text, model };
     } catch (e) {
       clearTimeout(timer);

@@ -184,6 +184,30 @@ function autoInscribirCadencia() {
   return n;
 }
 
+// Retención de medios (Privacidad · Parte 3B) — apagada por defecto. Borra SOLO
+// archivos de chat (entrantes/salientes) más viejos que N meses; jamás toca `cat_*`
+// (fotos del catálogo público, que son permanentes y las sigue sirviendo el sitio).
+function limpiarMediaAntigua() {
+  const enabled = store.getConfig('media_retention_enabled') === '1';
+  if (!enabled) return 0;
+  const dias = Number(store.getConfig('media_retention_days')) || 180;
+  const fs = require('fs');
+  const path = require('path');
+  const { MEDIA_DIR, isCatalogFile } = require('./media');
+  if (!fs.existsSync(MEDIA_DIR)) return 0;
+  const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
+  let borrados = 0;
+  for (const f of fs.readdirSync(MEDIA_DIR)) {
+    if (isCatalogFile(f)) continue; // catálogo público: nunca se borra por retención
+    const fp = path.join(MEDIA_DIR, f);
+    try {
+      const st = fs.statSync(fp);
+      if (st.isFile() && st.mtimeMs < limite) { fs.unlinkSync(fp); borrados++; }
+    } catch (e) { /* archivo tocado por otro proceso justo ahora — se intenta de nuevo mañana */ }
+  }
+  return borrados;
+}
+
 async function tickDiario() {
   const hoy = new Date().toISOString().slice(0, 10);
   if (_ultimoDiario === hoy) return;
@@ -192,7 +216,8 @@ async function tickDiario() {
     const seg = crearSeguimientosAutomaticos();
     const cad = autoInscribirCadencia();
     const ins = insignias.recomputeAll();
-    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia; insignias`, ins);
+    const media = limpiarMediaAntigua();
+    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia, ${media} archivo(s) de media retirados; insignias`, ins);
   } catch (e) { console.error('[SCHEDULER] tickDiario:', e.message); }
 }
 

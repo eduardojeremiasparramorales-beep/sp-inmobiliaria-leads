@@ -55,6 +55,7 @@ async function sendMessage(to, text) {
 async function sendMessageSmart(to, text, leadId) {
   try {
     const result = await sendMessage(to, text);
+    try { require('../db/store').bumpUsage('mensajes_enviados'); } catch (e) {}
     return { data: result, templateSent: false, reopenedWindow: false };
   } catch (err) {
     const errData = err.response && err.response.data && err.response.data.error;

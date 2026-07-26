@@ -12,6 +12,7 @@
     "release:apk": "node scripts/release-apk.js"
   },
   "dependencies": {
+    "archiver": "^8.0.0",
     "axios": "^1.7.0",
     "better-sqlite3": "^9.4.0",
     "dotenv": "^17.4.2",

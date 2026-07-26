@@ -41,7 +41,9 @@ async function sendOneWithRetry(to, tpl, lead, vendedor, overrides) {
   let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await sendResolvedTemplate(to, tpl, lead, vendedor, overrides);
+      const r = await sendResolvedTemplate(to, tpl, lead, vendedor, overrides);
+      try { store.bumpUsage('campanas_enviadas'); } catch (e) {}
+      return r;
     } catch (err) {
       lastErr = err;
       const status = err.response && err.response.status;

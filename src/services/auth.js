@@ -34,6 +34,7 @@ function createSession(data) {
     rol: data.rol || 'vendedor',
     nombre: data.nombre || '',
     email: data.email || '',
+    userAgent: data.userAgent || '',
   });
   return token;
 }
@@ -95,6 +96,7 @@ function requireAuth(req, res, next) {
         const nuevo = createSession({
           userId: raw.user_id, vendedorId: raw.vendedor_id,
           rol: raw.rol, nombre: raw.nombre, email: raw.email,
+          userAgent: raw.user_agent || req.headers['user-agent'] || '', // preservar el dispositivo al rotar el token
         });
         // El token viejo expira en 5 min (created_at retrocedido a TTL-5min)
         store.expireSessionSoon(token, 5 * 60 * 1000);
@@ -105,6 +107,9 @@ function requireAuth(req, res, next) {
         store.refreshSession(token);
       }
     }
+    // "Última actividad" en Sesiones activas — throttled dentro de touchSessionLastSeen,
+    // así que esto no agrega un UPDATE por request, solo cuando ya pasó rato.
+    try { store.touchSessionLastSeen(token); } catch (e) {}
   }
   req.session = session;
   if (!req.token) req.token = token;

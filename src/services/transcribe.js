@@ -106,4 +106,4 @@ async function llamarWhisper(prov, filePath, mime) {
   return r && r.text;
 }
 
-module.exports = { enqueue };
+module.exports = { enqueue, isEnabled: () => !!getProveedor() };

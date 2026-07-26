@@ -95,6 +95,7 @@ function handleMessage(req, res) {
           const fromPhone = msg.from;
           if (!fromPhone) continue;
 
+          try { store.bumpUsage('mensajes_recibidos'); } catch (e) {}
           flushPendingOutbound(fromPhone).catch(e => console.error('[Webhook] flushPendingOutbound:', e.message));
 
           // Meta reintenta webhooks si el 200 tarda o hay errores de red: si ya guardamos
