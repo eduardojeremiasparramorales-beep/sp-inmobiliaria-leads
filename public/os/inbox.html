@@ -967,7 +967,7 @@
   }, 500);
 
   /* ── Render mensajes ── */
-  const EMOJIS = ['👍','❤️','😂','😮','😢','🙏','🔥','🎉','💯','⭐','👏','💪'];
+  const REACT_EMOJIS = ['👍','❤️','😂','😮','😢','🙏','🔥','🎉','💯','⭐','👏','💪'];
   let emojiPickerTarget = null;
 
   function renderReactions(reactions) {
@@ -1011,7 +1011,7 @@
         if (!grid) {
           grid = document.createElement('div');
           grid.className = 'emoji-grid';
-          grid.innerHTML = EMOJIS.map(em => `<button data-em="${em}">${em}</button>`).join('');
+          grid.innerHTML = REACT_EMOJIS.map(em => `<button data-em="${em}">${em}</button>`).join('');
           grid.addEventListener('click', async (ev2) => {
             const em = ev2.target.closest('[data-em]');
             if (!em || !emojiPickerTarget) return;
