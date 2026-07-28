@@ -33,7 +33,7 @@ function init() {
       const saJson = saRaw.trim().startsWith('{') ? saRaw : Buffer.from(saRaw, 'base64').toString('utf8');
       const admin = require('firebase-admin');
       const serviceAccount = JSON.parse(saJson);
-      if (!admin.apps.length) admin.initializeApp({ credential: admin.cert(serviceAccount) });
+      if (!admin.getApps().length) admin.initializeApp({ credential: admin.cert(serviceAccount) });
       fcmEnabled = true;
     } catch (e) {
       console.error('FCM deshabilitado: FCM_SERVICE_ACCOUNT_JSON inválido (¿JSON crudo o base64 corrupto?) —', e.message);
@@ -75,7 +75,7 @@ async function sendFcm(s, payload) {
   if (!fcmEnabled) return;
   try {
     const admin = require('firebase-admin');
-    await admin.messaging().send({
+    await require('firebase-admin/messaging').getMessaging().send({
       token: s.endpoint, // el token FCM se guarda en la columna endpoint (ver store.saveFcmToken)
       notification: { title: payload.title || 'Leons Group', body: payload.body || '' },
       data: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
