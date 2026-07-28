@@ -78,6 +78,7 @@
     { title: 'Organización', items: [
       { id: 'ia-chat', label: 'Chat IA', icon: 'ai', href: '/os/ia-chat.html', admin: true },
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
+      { id: 'team-chat', label: 'Chat Interno', icon: 'msg', href: '/os/equipo-interno.html', admin: true },
       { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: '/os/configuracion.html', admin: true },
       { id: 'dedup', label: 'Depurar', icon: 'zap', href: '/os/deduplicar.html', admin: true },

@@ -766,6 +766,54 @@ function getAllTeamMessagesForAdmin(limit) {
   ).reverse();
 }
 
+// Admin: todas las conversaciones del chat interno (general + DMs) con metadata
+function getAdminTeamConversations() {
+  const generalLast = one(
+    `SELECT tm.*, (SELECT COUNT(*) FROM team_messages WHERE to_vendedor_id IS NULL) AS msg_count
+     FROM team_messages tm WHERE tm.to_vendedor_id IS NULL ORDER BY tm.id DESC LIMIT 1`
+  );
+  const dms = all(
+    `SELECT tm.*,
+            CASE WHEN tm.from_vendedor_id = 0 THEN tm.to_vendedor_id
+                 WHEN tm.to_vendedor_id = 0 THEN tm.from_vendedor_id
+                 ELSE MIN(tm.from_vendedor_id, tm.to_vendedor_id) END AS pair_a,
+            CASE WHEN tm.from_vendedor_id = 0 THEN tm.from_vendedor_id
+                 WHEN tm.to_vendedor_id = 0 THEN tm.to_vendedor_id
+                 ELSE MAX(tm.from_vendedor_id, tm.to_vendedor_id) END AS pair_b,
+            vf.nombre AS from_nombre_full,
+            vt.nombre AS to_nombre
+     FROM team_messages tm
+     LEFT JOIN vendedores vf ON tm.from_vendedor_id = vf.id
+     LEFT JOIN vendedores vt ON tm.to_vendedor_id = vt.id
+     WHERE tm.to_vendedor_id IS NOT NULL
+     ORDER BY tm.id DESC`
+  );
+  const dmMap = {};
+  dms.forEach(m => {
+    const key = `${m.pair_a}_${m.pair_b}`;
+    if (!dmMap[key]) {
+      dmMap[key] = {
+        pair: [m.pair_a, m.pair_b],
+        names: [m.from_nombre_full, m.to_nombre].filter(Boolean),
+        last_message: m.body,
+        last_at: m.created_at,
+        last_from: m.from_nombre_full,
+        count: 0
+      };
+    }
+    dmMap[key].count++;
+  });
+  return {
+    general: generalLast ? {
+      last_message: generalLast.body,
+      last_from: generalLast.from_nombre,
+      last_at: generalLast.created_at,
+      msg_count: generalLast.msg_count || 0
+    } : { last_message: null, msg_count: 0 },
+    dms: Object.values(dmMap)
+  };
+}
+
 // --- Borrar para mí ---
 function softDeleteMessage(messageId, senderNumber) {
   if (senderNumber) {
@@ -2728,7 +2776,7 @@ module.exports = {
   toggleStarMessage, getStarredMessages, searchMessages,
   setTranscript, setTranslation,
   createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
-  saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, countTeamUnread, getAllTeamMessagesForAdmin,
+  saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, countTeamUnread, getAllTeamMessagesForAdmin, getAdminTeamConversations,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
   getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,
   // Campañas SP

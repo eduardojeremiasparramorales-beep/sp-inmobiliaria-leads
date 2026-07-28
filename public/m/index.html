@@ -161,6 +161,32 @@
   .c-act:active{ background:var(--bg-2); }
   .c-act svg{ width:20px; height:20px; }
 
+  /* ── Chat Equipo — Banner Premium (Option B/D) ── */
+  .eq-banner{ padding:calc(var(--safe-t) + 12px) 16px 10px; background:radial-gradient(circle 200px at 50% 0%,rgba(200,164,90,.07),transparent 70%),var(--glass); backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur); border-bottom:1px solid var(--glass-border); text-align:center; position:relative; }
+  .eq-banner__back{ position:absolute; top:calc(var(--safe-t) + 12px); left:14px; width:36px; height:36px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border-soft); color:var(--text-2); display:grid; place-items:center; cursor:pointer; font-size:16px; z-index:2; }
+  .eq-banner__logo{ width:46px; height:46px; border-radius:14px; overflow:hidden; margin:0 auto 8px; box-shadow:0 4px 18px rgba(200,164,90,.22),0 0 0 1.5px rgba(200,164,90,.15); }
+  .eq-banner__logo img{ width:100%; height:100%; object-fit:cover; }
+  .eq-banner__dm-logo{ width:54px; height:54px; border-radius:16px; overflow:hidden; margin:0 auto 8px; box-shadow:0 4px 22px rgba(200,164,90,.28),0 0 0 2px rgba(200,164,90,.2); }
+  .eq-banner__dm-logo img{ width:100%; height:100%; object-fit:cover; }
+  .eq-banner__brand{ font-family:var(--f-title); font-size:16px; font-weight:600; color:var(--gold); letter-spacing:.12em; margin-bottom:2px; }
+  .eq-banner__sub{ font-size:11px; color:var(--text-3); margin-bottom:10px; }
+  .eq-banner__line{ width:40px; height:2px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:0 auto; border-radius:1px; }
+  .eq-banner__team{ display:flex; justify-content:center; align-items:center; margin-bottom:10px; }
+  .eq-banner__team .av{ width:34px; height:34px; margin:0 -5px; font-size:11px; border:2.5px solid var(--bg-0); transition:transform .15s; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+  .eq-banner__team .av:hover{ transform:translateY(-4px) scale(1.08); z-index:2; }
+  .eq-banner__more{ width:34px; height:34px; border-radius:50%; background:var(--bg-4); border:2.5px solid var(--bg-0); display:grid; place-items:center; font-size:10px; font-weight:700; color:var(--gold); margin:0 -5px; }
+  .eq-banner__dm-status{ display:inline-flex; align-items:center; gap:5px; background:rgba(78,123,70,.15); border:1px solid rgba(78,123,70,.3); border-radius:999px; padding:3px 10px; margin-bottom:6px; }
+  .eq-banner__dm-dot{ width:6px; height:6px; border-radius:50%; background:#4E7B46; }
+  .eq-banner__dm-status span{ font-size:10.5px; color:#6da362; font-weight:500; }
+  .eq-banner__dm-name{ font-family:var(--f-title); font-size:17px; font-weight:600; color:var(--gold); letter-spacing:.06em; margin-bottom:2px; }
+  .eq-typing{ display:none; align-items:center; gap:5px; justify-content:center; padding:4px 0 2px; font-size:11px; color:var(--text-3); }
+  .eq-typing.show{ display:flex; }
+  .eq-typing__dots{ display:flex; gap:3px; }
+  .eq-typing__dots span{ width:5px; height:5px; border-radius:50%; background:var(--gold); animation:eqTypePulse 1.2s infinite; }
+  .eq-typing__dots span:nth-child(2){ animation-delay:.2s; }
+  .eq-typing__dots span:nth-child(3){ animation-delay:.4s; }
+  @keyframes eqTypePulse{ 0%,100%{ opacity:.3;transform:scale(.8); } 50%{ opacity:1;transform:scale(1); } }
+
   .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px 6px; display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
   .c-msgs.c-msgs--patron{
     background:
@@ -614,14 +640,11 @@
 
   <!-- ══ Chat interno Equipo Leons ══ -->
   <section class="screen screen--chat" id="scEquipo">
-    <header class="c-head">
-      <button class="c-back" id="eqBack"></button>
-      <div class="m-avatar" style="width:38px;height:38px;background:var(--grad-gold-deep);color:#0A0A0A;font-size:16px;border-radius:12px;display:grid;place-items:center">🦁</div>
-      <div style="min-width:0;flex:1">
-        <div style="font-size:15px;font-weight:600;color:var(--gold)" id="eqTitle">Equipo Leons</div>
-        <div style="font-size:11px;color:var(--text-3)" id="eqSubtitle">Chat interno — los clientes no lo ven</div>
-      </div>
-    </header>
+    <div class="eq-banner" id="eqBanner">
+      <button class="eq-banner__back" id="eqBack"></button>
+      <div id="eqBannerContent"></div>
+      <div class="eq-typing" id="eqTyping"><div class="eq-typing__dots"><span></span><span></span><span></span></div><span id="eqTypingName"></span></div>
+    </div>
     <div id="eqTabs" style="display:flex;gap:6px;padding:8px 12px 4px;overflow-x:auto;border-bottom:1px solid var(--border-soft)"></div>
     <div id="eqSupervisado" style="display:none;font-size:11px;color:var(--text-3);background:rgba(200,164,90,.08);padding:6px 14px;text-align:center">🛡️ Chat interno supervisado por administración</div>
     <div class="m-scroll" id="eqMsgs" style="padding:12px 14px"></div>
@@ -1004,10 +1027,38 @@ function renderEqTabs(){
   box.innerHTML=chip(null,'🦁 General')+_eqAsesores.map(a=>chip(Number(a.id), esc(a.nombre.split(' ')[0]))).join('');
   box.querySelectorAll('[data-con]').forEach(b=>b.onclick=async()=>{ _eqCon=b.dataset.con===''?null:Number(b.dataset.con); haptic(6); renderEqTabs(); updateEqHeader(); await cargarEquipo(); renderEquipo(); });
 }
+function renderEqBanner(){
+  const box=$('#eqBannerContent'); if(!box) return;
+  if(_eqCon==null){
+    const maxShow=5;
+    const avs=_eqAsesores.slice(0,maxShow);
+    const extra=_eqAsesores.length-maxShow;
+    box.innerHTML=
+      '<div class="eq-banner__logo"><img src="/icons/logo.png" alt=""></div>'+
+      '<div class="eq-banner__brand">EQUIPO LEONS</div>'+
+      '<div class="eq-banner__sub">Chat interno — los clientes no lo ven</div>'+
+      '<div class="eq-banner__team">'+
+        avs.map(a=>`<div class="av" style="background:${avatarColor(a.nombre)};overflow:hidden">${a.foto?`<img src="${esc(a.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(a.nombre)}</div>`).join('')+
+        (extra>0?`<div class="eq-banner__more">+${extra}</div>`:'')+
+      '</div>'+
+      '<div class="eq-banner__line"></div>';
+  } else {
+    const a=_eqAsesores.find(x=>Number(x.id)===Number(_eqCon));
+    const nombre=a?a.nombre:'Directo';
+    const foto=a&&a.foto;
+    box.innerHTML=
+      `<div class="eq-banner__dm-logo" style="background:${avatarColor(nombre)}">${foto?`<img src="${esc(foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(nombre)}</div>`+
+      '<div class="eq-banner__dm-status"><div class="eq-banner__dm-dot"></div><span>En línea</span></div>'+
+      `<div class="eq-banner__dm-name">${esc(nombre)}</div>`+
+      '<div class="eq-banner__sub">Mensaje directo</div>'+
+      '<div class="eq-banner__line"></div>';
+  }
+}
 function updateEqHeader(){
-  const t=$('#eqTitle'), s=$('#eqSubtitle'), sup=$('#eqSupervisado');
-  if(_eqCon==null){ if(t)t.textContent='Equipo Leons'; if(s)s.textContent='Canal general — los clientes no lo ven'; if(sup)sup.style.display='none'; }
-  else { const a=_eqAsesores.find(x=>Number(x.id)===Number(_eqCon)); if(t)t.textContent=a?a.nombre:'Directo'; if(s)s.textContent='Mensaje directo'; if(sup)sup.style.display=me&&me.rol!=='admin'?'block':'none'; }
+  const sup=$('#eqSupervisado');
+  renderEqBanner();
+  if(_eqCon!=null){ if(sup) sup.style.display=me&&me.rol!=='admin'?'block':'none'; }
+  else { if(sup) sup.style.display='none'; }
 }
 function marcarEquipoLeido(){
   if(teamMsgs.length) localStorage.setItem('sp_equipo_last_read', String(teamMsgs[teamMsgs.length-1].id));
@@ -1026,14 +1077,28 @@ async function enviarEquipo(){
   const mentions=[]; _eqAsesores.forEach(a=>{ const f=(a.nombre||'').split(' ')[0]; if(f && new RegExp('@'+f,'i').test(body)) mentions.push(Number(a.id)); });
   const payload={body}; if(_eqCon!=null) payload.to=_eqCon; if(mentions.length) payload.mentions=mentions;
   const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); }
+  if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); hideEqTyping(); }
   else toast('Error al enviar');
 }
+let _eqTypingLast=0;
+function enviarEqTyping(){
+  const now=Date.now(); if(now-_eqTypingLast<3000) return; _eqTypingLast=now;
+  api('/api/equipo/typing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:_eqCon})});
+}
+function showEqTyping(nombre){
+  const el=$('#eqTyping'),nm=$('#eqTypingName');
+  if(el) el.classList.add('show');
+  if(nm) nm.textContent=nombre+' está escribiendo…';
+}
+function hideEqTyping(){ const el=$('#eqTyping'); if(el) el.classList.remove('show'); }
 function initEquipo(){
   const back=$('#eqBack'); if(back){ back.innerHTML=I(SVG.back,22); back.onclick=cerrarEquipo; }
   const send=$('#eqSend'); if(send){ send.innerHTML=I(SVG.send,19); send.onclick=enviarEquipo; }
   const inp=$('#eqInput');
-  if(inp) inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviarEquipo(); } });
+  if(inp){
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviarEquipo(); } });
+    inp.addEventListener('input',()=>{ enviarEqTyping(); });
+  }
   cargarEquipo().then(renderList);
 }
 
@@ -3912,14 +3977,21 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
   // Notificación del centro (asignaciones, escalamientos, recordatorios…)
   es.addEventListener('notificacion',ev=>{ try{ const x=JSON.parse(ev.data); const b=document.getElementById('notifBadge'); const cur=b?Number(b.textContent)||0:0; setNotifBadge(cur+1); if(x.tipo!=='mensaje_cliente'){ toast('🔔 '+(x.titulo||'Notificación')); haptic([80,40,80]); playNotifSound(); } }catch(e){} });
   // Chat interno del equipo en vivo
-  es.addEventListener('equipo_mensaje',ev=>{ try{ const m=JSON.parse(ev.data); if(teamMsgs.find(x=>x.id===m.id)) return;
+  es.addEventListener('equipo_mensaje',ev=>{ try{ const m=JSON.parse(ev.data); if(teamMsgs.find(x=>x.id===m.id)) return; hideEqTyping();
     if(_eqAbierto&&_eqCon==null){ teamMsgs.push(m); renderEquipo(); marcarEquipoLeido(); }
     else if(!esMio(m)){ renderList(); toast('🦁 '+esc(m.from_nombre||'Equipo')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); } }catch(e){} });
   // Mensaje directo entre asesores (o del admin monitoreando)
-  es.addEventListener('equipo_directo',ev=>{ try{ const m=JSON.parse(ev.data);
+  es.addEventListener('equipo_directo',ev=>{ try{ const m=JSON.parse(ev.data); hideEqTyping();
     const otro = Number(m.from_vendedor_id)===Number(miId()) ? Number(m.to_vendedor_id) : Number(m.from_vendedor_id);
     if(_eqAbierto&&Number(_eqCon)===otro){ if(!teamMsgs.find(x=>x.id===m.id)){ teamMsgs.push(m); renderEquipo(); marcarEquipoLeido(); } }
     else if(!esMio(m)){ toast('💬 '+esc(m.from_nombre||'Asesor')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); } }catch(e){} });
+  // Typing indicator del equipo
+  es.addEventListener('equipo_typing',ev=>{ try{ const t=JSON.parse(ev.data);
+    if(Number(t.from_id)===Number(miId())) return;
+    const canalGeneral=t.to==null&&_eqCon==null;
+    const directo=t.to!=null&&Number(_eqCon)===Number(t.from_id);
+    if(_eqAbierto&&(canalGeneral||directo)){ showEqTyping(t.from_nombre); setTimeout(hideEqTyping,5000); }
+  }catch(e){} });
   // Transcripción IA lista para una nota de voz
   es.addEventListener('transcripcion',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m){ m.transcript=x.transcript; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }catch(e){} });
   // Programados del servidor
