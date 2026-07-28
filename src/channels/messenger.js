@@ -53,18 +53,11 @@ class MessengerAdapter extends ChannelAdapter {
   }
 
   async sendLocation(to, latitude, longitude) {
-    const { token, pageId } = this.getConfig();
-    const res = await axios.post(`${GRAPH}/${pageId}/messages`, {
-      recipient: { id: to },
-      messaging_type: 'RESPONSE',
-      message: {
-        attachment: {
-          type: 'location',
-          payload: { coordinates: { lat: Number(latitude), long: Number(longitude) } },
-        },
-      },
-    }, { params: { access_token: token } });
-    return res.data;
+    // Messenger NO soporta location como attachment saliente — enviar link de Google Maps
+    const lat = Number(latitude), lng = Number(longitude);
+    const url = `https://www.google.com/maps?q=${lat},${lng}`;
+    const text = `📍 Ubicación: ${lat}, ${lng}\n${url}`;
+    return this.sendMessage(to, text);
   }
 
   async sendReaction(to, mid, emoji) {
