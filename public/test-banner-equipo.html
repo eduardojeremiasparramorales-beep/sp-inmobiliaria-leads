@@ -98,6 +98,28 @@
   .optB-more { width:34px; height:34px; border-radius:50%; background:var(--bg-4); border:2px solid var(--bg-0); display:grid; place-items:center; font-size:10px; font-weight:700; color:var(--gold); margin:0 -5px; }
   .optB-line { width:40px; height:2px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:10px auto 0; border-radius:1px; }
 
+  /* ── Option B: Direct Message variant ── */
+  .optB-dm-head {
+    padding: calc(var(--safe-t) + 14px) 16px 12px;
+    background:
+      radial-gradient(circle 180px at 50% 0%, rgba(200,164,90,.06), transparent 70%),
+      var(--glass);
+    backdrop-filter: var(--blur);
+    -webkit-backdrop-filter: var(--blur);
+    border-bottom: 1px solid var(--glass-border);
+    text-align: center;
+    position: relative;
+  }
+  .optB-dm-logo { width:52px; height:52px; border-radius:16px; overflow:hidden; margin:0 auto 10px; box-shadow:0 4px 20px rgba(200,164,90,.25), 0 0 0 2px rgba(200,164,90,.2); }
+  .optB-dm-logo img { width:100%; height:100%; object-fit:cover; }
+  .optB-dm-status { display:inline-flex; align-items:center; gap:5px; background:rgba(78,123,70,.15); border:1px solid rgba(78,123,70,.3); border-radius:999px; padding:3px 10px; margin-bottom:8px; }
+  .optB-dm-status .dot { width:6px; height:6px; border-radius:50%; background:#4E7B46; }
+  .optB-dm-status span { font-size:10.5px; color:#6da362; font-weight:500; }
+  .optB-dm-title { font-family:var(--f-title); font-size:17px; font-weight:600; color:var(--gold); letter-spacing:.06em; margin-bottom:2px; }
+  .optB-dm-sub { font-size:11px; color:var(--text-3); margin-bottom:10px; }
+  .optB-dm-line { width:40px; height:2px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:0 auto; border-radius:1px; }
+  .optB-dm-head .optB-back { position:absolute; top:calc(var(--safe-t) + 14px); left:14px; width:34px; height:34px; border-radius:50%; background:var(--bg-3); border:1px solid var(--border-soft); color:var(--text-2); display:grid; place-items:center; cursor:pointer; font-size:16px; z-index:2; }
+
   /* ════════════════════════════════════════
      OPCIÓN C — "Gold Edge"
      Banner con borde dorado premium + avatares flotantes
@@ -254,12 +276,40 @@
     </div>
   </div>
 
+  <!-- ═══ OPCIÓN D — B: Direct Message ═══ -->
+  <div>
+    <div class="option-label">Opción D</div>
+    <div class="option-title">Premium Center — Chat Directo</div>
+    <div class="phone">
+      <div class="phone-screen">
+        <div class="optB-dm-head">
+          <button class="optB-back" style="position:absolute;top:calc(var(--safe-t) + 14px);left:14px">←</button>
+          <div class="optB-dm-logo"><img src="/icons/logo.png" alt=""></div>
+          <div class="optB-dm-status"><div class="dot"></div><span>En línea</span></div>
+          <div class="optB-dm-title">Eduardo Parra</div>
+          <div class="optB-dm-sub">Mensaje directo — supervisado por admin</div>
+          <div class="optB-dm-line"></div>
+        </div>
+        <div class="fake-msgs">
+          <div class="fake-msg in">Oye, ¿cómo te fue con el cliente de Tocaima?<div class="time">10:32 AM</div></div>
+          <div class="fake-msg out">Muy bien, ya firmó el lote 15. Le mandé el contrato por WhatsApp.<div class="time">10:33 AM</div></div>
+          <div class="fake-msg in">Excelente, lo registro en el pipeline 👌<div class="time">10:34 AM</div></div>
+        </div>
+        <div class="fake-input">
+          <textarea placeholder="Mensaje directo…" rows="1"></textarea>
+          <button class="fake-send">➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="pick" id="pick">
   <button data-v="A">A — Minimal</button>
   <button data-v="B">B — Premium</button>
   <button data-v="C">C — Gold Edge</button>
+  <button data-v="D">D — Directo</button>
 </div>
 <p class="pick-desc" id="pickDesc">Toca una opción para seleccionarla</p>
 
@@ -267,7 +317,8 @@
   const descs = {
     A: 'Minimal Stack — Logo pequeño + avatares superpuestos. Limpio, moderno, ocupa poco espacio.',
     B: 'Premium Center — Logo centrado grande + avatares en arco + línea dorada. El más elegante y llamativo.',
-    C: 'Gold Edge — Borde dorado premium + avatares inline + pill de actividad. Informativo y con presencia.'
+    C: 'Gold Edge — Borde dorado premium + avatares inline + pill de actividad. Informativo y con presencia.',
+    D: 'Chat Directo — Misma Option B pero en modo directo: foto grande del asesor + estado + nombre. Sin avatares del equipo.'
   };
   document.getElementById('pick').addEventListener('click', e => {
     const btn = e.target.closest('button'); if (!btn) return;
