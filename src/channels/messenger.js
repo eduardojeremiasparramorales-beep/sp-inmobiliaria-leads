@@ -52,6 +52,30 @@ class MessengerAdapter extends ChannelAdapter {
     }
   }
 
+  async sendLocation(to, latitude, longitude) {
+    const { token, pageId } = this.getConfig();
+    const res = await axios.post(`${GRAPH}/${pageId}/messages`, {
+      recipient: { id: to },
+      messaging_type: 'RESPONSE',
+      message: {
+        attachment: {
+          type: 'location',
+          payload: { coordinates: { lat: Number(latitude), long: Number(longitude) } },
+        },
+      },
+    }, { params: { access_token: token } });
+    return res.data;
+  }
+
+  async sendReaction(to, mid, emoji) {
+    const { token, pageId } = this.getConfig();
+    const res = await axios.post(`${GRAPH}/${pageId}/messages`, {
+      recipient: { id: to },
+      reaction: { mid, emoji, action: emoji ? 'react' : 'unreact' },
+    }, { params: { access_token: token } });
+    return res.data;
+  }
+
   // --- Sender Actions: typing, mark seen ---
   async sendSenderAction(to, action) {
     const { token, pageId } = this.getConfig();

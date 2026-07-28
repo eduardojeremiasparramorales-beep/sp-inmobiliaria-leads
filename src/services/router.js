@@ -198,6 +198,7 @@ class MessageRouter {
 
     // 3. Enviar mensaje (smart: detecta ventana 24h y envía template si está cerrada)
     let templateSent = false;
+    let outgoingMid = null;
     if (conversation.channel === 'whatsapp') {
       const { sendMessageSmart } = require('./whatsapp');
       const leadId = conversation.lead_id || null;
@@ -206,8 +207,9 @@ class MessageRouter {
     } else {
       try {
         console.log(`[ROUTER out] Enviando por ${conversation.channel} a ${channelUserId}...`);
-        await adapter.sendMessage(channelUserId, text);
-        console.log(`[ROUTER out] Enviado OK por ${conversation.channel}`);
+        const result = await adapter.sendMessage(channelUserId, text);
+        outgoingMid = result && result.message_id ? result.message_id : null;
+        console.log(`[ROUTER out] Enviado OK por ${conversation.channel} mid=${outgoingMid}`);
       } catch (e) {
         console.error(`[ROUTER out] Error enviando por ${conversation.channel}:`, e.response ? JSON.stringify(e.response.data) : e.message);
         throw e;
@@ -215,8 +217,9 @@ class MessageRouter {
     }
 
     // 4. Guardar en timeline
+    const timelineMeta = { channel: conversation.channel, mid: outgoingMid };
     const message = store.addTimelineEvent(conversation.id, 'message', {
-      channel: conversation.channel,
+      ...timelineMeta,
       body: text,
       direction: 'outgoing',
       from_number: '',

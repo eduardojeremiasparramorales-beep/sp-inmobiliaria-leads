@@ -1337,14 +1337,15 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
       if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channel}`);
 
       try {
-        await adapter.sendMessage(channelUserId, textoParaEnviar);
-        console.log(`[RESPONDER] Enviado OK por ${channel} a ${channelUserId}`);
+        const result = await adapter.sendMessage(channelUserId, textoParaEnviar);
+        const outgoingMid = result && result.message_id ? result.message_id : null;
+        console.log(`[RESPONDER] Enviado OK por ${channel} a ${channelUserId} mid=${outgoingMid}`);
+        store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, outgoingMid, 'sent');
       } catch (e) {
         const errDetail = e.response ? JSON.stringify(e.response.data) : e.message;
         console.error(`[RESPONDER] Error enviando por ${channel}:`, errDetail);
         throw e;
       }
-      store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, null, 'sent');
     }
 
     store.setFirstResponse(lead.id);
@@ -1545,13 +1546,17 @@ app.post('/api/leads/:id/send-location', auth.requireAuth, async (req, res) => {
     if (channelLoc === 'whatsapp') {
       await sendLocation(lead.customer_phone, Number(latitude), Number(longitude), name, address);
     } else {
-      // Messenger/Instagram: enviar ubicación como texto formateado
+      // Messenger/Instagram: enviar ubicación como attachment nativo
       const { getAdapter } = require('./channels');
       const adapter = getAdapter(channelLoc);
       if (!adapter) throw new Error(`Canal ${channelLoc} no configurado`);
       const channelUserId = store.getChannelUserIdForLead(lead.id, channelLoc);
       if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channelLoc}`);
-      await adapter.sendMessage(channelUserId, displayBody);
+      if (typeof adapter.sendLocation === 'function') {
+        await adapter.sendLocation(channelUserId, latitude, longitude);
+      } else {
+        await adapter.sendMessage(channelUserId, displayBody);
+      }
     }
     store.saveMessage(lead.id, fromNumber, lead.customer_phone, locBody, 'outgoing', {
       media_type: 'location', media_id: null, media_mime: null, media_filename: null,
@@ -1599,14 +1604,23 @@ app.post('/api/messages/:id/react', auth.requireAuth, (req, res) => {
   if (phone.startsWith('messenger_')) channel = 'messenger';
   else if (phone.startsWith('instagram_')) channel = 'instagram';
 
-  // Enviar la reacción real al canal (WhatsApp SÍ soporta, Messenger/Instagram NO)
+  // Enviar la reacción real al canal
   if (channel === 'whatsapp' && row.wamid && lead && lead.customer_phone) {
     const { sendReaction } = require('./services/whatsapp');
     sendReaction(lead.customer_phone, row.wamid, found ? '' : emoji)
       .catch(e => console.error('[REACT] Error enviando reacción a WhatsApp:', e.message));
+  } else if (channel === 'messenger' && row.wamid && lead && lead.customer_phone) {
+    // Para mensajes entrantes de Messenger, row.wamid contiene el mid de Facebook
+    const { getAdapter } = require('./channels');
+    const adapter = getAdapter('messenger');
+    if (adapter && typeof adapter.sendReaction === 'function') {
+      const channelUserId = store2.getChannelUserIdForLead(lead.id, 'messenger');
+      if (channelUserId) {
+        adapter.sendReaction(channelUserId, row.wamid, found ? '' : emoji)
+          .catch(e => console.error('[REACT] Error enviando reacción a Messenger:', e.message));
+      }
+    }
   }
-  // Para Messenger/Instagram: la reacción se guarda en DB pero no se puede enviar al API
-  // (limitación de plataforma — Messenger no soporta reacciones salientes desde Pages)
 
   const reactions = store2.getReactionsForMessage(msgId);
   res.json({ ok: true, reactions });
@@ -1855,6 +1869,41 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
 // Monitoreo admin: todas las conversaciones internas (solo lectura)
 app.get('/api/equipo/monitor', auth.requireAdmin, (req, res) => {
   res.json(store.getAllTeamMessagesForAdmin(req.query.limit ? Number(req.query.limit) : 200));
+});
+
+// ── Typing indicator para chat interno ──
+const _equipoTyping = new Map(); // fromId -> { nombre, to, ts }
+app.post('/api/equipo/typing', auth.requireAuth, (req, res) => {
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
+  const to = req.body && req.body.to != null ? Number(req.body.to) : null;
+  _equipoTyping.set(fromId, { nombre, to, ts: Date.now() });
+  const payload = { from_id: fromId, from_nombre: nombre, to };
+  if (to != null) {
+    events.emitToVendedor(to, 'equipo_typing', payload);
+    events.emitToVendedor(fromId, 'equipo_typing', payload);
+    events.emitToAdmins('equipo_typing', payload);
+  } else {
+    events.emitToTodos('equipo_typing', payload);
+  }
+  res.json({ ok: true });
+});
+
+// Admin: lista de conversaciones del chat interno para inbox
+app.get('/api/equipo/admin/conversations', auth.requireAdmin, (req, res) => {
+  const convs = store.getAdminTeamConversations();
+  res.json(convs);
+});
+
+// Admin: mensajes de cualquier conversación interna
+app.get('/api/equipo/admin/messages', auth.requireAdmin, (req, res) => {
+  const type = req.query.type || 'general';
+  const withId = req.query.with ? Number(req.query.with) : null;
+  const limit = Math.min(Number(req.query.limit) || 100, 200);
+  if (type === 'dm' && withId != null) {
+    return res.json(store.getTeamDirectMessages(0, withId, limit));
+  }
+  res.json(store.getTeamMessages(null, limit));
 });
 
 // Editar mensaje enviado (solo outgoing y reciente)
