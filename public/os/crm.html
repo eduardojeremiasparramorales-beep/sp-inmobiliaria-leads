@@ -40,7 +40,7 @@
   ctx.content.innerHTML = `
     <div style="padding:var(--s3) var(--s3) 0">
       <div class="u-between u-gap2" style="margin-bottom:var(--s3)">
-        <label class="os-search" style="min-width:280px">${ICONS.search}<input id="q" placeholder="Buscar por nombre o teléfono…"></label>
+        <label class="os-search" style="width:100%;max-width:360px">${ICONS.search}<input id="q" placeholder="Buscar por nombre o teléfono…"></label>
         <div class="u-row u-gap1 u-wrap" id="filters">${FILTERS.map(([k,l],i)=>`<button class="chip${i===0?' active':''}" data-f="${k}">${l}</button>`).join('')}</div>
       </div>
     </div>

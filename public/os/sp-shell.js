@@ -209,7 +209,9 @@
     });
     const nav = document.getElementById('osNav');
     const mb = document.getElementById('osMenuBtn');
+    function updateMenuBtn(){ if(mb){ if(window.innerWidth<=720){ mb.classList.remove('u-hide'); }else{ mb.classList.add('u-hide'); nav.classList.remove('open'); } } }
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
+    let _resizeTimer; window.addEventListener('resize',()=>{ clearTimeout(_resizeTimer); _resizeTimer=setTimeout(updateMenuBtn,150); });
     window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
 
     initThemeToggle();
@@ -320,7 +322,7 @@
       const d = await api('/api/notificaciones?limit=30');
       const items = (d && d.notificaciones) || [];
       panel = document.createElement('div');
-      panel.style.cssText = 'position:fixed;top:56px;right:16px;width:340px;max-height:65vh;overflow-y:auto;background:var(--bg-0,#111);border:1px solid var(--border,#222);border-radius:12px;z-index:9999;box-shadow:0 16px 48px rgba(0,0,0,.5)';
+      panel.style.cssText = 'position:fixed;top:calc(56px + env(safe-area-inset-top, 0px));right:16px;width:340px;max-width:calc(100vw - 32px);max-height:65vh;overflow-y:auto;background:var(--bg-0,#111);border:1px solid var(--border,#222);border-radius:12px;z-index:9999;box-shadow:0 16px 48px rgba(0,0,0,.5)';
       panel.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border-soft,#1a1a1a)">
           <span style="font-weight:600;font-size:13px">Notificaciones</span>
@@ -368,7 +370,7 @@
 
     const modal = document.createElement('div');
     modal.className = 'os-modal';
-    modal.style.cssText = 'position:fixed;bottom:90px;right:24px;width:380px;max-height:70vh;background:var(--bg-0);border:1px solid var(--border);border-radius:var(--r);z-index:9999;box-shadow:0 16px 64px rgba(0,0,0,.5);display:flex;flex-direction:column;opacity:0;transform:translateY(12px) scale(.97);transition:all .2s cubic-bezier(.16,1,.3,1)';
+    modal.style.cssText = 'position:fixed;bottom:calc(90px + env(safe-area-inset-bottom, 0px));right:24px;width:380px;max-width:calc(100vw - 32px);max-height:70vh;background:var(--bg-0);border:1px solid var(--border);border-radius:var(--r);z-index:9999;box-shadow:0 16px 64px rgba(0,0,0,.5);display:flex;flex-direction:column;opacity:0;transform:translateY(12px) scale(.97);transition:all .2s cubic-bezier(.16,1,.3,1)';
     modal.id = 'copilotoModal';
     modal.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-soft)">
