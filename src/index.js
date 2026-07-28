@@ -12,7 +12,7 @@ const { handleMessage } = require('./webhook/messages');
 const { sendMessage, sendMessageSmart, uploadMedia, sendMedia, sendLocation } = require('./services/whatsapp');
 const multer = require('multer');
 const mediaStore = require('./services/media');
-const { convertToM4A, getPlayableAudioPath } = require('./services/audio');
+const { convertToOggOpus, convertToM4A, getPlayableAudioPath } = require('./services/audio');
 
 // Sirve un archivo de media. Para audio, lo transcodifica a m4a si hace falta
 // (iOS/Safari no reproduce OGG/Opus) y aprovecha el soporte de HTTP Range de sendFile.
@@ -1200,6 +1200,9 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
     if (buffer.length > CFG.MAX_FILE_SIZE) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     let sendMime = mime, sendFilename = filename;
     if (tipo === 'audio' && conv.channel === 'whatsapp') {
+      const conv2 = await convertToOggOpus(buffer, mime);
+      buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
+    } else if (tipo === 'audio') {
       const conv2 = await convertToM4A(buffer, mime);
       buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.m4a';
     }
@@ -1469,8 +1472,8 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
       let displayMime = mime, displayFilename = filename, sendMime = mime, sendFilename = filename;
       if (tipo === 'audio') {
         displayFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
-        const conv2 = await convertToM4A(buffer, mime);
-        buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.m4a';
+        const conv2 = await convertToOggOpus(buffer, mime);
+        buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
         displayMime = mime;
       }
       const storedFilename = tipo === 'audio' ? displayFilename : mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
@@ -1820,11 +1823,20 @@ app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
   // ?con=<vendedorId> → hilo directo; sin él → canal general
   const con = req.query.con ? Number(req.query.con) : null;
   const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  let msgs;
   if (con != null) {
     store.markTeamDirectRead(yo, con);
-    return res.json(store.getTeamDirectMessages(yo, con, 80));
+    msgs = store.getTeamDirectMessages(yo, con, 80);
+  } else {
+    msgs = store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 50);
   }
-  res.json(store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 50));
+  // Enriquecer con reacciones
+  if (Array.isArray(msgs) && msgs.length) {
+    const ids = msgs.map(m => m.id).filter(Boolean);
+    const reactionsMap = store.getTeamReactionsForMessages(ids);
+    msgs.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
+  }
+  res.json(msgs || []);
 });
 
 // Lista de hilos directos + contador de no leídos (para la bandeja del asesor)
@@ -1834,13 +1846,14 @@ app.get('/api/equipo/directos', auth.requireAuth, (req, res) => {
 });
 
 app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
-  const { body, to, mentions, leadRef } = req.body || {};
+  const { body, to, mentions, leadRef, replyTo } = req.body || {};
   if (!body || !String(body).trim()) return res.status(400).json({ error: 'body_requerido' });
   const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
   const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
   const toVendedorId = (to != null && to !== '') ? Number(to) : null;
   const menciones = Array.isArray(mentions) ? mentions.map(Number).filter(Boolean) : [];
-  const msg = store.saveTeamMessage(fromId, nombre, String(body).trim(), { toVendedorId, mentions: menciones, leadRef });
+  const replyToId = replyTo ? Number(replyTo) : null;
+  const msg = store.saveTeamMessage(fromId, nombre, String(body).trim(), { toVendedorId, mentions: menciones, leadRef, replyToId });
 
   if (toVendedorId != null) {
     // Directo: al destinatario y a los admins (monitoreo transparente)
@@ -1904,6 +1917,57 @@ app.get('/api/equipo/admin/messages', auth.requireAdmin, (req, res) => {
     return res.json(store.getTeamDirectMessages(0, withId, limit));
   }
   res.json(store.getTeamMessages(null, limit));
+});
+
+// ── Reacciones del chat interno ──
+app.post('/api/equipo/messages/:id/react', auth.requireAuth, (req, res) => {
+  const msgId = Number(req.params.id);
+  const { emoji } = req.body || {};
+  if (!msgId || !emoji) return res.status(400).json({ error: 'id_y_emoji_requeridos' });
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  // Verificar que el mensaje existe
+  const msg = store.one ? store.one('SELECT * FROM team_messages WHERE id = ?', [msgId]) : null;
+  if (!msg) return res.status(404).json({ error: 'mensaje_no_existe' });
+  // Toggle reacción
+  const existing = store.getTeamReactionsForMessages([msgId])[msgId] || [];
+  const found = existing.find(r => r.emoji === emoji && r.from_vendedor_id === fromId);
+  if (found) store.removeTeamReaction(msgId, emoji, fromId);
+  else store.saveTeamReaction(msgId, emoji, fromId);
+  const reactions = store.getTeamReactionsForMessages([msgId])[msgId] || [];
+  // Emitir a todos
+  const payload = { messageId: msgId, reactions, from_id: fromId, emoji, action: found ? 'remove' : 'add' };
+  events.emitToTodos('equipo_reaction', payload);
+  res.json({ ok: true, reactions });
+});
+
+// ── Borrar mensaje del chat interno ──
+app.post('/api/equipo/messages/:id/delete', auth.requireAuth, (req, res) => {
+  const msgId = Number(req.params.id);
+  const { mode } = req.body || {};
+  if (!msgId || !mode || !['me', 'everyone'].includes(mode)) return res.status(400).json({ error: 'id_y_mode_requeridos' });
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
+  const msg = store.one ? store.one('SELECT * FROM team_messages WHERE id = ?', [msgId]) : null;
+  if (!msg) return res.status(404).json({ error: 'mensaje_no_existe' });
+  if (mode === 'everyone' && Number(msg.from_vendedor_id) !== fromId && req.session.rol !== 'admin') {
+    return res.status(403).json({ error: 'solo_puedes_borrar_tus_mensajes' });
+  }
+  if (mode === 'everyone') {
+    store.deleteTeamMessage(msgId, nombre, 'everyone');
+    events.emitToTodos('equipo_message_deleted', { messageId: msgId, by: nombre });
+  }
+  res.json({ ok: true, mode });
+});
+
+// ── Presencia de asesores ──
+app.post('/api/equipo/presence', auth.requireAuth, (req, res) => {
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  store.updatePresence(fromId);
+  res.json({ ok: true });
+});
+
+app.get('/api/equipo/presence', auth.requireAuth, (req, res) => {
+  res.json(store.getPresenceMap());
 });
 
 // Editar mensaje enviado (solo outgoing y reciente)

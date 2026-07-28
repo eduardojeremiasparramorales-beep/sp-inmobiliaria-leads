@@ -1104,10 +1104,17 @@ function initEquipo(){
 
 /* ════════ Bloqueo con huella (Biometric native + WebAuthn web) ════════ */
 const BIO_KEY='sp_bio_lock';
+const BIO_UNLOCK_KEY='sp_bio_last_unlock';
+const BIO_UNLOCK_INTERVAL=15*60*1000; // 15 minutos
 let _bioUnlocking=false;
 function bioLockVisible(){ const el=$('#bioLock'); return el&&el.style.display!=='none'; }
 function bioLockShow(){ const el=$('#bioLock'); if(el) el.style.display='flex'; }
 function bioLockHide(){ const el=$('#bioLock'); if(el) el.style.display='none'; }
+function bioShouldUnlock(){
+  const last=Number(localStorage.getItem(BIO_UNLOCK_KEY)||0);
+  return !last||(Date.now()-last>=BIO_UNLOCK_INTERVAL);
+}
+function bioMarkUnlocked(){ localStorage.setItem(BIO_UNLOCK_KEY,String(Date.now())); }
 async function bioDisponible(){
   try{
     if(esNativo()&&window.Capacitor.isPluginAvailable('BiometricLock')){
@@ -1135,11 +1142,12 @@ async function bioSetActivado(v){
     localStorage.setItem(BIO_KEY,v?'1':'0');
   }catch(e){ localStorage.setItem(BIO_KEY,v?'1':'0'); }
 }
+function _bioCredKey(){ return 'sp_bio_cred_'+(me&&me.vendedorId||'unknown'); }
 function getBioCredId(){
-  try{ const r=localStorage.getItem('sp_bio_cred'); return r?Uint8Array.from(JSON.parse(r)):null; }catch(e){ return null; }
+  try{ const r=localStorage.getItem(_bioCredKey()); return r?Uint8Array.from(JSON.parse(r)):null; }catch(e){ return null; }
 }
 function setBioCredId(id){
-  localStorage.setItem('sp_bio_cred',JSON.stringify(Array.from(id)));
+  localStorage.setItem(_bioCredKey(),JSON.stringify(Array.from(id)));
 }
 async function bioVerificar(){
   if(esNativo()&&window.Capacitor.isPluginAvailable('BiometricLock')){
@@ -1147,10 +1155,13 @@ async function bioVerificar(){
   }else if(window.PublicKeyCredential){
     let credId=getBioCredId();
     if(!credId){
+      const uid=new Uint8Array(16);
+      const vid=String(me&&me.vendedorId||0);
+      for(let i=0;i<16;i++) uid[i]=vid.charCodeAt(i%vid.length);
       const cred=await navigator.credentials.create({publicKey:{
         challenge:crypto.getRandomValues(new Uint8Array(32)),
         rp:{name:'SP CRM',id:window.location.hostname},
-        user:{id:crypto.getRandomValues(new Uint8Array(16)),name:'sp_user',displayName:'SP CRM'},
+        user:{id:uid,name:'vendedor_'+vid,displayName:'Leons Group'},
         pubKeyCredParams:[{alg:-7,type:'public-key'}],
         authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
       }});
@@ -1177,10 +1188,13 @@ async function pedirDesbloqueo(){
       }else if(window.PublicKeyCredential){
         let credId=getBioCredId();
         if(!credId){
+          const uid=new Uint8Array(16);
+          const vid=String(me&&me.vendedorId||0);
+          for(let i=0;i<16;i++) uid[i]=vid.charCodeAt(i%vid.length);
           const cred=await navigator.credentials.create({publicKey:{
             challenge:crypto.getRandomValues(new Uint8Array(32)),
             rp:{name:'SP CRM',id:window.location.hostname},
-            user:{id:crypto.getRandomValues(new Uint8Array(16)),name:'sp_user',displayName:'SP CRM'},
+            user:{id:uid,name:'vendedor_'+vid,displayName:'Leons Group'},
             pubKeyCredParams:[{alg:-7,type:'public-key'}],
             authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
           }});
@@ -1193,6 +1207,7 @@ async function pedirDesbloqueo(){
           userVerification:'required',
         }});
       }
+      bioMarkUnlocked();
       bioLockHide(); _bioUnlocking=false; haptic([10,20]);
     }catch(e){
       _bioUnlocking=false;
@@ -1206,14 +1221,14 @@ async function pedirDesbloqueo(){
   intentar();
 }
 async function initBioLock(){
-  if(await bioActivado()&&await bioDisponible()) pedirDesbloqueo();
+  if(await bioActivado()&&await bioDisponible()&&bioShouldUnlock()) pedirDesbloqueo();
   try{
     if(esNativo()&&window.Capacitor.isPluginAvailable('App'))
       window.Capacitor.Plugins.App.addListener('resume',async()=>{
-        if(!_bioUnlocking&&await bioActivado()&&await bioDisponible()&&!bioLockVisible()) pedirDesbloqueo();
+        if(!_bioUnlocking&&await bioActivado()&&await bioDisponible()&&bioShouldUnlock()&&!bioLockVisible()) pedirDesbloqueo();
       });
     document.addEventListener('visibilitychange',()=>{
-      if(!document.hidden&&!_bioUnlocking) (async()=>{ if(await bioActivado()&&await bioDisponible()&&!bioLockVisible()) pedirDesbloqueo(); })();
+      if(!document.hidden&&!_bioUnlocking) (async()=>{ if(await bioActivado()&&await bioDisponible()&&bioShouldUnlock()&&!bioLockVisible()) pedirDesbloqueo(); })();
     });
   }catch(e){}
 }
