@@ -128,4 +128,50 @@ async function getPlayableAudioPath(srcPath, mime) {
   return { path: srcPath, mime: mime };
 }
 
-module.exports = { convertToOggOpus, isFfmpegAvailable, getPlayableAudioPath };
+// Convierte audio a M4A/AAC — compatible con TODOS los clientes WhatsApp (iOS, Android, Web).
+// OGG/Opus tiene problemas conocidos con clientes iPhone; M4A no.
+// Devuelve { buffer, mime, ext }.
+async function convertToM4A(buffer, inputMime) {
+  const base = String(inputMime || '').split(';')[0].trim().toLowerCase();
+  if (isIosFriendly(base)) {
+    const ext = base === 'audio/mpeg' ? 'mp3' : base === 'audio/aac' ? 'aac' : 'm4a';
+    return { buffer, mime: base, ext };
+  }
+  if (!isFfmpegAvailable()) {
+    if (isWhatsAppAcceptedAudio(inputMime)) {
+      console.warn('[AUDIO] ffmpeg no disponible — enviando audio original:', base);
+      const ext = base === 'audio/mpeg' ? 'mp3' : base === 'audio/amr' ? 'amr' : base === 'audio/aac' ? 'aac' : 'm4a';
+      return { buffer, mime: base, ext };
+    }
+    const err = new Error('ffmpeg_no_disponible: no se puede convertir ' + inputMime + ' a M4A');
+    err.code = 'FFMPEG_MISSING';
+    throw err;
+  }
+
+  const id = crypto.randomBytes(6).toString('hex');
+  const inPath = path.join(os.tmpdir(), `sp-audio-in-${id}`);
+  const outPath = path.join(os.tmpdir(), `sp-audio-out-${id}.m4a`);
+  try {
+    fs.writeFileSync(inPath, buffer);
+    await new Promise((resolve, reject) => {
+      const args = ['-y', '-i', inPath, '-vn', '-c:a', 'aac', '-b:a', '96k', '-ar', '44100', '-ac', '1', '-movflags', '+faststart', outPath];
+      const p = spawn('ffmpeg', args);
+      let stderr = '';
+      p.stderr.on('data', d => { stderr += d; if (stderr.length > 8192) stderr = stderr.slice(-8192); });
+      p.on('error', reject);
+      p.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error('ffmpeg salió con código ' + code + ': ' + stderr.slice(-500)));
+      });
+      setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} }, 60000).unref();
+    });
+    const out = fs.readFileSync(outPath);
+    if (!out || out.length === 0) throw new Error('ffmpeg produjo un archivo vacío');
+    return { buffer: out, mime: 'audio/mp4', ext: 'm4a' };
+  } finally {
+    try { fs.unlinkSync(inPath); } catch (e) {}
+    try { fs.unlinkSync(outPath); } catch (e) {}
+  }
+}
+
+module.exports = { convertToOggOpus, convertToM4A, isFfmpegAvailable, getPlayableAudioPath };

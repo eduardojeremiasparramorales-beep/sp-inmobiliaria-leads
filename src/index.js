@@ -12,7 +12,7 @@ const { handleMessage } = require('./webhook/messages');
 const { sendMessage, sendMessageSmart, uploadMedia, sendMedia, sendLocation } = require('./services/whatsapp');
 const multer = require('multer');
 const mediaStore = require('./services/media');
-const { convertToOggOpus, getPlayableAudioPath } = require('./services/audio');
+const { convertToM4A, getPlayableAudioPath } = require('./services/audio');
 
 // Sirve un archivo de media. Para audio, lo transcodifica a m4a si hace falta
 // (iOS/Safari no reproduce OGG/Opus) y aprovecha el soporte de HTTP Range de sendFile.
@@ -1200,8 +1200,8 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
     if (buffer.length > CFG.MAX_FILE_SIZE) return res.status(413).json({ error: 'archivo_muy_grande_max_18mb' });
     let sendMime = mime, sendFilename = filename;
     if (tipo === 'audio' && conv.channel === 'whatsapp') {
-      const conv2 = await convertToOggOpus(buffer, mime);
-      buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
+      const conv2 = await convertToM4A(buffer, mime);
+      buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.m4a';
     }
     const storedFilename = mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
 
@@ -1468,8 +1468,8 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
       let displayMime = mime, displayFilename = filename, sendMime = mime, sendFilename = filename;
       if (tipo === 'audio') {
         displayFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
-        const conv2 = await convertToOggOpus(buffer, mime);
-        buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.ogg';
+        const conv2 = await convertToM4A(buffer, mime);
+        buffer = conv2.buffer; sendMime = conv2.mime; sendFilename = 'nota-voz.m4a';
         displayMime = mime;
       }
       const storedFilename = tipo === 'audio' ? displayFilename : mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
@@ -3166,23 +3166,65 @@ app.post('/api/campanas-sp/projects/:id/generate', auth.requireAdmin, async (req
   }
 });
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+// Límites unificados: antes /analyze-images topaba en 10 archivos mientras upload-images
+// permitía 50 — una carpeta real de fotos (>10) hacía que multer abortara TODA la petición
+// con LIMIT_UNEXPECTED_FILE, que caía al handler global de errores como un 500 opaco
+// "error_interno". diskStorage (en vez de memoryStorage) evita además acumular hasta
+// 50×20MB en RAM contra un contenedor de 700MB (riesgo real de OOM).
+const CAMPANAS_UPLOAD_MAX_FILES = 50;
+const CAMPANAS_UPLOAD_MAX_SIZE = 20 * 1024 * 1024;
 
-app.post('/api/campanas-sp/projects/:id/upload-images', auth.requireAdmin, upload.array('images', 50), async (req, res) => {
+function requireCampanasSpProject(req, res, next) {
   const p = store.getCampanasSpProject(Number(req.params.id));
   if (!p) return res.status(404).json({ error: 'not_found' });
+  req.campanasSpProject = p;
+  next();
+}
+
+// Envuelve un middleware de multer para traducir sus errores a códigos claros en español
+// en vez de dejarlos caer al handler global (que los colapsa a 500 "error_interno" sin
+// explicar si el problema fue el tamaño, la cantidad de archivos, o algo interno.
+function handleMulterErrors(uploadMiddleware) {
+  return (req, res, next) => {
+    uploadMiddleware(req, res, (err) => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ error: 'archivo_muy_grande', detalle: 'Cada imagen debe pesar menos de 20MB.' });
+        }
+        if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({ error: 'demasiados_archivos', detalle: `Máximo ${CAMPANAS_UPLOAD_MAX_FILES} imágenes por carga.` });
+        }
+        return res.status(400).json({ error: 'error_subida', detalle: err.message });
+      }
+      console.error('[CAMPANAS-SP] error de subida:', err.message);
+      res.status(500).json({ error: 'error_interno' });
+    });
+  };
+}
+
+function campanasFilename(originalname) {
+  return Date.now() + '-' + originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+// Escribe directo en la carpeta persistida del proyecto (data/campanas-projects/<slug>/images
+// — ver campanas-sp.js getProjectDir) — requireCampanasSpProject ya corrió antes, así que
+// req.campanasSpProject está disponible dentro del callback destination.
+const uploadImagesStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(campanasSp.getProjectDir(req.campanasSpProject.slug), 'images');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => cb(null, campanasFilename(file.originalname)),
+});
+const uploadImages = multer({ storage: uploadImagesStorage, limits: { fileSize: CAMPANAS_UPLOAD_MAX_SIZE, files: CAMPANAS_UPLOAD_MAX_FILES } });
+
+app.post('/api/campanas-sp/projects/:id/upload-images', auth.requireAdmin, requireCampanasSpProject, handleMulterErrors(uploadImages.array('images', CAMPANAS_UPLOAD_MAX_FILES)), async (req, res) => {
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
-  const slug = p.slug;
-  const imgDir = path.join(campanasSp.getProjectDir(slug), 'images');
-  fs.mkdirSync(imgDir, { recursive: true });
-  const saved = [];
-  for (const file of req.files) {
-    const ext = path.extname(file.originalname) || '.png';
-    const name = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fp = path.join(imgDir, name);
-    fs.writeFileSync(fp, file.buffer);
-    saved.push(name);
-  }
+  const p = req.campanasSpProject;
+  const imgDir = path.join(campanasSp.getProjectDir(p.slug), 'images');
+  const saved = req.files.map((f) => f.filename);
   // Actualizar images_dir si está vacío
   if (!p.images_dir) {
     store.updateCampanasSpProject(p.id, { images_dir: imgDir });
@@ -3213,19 +3255,89 @@ app.get('/api/campanas-sp/projects/:id/file/:category/:filename', auth.requireAd
   });
 });
 
-app.post('/api/campanas-sp/analyze-images', auth.requireAdmin, upload.array('images', 10), async (req, res) => {
+// Carpeta de escaneo temporal (fuera del proyecto — solo sirve para que Gemini categorice
+// una muestra antes de guardar nada). Usa detectRoot() en vez de process.cwd(): el proceso
+// puede arrancar desde un cwd distinto según cómo se lance (ver wrappers de desarrollo),
+// mientras que detectRoot() siempre resuelve la raíz real de la app.
+function analyzeUploadsDir() {
+  return path.join(campanasSp.detectRoot(), 'data', 'uploads');
+}
+const uploadAnalyzeStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = analyzeUploadsDir();
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => cb(null, campanasFilename(file.originalname)),
+});
+const uploadAnalyze = multer({ storage: uploadAnalyzeStorage, limits: { fileSize: CAMPANAS_UPLOAD_MAX_SIZE, files: CAMPANAS_UPLOAD_MAX_FILES } });
+
+// Envía un asset ya generado (imagen o el reel.mp4) directo al chat de un lead — antes el
+// botón "Compartir al chat" era solo un toast que no hacía nada. Solo WhatsApp por ahora
+// (Messenger/Instagram necesitan servir el archivo por URL pública en vez de media_id; se
+// añade cuando haga falta, sin bloquear esto).
+app.post('/api/campanas-sp/projects/:id/share-asset', auth.requireAdmin, mediaLimiter, messageLimiter, async (req, res) => {
+  const { leadId, category, filename } = req.body || {};
+  if (!leadId || !category || !filename) return res.status(400).json({ error: 'faltan_datos' });
+  if (!CSP_FILE_SAFE.test(category) || !CSP_FILE_SAFE.test(filename)) return res.status(400).json({ error: 'nombre_invalido' });
+
+  const p = store.getCampanasSpProject(Number(req.params.id));
+  if (!p || !p.output_dir) return res.status(404).json({ error: 'not_found' });
+
+  const lead = store.getLeadById(leadId);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+
+  const conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
+  const channel = conversation ? conversation.channel : 'whatsapp';
+  if (channel !== 'whatsapp') {
+    return res.status(400).json({ error: 'solo_whatsapp_por_ahora', detalle: 'Compartir al chat solo soporta WhatsApp por ahora.' });
+  }
+
+  const root = path.resolve(p.output_dir);
+  const fp = path.join(root, category, filename);
+  if (!fp.startsWith(root) || !fs.existsSync(fp)) return res.status(404).json({ error: 'archivo_no_encontrado' });
+
+  try {
+    const buffer = fs.readFileSync(fp);
+    const mime = /\.mp4$/i.test(filename) ? 'video/mp4' : /\.png$/i.test(filename) ? 'image/png' : 'image/jpeg';
+    const tipo = mime.startsWith('video/') ? 'video' : 'image';
+    const caption = `${p.name} — Sp Leons Group`;
+    const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
+
+    const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename);
+    const mediaId = await uploadMedia(buffer, mime, filename);
+    if (!mediaId) return res.status(502).json({ error: 'error_upload', detalle: 'WhatsApp no retornó media ID' });
+    await new Promise((r) => setTimeout(r, CFG.MEDIA_PROPAGATION_DELAY));
+    const mediaResult = await sendMedia(lead.customer_phone, mediaId, tipo, caption, filename);
+    if (!mediaResult || !mediaResult.messages || !mediaResult.messages[0]) {
+      return res.status(502).json({ error: 'error_envio_whatsapp' });
+    }
+    const wamid = mediaResult.messages[0].id;
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, caption, 'outgoing', {
+      media_type: tipo, media_id: mediaId, media_mime: mime, media_filename: storedFilename,
+    }, null, wamid, 'sent');
+    store.setFirstResponse(lead.id);
+    if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
+    store.syncLeadToConversation(store.getLeadById(lead.id), {
+      direction: 'outgoing', body: caption, fromNumber, toNumber: lead.customer_phone,
+      media: { media_type: tipo, media_id: null, media_mime: mime, media_filename: null },
+    });
+    events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[CAMPANAS-SP] compartir al chat falló:', e.message);
+    res.status(502).json({ error: 'error_envio', detalle: e.message });
+  }
+});
+
+app.post('/api/campanas-sp/analyze-images', auth.requireAdmin, handleMulterErrors(uploadAnalyze.array('images', CAMPANAS_UPLOAD_MAX_FILES)), async (req, res) => {
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
   try {
-    const tmpDir = path.join(process.cwd(), 'data', 'uploads');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const savedPaths = [];
-    for (const file of req.files) {
-      const name = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const fp = path.join(tmpDir, name);
-      fs.writeFileSync(fp, file.buffer);
-      savedPaths.push(fp);
-    }
-    const result = await campanasSp.analyzeImages(savedPaths);
+    // Alcanza con una muestra — ai_generator.py ya trunca a las primeras 5 igual (analyze
+    // solo sirve para sugerir nombre/ubicación/categorías, no para el set completo).
+    const sample = req.files.slice(0, 5).map((f) => f.path);
+    const result = await campanasSp.analyzeImages(sample);
     res.json(result);
   } catch (e) {
     console.error('[VISION]', e.message);
