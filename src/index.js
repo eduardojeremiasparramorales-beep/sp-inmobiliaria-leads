@@ -1498,7 +1498,12 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
 
       // Subir media: Messenger/Instagram aceptan URLs, no media_ids como WhatsApp.
       // Guardamos en disco y servimos vía URL pública firmada.
-      const storedFilename = mediaStore.saveOutgoingMedia(buffer, mime, filename || `media-${Date.now()}`);
+      let msBuffer = buffer, msMime = mime, msFilename = filename || `media-${Date.now()}`;
+      if (tipo === 'audio') {
+        const conv2 = await convertToM4A(buffer, mime);
+        msBuffer = conv2.buffer; msMime = conv2.mime; msFilename = `audio-${Date.now()}.m4a`;
+      }
+      const storedFilename = mediaStore.saveOutgoingMedia(msBuffer, msMime, msFilename);
       const publicUrl = `${process.env.BASE_URL || 'https://spcrm.duckdns.org'}/api/public/media/${storedFilename}?token=${mediaStore.signMediaToken(storedFilename)}`;
       await adapter.sendMedia(channelUserId, publicUrl, tipo, caption);
       store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
@@ -1963,6 +1968,8 @@ app.post('/api/equipo/messages/:id/delete', auth.requireAuth, (req, res) => {
 app.post('/api/equipo/presence', auth.requireAuth, (req, res) => {
   const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
   store.updatePresence(fromId);
+  const events = require('./services/events');
+  events.emitToTodos('equipo_presence', { vendedor_id: fromId, online: true, last_seen: new Date().toISOString() });
   res.json({ ok: true });
 });
 
