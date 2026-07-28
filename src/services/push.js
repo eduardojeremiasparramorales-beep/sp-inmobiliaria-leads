@@ -33,7 +33,7 @@ function init() {
       const saJson = saRaw.trim().startsWith('{') ? saRaw : Buffer.from(saRaw, 'base64').toString('utf8');
       const admin = require('firebase-admin');
       const serviceAccount = JSON.parse(saJson);
-      if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      if (!admin.apps.length) admin.initializeApp({ credential: admin.cert(serviceAccount) });
       fcmEnabled = true;
     } catch (e) {
       console.error('FCM deshabilitado: FCM_SERVICE_ACCOUNT_JSON inválido (¿JSON crudo o base64 corrupto?) —', e.message);
