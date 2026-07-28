@@ -13,6 +13,14 @@ function emit(channelType, target, evento, data) {
   } catch (e) { /* noop */ }
 }
 
+// Genera un body legible para media entrante que no tiene texto (stickers, imágenes, etc.)
+function mediaBody(media, options) {
+  if (!media) return '[archivo]';
+  const t = (options && options.type) || media.type || '';
+  const map = { image: '🖼️ Imagen', video: '🎬 Video', audio: '🎙️ Audio', document: '📄 Documento', sticker: '👍' };
+  return map[t] || '📎 Archivo';
+}
+
 function evaluateWorkflow(triggerEvent, ctx) {
   try {
     const WorkflowEngine = require('./workflow');
@@ -73,6 +81,9 @@ class MessageRouter {
 
     // 5b. Para canales no-WhatsApp: crear lead en tabla legacy para que el vendedor lo vea en su panel
     let leadId = conversation.lead_id || null;
+    const media = options.media || null;
+    // Enriquecer media con media_type si no lo tiene (los adapters no siempre lo incluyen)
+    const mediaWithType = media ? { media_type: options.type || media.type || null, media_id: media.id || null, media_mime: media.mime || null, media_filename: media.filename || null } : null;
     if (channel !== 'whatsapp') {
       // Buscar si ya hay un lead vinculado a esta conversación o por teléfono del cliente
       const customerPhone = customer.phone || '';
@@ -95,7 +106,7 @@ class MessageRouter {
         const nombreCliente = meta.name || customer.name || 'Cliente';
         try {
           const phoneForLead = customerPhone || `messenger_${fromUserId}`;
-          const result = store.saveLead(phoneForLead, nombreCliente, messageBody || '[archivo]');
+          const result = store.saveLead(phoneForLead, nombreCliente, messageBody || mediaBody(media, options));
           leadId = result.leadId;
           if (result.isNew) {
             store.assignLeadToVendedor(leadId, assignedVendedor);
@@ -105,7 +116,7 @@ class MessageRouter {
             store.setLeadNombre(leadId, nombreCliente);
           }
           // Guardar también en tabla messages (legacy) para consistencia
-          store.saveMessage(leadId, fromUserId, assignedVendedor.telefono || '', messageBody || '[archivo]', 'incoming');
+          store.saveMessage(leadId, fromUserId, assignedVendedor.telefono || '', messageBody || mediaBody(media, options), 'incoming', mediaWithType);
           // Vincular conversación al lead
           require('../db/adapter').run('UPDATE conversations SET lead_id = ? WHERE id = ?', [leadId, conversation.id]);
         } catch (e) {
@@ -115,7 +126,6 @@ class MessageRouter {
     }
 
     // 6. Guardar en timeline
-    const media = options.media || null;
     // Agregar mid al metadata para vincular reacciones/estados de Messenger
     if (options.mid) meta.mid = options.mid;
     const message = store.addTimelineEvent(conversation.id, 'message', {
@@ -134,7 +144,7 @@ class MessageRouter {
     // Actualizar last_message / unread_count de la conversación
     require('../db/adapter').run(
       'UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\') WHERE id = ?',
-      [messageBody || '[media]', conversation.id]
+      [messageBody || mediaBody(media, options), conversation.id]
     );
     conversation = store.getConversationById(conversation.id);
 
@@ -166,7 +176,7 @@ class MessageRouter {
           require('./notify').notify({
             vendedorId: conversation.assigned_to_id, tipo: 'mensaje_cliente', leadId: leadId, push: true,
             titulo: `💬 ${customer.name || 'Cliente'} (${canal})`,
-            cuerpo: String(messageBody || '[archivo]').slice(0, 120),
+            cuerpo: String(messageBody || mediaBody(media, options)).slice(0, 120),
           }).catch(() => {});
         } catch (e) { /* notify opcional */ }
       }
