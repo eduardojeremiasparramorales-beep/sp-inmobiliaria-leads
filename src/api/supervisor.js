@@ -313,7 +313,7 @@ router.get('/alertas', (req, res) => {
   try {
     const tipos = (req.query.tipo || '')
       .split(',')
-      .map(String.prototype.trim)
+      .map(s => String(s).trim())
       .filter(Boolean);
     const soloSinLeer = req.query.leidas === '0';
     const leerLeidas = req.query.leidas === '1';
