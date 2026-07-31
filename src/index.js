@@ -1665,6 +1665,8 @@ app.post('/api/messages/:id/react', auth.requireAuth, (req, res) => {
           .catch(e => console.error('[REACT] Error enviando reacción a Messenger:', e.message));
       }
     }
+  } else if (channel === 'instagram') {
+    console.log('[REACT] Instagram: reaccion guardada en DB (API no soporta envio)');
   }
 
   const reactions = store2.getReactionsForMessage(msgId);
@@ -1714,6 +1716,11 @@ app.post('/api/messages/:id/forward', auth.requireAuth, messageLimiter, async (r
   if (!esAdmin && ((!leadOrigen || Number(leadOrigen.assigned_to_id) !== vid) || Number(leadDest.assigned_to_id) !== vid)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
+  // Detectar canal del lead destino (multicanal)
+  const destPhone = (leadDest && leadDest.customer_phone) || '';
+  let destChannel = 'whatsapp';
+  if (destPhone.startsWith('messenger_')) destChannel = 'messenger';
+  else if (destPhone.startsWith('instagram_')) destChannel = 'instagram';
   try {
     const fromNumber = leadDest.assigned_to_phone || req.session.email || 'panel';
     let wamid = null;
@@ -1730,7 +1737,18 @@ app.post('/api/messages/:id/forward', auth.requireAuth, messageLimiter, async (r
       if (!loc || isNaN(lat) || isNaN(lng)) {
         return res.status(422).json({ error: 'ubicacion_invalida' });
       }
-      const result = await sendLocation(leadDest.customer_phone, lat, lng, loc.name || '', loc.address || '');
+      const { getAdapter: _ga } = require('./channels');
+      const destAdapter = _ga(destChannel);
+      let result;
+      if (destChannel === 'whatsapp') {
+        result = await sendLocation(leadDest.customer_phone, lat, lng, loc.name || '', loc.address || '');
+      } else if (destAdapter && typeof destAdapter.sendLocation === 'function') {
+        const cuid = destPhone.replace(/^(messenger_|instagram_)/, '');
+        result = await destAdapter.sendLocation(cuid, lat, lng);
+      } else {
+        const cuid = destPhone.replace(/^(messenger_|instagram_)/, '');
+        result = await destAdapter.sendMessage(cuid, 'Ubicacion: ' + lat + ', ' + lng);
+      }
       wamid = result && result.messages && result.messages[0] ? result.messages[0].id : null;
       media = { media_type: 'location', media_id: null, media_mime: null, media_filename: null };
       store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, row.body, 'outgoing', media, null, wamid, 'sent');
@@ -1739,7 +1757,14 @@ app.post('/api/messages/:id/forward', auth.requireAuth, messageLimiter, async (r
       let result;
       let mediaIdVigente = row.media_id;
       try {
-        result = await sendMedia(leadDest.customer_phone, mediaIdVigente, row.media_type, caption);
+        if (destChannel === 'whatsapp') {
+          result = await sendMedia(leadDest.customer_phone, mediaIdVigente, row.media_type, caption);
+        } else {
+          const { getAdapter: _ga2 } = require('./channels');
+          const da2 = _ga2(destChannel);
+          const cuid2 = destPhone.replace(/^(messenger_|instagram_)/, '');
+          result = await da2.sendMedia(cuid2, mediaIdVigente, row.media_type, caption);
+        }
       } catch (e) {
         // media_id caducado → re-subir desde disco y reintentar
         if (!row.media_filename) throw e;
@@ -1754,9 +1779,17 @@ app.post('/api/messages/:id/forward', auth.requireAuth, messageLimiter, async (r
       store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, row.body || '', 'outgoing', media, null, wamid, 'sent');
     } else {
       const texto = '✉️ Reenviado: ' + (row.body || '');
-      const smart = await sendMessageSmart(leadDest.customer_phone, texto, leadDest.id);
-      wamid = smart.data && smart.data.messages && smart.data.messages[0] ? smart.data.messages[0].id : null;
-      store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, texto, 'outgoing', null, null, wamid, 'sent');
+      if (destChannel === 'whatsapp') {
+        const smart = await sendMessageSmart(leadDest.customer_phone, texto, leadDest.id);
+        wamid = smart.data && smart.data.messages && smart.data.messages[0] ? smart.data.messages[0].id : null;
+        store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, texto, 'outgoing', null, null, wamid, 'sent');
+      } else {
+        const { getAdapter: _ga3 } = require('./channels');
+        const da3 = _ga3(destChannel);
+        const cuid3 = destPhone.replace(/^(messenger_|instagram_)/, '');
+        await da3.sendMessage(cuid3, texto);
+        store.saveMessage(leadDest.id, fromNumber, leadDest.customer_phone, texto, 'outgoing', null, null, null, 'sent');
+      }
     }
     store.syncLeadToConversation(store.getLeadById(leadDest.id), { direction: 'outgoing', body: row.body || `[${row.media_type}]`, fromNumber, toNumber: leadDest.customer_phone });
     events.emitToVendedor(leadDest.assigned_to_id, 'nuevo_mensaje', { leadId: leadDest.id, tipo: 'respuesta_panel', ts: Date.now() });
@@ -2999,7 +3032,7 @@ function checkRecordatorios() {
 
 // ===================== CENTRO DE NOTIFICACIONES =====================
 // Admin usa el canal 0 (misma convención que SSE y push); vendedor su propio id.
-function canalNotif(req) { return req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId); }
+function canalNotif(req) { return (req.session.rol === 'admin' || req.session.rol === 'supervisor') ? 0 : Number(req.session.vendedorId); }
 
 app.get('/api/notificaciones', auth.requireAuth, (req, res) => {
   const canal = canalNotif(req);
@@ -3117,8 +3150,29 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
+  // Detectar canal del lead (multicanal)
+  const leadPhone = (lead && lead.customer_phone) || '';
+  let leadChannel = 'whatsapp';
+  if (leadPhone.startsWith('messenger_')) leadChannel = 'messenger';
+  else if (leadPhone.startsWith('instagram_')) leadChannel = 'instagram';
   try {
     let tplNombre = nombre;
+    // Para Instagram/Messenger: resolver template como texto plano y enviar como mensaje normal
+    if (leadChannel !== 'whatsapp') {
+      const { getAdapter: _gaTpl } = require('./channels');
+      const tplAdapter = _gaTpl(leadChannel);
+      const channelUserId = leadPhone.replace(/^(messenger_|instagram_)/, '');
+      if (tplAdapter && channelUserId) {
+        let textoResolver = nombre || 'Hola, queremos retomar tu solicitud. Escríbenos y con gusto te atendemos.';
+        if (templateId) {
+          const tpl = store.getWATemplateById(templateId);
+          if (tpl) { textoResolver = tplAdapter.resolveTemplateText ? tplAdapter.resolveTemplateText(templateId, params) : tpl.nombre || textoResolver; }
+        }
+        await tplAdapter.sendMessage(channelUserId, textoResolver);
+        store.saveMessage(lead.id, 'sistema', leadPhone, '[Template: ' + (tplNombre || templateId) + ']', 'outgoing');
+        return res.json({ ok: true, warning: 'template_sent_as_text' });
+      }
+    }
     if (templateId) {
       const tpl = store.getWATemplateById(templateId);
       if (!tpl) return res.status(404).json({ error: 'template_no_existe' });

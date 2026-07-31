@@ -52,7 +52,7 @@ router.get('/me', (req, res) => {
     { id: 'dashboard', sprint: 2, activo: true },
     { id: 'equipo', sprint: 3, activo: true },
     { id: 'conversaciones', sprint: 4, activo: true },
-    { id: 'alertas', sprint: 5, activo: false },
+    { id: 'alertas', sprint: 5, activo: true },
     { id: 'feed', sprint: 6, activo: false },
     { id: 'ia', sprint: 7, activo: false },
     { id: 'analitica', sprint: 8, activo: false },
@@ -302,9 +302,84 @@ router.get('/conversaciones', (req, res) => {
   }
 });
 
+// ── S5: Alertas — panel de monitoreo de eventos del equipo ─────────────────
+// Notificaciones del canal de supervisión (vendedor_id = 0) generadas por el
+// sistema (asignaciones, escalamientos, mensajes programados, errores, etc.).
+// El supervisor NO puede crear alertas manuales — solo administradores.
+// ────────────────────────────────────────────────────────────────────────────
+
+// GET /api/supervisor/alertas — historial paginado con filtros
+router.get('/alertas', (req, res) => {
+  try {
+    const tipos = (req.query.tipo || '')
+      .split(',')
+      .map(String.prototype.trim)
+      .filter(Boolean);
+    const soloSinLeer = req.query.leidas === '0';
+    const leerLeidas = req.query.leidas === '1';
+    const desde = Number(req.query.desde) || 0;
+    const limit = Math.min(Number(req.query.limite) || 50, 100);
+
+    const todas = store.getNotifications(0, 200);
+    let filtradas = todas.filter(n => Number(n.created_at) >= desde);
+
+    if (leerLeidas) filtradas = filtradas.filter(n => n.leida);
+    else if (soloSinLeer) filtradas = filtradas.filter(n => !n.leida);
+
+    if (tipos.length > 0) filtradas = filtradas.filter(n => tipos.includes(String(n.tipo)));
+
+    // Resumen por tipo (conteos de todas, no filtradas)
+    const conteo = {};
+    for (const n of todas) conteo[n.tipo] = (conteo[n.tipo] || 0) + 1;
+
+    res.json({
+      alertas: filtradas.slice(0, limit),
+      total: filtradas.length,
+      limite: limit,
+      conteoPorTipo: conteo,
+      generadoEn: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error('[SUPERVISOR] alertas error:', e.message);
+    res.status(500).json({ error: 'error_alertas', detalle: e.message });
+  }
+});
+
+// GET /api/supervisor/alertas/sin-leer — conteo para badge del NAV
+router.get('/alertas/sin-leer', (_req, res) => {
+  try {
+    const n = store.countUnreadNotifications(0);
+    res.json({ sin_leer: n });
+  } catch (e) {
+    console.error('[SUPERVISOR] alertas/sin-leer error:', e.message);
+    res.status(500).json({ error: 'error_sin_leer', detalle: e.message });
+  }
+});
+
+// POST /api/supervisor/alertas/marcar-todas
+router.post('/alertas/marcar-todas', (_req, res) => {
+  try {
+    store.markAllNotificationsRead(0);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[SUPERVISOR] alertas/marcar-todas error:', e.message);
+    res.status(500).json({ error: 'error_marcar_todas', detalle: e.message });
+  }
+});
+
+// POST /api/supervisor/alertas/:id/leer
+router.post('/alertas/:id/leer', (req, res) => {
+  try {
+    store.markNotificationRead(req.params.id, 0);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[SUPERVISOR] alertas/leer error:', e.message);
+    res.status(500).json({ error: 'error_leer', detalle: e.message });
+  }
+});
+
 // --- Stubs para próximos sprints (501 hasta que el Sprint correspondiente los implemente) ---
 const stub = (id, sprint) => (req, res) => res.status(501).json({ error: 'no_implementado', seccion: id, sprint });
-router.get('/alertas', stub('alertas', 5));
 router.get('/feed', stub('feed', 6));
 router.get('/analitica', stub('analitica', 8));
 

@@ -92,7 +92,7 @@
         const ic = ICONS[it.icon] || ICONS_LOCAL[it.icon] || '';
         return `<a class="os-nav__item${it.id === active ? ' active' : ''}" data-section="${it.id}"${it.href ? ` href="${it.href}"` : ''}>
           ${ic.replace('<svg ', '<svg style="width:18px;height:18px" ') || ''}<span>${it.label}</span>
-          ${it.badge === 'live' ? '<span class="os-nav__badge" id="navBadgeAlertas" style="display:none">•</span>' : ''}
+          ${it.badge === 'live' ? '<span class="os-nav__badge" id="navBadgeAlertas" style="display:none;min-width:16px;height:16px;border-radius:999px;background:var(--gold,#D4AF37);color:#0A0A0A;font-size:9.5px;font-weight:700;align-items:center;justify-content:center;padding:0 4px;margin-left:auto">0</span>' : ''}
         </a>`;
       }).join('');
       return `<div class="os-nav__group"><div class="os-nav__title">${group.title}</div>${items}</div>`;
@@ -150,6 +150,16 @@
     // Tiempo real: suscripción al SSE del panel.
     initStream();
 
+    // Cargar conteo inicial de alertas sin leer para el badge del NAV
+    api('/api/supervisor/alertas/sin-leer')
+      .then(r => {
+        if (r && r.sin_leer > 0) {
+          const b = document.getElementById('navBadgeAlertas');
+          if (b) { b.textContent = String(r.sin_leer); b.style.display = 'inline-flex'; }
+        }
+      })
+      .catch(() => {});
+
     return { me, content: document.getElementById('osContent'), esc };
   }
 
@@ -201,12 +211,18 @@
         try {
           const d = JSON.parse(e.data);
           toast(`${esc(d.titulo || 'Notificación')}${d.cuerpo ? ' — ' + esc(String(d.cuerpo).slice(0, 60)) : ''}`);
+          const b = document.getElementById('navBadgeAlertas');
+          if (b) { const cur = parseInt(b.textContent, 10) || 0; b.textContent = cur + 1; b.style.display = 'inline-flex'; }
         } catch (err) {}
       });
       _es.addEventListener('nuevo_mensaje', (e) => {
         // Llega alerta del equipo (lead sin responder, reasignación, etc.) — encender badge Alertas.
         const b = document.getElementById('navBadgeAlertas');
-        if (b) b.style.display = 'block';
+        if (b) {
+          const cur = parseInt(b.textContent, 10) || 0;
+          b.textContent = cur + 1;
+          b.style.display = 'inline-flex';
+        }
       });
       _es.onerror = () => { try { _es.close(); } catch (e) {} _es = null; setTimeout(initStream, 5000); };
     } catch (e) {}

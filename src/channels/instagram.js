@@ -1,4 +1,4 @@
-const axios = require('axios');
+﻿const axios = require('axios');
 const crypto = require('crypto');
 const ChannelAdapter = require('./adapter');
 const store = require('../db/store');
@@ -49,7 +49,15 @@ class InstagramAdapter extends ChannelAdapter {
     }
   }
 
-  parseWebhookPayload(body) {
+
+  async sendLocation(to, latitude, longitude) {
+    const lat = Number(latitude), lng = Number(longitude);
+    const url = `https://www.google.com/maps?q=${lat},${lng}`;
+    const text = `Ubicacion: ${lat}, ${lng}\n${url}`;
+    return this.sendMessage(to, text);
+  }
+
+    parseWebhookPayload(body) {
     if (!body || body.object !== 'instagram') return null;
 
     const entry = (body.entry || [])[0];

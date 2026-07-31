@@ -55,7 +55,21 @@ async function procesarCadencias() {
       const vendedor = store.getVendedorById(l.assigned_to_id);
       const cuerpoBase = aplicarVarsCad(paso.mensaje, l, vendedor && vendedor.nombre);
       const cuerpo = _buildFirma ? _buildFirma(cuerpoBase, (vendedor && vendedor.nombre) || 'Asesor') : cuerpoBase;
-      const smart = await sendMessageSmart(l.customer_phone, cuerpo, l.id);
+      // Detectar canal del lead (multicanal)
+      const cadPhone = l.customer_phone || '';
+      let cadChannel = 'whatsapp';
+      if (cadPhone.startsWith('messenger_')) cadChannel = 'messenger';
+      else if (cadPhone.startsWith('instagram_')) cadChannel = 'instagram';
+      let smart;
+      if (cadChannel !== 'whatsapp') {
+        const { getAdapter } = require('../channels');
+        const cadAdapter = getAdapter(cadChannel);
+        const cuid = cadPhone.replace(/^(messenger_|instagram_)/, '');
+        if (cadAdapter && cuid) { await cadAdapter.sendMessage(cuid, cuerpo); }
+        smart = { queued: false, data: null };
+      } else {
+        smart = await sendMessageSmart(l.customer_phone, cuerpo, l.id);
+      }
       if (smart && !smart.queued) {
         const wamid = smart.data && smart.data.messages && smart.data.messages[0] ? smart.data.messages[0].id : null;
         const fromNumber = l.assigned_to_phone || 'panel';
@@ -100,7 +114,21 @@ async function enviarUno(s) {
     const vendedor = s.vendedor_id ? store.getVendedorById(s.vendedor_id) : null;
     const nombre = vendedor ? vendedor.nombre : 'Asesor';
     const cuerpo = _buildFirma ? _buildFirma(s.body, nombre) : s.body;
-    const smart = await sendMessageSmart(lead.customer_phone, cuerpo, lead.id);
+    // Detectar canal del lead (multicanal)
+    const progPhone = lead.customer_phone || '';
+    let progChannel = 'whatsapp';
+    if (progPhone.startsWith('messenger_')) progChannel = 'messenger';
+    else if (progPhone.startsWith('instagram_')) progChannel = 'instagram';
+    let smart;
+    if (progChannel !== 'whatsapp') {
+      const { getAdapter } = require('../channels');
+      const progAdapter = getAdapter(progChannel);
+      const pcuid = progPhone.replace(/^(messenger_|instagram_)/, '');
+      if (progAdapter && pcuid) { await progAdapter.sendMessage(pcuid, cuerpo); }
+      smart = { queued: false, data: null };
+    } else {
+      smart = await sendMessageSmart(lead.customer_phone, cuerpo, lead.id);
+    }
     // Marcar 'enviado' INMEDIATAMENTE tras aceptar Meta el envío: si la contabilidad
     // de abajo fallara (disco lleno, deploy que mata el proceso), el peor caso es un
     // mensaje sin registrar — nunca un cliente recibiendo el mismo texto duplicado.
