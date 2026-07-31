@@ -268,13 +268,29 @@ const CHANNEL_TOKEN_FIELDS = {
   messenger: { tokenKey: 'channel_messenger_token', idKey: 'channel_messenger_page_id', idField: 'pageId' },
   instagram: { tokenKey: 'channel_instagram_token', idKey: 'channel_instagram_user_id', idField: 'igUserId' },
 };
-app.post('/api/channels/:name/token', auth.requireAdmin, (req, res) => {
+app.post('/api/channels/:name/token', auth.requireAdmin, async (req, res) => {
   const { name } = req.params;
   const cfg = CHANNEL_TOKEN_FIELDS[name];
   if (!cfg) return res.status(404).json({ error: 'canal_no_soporta_token_ui' });
   const { token, pageId, igUserId } = req.body || {};
   const id = pageId || igUserId;
   if (!token || !String(token).trim()) return res.status(400).json({ error: 'token_requerido' });
+  if (!id || !String(id).trim()) return res.status(400).json({ error: 'id_requerido' });
+
+  // Validar token + id contra Graph API antes de guardar: evita tokens inválidos
+  // (ej. tokens legacy de Instagram que Meta rechaza con error 190).
+  try {
+    const axios = require('axios');
+    const resp = await axios.get(`https://graph.facebook.com/v22.0/${String(id).trim()}`, {
+      params: { fields: 'id', access_token: String(token).trim() },
+      timeout: 15000,
+    });
+    if (!resp.data || !resp.data.id) throw new Error('La API no devolvió el id solicitado');
+  } catch (e) {
+    const detalle = (e.response && e.response.data && e.response.data.error && e.response.data.error.message) || e.message;
+    return res.status(400).json({ error: 'token_invalido', detalle: String(detalle).slice(0, 300) });
+  }
+
   store.setConfig(cfg.tokenKey, String(token).trim());
   if (id && String(id).trim()) store.setConfig(cfg.idKey, String(id).trim());
   res.json({ ok: true });

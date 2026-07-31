@@ -105,7 +105,7 @@ class MessageRouter {
         // Crear lead nuevo para que el vendedor lo vea
         const nombreCliente = meta.name || customer.name || 'Cliente';
         try {
-          const phoneForLead = customerPhone || `messenger_${fromUserId}`;
+          const phoneForLead = customerPhone || `${channel}_${fromUserId}`;
           const result = store.saveLead(phoneForLead, nombreCliente, messageBody || mediaBody(media, options));
           leadId = result.leadId;
           if (result.isNew) {
