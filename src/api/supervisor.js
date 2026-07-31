@@ -14,15 +14,18 @@
 //   - GET  /api/supervisor/feed              (S6: feed multimedia — Sprint 6)
 //   - GET  /api/supervisor/analitica         (S8: embudo + series — Sprint 8)
 //
-// S1 expone ping + me; S2 agrega /dashboard (auto-contenido, reusa store).
-// Los demás llegan con cada Sprint; mientras tanto, devuelven 501 Not Implemented
-// — así el frontend puede probar la existencia de la ruta sin que parezca un bug de auth.
+// S1 expone ping + me; S2 agrega /dashboard; S3 agrega /equipo, /equipo/leads y
+// /reasignar (todos auto-contenidos, reusan store.js). Los demás llegan con cada
+// Sprint; mientras tanto, devuelven 501 Not Implemented — así el frontend puede
+// probar la existencia de la ruta sin que parezca un bug de auth.
 
 const express = require('express');
 const router = express.Router();
 
 const auth = require('../services/auth');
 const store = require('../db/store');
+const events = require('../services/events');
+const { notify } = require('../services/notify');
 
 // --- S1: ping de cableado ---
 // Útil para verificar, desde el frontend o con curl, que la cookie sp_session
@@ -46,7 +49,7 @@ router.get('/me', (req, res) => {
   const capacidades = [
     { id: 'me', sprint: 1, activo: true },
     { id: 'dashboard', sprint: 2, activo: true },
-    { id: 'equipo', sprint: 3, activo: false },
+    { id: 'equipo', sprint: 3, activo: true },
     { id: 'conversaciones', sprint: 4, activo: false },
     { id: 'alertas', sprint: 5, activo: false },
     { id: 'feed', sprint: 6, activo: false },
@@ -63,6 +66,18 @@ router.get('/me', (req, res) => {
     capacidades,
   });
 });
+
+// --- Helper: IDs de vendedores que NO son asesores (admin/supervisor) ---
+// Misma regla que el round-robin de getVendedoresActivos(): el supervisor nunca
+// debe ver al admin ni a sí mismo como parte del equipo de asesores.
+function idsNoAsesores() {
+  const excl = new Set();
+  try {
+    const r = store.getDB().exec("SELECT vendedor_id FROM usuarios WHERE rol IN ('admin','supervisor') AND vendedor_id IS NOT NULL");
+    if (r && r.length) r[0].values.forEach(row => excl.add(Number(row[0])));
+  } catch (e) { /* noop */ }
+  return excl;
+}
 
 // --- S2: Dashboard global del equipo ---
 // Devuelve una snapshot agregada lista para pintar el dashboard del supervisor:
@@ -88,11 +103,7 @@ router.get('/dashboard', (req, res) => {
 
     // IDs a excluir del "equipo" del supervisor: vendedores que en realidad son
     // admin o supervisor (misma regla que el round-robin de getVendedoresActivos).
-    const excl = new Set();
-    try {
-      const r = store.getDB().exec("SELECT vendedor_id FROM usuarios WHERE rol IN ('admin','supervisor') AND vendedor_id IS NOT NULL");
-      if (r && r.length) r[0].values.forEach(row => excl.add(Number(row[0])));
-    } catch (e) { /* noop */ }
+    const excl = idsNoAsesores();
 
     // Ranking por asesor desde getInsigniaStats (ya mapeado y ordenado en store.js)
     let ranking = [];
@@ -145,10 +156,124 @@ router.get('/dashboard', (req, res) => {
     res.status(500).json({ error: 'error_dashboard', detalle: e.message });
   }
 });
+// --- S3: Equipo — listado de asesores con métricas individuales ---
+// Cada asesor: contadores de pipeline (insignias), estado, actividad de hoy y
+// tasa de respuesta. Ordenado por cierres del mes → cierres totales (ranking).
+router.get('/equipo', (req, res) => {
+  try {
+    const excl = idsNoAsesores();
+    // Un solo query de insignias y un join en memoria (evita N+1 por asesor)
+    const stats = {};
+    (store.getInsigniaStats() || []).forEach(s => { stats[Number(s.vendedor_id)] = s; });
+
+    const asesores = (store.getVendedores() || [])
+      .filter(v => !excl.has(Number(v.id)))
+      .map(v => {
+        const s = stats[Number(v.id)] || {};
+        const m = store.getVendedorMetricas(v.id);
+        const total = Number(v.total_leads) || 0;
+        const vendidos = Number(s.vendidos) || 0;
+        return {
+          id: v.id,
+          nombre: v.nombre,
+          telefono: v.telefono,
+          estado: v.estado,
+          foto: v.foto || null,
+          total,
+          activos: Number(s.activos) || 0,
+          pendientes: Number(s.pendientes) || 0,
+          vendidos,
+          vendidosMes: Number(s.vendidos_mes) || 0,
+          respondidos: Number(s.respondidos) || 0,
+          leadsHoy: m.leadsHoy,
+          leadsCerrados: m.leadsCerrados,
+          tasaRespuesta: m.tasaRespuesta,
+          conversion: total ? Math.round((vendidos / total) * 100) : 0,
+          ultimaActividad: m.ultimaActividad,
+        };
+      })
+      .sort((a, b) => (b.vendidosMes - a.vendidosMes) || (b.vendidos - a.vendidos) || a.nombre.localeCompare(b.nombre));
+
+    res.json({ asesores, generadoEn: new Date().toISOString() });
+  } catch (e) {
+    console.error('[SUPERVISOR] equipo error:', e.message);
+    res.status(500).json({ error: 'error_equipo', detalle: e.message });
+  }
+});
+
+// --- S3: Leads activos de un asesor (para el picker de reasignación) ---
+// Reusa getAdminInbox del store (el mismo query que el inbox del admin) y filtra
+// solo los leads no cerrados. Sin paginación propia: limite 300 es suficiente
+// para la operación manual de un supervisor.
+router.get('/equipo/leads', (req, res) => {
+  try {
+    const asesorId = Number(req.query.asesorId);
+    if (!asesorId) return res.status(400).json({ error: 'asesor_requerido' });
+    const asesor = store.getVendedorById(asesorId);
+    if (!asesor) return res.status(404).json({ error: 'asesor_no_existe' });
+    const rows = store.getAdminInbox({ vendedorId: asesorId, limite: 300 }) || [];
+    res.json({
+      asesor: { id: asesor.id, nombre: asesor.nombre },
+      leads: rows
+        .filter(l => String(l.status || '') !== 'cerrado')
+        .map(l => ({
+          id: l.id,
+          nombre: l.customer_name,
+          telefono: l.customer_phone,
+          etiqueta: l.etiqueta || 'sin_clasificar',
+          status: l.status || 'nuevo',
+          unread: Number(l.unread_count) || 0,
+          temperatura: l.temperatura || null,
+          creado: l.created_at,
+          actualizado: l.updated_at,
+        })),
+    });
+  } catch (e) {
+    console.error('[SUPERVISOR] equipo/leads error:', e.message);
+    res.status(500).json({ error: 'error_equipo_leads', detalle: e.message });
+  }
+});
+
+// --- S3: Reasignar un lead entre asesores ---
+// Espejo del endpoint admin /api/leads/:id/reasignar pero restringido a asesores
+// reales (excluye admin/supervisor) y con los mismos efectos secundarios:
+// reassignLead() en store + SSE a ambos vendedores y admins + notificación push.
+router.post('/reasignar/:leadId', (req, res) => {
+  try {
+    const lead = store.getLeadById(req.params.leadId);
+    if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+    if (String(lead.status || '') === 'cerrado') return res.status(400).json({ error: 'lead_cerrado' });
+
+    const excl = idsNoAsesores();
+    const vendedorId = Number((req.body || {}).vendedorId);
+    const vendedor = (store.getVendedores() || []).find(v => Number(v.id) === vendedorId && !excl.has(Number(v.id)));
+    if (!vendedor) return res.status(400).json({ error: 'vendedor_no_existe' });
+    if (String(vendedor.estado) !== 'activo') return res.status(400).json({ error: 'vendedor_inactivo' });
+    if (Number(lead.assigned_to_id) === Number(vendedor.id)) return res.status(400).json({ error: 'mismo_asesor' });
+
+    const anteriorId = lead.assigned_to_id;
+    store.reassignLead(lead.id, vendedor, anteriorId);
+
+    events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+    if (anteriorId) events.emitToVendedor(anteriorId, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+    events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+    notify({ vendedorId: vendedor.id, tipo: 'lead_asignado', leadId: lead.id, push: true,
+      titulo: '🆕 Lead asignado a ti', cuerpo: `${lead.customer_name} (${lead.customer_phone})` }).catch(() => {});
+    if (anteriorId && Number(anteriorId) !== Number(vendedor.id)) {
+      notify({ vendedorId: anteriorId, tipo: 'lead_reasignado', leadId: lead.id, push: true,
+        titulo: '🔄 Lead reasignado', cuerpo: `${lead.customer_name} pasó a ${vendedor.nombre}.` }).catch(() => {});
+    }
+
+    console.log(`[SUPERVISOR] Reasignado lead ${lead.id} (${lead.customer_name}): vendedor ${anteriorId || '—'} → ${vendedor.id} por ${req.session.nombre}`);
+    res.json({ ok: true, leadId: lead.id, vendedor: { id: vendedor.id, nombre: vendedor.nombre } });
+  } catch (e) {
+    console.error('[SUPERVISOR] reasignar error:', e.message);
+    res.status(500).json({ error: 'error_reasignar', detalle: e.message });
+  }
+});
+
 // --- Stubs para próximos sprints (501 hasta que el Sprint correspondiente los implemente) ---
 const stub = (id, sprint) => (req, res) => res.status(501).json({ error: 'no_implementado', seccion: id, sprint });
-router.get('/equipo', stub('equipo', 3));
-router.post('/reasignar/:leadId', stub('reasignar', 3));
 router.get('/conversaciones', stub('conversaciones', 4));
 router.get('/alertas', stub('alertas', 5));
 router.get('/feed', stub('feed', 6));

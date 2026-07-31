@@ -15,7 +15,7 @@
     { title: 'Supervisión', items: [
       { id: 'inicio', label: 'Inicio', icon: 'dashboard', href: '/supervisor/index.html' },
       { id: 'dashboard', label: 'Dashboard', icon: 'analytics', href: '/supervisor/dashboard.html' },
-      { id: 'equipo', label: 'Equipo', icon: 'team' },
+      { id: 'equipo', label: 'Equipo', icon: 'team', href: '/supervisor/equipo.html' },
       { id: 'conversaciones', label: 'Conversaciones', icon: 'inbox' },
       { id: 'alertas', label: 'Alertas', icon: 'activity', badge: 'live' },
     ]},

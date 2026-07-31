@@ -1948,7 +1948,7 @@ function getAdminInbox({ busqueda, etiqueta, vendedorId, limite, offset } = {}) 
     ${whereStr}
     ORDER BY l.updated_at DESC, l.id DESC
     LIMIT ? OFFSET ?
-  `, [...params, 'incoming', 'outgoing', '2000-01-01', lim, off]);
+  `, ['incoming', 'outgoing', '2000-01-01', ...params, lim, off]);
 }
 
 function getAdminInboxStats() {
