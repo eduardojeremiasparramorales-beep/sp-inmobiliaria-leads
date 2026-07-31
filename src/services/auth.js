@@ -28,6 +28,20 @@ const SESSION_TTL_MS = CFG.SESSION_TTL_MS;
 function createSession(data) {
   const token = crypto.randomBytes(32).toString('hex');
   const store = require('../db/store');
+  // Vid.a V3: la sesión nace DENTRO del contexto del tenant activo (un request de login
+  // envuelto por el middleware de index.js ya resuelve la empresa del negocio cliente).
+  // Guardar ese tenant en la sesión es lo que permite al middleware de requests futuros
+  // saber en qué BD buscar la sesión (y en qué BD vive el vendedor).
+  let empresaId = data.empresaId != null ? data.empresaId : null;
+  let empresaDbPath = data.empresaDbPath || null;
+  try {
+    const adapter = require('../db/adapter');
+    const ctx = adapter.tenantContext.getStore();
+    if (ctx && ctx.empresaId != null) {
+      empresaId = ctx.empresaId;
+      empresaDbPath = ctx.dbPath || adapter.DEFAULT_DB_PATH;
+    }
+  } catch (e) { /* sin contexto → empresa #1 (default) */ }
   store.createDBSession(token, {
     userId: data.id || data.userId || null,
     vendedorId: data.vendedor_id || data.vendedorId || null,
@@ -35,6 +49,8 @@ function createSession(data) {
     nombre: data.nombre || '',
     email: data.email || '',
     userAgent: data.userAgent || '',
+    empresaId,
+    empresaDbPath,
   });
   return token;
 }
@@ -54,6 +70,8 @@ function getSession(token) {
     rol: s.rol,
     nombre: s.nombre,
     email: s.email || '',
+    empresaId: s.empresa_id != null ? Number(s.empresa_id) : null,
+    empresaDbPath: s.empresa_db_path || null,
   };
 }
 

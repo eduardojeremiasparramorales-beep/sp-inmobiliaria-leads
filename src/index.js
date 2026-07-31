@@ -49,8 +49,57 @@ app.set('trust proxy', 1);
 // Va primero, antes que cualquier otro middleware, para que TODO lo que siga
 // (parseo de body, rutas, auth) tenga acceso a la conexión de BD correcta.
 const dbAdapter = require('./db/adapter');
+
+// Vid.a V3 — cada request corre en el contexto del tenant al que pertenece la sesión
+// (o empresa #1 si no hay sesión: login, páginas públicas, webhook — el webhook se
+// re-resuelve por phone_number_id dentro de webhook/messages.js). La sesión vive en la
+// BD de SU empresa y lleva empresa_id + empresa_db_path (ver services/auth.js), así que
+// resolver el tenant = leer el token → saber en qué BD buscar. Cache en memoria para no
+// escanear BD de todos los negocios por cada request; el escaneo solo ocurre tras un
+// arranque o un login nuevo (miss de cache).
+const sessionTenants = new Map();      // token → {empresaId, dbPath} | null (negativo)
+const sessionTenantsAt = new Map();    // token → ts del último lookup
+const SESSION_TENANT_TTL_MS = 10 * 60 * 1000;
+const SESSION_TENANT_NEG_TTL_MS = 45 * 1000;
+function resolveTenantForSession(token) {
+  if (!token) return null;
+  const now = Date.now();
+  const ts = sessionTenantsAt.get(token);
+  if (ts && now - ts < (sessionTenants.has(token) ? SESSION_TENANT_TTL_MS : SESSION_TENANT_NEG_TTL_MS)) {
+    return sessionTenants.get(token) || null;
+  }
+  // Miss de cache: escanear sesión — primero empresa #1 (el caso común y el más barato),
+  // y solo si no está, las demás empresas activas (token indexado, una consulta por BD).
+  const scan = (empresaId, dbPath) => {
+    let found = null;
+    try {
+      dbAdapter.tenantContext.run({ empresaId, dbPath }, () => { found = store.getDBSession(token); });
+    } catch (e) { found = null; }
+    return found;
+  };
+  let s = scan(dbAdapter.DEFAULT_EMPRESA_ID, dbAdapter.DEFAULT_DB_PATH);
+  if (!s) {
+    try {
+      const platform = require('./db/platform');
+      for (const e of platform.getEmpresas() || []) {
+        if (!e.activo || Number(e.id) === dbAdapter.DEFAULT_EMPRESA_ID) continue;
+        s = scan(e.id, e.db_path);
+        if (s) break;
+      }
+    } catch (e) { /* control plane no disponible → sesión solo en empresa #1 */ }
+  }
+  const res = s ? {
+    empresaId: s.empresa_id != null ? Number(s.empresa_id) : dbAdapter.DEFAULT_EMPRESA_ID,
+    dbPath: s.empresa_db_path || dbAdapter.DEFAULT_DB_PATH,
+  } : null;
+  sessionTenants.set(token, res);
+  sessionTenantsAt.set(token, now);
+  return res;
+}
+
 app.use((req, res, next) => {
-  dbAdapter.tenantContext.run({ empresaId: dbAdapter.DEFAULT_EMPRESA_ID, dbPath: dbAdapter.DEFAULT_DB_PATH }, next);
+  const ten = resolveTenantForSession(auth.getTokenFromReq(req));
+  dbAdapter.tenantContext.run(ten || { empresaId: dbAdapter.DEFAULT_EMPRESA_ID, dbPath: dbAdapter.DEFAULT_DB_PATH }, next);
 });
 
 // Guardar el body crudo para verificar la firma del webhook de Meta.
@@ -800,12 +849,32 @@ app.post('/api/login', loginLimiter, (req, res) => {
   const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
   const MAX_AGE = CFG.SESSION_TTL_MS / 1000; // 30 días en segundos
 
+  // Vid.a V3 — selector manual de empresa para negocios clientes (por dominio es V4).
+  // Sin `empresa`, el login valida contra empresa #1 (comportamiento histórico intacto).
+  let loginTenant = null;
+  const empresaSlug = req.body && req.body.empresa ? String(req.body.empresa).trim() : '';
+  if (empresaSlug) {
+    try {
+      const platform = require('./db/platform');
+      const emp = platform.getEmpresaBySlug(empresaSlug.toLowerCase());
+      if (!emp) return res.status(401).json({ error: 'empresa_no_existe' });
+      loginTenant = { empresaId: emp.id, dbPath: emp.db_path, empresa: emp };
+    } catch (e) {
+      console.error('[LOGIN] error resolviendo empresa:', e.message);
+      return res.status(500).json({ error: 'error_empresa' });
+    }
+  }
+  // El resto del login (buscar vendedor, validar PIN, crear sesión) corre dentro del
+  // tenant resuelto — createSession guarda ese tenant en la sesión (ver auth.js).
+  const runLogin = (fn) => (loginTenant ? dbAdapter.tenantContext.run(loginTenant, fn) : fn());
+
   // Destruir sesión anterior si existe (session fixation prevention)
   const oldToken = auth.getTokenFromReq(req);
   if (oldToken) auth.destroySession(oldToken);
 
   // Teléfono + PIN (vendedor o admin)
   if (telefono && pin) {
+    return runLogin(() => {
     const tel = String(telefono).trim();
     let vendedor = store.getVendedorByTelefono(tel);
     // Fallback: buscar sin prefijo + (por si se almacenó sin él)
@@ -840,7 +909,8 @@ app.post('/api/login', loginLimiter, (req, res) => {
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
     // PIN de fábrica: obligar a cambiarlo antes de usar el panel
     const mustChange = String(pin) === '0000';
-    return res.json({ ok: true, token, must_change: mustChange, usuario: { nombre: vendedor.nombre, rol, vendedorId: vendedor.id } });
+    return res.json({ ok: true, token, must_change: mustChange, usuario: { nombre: vendedor.nombre, rol, vendedorId: vendedor.id }, empresa: loginTenant ? { id: loginTenant.empresaId, nombre: loginTenant.empresa.nombre, slug: loginTenant.empresa.slug } : undefined });
+    });
   }
 
   // Email + contraseña (legacy admin)
@@ -4453,14 +4523,26 @@ function ensurePlatformAdmin() {
   httpServer.listen(PORT, () => {
     console.log(`Leons Group CRM corriendo en puerto ${PORT}`);
   });
-  // Vid.a V1: estos jobs corren por setInterval, fuera de cualquier request — sin
-  // envolverlos perderían acceso a la BD en cuanto adapter.js empiece a exigir contexto
-  // de tenant. runAsTenant() los mete en el mismo contexto empresa #1 que usa cada request.
-  const runAsTenant = (fn) => dbAdapter.tenantContext.run({ empresaId: dbAdapter.DEFAULT_EMPRESA_ID, dbPath: dbAdapter.DEFAULT_DB_PATH }, fn);
-  setInterval(() => runAsTenant(checkEscalation), CFG.ESCALATION_CHECK_INTERVAL);
-  setInterval(() => runAsTenant(checkRecordatorios), 60000);
-  setInterval(() => runAsTenant(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS)), CFG.SESSION_CLEANUP_INTERVAL);
-  setInterval(() => runAsTenant(() => store.purgeOldFeedEvents(90)), 6 * 60 * 60 * 1000);
+  // Vid.a V3 — estos jobs corren por setInterval, fuera de cualquier request — sin
+  // contexto de tenant perderían acceso a la BD (adapter.js resuelve la conexión por
+  // contexto). runForAllTenants() itera TODAS las empresas activas del control plane
+  // (incluida #1) y corre el job dentro del contexto de cada una, secuencialmente.
+  // Si el control plane no está disponible, cae a empresa #1 (comportamiento histórico).
+  const platform = require('./db/platform');
+  const runForAllTenants = async (fn) => {
+    let empresas = [];
+    try {
+      empresas = (platform.getEmpresas() || []).filter(e => e.activo);
+    } catch (e) { empresas = []; }
+    if (!empresas.length) empresas = [{ id: dbAdapter.DEFAULT_EMPRESA_ID, db_path: dbAdapter.DEFAULT_DB_PATH }];
+    for (const e of empresas) {
+      await dbAdapter.tenantContext.run({ empresaId: e.id, dbPath: e.db_path || dbAdapter.DEFAULT_DB_PATH }, () => fn(e));
+    }
+  };
+  setInterval(() => { runForAllTenants(() => checkEscalation()).catch(e => console.error('[SCHED] checkEscalation:', e.message)); }, CFG.ESCALATION_CHECK_INTERVAL);
+  setInterval(() => { runForAllTenants(() => checkRecordatorios()).catch(e => console.error('[SCHED] checkRecordatorios:', e.message)); }, 60000);
+  setInterval(() => { runForAllTenants(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS)).catch(e => console.error('[SCHED] cleanExpiredSessions:', e.message)); }, CFG.SESSION_CLEANUP_INTERVAL);
+  setInterval(() => { runForAllTenants(() => store.purgeOldFeedEvents(90)).catch(e => console.error('[SCHED] purgeOldFeedEvents:', e.message)); }, 6 * 60 * 60 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
-  require('./services/scheduler').start(buildMensajeConFirma, runAsTenant);
+  require('./services/scheduler').start(buildMensajeConFirma, runForAllTenants);
 })();

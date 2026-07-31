@@ -221,13 +221,15 @@ function limpiarMediaAntigua() {
   const dias = Number(store.getConfig('media_retention_days')) || 180;
   const fs = require('fs');
   const path = require('path');
-  const { MEDIA_DIR, isCatalogFile } = require('./media');
-  if (!fs.existsSync(MEDIA_DIR)) return 0;
+  // Vid.a V3: tenant-aware — cada negocio limpia SU carpeta de media.
+  const { getMediaDir, isCatalogFile } = require('./media');
+  const dir = getMediaDir();
+  if (!fs.existsSync(dir)) return 0;
   const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
   let borrados = 0;
-  for (const f of fs.readdirSync(MEDIA_DIR)) {
+  for (const f of fs.readdirSync(dir)) {
     if (isCatalogFile(f)) continue; // catálogo público: nunca se borra por retención
-    const fp = path.join(MEDIA_DIR, f);
+    const fp = path.join(dir, f);
     try {
       const st = fs.statSync(fp);
       if (st.isFile() && st.mtimeMs < limite) { fs.unlinkSync(fp); borrados++; }

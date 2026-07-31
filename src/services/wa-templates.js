@@ -7,9 +7,10 @@ const axios = require('axios');
 const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
 
 async function fetchApprovedTemplatesFromMeta() {
-  const token = process.env.WHATSAPP_TOKEN;
+  // Vid.a V3: tenant-aware — el token del canal del negocio activo (env para #1).
+  const { token } = require('./whatsapp').getAuth();
   const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-  if (!token) throw new Error('Falta WHATSAPP_TOKEN');
+  if (!token) throw new Error('Falta token de canal');
   if (!wabaId) throw new Error('Falta WHATSAPP_BUSINESS_ACCOUNT_ID');
 
   const templates = [];

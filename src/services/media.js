@@ -5,8 +5,26 @@ const crypto = require('crypto');
 
 const MEDIA_DIR = path.join(__dirname, '..', '..', 'data', 'media');
 
+// Vid.a V3 — carpeta de media del tenant activo: empresa #1 usa data/media/ (histórico);
+// un negocio cliente usa data/media/{slug}/ (la carpeta que provisionEmpresa crea).
+function getMediaDir() {
+  try {
+    const adapter = require('../db/adapter');
+    const ctx = adapter.tenantContext.getStore();
+    const empresaId = (ctx && ctx.empresaId != null) ? Number(ctx.empresaId) : adapter.DEFAULT_EMPRESA_ID;
+    if (empresaId === adapter.DEFAULT_EMPRESA_ID) return MEDIA_DIR;
+    const platform = require('../db/platform');
+    const vidaProvision = require('./vida-provision');
+    const emp = platform.getEmpresaById(empresaId);
+    return emp ? vidaProvision.getEmpresaMediaDir(emp.slug) : MEDIA_DIR;
+  } catch (e) {
+    return MEDIA_DIR;
+  }
+}
+
 function ensureDir() {
-  if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  const dir = getMediaDir();
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 // Extensión a partir del mime (fallback .bin)
@@ -34,7 +52,7 @@ function saveMessageMedia(mediaId, buffer, mime, originalFilename) {
   ensureDir();
   const ext = extFor(mime, originalFilename);
   const filename = `${mediaId}.${ext}`;
-  fs.writeFileSync(path.join(MEDIA_DIR, filename), buffer);
+  fs.writeFileSync(path.join(getMediaDir(), filename), buffer);
   return filename;
 }
 
@@ -43,7 +61,7 @@ function saveOutgoingMedia(buffer, mime, originalFilename) {
   ensureDir();
   const ext = extFor(mime, originalFilename);
   const filename = `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  fs.writeFileSync(path.join(MEDIA_DIR, filename), buffer);
+  fs.writeFileSync(path.join(getMediaDir(), filename), buffer);
   return filename;
 }
 
@@ -54,7 +72,7 @@ function saveCatalogMedia(buffer, mime, originalFilename) {
   ensureDir();
   const ext = extFor(mime, originalFilename);
   const filename = `cat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  fs.writeFileSync(path.join(MEDIA_DIR, filename), buffer);
+  fs.writeFileSync(path.join(getMediaDir(), filename), buffer);
   return filename;
 }
 // ¿Es un archivo de catálogo (público)? Solo estos se sirven sin sesión.
@@ -65,7 +83,7 @@ function isCatalogFile(filename) {
 function getMediaPath(filename) {
   // Evita path traversal: solo el basename
   const safe = path.basename(String(filename || ''));
-  return path.join(MEDIA_DIR, safe);
+  return path.join(getMediaDir(), safe);
 }
 
 // --- Token firmado para exponer temporalmente un archivo a canales externos (Meta) ---
@@ -99,4 +117,4 @@ function verifyMediaToken(filename, token) {
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { saveMessageMedia, saveOutgoingMedia, saveCatalogMedia, isCatalogFile, getMediaPath, MEDIA_DIR, signMediaToken, verifyMediaToken };
+module.exports = { saveMessageMedia, saveOutgoingMedia, saveCatalogMedia, isCatalogFile, getMediaPath, MEDIA_DIR, getMediaDir, signMediaToken, verifyMediaToken };

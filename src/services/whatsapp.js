@@ -4,13 +4,37 @@ const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
 const WINDOW_CLOSED_CODE = 131047;
 const TOKEN_INVALID_CODE = 190;
 
+// Vid.a V3 — credenciales del canal SEGÚN el tenant activo:
+//   · Empresa #1 (SP Leons Group, legacy): WHATSAPP_TOKEN / PHONE_NUMBER_ID de .env.
+//   · Negocios clientes: canal registrado en el control plane (token cifrado con
+//     AES-256-GCM, ver db/platform.js + services/crypto-vault.js) — canal_id = phone_number_id.
+// Devuelve { token, phoneNumberId, empresaId }.
+function getAuth() {
+  const adapter = require('../db/adapter');
+  const ctx = adapter.tenantContext.getStore();
+  const empresaId = (ctx && ctx.empresaId != null) ? Number(ctx.empresaId) : adapter.DEFAULT_EMPRESA_ID;
+
+  if (empresaId === adapter.DEFAULT_EMPRESA_ID) {
+    const token = process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
+    return { token, phoneNumberId, empresaId };
+  }
+
+  const platform = require('../db/platform');
+  const vault = require('./crypto-vault');
+  const canal = (platform.getCanalesByEmpresa(empresaId) || []).find(c => c.canal === 'whatsapp');
+  if (!canal) throw new Error(`Empresa #${empresaId}: canal WhatsApp no conectado en el control plane`);
+  const token = vault.decrypt(platform.getCanalToken(canal.canal_id));
+  return { token, phoneNumberId: canal.canal_id, empresaId };
+}
+
 function getApiConfig() {
-  const token = process.env.WHATSAPP_TOKEN;
-  const phoneNumberId = process.env.PHONE_NUMBER_ID;
-  if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
+  const { token, phoneNumberId, empresaId } = getAuth();
   return {
     url: `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    empresaId,
   };
 }
 
@@ -24,11 +48,13 @@ function reportGraphError(err) {
     const now = Date.now();
     if (now - lastTokenAlertAt > 10 * 60 * 1000) {
       lastTokenAlertAt = now;
-      console.error('[WhatsApp] TOKEN INVÁLIDO O EXPIRADO (error 190) — todos los envíos están fallando. Renueva WHATSAPP_TOKEN.');
+      const ctxEmpresa = (() => { try { const c = require('../db/adapter').tenantContext.getStore(); return c && c.empresaId != null ? c.empresaId : 1; } catch (e) { return 1; } })();
+      console.error(`[WhatsApp] TOKEN INVÁLIDO O EXPIRADO (error 190) — todos los envíos de la empresa #${ctxEmpresa} están fallando. Renueva el token del canal.`);
       try {
         require('./events').emitToAdmins('sistema_alerta', {
           tipo: 'token_expirado',
-          mensaje: 'El token de WhatsApp expiró o es inválido. Los mensajes NO se están enviando. Renueva WHATSAPP_TOKEN en el servidor.',
+          empresaId: ctxEmpresa,
+          mensaje: `El token de WhatsApp expiró o es inválido (empresa #${ctxEmpresa}). Los mensajes NO se están enviando. Renueva el token del canal.`,
           ts: now,
         });
       } catch (e) { /* events no disponible en este contexto */ }
@@ -150,9 +176,7 @@ const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
 // Calidad y tier de mensajería del número — determina cuántos destinatarios únicos
 // se pueden alcanzar por día en campañas (250 → 1k → 10k... sube con volumen+calidad).
 async function getPhoneQuality() {
-  const token = process.env.WHATSAPP_TOKEN;
-  const phoneNumberId = process.env.PHONE_NUMBER_ID;
-  if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
+  const { token, phoneNumberId } = getAuth();
   const res = await axios.get(`${GRAPH}/${phoneNumberId}`, {
     headers: { Authorization: `Bearer ${token}` },
     params: { fields: 'quality_rating,messaging_limit_tier,verified_name,display_phone_number' },
@@ -162,7 +186,7 @@ async function getPhoneQuality() {
 
 // Devuelve la URL temporal y el mime de un media entrante (por su id)
 async function getMediaUrl(mediaId) {
-  const token = process.env.WHATSAPP_TOKEN;
+  const { token } = getAuth();
   const res = await axios.get(`${GRAPH}/${mediaId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -171,7 +195,7 @@ async function getMediaUrl(mediaId) {
 
 // Descarga el binario de un media entrante. Devuelve { buffer, mime }
 async function downloadMedia(mediaId) {
-  const token = process.env.WHATSAPP_TOKEN;
+  const { token } = getAuth();
   const meta = await getMediaUrl(mediaId);
   const res = await axios.get(meta.url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -182,9 +206,7 @@ async function downloadMedia(mediaId) {
 
 // Sube un archivo a WhatsApp y devuelve el media id para reenviarlo
 async function uploadMedia(buffer, mime, filename) {
-  const token = process.env.WHATSAPP_TOKEN;
-  const phoneNumberId = process.env.PHONE_NUMBER_ID;
-  if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
+  const { token, phoneNumberId } = getAuth();
 
   // WhatsApp exige el MIME base en 'type' (p. ej. "audio/ogg"), SIN parámetros como "; codecs=opus".
   // Un type mal formado deja el media inaccesible para el cliente en iOS ("Este audio ya no está disponible").
@@ -266,4 +288,4 @@ async function revokeMessage(to, wamid) {
   }
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality, getApiConfig, getAuth };

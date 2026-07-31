@@ -11,8 +11,9 @@ class WhatsAppAdapter extends ChannelAdapter {
   }
 
   getApiConfig() {
-    const token = process.env.WHATSAPP_TOKEN;
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    // Vid.a V3: tenant-aware — el mismo helper que usa services/whatsapp.js
+    // (env para empresa #1, canal cifrado del control plane para negocios clientes).
+    const { token, phoneNumberId } = require('../services/whatsapp').getAuth();
     if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
     return {
       url: `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
@@ -63,7 +64,7 @@ class WhatsAppAdapter extends ChannelAdapter {
   }
 
   async getMediaUrl(mediaId) {
-    const token = process.env.WHATSAPP_TOKEN;
+    const { token } = require('../services/whatsapp').getAuth();
     const res = await axios.get(`https://graph.facebook.com/${API_VERSION}/${mediaId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -71,7 +72,7 @@ class WhatsAppAdapter extends ChannelAdapter {
   }
 
   async downloadMedia(mediaId) {
-    const token = process.env.WHATSAPP_TOKEN;
+    const { token } = require('../services/whatsapp').getAuth();
     const meta = await this.getMediaUrl(mediaId);
     const res = await axios.get(meta.url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -81,8 +82,7 @@ class WhatsAppAdapter extends ChannelAdapter {
   }
 
   async uploadMedia(buffer, mime, filename) {
-    const token = process.env.WHATSAPP_TOKEN;
-    const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const { token, phoneNumberId } = require('../services/whatsapp').getAuth();
     if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
 
     const FormData = require('form-data');

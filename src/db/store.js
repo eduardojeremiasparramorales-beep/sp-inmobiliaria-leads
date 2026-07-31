@@ -272,6 +272,11 @@ function createSchema() {
   // touchSessionLastSeen) porque es lo que realmente responde "¿sigue viva de verdad?".
   ensureColumn('sessions', 'user_agent', 'TEXT');
   ensureColumn('sessions', 'last_seen_at', 'INTEGER');
+  // Vid.a V3: la sesión de un negocio cliente sabe a qué tenant pertenece (la sesión
+  // vive en la BD de ESA empresa; el middleware de index.js usa estas columnas para
+  // resolver la conexión correcta a partir del token de la cookie).
+  ensureColumn('sessions', 'empresa_id', 'INTEGER');
+  ensureColumn('sessions', 'empresa_db_path', 'TEXT');
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS wa_templates (
@@ -1420,7 +1425,7 @@ function setVendedorPin(id, pinHash) {
 // --- Sesiones persistentes en DB ---
 function createDBSession(token, data) {
   const now = Date.now();
-  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at, user_agent, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at, user_agent, last_seen_at, empresa_id, empresa_db_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
     token,
     data.userId != null ? Number(data.userId) : null,
     data.vendedorId != null ? Number(data.vendedorId) : null,
@@ -1430,6 +1435,8 @@ function createDBSession(token, data) {
     now,
     String(data.userAgent || '').slice(0, 255),
     now,
+    data.empresaId != null ? Number(data.empresaId) : null,
+    data.empresaDbPath || null,
   ]);
 }
 
