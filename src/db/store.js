@@ -2133,10 +2133,13 @@ function getConversations({ channel, status, etiqueta, busqueda, vendedorId, lim
   const lim = Number(limite) || 50;
   const off = Number(offset) || 0;
   return all(`
-    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, c.avatar_url AS customer_avatar, v.nombre AS assigned_to_nombre
+    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, c.avatar_url AS customer_avatar, v.nombre AS assigned_to_nombre,
+      CASE WHEN l.id IS NOT NULL THEN l.unread_count ELSE conv.unread_count END AS unread_count,
+      l.status AS lead_status
     FROM conversations conv
     LEFT JOIN customers c ON c.id = conv.customer_id
     LEFT JOIN vendedores v ON v.id = conv.assigned_to_id
+    LEFT JOIN leads l ON l.id = conv.lead_id
     ${whereStr}
     ORDER BY conv.updated_at DESC, conv.id DESC
     LIMIT ? OFFSET ?

@@ -14,10 +14,11 @@
 //   - GET  /api/supervisor/feed              (S6: feed multimedia — Sprint 6)
 //   - GET  /api/supervisor/analitica         (S8: embudo + series — Sprint 8)
 //
-// S1 expone ping + me; S2 agrega /dashboard; S3 agrega /equipo, /equipo/leads y
-// /reasignar (todos auto-contenidos, reusan store.js). Los demás llegan con cada
-// Sprint; mientras tanto, devuelven 501 Not Implemented — así el frontend puede
-// probar la existencia de la ruta sin que parezca un bug de auth.
+// S1 expone ping + me; S2 /dashboard; S3 /equipo, /equipo/leads y /reasignar;
+// S4 /conversaciones (el timeline se sirve desde los endpoints existentes, ya
+// abiertos al supervisor en index.js). Los demás llegan con cada Sprint;
+// mientras tanto, devuelven 501 Not Implemented — así el frontend puede probar
+// la existencia de la ruta sin que parezca un bug de auth.
 
 const express = require('express');
 const router = express.Router();
@@ -50,7 +51,7 @@ router.get('/me', (req, res) => {
     { id: 'me', sprint: 1, activo: true },
     { id: 'dashboard', sprint: 2, activo: true },
     { id: 'equipo', sprint: 3, activo: true },
-    { id: 'conversaciones', sprint: 4, activo: false },
+    { id: 'conversaciones', sprint: 4, activo: true },
     { id: 'alertas', sprint: 5, activo: false },
     { id: 'feed', sprint: 6, activo: false },
     { id: 'ia', sprint: 7, activo: false },
@@ -272,9 +273,37 @@ router.post('/reasignar/:leadId', (req, res) => {
   }
 });
 
+// --- S4: Conversaciones en vivo — inbox del equipo con filtros ---
+// Reusa getUnifiedConversations (legacy leads + multicanal) y filtra en memoria:
+//   - busqueda: nombre o teléfono del cliente
+//   - vendedorId: solo las de un asesor
+//   - etiqueta: etapa del pipeline ('todos' = sin filtro)
+//   - soloSinResponder=1: solo conversaciones con mensajes entrantes sin leer
+//   - canal: whatsapp | messenger | instagram
+// El timeline de cada ítem lo consume el frontend desde los endpoints ya existentes
+// (/api/leads/:id/mensajes y /api/inbox/conversations/:id/timeline), abiertos al
+// supervisor en index.js (lectura global + cerrar leads).
+router.get('/conversaciones', (req, res) => {
+  try {
+    const { busqueda, vendedorId, etiqueta, soloSinResponder, canal } = req.query;
+    const items = store.getUnifiedConversations({ busqueda, vendedorId, limite: 300 }) || [];
+    const conversaciones = items.filter(it => {
+      if (String(it.status || '') === 'cerrado') return false;
+      if (String(it.lead_status || '') === 'cerrado') return false;
+      if (etiqueta && etiqueta !== 'todos' && String(it.etiqueta || 'sin_clasificar') !== String(etiqueta)) return false;
+      if (soloSinResponder === '1' && Number(it.unread_count || 0) === 0) return false;
+      if (canal && String(it.channel || 'whatsapp') !== String(canal)) return false;
+      return true;
+    });
+    res.json({ conversaciones, generadoEn: new Date().toISOString() });
+  } catch (e) {
+    console.error('[SUPERVISOR] conversaciones error:', e.message);
+    res.status(500).json({ error: 'error_conversaciones', detalle: e.message });
+  }
+});
+
 // --- Stubs para próximos sprints (501 hasta que el Sprint correspondiente los implemente) ---
 const stub = (id, sprint) => (req, res) => res.status(501).json({ error: 'no_implementado', seccion: id, sprint });
-router.get('/conversaciones', stub('conversaciones', 4));
 router.get('/alertas', stub('alertas', 5));
 router.get('/feed', stub('feed', 6));
 router.get('/analitica', stub('analitica', 8));

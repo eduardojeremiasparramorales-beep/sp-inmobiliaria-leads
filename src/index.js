@@ -1009,17 +1009,17 @@ app.get('/api/mis-leads/archivados', auth.requireAuth, (req, res) => {
 app.get('/api/leads/:id(\\d+)', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+  if (!esAccesoGlobal(req) && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   res.json(lead);
 });
 
-// Historial de mensajes de un lead (solo si le pertenece o es admin)
+// Historial de mensajes de un lead (solo si le pertenece, es admin o supervisor)
 app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+  if (!esAccesoGlobal(req) && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   // Paginado: por defecto los últimos 100; ?before_id=N trae la página anterior
@@ -1050,7 +1050,7 @@ app.get('/api/leads/:id/window-status', auth.requireAuth, (req, res) => {
 // ===================== INBOX MULTICANAL (Nuevo Schema) =====================
 
 app.get('/api/inbox/conversations', auth.requireAuth, (req, res) => {
-  if (req.session.rol === 'admin') return res.json(store.getConversations({ limite: 200 }));
+  if (esAccesoGlobal(req)) return res.json(store.getConversations({ limite: 200 }));
   if (!req.session.vendedorId) return res.json([]);
   res.json(store.getConversationsByVendedorId(req.session.vendedorId));
 });
@@ -1063,13 +1063,18 @@ function assertConvAccess(req, res, conv) {
   return false;
 }
 
+// ¿La sesión ve/opera conversaciones de cualquier asesor? (admin o supervisor)
+function esAccesoGlobal(req) {
+  return req.session.rol === 'admin' || req.session.rol === 'supervisor';
+}
+
 app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) => {
   let conv = store.getConversationById(req.params.id);
   // Fallback: si el id corresponde a un lead legacy sin conversación (item _type:'lead'
   // del inbox unificado), crearla al vuelo con su historial en lugar de dar 404.
   if (!conv) conv = store.getOrCreateConversationForLead(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
-  if (req.session.rol !== 'admin' && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
+  if (!esAccesoGlobal(req) && Number(conv.assigned_to_id) !== Number(req.session.vendedorId))
     return res.status(403).json({ error: 'sin_permiso' });
   const messages = store.getTimelineByConversation(conv.id);
   // Enriquecer con reacciones: buscar mensajes en la tabla messages que coincidan
@@ -1137,7 +1142,7 @@ app.post('/api/inbox/conversations/:id/leido', auth.requireAuth, async (req, res
 });
 
 app.get('/api/inbox/unified-conversations', auth.requireAuth, (req, res) => {
-  if (req.session.rol !== 'admin') return res.json([]);
+  if (!esAccesoGlobal(req)) return res.json([]);
   const { busqueda, vendedorId, limite } = req.query;
   res.json(store.getUnifiedConversations({ busqueda, vendedorId, limite }));
 });
@@ -2479,7 +2484,7 @@ app.post('/api/leads/:id/mark-all-read', auth.requireAuth, (req, res) => {
 app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+  if (!esAccesoGlobal(req) && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
   const adapter = require('./db/adapter');
