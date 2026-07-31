@@ -2193,7 +2193,7 @@ function showCtxMenu(msgId){
   $('#ctxDelete').onclick=()=>{ closeSheet(); showDeleteOptions(msgId); };
   $('#ctxSelect').onclick=()=>{ closeSheet(); enterSelMode(msgId); };
 }
-/* ════════ Guardar imagen (descarga nativa + fallback Web Share API) ════════ */
+/* ════════ Guardar imagen (Galería en app nativa + Web Share + descarga) ════════ */
 async function saveImg(m){
   const src=m.id?`/api/media/${m.id}`:'';
   if(!src){ toast('Sin imagen','err'); return; }
@@ -2203,14 +2203,38 @@ async function saveImg(m){
     const r=await fetch(src,{credentials:'include'});
     if(!r.ok) throw new Error('HTTP '+r.status);
     const blob=await r.blob();
-    // 1) Web Share API con files (mejor en móvil/App — abre hoja de compartir nativa)
+    // 1) App nativa (APK Capacitor): guardar directo en la Galería del teléfono.
+    //    El WebView ignora <a download>, así que usamos los plugins nativos.
+    if(esNativo()){
+      const P=window.Capacitor.Plugins||{};
+      if(P.Filesystem){
+        try{
+          const toBase64=f=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result.split(',')[1]); fr.onerror=rej; fr.readAsDataURL(f); });
+          const dataBase64=await toBase64(blob);
+          const w=await P.Filesystem.writeFile({path:'sp-leons/'+filename,data:dataBase64,directory:'CACHE'});
+          if(P.Media&&P.Media.savePhoto){
+            await P.Media.savePhoto({path:w.uri,album:'Sp Leons'});
+            toast('Guardada en Galería');
+            return;
+          }
+          if(P.Share&&P.Share.share){
+            await P.Share.share({files:[w.uri],title:filename,useSystemSharingController:true});
+            return;
+          }
+        }catch(e){
+          console.error('[saveImg nativo]',e);
+          // si falla, cae al flujo web de abajo
+        }
+      }
+    }
+    // 2) Web Share API con files (mejor en navegador móvil — abre hoja de compartir nativa)
     if(navigator.canShare && navigator.canShare({files:[new File([blob],filename,{type:blob.type||'image/jpeg'})]}) ){
       try{
         await navigator.share({files:[new File([blob],filename,{type:blob.type||'image/jpeg'})], title:filename});
         return;
       }catch(e){ if(e && e.name==='AbortError') return; /* si cancela o falla, seguir al fallback */ }
     }
-    // 2) Fallback: <a download> programático
+    // 3) Fallback: <a download> programático
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url; a.download=filename; a.target='_blank';

@@ -1,10 +1,10 @@
 {
-  "versionCode": 7,
-  "versionName": "1.4.0",
+  "versionCode": 8,
+  "versionName": "1.5.0",
   "apkUrl": "/descargas/leons-group.apk",
-  "size": 10722158,
-  "sha256": "7dd8294e1f5e4060d5ed565ac728f2caa9e05a4466975560bd82c8d601a7d2d5",
-  "notas": "Notificaciones push nativas (FCM) + correcciones",
-  "obligatoria": true,
-  "fecha": "2026-07-28"
+  "size": 11009809,
+  "sha256": "ec167aa2613a9b046b2742ef05608739990e42a54a618fc7ef30f758665802f6",
+  "notas": "Guardar imagen en Galería (vendedor): botón Guardar imagen ahora guarda en la Galería del teléfono",
+  "obligatoria": false,
+  "fecha": "2026-07-31"
 }
