@@ -29,7 +29,10 @@ function resolveLeadVariables(lead, vendedor) {
     vendedor_nombre: (vendedor && vendedor.nombre) || '',
     vendedor_telefono: (vendedor && vendedor.telefono) || '',
     link_ubicacion: (lead && lead.link_ubicacion) || '',
-    link_catalogo: `${process.env.BASE_URL || ''}/os/propiedades.html`,
+    // Antes apuntaba a /os/propiedades.html — panel admin protegido por sesión: un cliente
+    // que recibiera este link por WhatsApp caía en el login. El catálogo público real
+    // (sin sesión, OG tags para preview en WhatsApp) vive en /catalogo/.
+    link_catalogo: `${process.env.BASE_URL || ''}/catalogo/`,
     empresa: store.getConfig('company_name') || 'Leons Group',
   };
 }

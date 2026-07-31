@@ -74,6 +74,14 @@
     </div>
   `;
 
+  // Secciones activas navegan a su página; /me no tiene página propia → vuelve al inicio.
+  document.querySelectorAll('[data-go]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-go');
+      location.href = id === 'me' ? '/supervisor/index.html' : `/supervisor/${id}.html`;
+    });
+  });
+
   function tituloSeccion(id){
     return ({
       dashboard: 'Dashboard del equipo',

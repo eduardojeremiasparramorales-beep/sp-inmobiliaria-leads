@@ -160,8 +160,19 @@ async function generateAssets(projectId) {
 
   store.updateCampanasSpProject(projectId, { status: 'generating' });
 
-  const imagesDir = project.images_dir;
-  const outputDir = project.output_dir || path.join(getCampanasSpDir(), 'projects', project.slug, 'generated');
+  // Recalcula desde el slug en vez de confiar ciegamente en las rutas guardadas en BD: tras
+  // un redeploy en Docker, cualquier fila vieja con images_dir apuntando a CAMPAÑAS_SP/projects
+  // (código, no persistido) quedaría huérfana. Si la ruta guardada todavía existe y tiene
+  // fotos de verdad (típico en desarrollo local), se respeta.
+  const computedImagesDir = path.join(getProjectDir(project.slug), 'images');
+  const imagesDir = (project.images_dir && project.images_dir !== computedImagesDir
+      && fs.existsSync(project.images_dir)
+      && fs.readdirSync(project.images_dir).some((f) => /\.(png|jpe?g|webp)$/i.test(f)))
+    ? project.images_dir
+    : computedImagesDir;
+
+  const computedOutputDir = path.join(getProjectDir(project.slug), 'generated');
+  const outputDir = (project.output_dir && fs.existsSync(project.output_dir)) ? project.output_dir : computedOutputDir;
   fs.mkdirSync(outputDir, { recursive: true });
 
   let imageAssignments = {};
@@ -310,8 +321,12 @@ function safeParse(val) {
   catch (e) { return []; }
 }
 
+// Los proyectos viven bajo data/ (volumen persistido en Docker: solo ./data:/app/data
+// sobrevive un redeploy) — NUNCA bajo CAMPAÑAS_SP/, que es código que viaja con la imagen
+// y se pisa en cada `docker compose up -d --build`. Antes las fotos subidas y los assets
+// generados se perdían en cada deploy sin que nadie lo notara hasta la siguiente campaña.
 function getProjectDir(slug) {
-  return path.join(getCampanasSpDir(), 'projects', slug);
+  return path.join(detectRoot(), 'data', 'campanas-projects', slug);
 }
 
 function scanProjectImages(slug) {

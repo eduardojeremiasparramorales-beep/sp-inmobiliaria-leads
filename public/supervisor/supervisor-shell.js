@@ -8,10 +8,13 @@
 (function () {
   'use strict';
 
-  /* --- Navegación del Supervisor Center (8 secciones = 8 Sprints) --- */
+  /* --- Navegación del Supervisor Center (8 secciones = 8 Sprints) ---
+     href solo se pone cuando la página del sprint existe; sin href el ítem se
+     pinta gris sin enlace (la sección aún no está implementada). */
   const NAV = [
     { title: 'Supervisión', items: [
-      { id: 'inicio', label: 'Inicio', icon: 'dashboard' },
+      { id: 'inicio', label: 'Inicio', icon: 'dashboard', href: '/supervisor/index.html' },
+      { id: 'dashboard', label: 'Dashboard', icon: 'analytics', href: '/supervisor/dashboard.html' },
       { id: 'equipo', label: 'Equipo', icon: 'team' },
       { id: 'conversaciones', label: 'Conversaciones', icon: 'inbox' },
       { id: 'alertas', label: 'Alertas', icon: 'activity', badge: 'live' },
@@ -87,7 +90,7 @@
     const navHTML = NAV.map(group => {
       const items = group.items.map(it => {
         const ic = ICONS[it.icon] || ICONS_LOCAL[it.icon] || '';
-        return `<a class="os-nav__item${it.id === active ? ' active' : ''}" data-section="${it.id}">
+        return `<a class="os-nav__item${it.id === active ? ' active' : ''}" data-section="${it.id}"${it.href ? ` href="${it.href}"` : ''}>
           ${ic.replace('<svg ', '<svg style="width:18px;height:18px" ') || ''}<span>${it.label}</span>
           ${it.badge === 'live' ? '<span class="os-nav__badge" id="navBadgeAlertas" style="display:none">•</span>' : ''}
         </a>`;
@@ -147,7 +150,7 @@
     // Tiempo real: suscripción al SSE del panel.
     initStream();
 
-    return { me, content: document.getElementById('osContent') };
+    return { me, content: document.getElementById('osContent'), esc };
   }
 
   /* --- Selector de tema (espejo de sp-shell.js pero autónomo) --- */

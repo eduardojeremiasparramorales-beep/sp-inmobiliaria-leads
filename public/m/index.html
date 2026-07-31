@@ -19,8 +19,8 @@
 <style>
   /* ══════════ SP OS · Mobile Experience ══════════ */
   :root{
-    --safe-t: env(safe-area-inset-top, 0px);
-    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-t: env(safe-area-inset-top, 12px);
+    --safe-b: env(safe-area-inset-bottom, 8px);
     --nav-h: 62px;
     /* --glass / --glass-2 / --blur / --blur-sm se heredan de sp-os.css (tokens centralizados) */
     --spring: cubic-bezier(.22,1,.36,1);
@@ -172,7 +172,7 @@
   .eq-banner__sub{ font-size:11px; color:var(--text-3); margin-bottom:10px; }
   .eq-banner__line{ width:40px; height:2px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:0 auto; border-radius:1px; }
   .eq-banner__team{ display:flex; justify-content:center; align-items:center; margin-bottom:10px; }
-  .eq-banner__team .av{ width:34px; height:34px; margin:0 -5px; font-size:11px; border:2.5px solid var(--bg-0); transition:transform .15s; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+  .eq-banner__team .av{ width:34px; height:34px; margin:0 -5px; font-size:11px; border:2.5px solid var(--bg-0); transition:transform .15s; box-shadow:0 2px 8px rgba(0,0,0,.3); position:relative; }
   .eq-banner__team .av:hover{ transform:translateY(-4px) scale(1.08); z-index:2; }
   .eq-banner__more{ width:34px; height:34px; border-radius:50%; background:var(--bg-4); border:2.5px solid var(--bg-0); display:grid; place-items:center; font-size:10px; font-weight:700; color:var(--gold); margin:0 -5px; }
   .eq-banner__dm-status{ display:inline-flex; align-items:center; gap:5px; background:rgba(78,123,70,.15); border:1px solid rgba(78,123,70,.3); border-radius:999px; padding:3px 10px; margin-bottom:6px; }
@@ -186,6 +186,21 @@
   .eq-typing__dots span:nth-child(2){ animation-delay:.2s; }
   .eq-typing__dots span:nth-child(3){ animation-delay:.4s; }
   @keyframes eqTypePulse{ 0%,100%{ opacity:.3;transform:scale(.8); } 50%{ opacity:1;transform:scale(1); } }
+
+  /* Eq reactions */
+  .bub-reactions{ display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .bub-reaction{ display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:999px; font-size:12px; background:rgba(200,164,90,.08); border:1px solid var(--border-soft); cursor:pointer; transition:all .2s; }
+  .bub-reaction.mine{ background:rgba(200,164,90,.2); border-color:var(--gold); }
+  .bub-reaction:active{ transform:scale(.9); }
+  .r-count{ font-size:10px; color:var(--text-3); }
+
+  /* Eq reply bar */
+  #eqReplyBar.show{ display:flex !important; }
+
+  /* Eq presence dot */
+  .eq-presence-dot{ position:absolute; bottom:0; right:0; width:10px; height:10px; border-radius:50%; border:2px solid var(--bg-1); }
+  .eq-presence-dot.on{ background:var(--gold); }
+  .eq-presence-dot.off{ background:var(--text-3); opacity:.5; }
 
   .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px 6px; display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
   .c-msgs.c-msgs--patron{
@@ -203,6 +218,8 @@
   @keyframes bubIn{ from{ opacity:0; transform:translateY(6px) scale(.98); } }
   .bub__t{ font-size:10.5px; opacity:.5; margin-top:3px; text-align:right; }
   .bub img,.bub video{ max-width:210px; border-radius:12px; display:block; }
+  .bub a.img-tap{ display:block; line-height:0; }
+  .bub a.img-tap img{ max-width:210px; border-radius:12px; }
   .bub audio{ width:210px; }
   .bub a.file{ color:inherit; text-decoration:underline; word-break:break-all; }
   .bub-quote{ border-left:3px solid var(--gold); padding:4px 8px; margin-bottom:6px; border-radius:4px; background:rgba(200,164,90,.08); font-size:12.5px; line-height:1.3; }
@@ -519,6 +536,7 @@
   .sch-item .sch-del{ width:28px; height:28px; border-radius:50%; background:none; border:none; color:var(--text-3); display:grid; place-items:center; }
   .rec-list{ max-height:200px; overflow-y:auto; margin-bottom:8px; }
   .m-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .m-toast.toast-err{ background:rgba(192,57,43,.92); border-color:rgba(192,57,43,.6); }
   .sec{ margin-bottom:20px; }
   .sec-label{ font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; padding:0 4px; }
   .sec-body{ background:var(--bg-2); border-radius:14px; overflow:hidden; }
@@ -646,7 +664,10 @@
       <div class="eq-typing" id="eqTyping"><div class="eq-typing__dots"><span></span><span></span><span></span></div><span id="eqTypingName"></span></div>
     </div>
     <div id="eqTabs" style="display:flex;gap:6px;padding:8px 12px 4px;overflow-x:auto;border-bottom:1px solid var(--border-soft)"></div>
-    <div id="eqSupervisado" style="display:none;font-size:11px;color:var(--text-3);background:rgba(200,164,90,.08);padding:6px 14px;text-align:center">🛡️ Chat interno supervisado por administración</div>
+    <div id="eqReplyBar" style="display:none;padding:8px 14px;background:rgba(200,164,90,.08);border-top:1px solid var(--gold);border-bottom:1px solid var(--border-soft);align-items:center;gap:8px">
+      <div style="flex:1;min-width:0"><div id="eqReplyLabel" style="font-size:11px;font-weight:700;color:var(--gold)"></div><div id="eqReplyPreview" style="font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div></div>
+      <button onclick="eqCancelReply()" style="background:none;border:none;color:var(--text-3);font-size:18px;cursor:pointer;padding:4px">✕</button>
+    </div>
     <div class="m-scroll" id="eqMsgs" style="padding:12px 14px"></div>
     <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border)">
       <textarea id="eqInput" placeholder="Mensaje al equipo…" rows="1" style="flex:1;min-height:40px;max-height:100px;padding:10px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
@@ -716,6 +737,7 @@ const SVG = {
   smile:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01',
   edit:'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   info:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01',
+  download:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
 };
 
 /* ════════ Estado / helpers ════════ */
@@ -737,7 +759,7 @@ const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0])
 const money = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function haptic(p){ if(localStorage.getItem('sp_notif_vibrate')==='false') return; try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
-function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+function toast(m,type){ const t=$('#toast'); t.textContent=m; t.className=type==='err'?'show toast-err':'show'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),type==='err'?4000:2200); }
 function playNotifSound(){
   if(localStorage.getItem('sp_notif_sound')==='false') return;
   const custom=localStorage.getItem('sp_notif_sound_custom');
@@ -826,6 +848,17 @@ async function api(url, opts){
     if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
     if(!r.ok) return null;
     const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json() : r.text();
+  }
+  catch(e){ return null; }
+}
+async function apiDetailed(url, opts){
+  try{
+    const r = await fetch(url, Object.assign({credentials:'include', headers:{'Accept':'application/json'}}, opts||{}));
+    if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
+    const ct=r.headers.get('content-type')||'';
+    const body=ct.includes('json')? await r.json() : await r.text();
+    if(!r.ok) return { _error:true, error:(body&&body.error)||'http_'+r.status, detalle:(body&&body.detalle)||'' };
+    return body;
   }
   catch(e){ return null; }
 }
@@ -990,27 +1023,128 @@ function initUpdateResume(){
 }
 
 /* ════════ Chat interno Equipo Leons (canal general + directos, SSE) ════════ */
-let teamMsgs=[], _eqAbierto=false, _eqCon=null, _eqAsesores=[]; // _eqCon=null → canal general; id → directo
+let teamMsgs=[], _eqAbierto=false, _eqCon=null, _eqAsesores=[], _eqPresence={}, _eqReplyTo=null;
+const EQ_COLORS=['#2E7D46','#5B7B8C','#7C6BB0','#8C4A4A','#4A7A8C','#6B8C4A','#8C6B2A','#4A5B8C','#8C4A6B','#5B8C4A'];
+function eqColor(id){ return EQ_COLORS[Number(id||0) % EQ_COLORS.length]; }
 function miId(){ return me?(me.rol==='admin'?0:Number(me.vendedorId)):null; }
 function esMio(m){
   if(!me) return false;
   if(me.rol==='admin') return Number(m.from_vendedor_id)===0;
   return Number(m.from_vendedor_id)===Number(me.vendedorId);
 }
+function eqReactionsHTML(msgId, reactions){
+  if(!reactions||!reactions.length) return '';
+  const counts={}; const mineSet=new Set();
+  reactions.forEach(r=>{
+    counts[r.emoji]=(counts[r.emoji]||0)+1;
+    if(Number(r.from_vendedor_id)===Number(miId())) mineSet.add(r.emoji);
+  });
+  return '<div class="bub-reactions">'+Object.entries(counts).map(([emoji,cnt])=>`<span class="bub-reaction${mineSet.has(emoji)?' mine':''}" data-emoji="${esc(emoji)}" data-msgid="${msgId}">${emoji}${cnt>1?`<span class="r-count">${cnt}</span>`:''}</span>`).join('')+'</div>';
+}
+function eqQuoteHTML(m){
+  if(!m.reply_to_body||m.reply_deleted) return '';
+  const label=m.reply_to_from||'Asesor';
+  return `<div style="margin-bottom:4px;border-left:3px solid var(--gold);padding:4px 8px;font-size:11.5px;color:var(--text-3);background:rgba(200,164,90,.06);border-radius:4px"><span style="color:var(--gold);font-weight:600">${esc(label)}</span><br>${esc((m.reply_to_body||'').slice(0,100))}</div>`;
+}
 function eqMsgHTML(m){
   const mio=esMio(m);
   const hora=horaCorta(m.created_at);
-  return `<div class="msg-wrap" style="justify-content:${mio?'flex-end':'flex-start'};display:flex;margin-bottom:8px">
-    <div class="bub bub--${mio?'out':'in'}" style="max-width:80%">
-      ${!mio?`<div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:2px">${esc(m.from_nombre||'Asesor')}</div>`:''}
+  if(m.deleted) return `<div class="msg-wrap" style="justify-content:${mio?'flex-end':'flex-start'};display:flex;margin-bottom:8px"><div class="bub bub--${mio?'out':'in'}" style="max-width:80%;opacity:.5;font-style:italic"><span class="bub-body">Mensaje eliminado</span><div class="bub__t">${hora}</div></div></div>`;
+  const bg=mio?'':'background:'+eqColor(m.from_vendedor_id)+';';
+  return `<div class="msg-wrap" data-msgid="${m.id}" style="justify-content:${mio?'flex-end':'flex-start'};display:flex;margin-bottom:8px">
+    <div class="bub bub--${mio?'out':'in'}" style="max-width:80%;${bg}">
+      ${!mio?`<div style="font-size:11px;font-weight:700;color:${eqColor(m.from_vendedor_id)};margin-bottom:2px">${esc(m.from_nombre||'Asesor')}</div>`:''}
+      ${eqQuoteHTML(m)}
       <span class="bub-body">${esc(m.body)}</span>
       <div class="bub__t">${hora}</div>
+      ${eqReactionsHTML(m.id, m.reactions)}
     </div></div>`;
 }
 function renderEquipo(){
   const box=$('#eqMsgs'); if(!box) return;
   box.innerHTML=teamMsgs.length?teamMsgs.map(eqMsgHTML).join(''):'<div class="m-empty" style="min-height:200px"><p>Escribe el primer mensaje al equipo 🦁</p></div>';
   box.scrollTop=box.scrollHeight;
+}
+// Event delegation para el chat del equipo — se una sola vez
+(function(){
+  const box=$('#eqMsgs'); if(!box) return;
+  let pressTimer=null, dragX0=0, dragging=false;
+  box.addEventListener('touchstart',e=>{
+    const wrap=e.target.closest('.msg-wrap[data-msgid]');
+    const bub=wrap&&wrap.querySelector('.bub');
+    if(!bub) return;
+    dragX0=e.touches[0].clientX; dragging=false;
+    const msgId=Number(wrap.dataset.msgid);
+    const msg=teamMsgs.find(x=>x.id===msgId);
+    pressTimer=setTimeout(()=>{ haptic(15); eqShowMsgActions(msgId,msg); },500);
+  },{passive:true});
+  box.addEventListener('touchmove',e=>{
+    clearTimeout(pressTimer);
+    const dx=Math.max(0,e.touches[0].clientX-dragX0);
+    if(dx>50&&!dragging){ dragging=true; const wrap=e.target.closest('.msg-wrap[data-msgid]'); const bub=wrap&&wrap.querySelector('.bub'); if(bub){ bub.style.transition='transform .25s var(--spring)'; bub.style.transform='translateX(0)'; } const msgId=wrap?Number(wrap.dataset.msgid):null; const msg=msgId?teamMsgs.find(x=>x.id===msgId):null; if(msgId) eqSetReply(msgId,msg); }
+  },{passive:true});
+  box.addEventListener('touchend',e=>{
+    clearTimeout(pressTimer); dragging=false;
+    const bub=e.target.closest('.bub');
+    if(bub){ bub.style.transition='transform .3s var(--spring)'; bub.style.transform='translateX(0)'; }
+  });
+  box.addEventListener('click',e=>{
+    const el=e.target.closest('.bub-reaction[data-emoji]');
+    if(el) eqToggleReaction(Number(el.dataset.msgid),el.dataset.emoji);
+  });
+})();
+function eqShowMsgActions(msgId,msg){
+  const isMio=msg&&esMio(msg);
+  const items=[
+    `<div class="ctx-item primary" data-eqact="reply"><div class="ctx-ic">💬</div><div>Responder</div></div>`,
+    `<div class="ctx-item" data-eqact="react"><div class="ctx-ic">👍</div><div>Reaccionar</div></div>`,
+  ];
+  if(isMio) items.push(`<div class="ctx-item danger" data-eqact="delete_everyone"><div class="ctx-ic">🗑️</div><div>Eliminar para todos</div></div>`);
+  items.push(`<div class="ctx-item danger" data-eqact="delete_me"><div class="ctx-ic">🗑️</div><div>Eliminar para mí</div></div>`);
+  openSheet('Acciones',`<div style="padding:6px 0">${items.join('')}</div>`);
+  setTimeout(()=>{
+    document.querySelectorAll('[data-eqact]').forEach(el=>{
+      el.addEventListener('click',()=>{
+        const act=el.dataset.eqact;
+        closeSheet();
+        if(act==='reply') eqSetReply(msgId,msg);
+        else if(act==='react') eqToggleReaction(msgId,'👍');
+        else if(act==='delete_everyone') eqDeleteMsg(msgId,'everyone');
+        else if(act==='delete_me') eqDeleteMsg(msgId,'me');
+      });
+    });
+  },50);
+}
+function eqSetReply(msgId,msg){
+  if(!msg) return; _eqReplyTo=msg; haptic(12);
+  const bar=$('#eqReplyBar'); if(bar) bar.classList.add('show');
+  const lbl=$('#eqReplyLabel'); const prev=$('#eqReplyPreview');
+  if(lbl) lbl.textContent='Respondiendo a '+(msg.from_nombre||'Asesor');
+  if(prev) prev.textContent=(msg.body||'').slice(0,80);
+  const inp=$('#eqInput'); if(inp) inp.focus();
+}
+function eqCancelReply(){ _eqReplyTo=null; const bar=$('#eqReplyBar'); if(bar) bar.classList.remove('show'); }
+async function eqToggleReaction(msgId,emoji){
+  const r=await api('/api/equipo/messages/'+msgId+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+  if(r&&r.ok){ const idx=teamMsgs.findIndex(x=>x.id===msgId); if(idx>=0) teamMsgs[idx].reactions=r.reactions; renderEquipo(); }
+}
+async function eqDeleteMsg(msgId,mode){
+  if(!confirm(mode==='everyone'?'¿Eliminar para todos?':'¿Eliminar para ti?')) return;
+  const r=await api('/api/equipo/messages/'+msgId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
+  if(r&&r.ok){ if(mode==='everyone'){ const idx=teamMsgs.findIndex(x=>x.id===msgId); if(idx>=0) teamMsgs[idx].deleted=1; renderEquipo(); } toast('Mensaje eliminado'); }
+}
+function eqSendPresence(){ api('/api/equipo/presence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}); }
+let _eqPresenceInterval=null;
+function eqStartPresence(){ eqSendPresence(); if(_eqPresenceInterval) clearInterval(_eqPresenceInterval); _eqPresenceInterval=setInterval(eqSendPresence,30000); }
+async function eqLoadPresence(){ const d=await api('/api/equipo/presence'); if(d) _eqPresence=d; updateEqPresenceDots(); }
+function updateEqPresenceDots(){
+  document.querySelectorAll('.eq-presence-dot').forEach(dot=>{
+    const vid=Number(dot.dataset.vid);
+    const p=_eqPresence[vid];
+    const online=p&&(Date.now()-new Date(p.last_seen).getTime()<60000);
+    dot.classList.toggle('on',!!online);
+    dot.classList.toggle('off',!online);
+  });
 }
 async function cargarEquipo(){
   const url=_eqCon!=null?`/api/equipo/mensajes?con=${_eqCon}`:'/api/equipo/mensajes';
@@ -1038,7 +1172,7 @@ function renderEqBanner(){
       '<div class="eq-banner__brand">EQUIPO LEONS</div>'+
       '<div class="eq-banner__sub">Chat interno — los clientes no lo ven</div>'+
       '<div class="eq-banner__team">'+
-        avs.map(a=>`<div class="av" style="background:${avatarColor(a.nombre)};overflow:hidden">${a.foto?`<img src="${esc(a.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(a.nombre)}</div>`).join('')+
+        avs.map(a=>{ const p=_eqPresence[a.id]; const online=p&&(Date.now()-new Date(p.last_seen).getTime()<60000); return `<div class="av" style="background:${avatarColor(a.nombre)};overflow:hidden;position:relative">${a.foto?`<img src="${esc(a.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(a.nombre)}<div class="eq-presence-dot ${online?'on':'off'}" data-vid="${a.id}"></div></div>`; }).join('')+
         (extra>0?`<div class="eq-banner__more">+${extra}</div>`:'')+
       '</div>'+
       '<div class="eq-banner__line"></div>';
@@ -1046,19 +1180,17 @@ function renderEqBanner(){
     const a=_eqAsesores.find(x=>Number(x.id)===Number(_eqCon));
     const nombre=a?a.nombre:'Directo';
     const foto=a&&a.foto;
+    const p=_eqPresence[a?a.id:null]; const online=p&&(Date.now()-new Date(p.last_seen).getTime()<60000);
     box.innerHTML=
       `<div class="eq-banner__dm-logo" style="background:${avatarColor(nombre)}">${foto?`<img src="${esc(foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(nombre)}</div>`+
-      '<div class="eq-banner__dm-status"><div class="eq-banner__dm-dot"></div><span>En línea</span></div>'+
+      `<div class="eq-banner__dm-status"><div class="eq-banner__dm-dot" style="background:${online?'var(--gold)':'var(--text-3)'}"></div><span>${online?'En línea':'Desconectado'}</span></div>`+
       `<div class="eq-banner__dm-name">${esc(nombre)}</div>`+
       '<div class="eq-banner__sub">Mensaje directo</div>'+
       '<div class="eq-banner__line"></div>';
   }
 }
 function updateEqHeader(){
-  const sup=$('#eqSupervisado');
   renderEqBanner();
-  if(_eqCon!=null){ if(sup) sup.style.display=me&&me.rol!=='admin'?'block':'none'; }
-  else { if(sup) sup.style.display='none'; }
 }
 function marcarEquipoLeido(){
   if(teamMsgs.length) localStorage.setItem('sp_equipo_last_read', String(teamMsgs[teamMsgs.length-1].id));
@@ -1068,14 +1200,15 @@ async function abrirEquipo(){
   $('#scEquipo').classList.add('show');
   await cargarAsesoresEquipo(); renderEqTabs(); updateEqHeader();
   await cargarEquipo(); renderEquipo(); marcarEquipoLeido(); renderList();
+  eqStartPresence(); eqLoadPresence();
 }
 function cerrarEquipo(){ _eqAbierto=false; $('#scEquipo').classList.remove('show'); marcarEquipoLeido(); renderList(); }
 async function enviarEquipo(){
   const inp=$('#eqInput'); const body=(inp.value||'').trim(); if(!body) return;
   inp.value=''; haptic([10,20]);
-  // Menciones @nombre → resolver ids
   const mentions=[]; _eqAsesores.forEach(a=>{ const f=(a.nombre||'').split(' ')[0]; if(f && new RegExp('@'+f,'i').test(body)) mentions.push(Number(a.id)); });
   const payload={body}; if(_eqCon!=null) payload.to=_eqCon; if(mentions.length) payload.mentions=mentions;
+  if(_eqReplyTo){ payload.replyTo=_eqReplyTo.id; eqCancelReply(); }
   const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); hideEqTyping(); }
   else toast('Error al enviar');
@@ -1377,6 +1510,7 @@ async function init(){
     await cargar();
     await cargarArchivados();
     conectarStream();
+    eqStartPresence();
   }
   wire();
   initFileInput();
@@ -2029,6 +2163,7 @@ function showCtxMenu(msgId){
   if(!m) return;
   const out=m.direction==='outgoing';
   const hasText=!!(m.body||'');
+  const isImg=m.media_type==='image'||m.media_type==='sticker';
   const C=(ic,label,id,cls)=>`<div class="ctx-item${cls?' '+cls:''}" id="${id}"><div class="ctx-ic">${ic}</div><div>${label}</div></div>`;
   openSheet('Opciones', `<div style="padding:6px 0">
     ${C(I(SVG.smile,18),'Reaccionar','ctxReact')}
@@ -2038,6 +2173,7 @@ function showCtxMenu(msgId){
     ${C('<span style="font-size:16px">⭐</span>', m.starred_at?'Quitar destacado':'Destacar','ctxStar')}
     ${hasText&&m.direction==='incoming'?C('<span style="font-size:15px">🌐</span>','Traducir','ctxTranslate'):''}
     ${C(I(SVG.arrowUp,18),'Compartir','ctxShare')}
+    ${isImg?C(I(SVG.download,18),'Guardar imagen','ctxSaveImg'):''}
     ${out?C(I(SVG.info||'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01',18),'Info del mensaje','ctxInfo'):''}
     ${C(I(SVG.reply,18),'Responder','ctxReply')}
     ${C(I(SVG.trash,18),'Borrar','ctxDelete','danger')}
@@ -2051,10 +2187,41 @@ function showCtxMenu(msgId){
   const ctxTr=$('#ctxTranslate');
   if(ctxTr) ctxTr.onclick=async()=>{ closeSheet(); toast('Traduciendo…'); const r=await api('/api/mensajes/'+msgId+'/traducir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({a:'español'})}); if(r&&r.traduccion){ m.translated_body=r.traduccion; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } else toast('No se pudo traducir'); };
   $('#ctxShare').onclick=()=>{ closeSheet(); selShare([m.body||'']); };
+  if($('#ctxSaveImg')) $('#ctxSaveImg').onclick=async()=>{ closeSheet(); await saveImg(m); };
   if(out){ $('#ctxInfo').onclick=()=>{ closeSheet(); showMsgInfo(msgId); }; }
   $('#ctxReply').onclick=()=>{ closeSheet(); setReply(msgId); };
   $('#ctxDelete').onclick=()=>{ closeSheet(); showDeleteOptions(msgId); };
   $('#ctxSelect').onclick=()=>{ closeSheet(); enterSelMode(msgId); };
+}
+/* ════════ Guardar imagen (descarga nativa + fallback Web Share API) ════════ */
+async function saveImg(m){
+  const src=m.id?`/api/media/${m.id}`:'';
+  if(!src){ toast('Sin imagen','err'); return; }
+  const filename=(m.media_filename||'imagen.jpg').replace(/[^\w.()-]/g,'_');
+  toast('Descargando…');
+  try{
+    const r=await fetch(src,{credentials:'include'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const blob=await r.blob();
+    // 1) Web Share API con files (mejor en móvil/App — abre hoja de compartir nativa)
+    if(navigator.canShare && navigator.canShare({files:[new File([blob],filename,{type:blob.type||'image/jpeg'})]}) ){
+      try{
+        await navigator.share({files:[new File([blob],filename,{type:blob.type||'image/jpeg'})], title:filename});
+        return;
+      }catch(e){ if(e && e.name==='AbortError') return; /* si cancela o falla, seguir al fallback */ }
+    }
+    // 2) Fallback: <a download> programático
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=filename; a.target='_blank';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+  }catch(e){
+    console.error('[saveImg]',e);
+    // 3) Último recurso: abrir en pestaña nueva y que el usuario guarde a mano
+    try{ window.open(src,'_blank'); toast('Abre la imagen y guárdala a mano','err'); }
+    catch(e2){ toast('No se pudo descargar','err'); }
+  }
 }
 /* ════════ Emoji Picker ════════ */
 const EMOJIS=['👍','❤️','😂','😮','😢','🙏','🔥','🎉','💯','⭐','👏','💪'];
@@ -2324,7 +2491,7 @@ function renderMedia(m){
     return `<div class="loc-card" onclick="window.open('${mapsUrl}','_blank')"><div class="leaflet-map" id="${mapId}" data-lat="${lat}" data-lng="${lng}"></div><div class="loc-body"><span class="loc-ic">📍</span><div class="loc-info"><div class="loc-tit">${esc(label)}</div><div class="loc-sub">${lat}, ${lng}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
   }
   const src=m.id?`/api/media/${m.id}`:'';
-  if(m.media_type==='image'||m.media_type==='sticker') return src?`<img src="${src}" loading="lazy">`:'🖼️ Imagen';
+  if(m.media_type==='image'||m.media_type==='sticker') return src?`<a class="img-tap" href="${src}" download="${esc(m.media_filename||'imagen.jpg')}" target="_blank" data-msg="${m.id}"><img src="${src}" loading="lazy"></a>`:'🖼️ Imagen';
   if(m.media_type==='video') return src?`<video src="${src}" controls></video>`:'🎬 Video';
   if(m.media_type==='audio') return src?renderAudioPlayer(m.id,src):'🎙️ Audio';
   return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`;
@@ -2507,8 +2674,9 @@ async function checkWindowStatus(leadId){
 // Enviar una plantilla de WhatsApp aprobada por Meta al lead actual (primer contacto o reactivación post-24h)
 async function abrirPlantillaMeta(prefillName){
   if(!current){ toast('Selecciona un lead primero'); return; }
-  const waTemplates = await api('/api/wa-templates') || [];
-  if(!waTemplates.length){ toast('No hay plantillas sincronizadas. Pide al admin que sincronice en Configuración.','err'); return; }
+  const allWaTemplates = await api('/api/wa-templates') || [];
+  const waTemplates = allWaTemplates.filter(t => t.estado === 'APPROVED');
+  if(!waTemplates.length){ toast('No hay plantillas aprobadas. Pide al admin que sincronice desde Configuración.','err'); return; }
   openSheet('Plantilla de WhatsApp', `
     <form id="mtForm" style="display:flex;flex-direction:column;gap:12px">
       <div style="font-size:12px;color:var(--text-3)">Envía una plantilla aprobada por Meta a ${esc(current.customer_name||'este cliente')}.</div>
@@ -2526,9 +2694,19 @@ async function abrirPlantillaMeta(prefillName){
     let vars=[]; try{ vars=JSON.parse(tpl.variables||'[]'); }catch(e){}
     let mapping={}; try{ mapping=JSON.parse(tpl.var_mapping||'{}'); }catch(e){}
     if(!vars.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">Esta plantilla no tiene variables.</div>'; return; }
-    const nameVal=current.customer_name||'';
+    const leadVars={
+      nombre_cliente:current.customer_name||'',
+      telefono:current.customer_phone||'',
+      proyecto:current.proyecto||'',
+      ciudad:current.ciudad||'',
+      precio:current.presupuesto||'',
+      vendedor_nombre:current.vendedor_nombre||'',
+      vendedor_telefono:current.vendedor_telefono||'',
+      empresa:'Leons Group'
+    };
     box.innerHTML=vars.map(ph=>{
-      const prefill=mapping[ph]==='nombre_cliente'?esc(nameVal):'';
+      const catalogKey=mapping[ph];
+      const prefill=(catalogKey&&leadVars[catalogKey])?esc(leadVars[catalogKey]):'';
       return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph]?' — '+esc(mapping[ph]):' (sin asignar)'}" value="${prefill}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:4px">`;
     }).join('');
   };
@@ -2536,19 +2714,27 @@ async function abrirPlantillaMeta(prefillName){
   if(prefillName) renderVarFields();
   $('#mtForm').addEventListener('submit', async e=>{
     e.preventDefault();
+    if(window._sending) return;
     const templateId=$('#mtTemplate').value;
     if(!templateId){ toast('Selecciona una plantilla'); return; }
     const overrides={}; $('#mtVarFields')?.querySelectorAll('[data-var]').forEach(inp=>{ overrides[inp.dataset.var]=inp.value.trim(); });
+    window._sending=true;
     haptic(10); closeSheet(); toast('Enviando plantilla…');
     const leadId=current.id;
-    const r=await api(`/api/leads/${leadId}/enviar-template`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templateId,overrides})});
-    if(r&&r.ok){
-      toast('Plantilla enviada');
-      const d=await api(`/api/leads/${leadId}/mensajes`);
-      if(d&&current&&current.id===leadId){ currentMsgs=d.mensajes||[]; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); if(b) b.scrollTop=b.scrollHeight; }
-      cargar();
-      if(current&&current.id===leadId) checkWindowStatus(leadId);
-    } else toast('Error al enviar: '+((r&&r.error)||'desconocido'),'err');
+    try{
+      const r=await apiDetailed(`/api/leads/${leadId}/enviar-template`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templateId,overrides})});
+      if(r&&r.ok){
+        toast('Plantilla enviada');
+        const d=await api(`/api/leads/${leadId}/mensajes`);
+        if(d&&current&&current.id===leadId){ currentMsgs=d.mensajes||[]; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); if(b) b.scrollTop=b.scrollHeight; }
+        cargar();
+        if(current&&current.id===leadId) checkWindowStatus(leadId);
+      } else {
+        const errMsg=(r&&r.detalle)||(r&&r.error)||'Error desconocido';
+        toast('Error: '+errMsg,'err');
+      }
+    }catch(e){ toast('Error de conexión','err'); }
+    finally{ window._sending=false; }
   });
 }
 // Reverse geocoding con manejo de error visible (antes se tragaba silenciosamente)
@@ -4007,6 +4193,12 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
     const directo=t.to!=null&&Number(_eqCon)===Number(t.from_id);
     if(_eqAbierto&&(canalGeneral||directo)){ showEqTyping(t.from_nombre); setTimeout(hideEqTyping,5000); }
   }catch(e){} });
+  // Reacciones del equipo en vivo
+  es.addEventListener('equipo_reaction',ev=>{ try{ const r=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===r.message_id); if(idx>=0){ teamMsgs[idx].reactions=r.reactions; if(_eqAbierto) renderEquipo(); } }catch(e){} });
+  // Mensaje del equipo eliminado en vivo
+  es.addEventListener('equipo_message_deleted',ev=>{ try{ const d=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===d.message_id); if(idx>=0){ teamMsgs[idx].deleted=1; if(_eqAbierto) renderEquipo(); } }catch(e){} });
+  // Presencia del equipo en vivo
+  es.addEventListener('equipo_presence',ev=>{ try{ const p=JSON.parse(ev.data); _eqPresence[p.vendedor_id]={online:p.online,last_seen:p.last_seen}; updateEqPresenceDots(); if(_eqAbierto) renderEqBanner(); }catch(e){} });
   // Transcripción IA lista para una nota de voz
   es.addEventListener('transcripcion',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m){ m.transcript=x.transcript; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }catch(e){} });
   // Programados del servidor

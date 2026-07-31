@@ -181,16 +181,77 @@
       if (!imgs.length) continue;
       html += `<div style="margin-top:8px"><strong style="font-size:11px;color:var(--gold);text-transform:uppercase">${esc(cat)}</strong>`;
       html += '<div class="csp-grid">' + imgs.map(f => `
-        <a class="csp-asset" href="${fileUrl(id, cat, f)}" download="${esc(f)}" style="display:block;text-decoration:none">
-          <img src="${fileUrl(id, cat, f)}" loading="lazy" alt="${esc(f)}">
+        <div class="csp-asset">
+          <a href="${fileUrl(id, cat, f)}" download="${esc(f)}" style="display:block;text-decoration:none">
+            <img src="${fileUrl(id, cat, f)}" loading="lazy" alt="${esc(f)}">
+          </a>
           <span style="font-size:9.5px;color:var(--text-3);display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f)}</span>
-        </a>`).join('') + '</div></div>';
+          <button class="csp-btn csp-btn--ghost" style="height:24px;padding:0 8px;font-size:9.5px;margin-top:4px;width:100%" data-share-asset data-cat="${esc(cat)}" data-file="${esc(f)}">Compartir al chat</button>
+        </div>`).join('') + '</div></div>';
     }
     box.innerHTML = html || '<div style="font-size:12px;color:var(--text-3);padding:8px">Sin assets</div>';
 
     box.querySelector('[data-compartir-reel]')?.addEventListener('click', () => {
-      toast('Adjunta el video desde "Descargar" en el chat del lead por ahora — compartir directo llega con el glow-up del chat.', 'ok');
+      openShareModal(id, 'reel', 'reel.mp4');
     });
+
+    box.querySelectorAll('[data-share-asset]').forEach(el => {
+      el.addEventListener('click', () => openShareModal(id, el.dataset.cat, el.dataset.file));
+    });
+  }
+
+  // Compartir un asset generado (imagen o el reel) directo al chat de un lead — selector
+  // con búsqueda + POST a /share-asset. Solo WhatsApp por ahora (el backend lo valida igual).
+  async function openShareModal(projectId, category, filename) {
+    const existing = document.getElementById('cspShareModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'cspShareModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55)';
+    modal.innerHTML = `
+      <div style="background:var(--bg-1);border-radius:14px;padding:20px;width:92%;max-width:420px;max-height:80vh;overflow:auto;border:1px solid var(--border-soft)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0;color:var(--text-1);font-size:15px">Compartir al chat</h3>
+          <button id="csmClose" style="background:none;border:none;color:var(--text-3);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <input id="csmSearch" placeholder="Buscar lead por nombre o teléfono…" style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:13px;margin-bottom:10px;outline:none">
+        <div id="csmList" style="font-size:12px;color:var(--text-3)">Cargando leads…</div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#csmClose').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+    const leads = (await api('/api/leads')) || [];
+    const list = modal.querySelector('#csmList');
+    function renderList(filter) {
+      const f = (filter || '').toLowerCase();
+      const filtered = !f ? leads : leads.filter(l =>
+        (l.customer_name || '').toLowerCase().includes(f) || (l.customer_phone || '').includes(f));
+      if (!filtered.length) { list.innerHTML = '<div style="padding:16px 0;text-align:center">Sin resultados</div>'; return; }
+      list.innerHTML = filtered.slice(0, 30).map(l => `
+        <div data-lead="${l.id}" style="display:flex;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer">
+          <span style="color:var(--text-1)">${esc(l.customer_name || 'Sin nombre')} <span style="color:var(--text-3)">· ${esc(l.customer_phone || '')}</span></span>
+          <button class="csp-btn csp-btn--ghost" style="height:28px;padding:0 10px;font-size:11px" data-send="${l.id}">Enviar</button>
+        </div>`).join('');
+      list.querySelectorAll('[data-send]').forEach(btn => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Enviando…';
+        const r = await api(`/api/campanas-sp/projects/${projectId}/share-asset`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadId: Number(btn.dataset.send), category, filename }),
+        });
+        if (r && r.ok) {
+          toast('Enviado al chat', 'ok');
+          modal.remove();
+        } else {
+          toast('Error: ' + ((r && (r.detalle || r.error)) || 'no se pudo enviar'), 'err');
+          btn.disabled = false;
+          btn.textContent = 'Enviar';
+        }
+      }));
+    }
+    renderList('');
+    modal.querySelector('#csmSearch').addEventListener('input', (e) => renderList(e.target.value));
   }
 
   // ===== WIZARD =====
@@ -200,7 +261,7 @@
     { value: 'clasica', label: 'Clásica — dorado fuerte, tradicional' },
   ];
 
-  let wizardState = { step: 1, projectId: null, slug: '', name: '', location: '', price: '', area: '', features: [], template: 'premium', images: [] };
+  let wizardState = { step: 1, projectId: null, slug: '', name: '', location: '', price: '', area: '', features: [], template: 'premium', images: [], files: [] };
 
   function openWizard() {
     const existing = document.getElementById('cspWizard');
@@ -211,7 +272,7 @@
         name: currentProject.name, location: currentProject.location || '',
         price: currentProject.price || '', area: currentProject.area || '',
         features: safeArr(currentProject.features), template: currentProject.template || 'premium',
-        images: [],
+        images: [], files: [],
       };
     } else {
       wizardState = { step: 1, projectId: null, slug: '', name: '', location: '', price: '', area: '', features: [], template: 'premium', images: [] };
@@ -293,11 +354,19 @@
     });
   }
 
-  // STEP 2: Upload images
+  // STEP 2: Elegir imágenes (se suben al proyecto en el paso 4; aquí solo se filtran y se
+  // manda una muestra a analizar). Antes este paso solo tocaba /analyze-images — el proyecto
+  // se guardaba con images_dir vacío y "Generar" fallaba después con "images_dir no existe".
+  const CSP_MAX_FILES = 50;
+  const CSP_MAX_SIZE = 20 * 1024 * 1024;
+  function isImageFile(f) {
+    if (f.type && f.type.startsWith('image/')) return true;
+    return /\.(png|jpe?g|webp)$/i.test(f.name || '');
+  }
   function renderStep2(body) {
-    const hasImages = wizardState.images && wizardState.images.length;
+    const hasFiles = wizardState.files && wizardState.files.length;
     body.innerHTML = `
-      <p>Sube las fotos reales del proyecto para que el sistema las analice.</p>
+      <p>Elige las fotos reales del proyecto. Se suben al guardar y una muestra se analiza con IA.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
         <label class="csp-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px">
           Elegir carpeta
@@ -308,49 +377,60 @@
           <input type="file" multiple accept="image/*" id="wsFiles" style="display:none">
         </label>
       </div>
-      <div id="wsImgList" style="font-size:12px;color:var(--text-3);margin-bottom:8px">${hasImages ? wizardState.images.length + ' imagen(es) seleccionadas' : 'Ninguna imagen seleccionada'}</div>
+      <div id="wsImgList" style="font-size:12px;color:var(--text-3);margin-bottom:8px">${hasFiles ? wizardState.files.length + ' imagen(es) incluidas' : 'Ninguna imagen seleccionada'}</div>
       <div id="wsUploadProg" style="font-size:12px;color:var(--text-3);margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
         <button class="csp-btn csp-btn--ghost" id="wsPrev2">← Atrás</button>
-        <button class="csp-btn" id="wsNext2" ${!hasImages ? 'disabled' : ''}>Subir y analizar →</button>
+        <button class="csp-btn" id="wsNext2" ${!hasFiles ? 'disabled' : ''}>Siguiente →</button>
       </div>`;
     body.querySelector('#wsPrev2').addEventListener('click', () => { wizardState.step = 1; renderStep(); });
-    async function uploadSelected(files) {
-      if (!files || !files.length) return;
+
+    function selectFiles(fileList) {
+      const all = Array.from(fileList || []);
+      const imagenes = all.filter(isImageFile).filter(f => f.size <= CSP_MAX_SIZE);
+      const incluidas = imagenes.slice(0, CSP_MAX_FILES);
+      const descartadas = all.length - incluidas.length;
+      wizardState.files = incluidas;
+      wizardState.images = incluidas.map(f => f.name);
+      document.getElementById('wsImgList').textContent = incluidas.length + ' imagen(es) incluidas'
+        + (descartadas > 0 ? ' · ' + descartadas + ' descartada(s) (no-imagen o >20MB)' : '');
+      document.getElementById('wsNext2').disabled = !incluidas.length;
+      if (incluidas.length) analyzeSample(incluidas);
+    }
+
+    async function analyzeSample(files) {
+      const sample = files.slice(0, 5);
       const form = new FormData();
-      for (const f of files) form.append('images', f);
-      document.getElementById('wsUploadProg').textContent = 'Subiendo ' + files.length + ' archivos…';
+      for (const f of sample) form.append('images', f);
+      const btn = document.getElementById('wsNext2');
+      const prog = document.getElementById('wsUploadProg');
+      prog.textContent = 'Analizando ' + sample.length + ' imagen(es) con IA…';
+      btn.disabled = true;
       try {
-        // First upload to temp for analysis
         const r = await fetch('/api/campanas-sp/analyze-images', { method: 'POST', body: form, credentials: 'same-origin' });
-        const data = await r.json();
-        if (data && data.nombre_sugerido !== undefined) {
+        const data = await r.json().catch(() => null);
+        if (r.ok && data && !data.error) {
           aiResult = data;
-          wizardState.images = Array.from(files).map(f => f.name);
-          document.getElementById('wsImgList').textContent = files.length + ' imagen(es) subidas';
-          // Auto-fill suggested data if fields are empty
           if (data.nombre_sugerido && !wizardState.name) wizardState.name = data.nombre_sugerido;
           if (data.ubicacion && !wizardState.location) wizardState.location = data.ubicacion;
           if (data.features && data.features.length) wizardState.features = data.features;
           if (data.precio_visible && !wizardState.price) wizardState.price = data.precio_visible;
           if (data.area_visible && !wizardState.area) wizardState.area = data.area_visible;
-          toast('AI analizó las imágenes', 'ok');
-          wizardState.step = 3;
-          renderStep();
+          prog.textContent = 'IA analizó las imágenes ✓';
         } else {
-          document.getElementById('wsUploadProg').textContent = 'Error: ' + ((data && data.error) || 'no se pudo analizar');
+          aiResult = null;
+          prog.textContent = 'Sin análisis de IA: ' + ((data && data.error) || 'no se pudo analizar') + ' — puedes seguir manualmente';
         }
       } catch (e) {
-        document.getElementById('wsUploadProg').textContent = 'Error de conexión';
+        aiResult = null;
+        prog.textContent = 'Sin análisis de IA (error de conexión) — puedes seguir manualmente';
       }
+      btn.disabled = !(wizardState.files && wizardState.files.length);
     }
-    body.querySelector('#wsFolder').addEventListener('change', function() { uploadSelected(this.files); this.value = ''; });
-    body.querySelector('#wsFiles').addEventListener('change', function() { uploadSelected(this.files); this.value = ''; });
-    body.querySelector('#wsNext2').addEventListener('click', async () => {
-      // If no images uploaded yet, skip to step 3
-      wizardState.step = 3;
-      renderStep();
-    });
+
+    body.querySelector('#wsFolder').addEventListener('change', function() { selectFiles(this.files); this.value = ''; });
+    body.querySelector('#wsFiles').addEventListener('change', function() { selectFiles(this.files); this.value = ''; });
+    body.querySelector('#wsNext2').addEventListener('click', () => { wizardState.step = 3; renderStep(); });
   }
 
   // STEP 3: AI Analysis review
@@ -422,6 +502,9 @@
     });
     body.querySelector('#wsPrev4').addEventListener('click', () => { wizardState.step = 3; renderStep(); });
     body.querySelector('#wsNext4').addEventListener('click', async () => {
+      const btn = document.getElementById('wsNext4');
+      btn.disabled = true;
+      btn.textContent = 'Guardando…';
       wizardState.price = document.getElementById('ws4Price').value.trim();
       wizardState.area = document.getElementById('ws4Area').value.trim();
       // Save project to DB
@@ -444,12 +527,36 @@
       if (result && result.id) {
         wizardState.projectId = result.id;
         toast('Proyecto guardado', 'ok');
+        if (wizardState.files && wizardState.files.length) {
+          btn.textContent = 'Subiendo ' + wizardState.files.length + ' imagen(es)…';
+          await uploadProjectImages(result.id);
+        }
         wizardState.step = 5;
         renderStep();
       } else {
+        btn.disabled = false;
+        btn.textContent = 'Guardar proyecto →';
         toast('Error: ' + ((result && result.error) || 'no se pudo guardar'), 'err');
       }
     });
+  }
+
+  // Sube las fotos ya filtradas del paso 2 a la carpeta persistida del proyecto — sin esto
+  // images_dir queda vacío y "Generar" falla más adelante con "images_dir no existe".
+  async function uploadProjectImages(projectId) {
+    const form = new FormData();
+    for (const f of wizardState.files) form.append('images', f);
+    try {
+      const r = await fetch('/api/campanas-sp/projects/' + projectId + '/upload-images', { method: 'POST', body: form, credentials: 'same-origin' });
+      const data = await r.json().catch(() => null);
+      if (r.ok && data && data.ok) {
+        toast(data.count + ' imagen(es) subidas al proyecto', 'ok');
+      } else {
+        toast('No se pudieron subir las imágenes: ' + ((data && (data.detalle || data.error)) || 'error desconocido'), 'err');
+      }
+    } catch (e) {
+      toast('Error de conexión subiendo imágenes', 'err');
+    }
   }
 
   // STEP 5: Generate

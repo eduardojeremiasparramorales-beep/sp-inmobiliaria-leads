@@ -208,6 +208,28 @@ function limpiarMediaAntigua() {
   return borrados;
 }
 
+// data/uploads/ es el escaneo temporal de /api/campanas-sp/analyze-images (solo sirve para
+// que Gemini categorice una muestra antes de guardar nada en el proyecto) — nunca se vuelve
+// a leer después, así que crece para siempre si nadie la limpia. Sin config gate: es scratch,
+// no media de clientes; 7 días es de sobra para cualquier análisis en curso.
+function limpiarUploadsAntiguos() {
+  const fs = require('fs');
+  const path = require('path');
+  const campanasSp = require('./campanas-sp');
+  const dir = path.join(campanasSp.detectRoot(), 'data', 'uploads');
+  if (!fs.existsSync(dir)) return 0;
+  const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let borrados = 0;
+  for (const f of fs.readdirSync(dir)) {
+    const fp = path.join(dir, f);
+    try {
+      const st = fs.statSync(fp);
+      if (st.isFile() && st.mtimeMs < limite) { fs.unlinkSync(fp); borrados++; }
+    } catch (e) { /* archivo tocado por otro proceso justo ahora — se intenta de nuevo mañana */ }
+  }
+  return borrados;
+}
+
 async function tickDiario() {
   const hoy = new Date().toISOString().slice(0, 10);
   if (_ultimoDiario === hoy) return;
@@ -217,7 +239,8 @@ async function tickDiario() {
     const cad = autoInscribirCadencia();
     const ins = insignias.recomputeAll();
     const media = limpiarMediaAntigua();
-    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia, ${media} archivo(s) de media retirados; insignias`, ins);
+    const uploads = limpiarUploadsAntiguos();
+    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia, ${media} archivo(s) de media retirados, ${uploads} escaneo(s) temporal(es) retirado(s); insignias`, ins);
   } catch (e) { console.error('[SCHEDULER] tickDiario:', e.message); }
 }
 
