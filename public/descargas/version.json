@@ -1,10 +1,10 @@
 {
-  "versionCode": 9,
-  "versionName": "1.5.1",
+  "versionCode": 10,
+  "versionName": "1.5.2",
   "apkUrl": "/descargas/leons-group.apk",
-  "size": 11009845,
-  "sha256": "63edc29e2d387ba35fe43e0ed6635497647d4b0455a5e4a76642a921fd6172c4",
-  "notas": "Pantalla universal: la app ya no se recorta con el notch ni la barra inferior; el teclado ya no tapa la barra de mensaje",
+  "size": 11009877,
+  "sha256": "f477c1da21b0692eedfa87bf029956ec63678254b21539fcce4bc20b952efc23",
+  "notas": "Teclado garantizado: la barra de mensaje sube siempre encima del teclado (plugin nativo). Pantalla universal en cualquier teléfono: sin recortes por notch ni barra inferior",
   "obligatoria": false,
   "fecha": "2026-07-31"
 }
