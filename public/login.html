@@ -14,12 +14,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
 <script src="/os/theme.js"></script>
+<script src="/os/safe-area.js"></script>
 <style>
   :root{
     --bg:#0A0A0A; --gold:#D4AF37; --gold-ink:#D4AF37; --gold-2:#8E7028; --gold-3:#EDCC60;
     --green:#4E7B46; --txt:#F8F8F8; --txt-2:rgba(248,248,248,.5);
     --txt-3:rgba(248,248,248,.22); --border:#1A1A1A; --surface:#111;
-    --red:#E5484D; --ease:cubic-bezier(.22,1,.36,1);
+    --red:#E5484D; --ease:cubic-bezier(.22,1,.36,1); --kb:0px; /* altura del teclado (safe-area.js) */
     /* Glass (sync sp-os.css) */
     --glass:rgba(20,20,20,.15); --glass-2:rgba(25,25,25,.22);
     --glass-border:rgba(248,248,248,.08); --blur-sm:saturate(1.4) blur(24px);
@@ -57,7 +58,7 @@
   }
 
   /* ── Layout ── */
-  .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;transition:opacity .3s var(--ease),transform .3s var(--ease);z-index:1}
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;padding-bottom:calc(28px + var(--kb,0px));transition:opacity .3s var(--ease),transform .3s var(--ease);z-index:1}
   .screen.hidden{opacity:0;pointer-events:none;transform:translateY(12px)}
 
   /* ── Logo ── */
@@ -152,7 +153,7 @@
   .reg-body{width:100%;max-width:320px;overflow-y:auto;max-height:100%;padding-bottom:12px}
 
   /* ── Footer ── */
-  .foot{position:absolute;bottom:0;left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.6rem;color:var(--txt-3);letter-spacing:.08em}
+  .foot{position:absolute;bottom:var(--kb,0px);left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.6rem;color:var(--txt-3);letter-spacing:.08em}
 
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   @media (min-width:768px){

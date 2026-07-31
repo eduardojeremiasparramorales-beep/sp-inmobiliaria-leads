@@ -15,12 +15,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
 <script src="/os/theme.js"></script>
+<script src="/os/safe-area.js"></script>
 <link rel="stylesheet" href="/os/sp-os.css">
 <style>
   /* ══════════ SP OS · Mobile Experience ══════════ */
   :root{
-    --safe-t: env(safe-area-inset-top, 12px);
-    --safe-b: env(safe-area-inset-bottom, 8px);
+    --safe-t: env(safe-area-inset-top, 16px);
+    --safe-b: env(safe-area-inset-bottom, 12px);
+    --kb: 0px; /* Altura del teclado cubriendo el viewport — la calcula safe-area.js */
     --nav-h: 62px;
     /* --glass / --glass-2 / --blur / --blur-sm se heredan de sp-os.css (tokens centralizados) */
     --spring: cubic-bezier(.22,1,.36,1);
@@ -74,7 +76,7 @@
   .m-chip b{ font-weight:700; opacity:.7; }
 
   /* ── Lista ── */
-  .m-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(var(--nav-h) + var(--safe-b) + 8px); }
+  .m-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(var(--nav-h) + var(--safe-b) + var(--kb) + 8px); }
   .m-ptr{ height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; color:var(--text-3); transition:height .2s var(--ease); }
   .m-ptr .spin{ width:20px; height:20px; border:2px solid var(--border-strong); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
@@ -140,7 +142,7 @@
   .m-fab svg{ width:26px; height:26px; }
 
   /* ── Bottom Navigation (glass) ── */
-  .m-nav{ position:absolute; left:0; right:0; bottom:0; height:calc(var(--nav-h) + var(--safe-b)); padding-bottom:var(--safe-b); display:flex; background:var(--glass); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border-top:1px solid var(--glass-border); z-index:14; }
+  .m-nav{ position:absolute; left:0; right:0; bottom:0; height:calc(var(--nav-h) + var(--safe-b) + var(--kb)); padding-bottom:calc(var(--safe-b) + var(--kb)); display:flex; background:var(--glass); backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); border-top:1px solid var(--glass-border); z-index:14; }
   .m-nav__i{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:var(--text-3); background:none; border:none; font-size:10px; font-weight:500; transition:color .2s; position:relative; }
   .m-nav__i svg{ width:23px; height:23px; transition:transform .25s var(--spring); }
   .m-nav__i.active{ color:var(--gold); }
@@ -202,7 +204,7 @@
   .eq-presence-dot.on{ background:var(--gold); }
   .eq-presence-dot.off{ background:var(--text-3); opacity:.5; }
 
-  .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px 6px; display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
+  .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px calc(6px + var(--kb)); display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
   .c-msgs.c-msgs--patron{
     background:
       linear-gradient(180deg, rgba(10,10,10,.7), rgba(12,12,12,.8)),
@@ -227,7 +229,7 @@
   .bub--out .bub-quote{ border-left-color:#83B778; }
 
   /* ── Input inteligente ── */
-  .c-input{ padding:8px 12px calc(8px + var(--safe-b)); border-top:1px solid var(--border-soft); background:var(--bg-1); }
+  .c-input{ padding:8px 12px calc(8px + var(--safe-b) + var(--kb)); border-top:1px solid var(--border-soft); background:var(--bg-1); }
   .c-quick{ display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; }
   .c-quick button{ flex-shrink:0; height:30px; padding:0 13px; border-radius:999px; background:var(--bg-3); border:1px solid var(--border); color:var(--text-2); font-size:12px; }
   .c-input__row{ display:flex; align-items:flex-end; gap:8px; position:relative; }
@@ -258,7 +260,7 @@
   /* ── Bottom Sheet (iOS) ── */
   .sheet-bg{ position:absolute; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); opacity:0; transition:opacity .3s var(--ease); z-index:40; pointer-events:none; }
   .sheet-bg.show{ opacity:1; pointer-events:auto; }
-  .sheet{ position:absolute; left:0; right:0; bottom:0; max-height:88%; background:rgba(18,18,18,.72); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-radius:26px 26px 0 0; border-top:1px solid var(--glass-border); box-shadow:var(--glass-edge), 0 -20px 50px rgba(0,0,0,.5); transform:translateY(100%); transition:transform .38s var(--spring); z-index:41; display:flex; flex-direction:column; padding-bottom:var(--safe-b); }
+  .sheet{ position:absolute; left:0; right:0; bottom:0; max-height:88%; background:rgba(18,18,18,.72); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-radius:26px 26px 0 0; border-top:1px solid var(--glass-border); box-shadow:var(--glass-edge), 0 -20px 50px rgba(0,0,0,.5); transform:translateY(100%); transition:transform .38s var(--spring); z-index:41; display:flex; flex-direction:column; padding-bottom:calc(var(--safe-b) + var(--kb)); }
   .sheet.show{ transform:translateY(0); }
   .sheet__grab{ width:38px; height:5px; border-radius:3px; background:var(--border-strong); margin:10px auto 4px; flex-shrink:0; }
   .sheet__head{ display:flex; align-items:center; gap:10px; padding:6px 20px 12px; border-bottom:1px solid var(--border-soft); }
