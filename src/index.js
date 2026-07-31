@@ -532,11 +532,12 @@ app.get('/api/ai/models', auth.requireAdmin, async (req, res) => {
 app.use('/api/v2', require('./api/v2'));
 
 // ===================== SUPERVISOR CENTER API =====================
-// Toda la API del rol supervisor vive aquí abajo. El middleware requireSupervisor
-// aplica al router entero — no hace falta repetirlo en cada ruta. Endpoints de solo
-// lectura (dashboard/equipo) o de acciones operativas (reasignar) reusan store.js sin
-// duplicar queries. Sprints 2-8 van llenando los stubs 501 que el router expone.
-app.use('/api/supervisor', auth.requireSupervisor, require('./api/supervisor'));
+// Toda la API del rol supervisor vive aquí abajo. El middleware requireSupervisorOrAdmin
+// aplica al router entero (supervisor + admin: el admin es superset y publica al SP Feed).
+// Endpoints de solo lectura (dashboard/equipo) o de acciones operativas (reasignar)
+// reusan store.js sin duplicar queries. Sprints 2-8 van llenando los stubs 501 que el
+// router expone.
+app.use('/api/supervisor', auth.requireSupervisorOrAdmin, require('./api/supervisor'));
 
 // ===================== WEBHOOKS MULTICANAL =====================
 const channels = require('./channels');
@@ -739,6 +740,11 @@ app.post('/api/vendedores/registro', registroLimiter, (req, res) => {
   const label = rolRegistro === 'supervisor' ? 'supervisor' : 'asesor';
   console.log(`[REGISTRO] Nuevo ${label} pendiente de aprobación: ${nombre} (${tel})`);
   events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), rol: rolRegistro, ts: Date.now() });
+  try {
+    require('./services/activity').logAsesorConectado({
+      vendedorId, nombre: String(nombre).trim(), rol: rolRegistro,
+    });
+  } catch (e) { /* feed opcional */ }
   res.json({ ok: true, vendedorId, estado: 'pendiente', rol: rolRegistro });
 });
 
@@ -1126,6 +1132,14 @@ app.post('/api/inbox/conversations/:id/send', auth.requireAuth, async (req, res)
         }
       } catch (e) { console.error('send espejo lead:', e.message); }
     }
+    try {
+      const leadMirror = conv.lead_id ? store.getLeadById(conv.lead_id) : null;
+      require('./services/activity').logRespuesta({
+        leadId: conv.lead_id || null, conversationId: conv.id,
+        vendedorId: req.session.vendedorId, vendedorNombre: req.session.nombre,
+        customerName: leadMirror ? leadMirror.customer_name : (conv.customer ? conv.customer.name : null),
+      });
+    } catch (e) { /* feed opcional */ }
     res.json({ ok: true });
   } catch (e) {
     console.error('Error enviando por inbox:', e.message);
@@ -1163,8 +1177,23 @@ app.post('/api/inbox/conversations/:id/etiqueta', auth.requireAuth, (req, res) =
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   if (!assertConvAccess(req, res, conv)) return;
   if (etiqueta) {
+    const anterior = conv.etiqueta || 'sin_clasificar';
     store.updateConversationTag(conv.id, etiqueta);
-    if (conv.lead_id) { try { store.setLeadEtiqueta(conv.lead_id, etiqueta); } catch (e) { } }
+    if (conv.lead_id) {
+      try {
+        const lead = store.getLeadById(conv.lead_id);
+        if (lead) {
+          store.setLeadEtiqueta(conv.lead_id, etiqueta);
+          try {
+            require('./services/activity').logEtapa({
+              leadId: lead.id, customerName: lead.customer_name,
+              de: anterior, a: etiqueta,
+              actorId: req.session.vendedorId, actorNombre: req.session.nombre,
+            });
+          } catch (e) { /* feed opcional */ }
+        }
+      } catch (e) { }
+    }
   }
   res.json({ ok: true });
 });
@@ -1395,6 +1424,13 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
     store.syncLeadToConversation(store.getLeadById(lead.id), { direction: 'outgoing', body: textoParaEnviar, fromNumber, toNumber: lead.customer_phone });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    try {
+      require('./services/activity').logRespuesta({
+        leadId: lead.id, conversationId: conversation ? conversation.id : null,
+        vendedorId: req.session.vendedorId, vendedorNombre: req.session.nombre,
+        customerName: lead.customer_name,
+      });
+    } catch (e) { /* feed opcional */ }
     res.json({ ok: true, templateSent: false });
   } catch (e) {
     console.error('Error enviando respuesta desde panel:', e.message);
@@ -2619,8 +2655,16 @@ app.post('/api/leads/:id/etiqueta', auth.requireAuth, (req, res) => {
   if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
+  const anterior = lead.etiqueta || 'sin_clasificar';
   store.setLeadEtiqueta(lead.id, etiqueta);
   events.emitToAdmins('lead_actualizado', { leadId: lead.id, etiqueta, ts: Date.now() });
+  try {
+    require('./services/activity').logEtapa({
+      leadId: lead.id, customerName: lead.customer_name,
+      de: anterior, a: etiqueta,
+      actorId: req.session.vendedorId, actorNombre: req.session.nombre,
+    });
+  } catch (e) { /* feed opcional */ }
   // Dispara automatizaciones con trigger 'lead:tag_changed' (p. ej. mover a "cita" → notificar admin)
   try {
     const conversation = store.getOrCreateConversationForLead(lead.id);
@@ -2828,6 +2872,13 @@ app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
   events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
   if (anteriorId) events.emitToVendedor(anteriorId, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
   events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+  try {
+    require('./services/activity').logReasignacion({
+      leadId: lead.id, customerName: lead.customer_name,
+      de: anteriorId ? (getVendedores().find(v => Number(v.id) === Number(anteriorId)) || {}).nombre : null,
+      a: vendedor.nombre, actorNombre: req.session.nombre,
+    });
+  } catch (e) { /* feed opcional */ }
   notify({ vendedorId: vendedor.id, tipo: 'lead_asignado', leadId: lead.id, push: true,
     titulo: '🆕 Lead asignado a ti', cuerpo: `${lead.customer_name} (${lead.customer_phone})` }).catch(() => {});
   if (anteriorId && Number(anteriorId) !== Number(vendedor.id)) {
@@ -4021,6 +4072,11 @@ async function checkEscalation() {
       if (minutosDesdeCreacion >= ESC_ALERTA_MIN && lead.escalation_level < 1) {
         incrementEscalation(lead.id);
         console.log(`[ESCALADO] Alerta ${ESC_ALERTA_MIN}min lead ${lead.id} (${lead.customer_name})`);
+        try {
+          require('./services/activity').logTiempoObjetivo({
+            leadId: lead.id, customerName: lead.customer_name, minutos: ESC_ALERTA_MIN, tipo: 'escalamiento',
+          });
+        } catch (e) { /* feed opcional */ }
         if (lead.assigned_to_id) {
           notify({
             vendedorId: lead.assigned_to_id, tipo: 'escalamiento_alerta', leadId: lead.id, push: true,
@@ -4052,6 +4108,13 @@ async function checkEscalation() {
             events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            try {
+              require('./services/activity').logReasignacion({
+                leadId: lead.id, customerName: lead.customer_name,
+                de: vendedorAnterior ? (getVendedores().find(v => Number(v.id) === Number(vendedorAnterior)) || {}).nombre : null,
+                a: otroVendedor.nombre, automatica: true,
+              });
+            } catch (e) { /* feed opcional */ }
             notify({ vendedorId: otroVendedor.id, tipo: 'lead_reasignado', leadId: lead.id, push: true,
               titulo: '🆕 Lead reasignado a ti', cuerpo: `${lead.customer_name} (${lead.customer_phone}) — responde lo antes posible.` }).catch(() => {});
             notify({ vendedorId: vendedorAnterior, tipo: 'lead_reasignado', leadId: lead.id, push: true,
@@ -4071,6 +4134,11 @@ async function checkEscalation() {
           } else {
             // No hay otro vendedor disponible — alerta fuerte
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_sin_vendedores', ts: Date.now() });
+            try {
+              require('./services/activity').logTiempoObjetivo({
+                leadId: lead.id, customerName: lead.customer_name, minutos: ESC_REASIGNAR_MIN, tipo: 'sin_vendedores',
+              });
+            } catch (e) { /* feed opcional */ }
             notify({ vendedorId: 0, tipo: 'escalamiento_critico', leadId: lead.id, push: true,
               titulo: '⚠️ Lead sin atender', cuerpo: `${lead.customer_name} lleva ${ESC_REASIGNAR_MIN} min esperando y no hay otros asesores disponibles.` }).catch(() => {});
             if (lead.assigned_to_phone) {
@@ -4095,6 +4163,12 @@ async function checkEscalation() {
         incrementEscalation(lead.id);
         console.log(`[ESCALADO] Admin notificado — lead ${lead.id} lleva ${ESC_ADMIN_MIN} min sin respuesta`);
         events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'escalado_admin', minutos: Math.round(minutosDesdeCreacion), ts: Date.now() });
+        try {
+          require('./services/activity').logTiempoObjetivo({
+            leadId: lead.id, customerName: lead.customer_name,
+            minutos: Math.round(minutosDesdeCreacion), tipo: 'admin',
+          });
+        } catch (e) { /* feed opcional */ }
         notify({ vendedorId: 0, tipo: 'escalamiento_admin', leadId: lead.id, push: true,
           titulo: '🚨 Escalamiento a admin', cuerpo: `${lead.customer_name} lleva ${Math.round(minutosDesdeCreacion)} min sin respuesta.` }).catch(() => {});
         // Si es nuevo y no se reasignó antes, intentar reasignar ahora
@@ -4107,6 +4181,13 @@ async function checkEscalation() {
             events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
+            try {
+              require('./services/activity').logReasignacion({
+                leadId: lead.id, customerName: lead.customer_name,
+                de: vendedorAnterior ? (getVendedores().find(v => Number(v.id) === Number(vendedorAnterior)) || {}).nombre : null,
+                a: otroVendedor.nombre, automatica: true,
+              });
+            } catch (e) { /* feed opcional */ }
             notify({ vendedorId: otroVendedor.id, tipo: 'lead_reasignado', leadId: lead.id, push: true,
               titulo: '🆕 Lead reasignado a ti (urgente)', cuerpo: `${lead.customer_name} — ya pasaron ${ESC_ADMIN_MIN} min sin respuesta.` }).catch(() => {});
             await sendMessage(otroVendedor.telefono,
@@ -4363,6 +4444,7 @@ function ensurePlatformAdmin() {
   setInterval(() => runAsTenant(checkEscalation), CFG.ESCALATION_CHECK_INTERVAL);
   setInterval(() => runAsTenant(checkRecordatorios), 60000);
   setInterval(() => runAsTenant(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS)), CFG.SESSION_CLEANUP_INTERVAL);
+  setInterval(() => runAsTenant(() => store.purgeOldFeedEvents(90)), 6 * 60 * 60 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
   require('./services/scheduler').start(buildMensajeConFirma, runAsTenant);
 })();

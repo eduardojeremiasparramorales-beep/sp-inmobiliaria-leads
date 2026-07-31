@@ -20,7 +20,7 @@
       { id: 'alertas', label: 'Alertas', icon: 'activity', badge: 'live' },
     ]},
     { title: 'Inteligencia & Cultura', items: [
-      { id: 'feed', label: 'SP Feed', icon: 'spark' },
+      { id: 'feed', label: 'SP Feed', icon: 'spark', href: '/supervisor/feed.html' },
       { id: 'ia', label: 'IA Copiloto', icon: 'ai' },
       { id: 'analitica', label: 'Analítica', icon: 'analytics' },
     ]},

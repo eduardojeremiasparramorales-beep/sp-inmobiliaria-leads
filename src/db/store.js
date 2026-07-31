@@ -468,6 +468,28 @@ function createSchema() {
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_notif_vendedor ON notifications(vendedor_id, leida)`);
 
+  // SP Feed — contenido multimedia de marca (reels, fotos, enlaces) publicado
+  // por admin/supervisor. Los archivos subidos viven en data/feed/ (volumen
+  // persistente del contenedor) y se sirven por /api/supervisor/feed/media/:id.
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS sp_feed (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT NOT NULL,
+      descripcion TEXT DEFAULT '',
+      tipo TEXT NOT NULL DEFAULT 'imagen',
+      categoria TEXT NOT NULL DEFAULT 'cultura',
+      media_url TEXT DEFAULT '',
+      media_path TEXT DEFAULT '',
+      media_mime TEXT DEFAULT '',
+      media_filename TEXT DEFAULT '',
+      autor TEXT DEFAULT '',
+      creado_por INTEGER,
+      activo INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
+  `);
+  execSQL('CREATE INDEX IF NOT EXISTS idx_sp_feed_fecha ON sp_feed(activo, created_at)');
+
   // Chat de equipo: columnas nuevas para directos monitoreados y menciones.
   // (to_vendedor_id ya existía: NULL = canal general; un id = mensaje directo)
   ensureColumn('team_messages', 'mentions', 'TEXT');      // JSON de vendedor_ids mencionados
@@ -589,8 +611,23 @@ function assignLeadToVendedor(leadId, vendedor) {
   const vExists = one('SELECT id FROM vendedores WHERE id = ?', [vendedor.id]);
   if (!vExists) throw new Error(`Vendedor ${vendedor.id} no existe`);
 
+  const prev = one('SELECT assigned_to_id, customer_name FROM leads WHERE id = ?', [leadId]);
+  const esAsignacionInicial = !prev || prev.assigned_to_id == null || Number(prev.assigned_to_id) === 0;
+
   run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
+
+  // SP Feed: publicar "nuevo lead asignado" solo en la asignación inicial (las
+  // reasignaciones las publican sus propios endpoints). Carga lazy para no
+  // crear ciclo store ↔ activity en el arranque.
+  if (esAsignacionInicial) {
+    try {
+      require('../services/activity').logLeadAsignado({
+        leadId, vendedor,
+        customerName: prev ? prev.customer_name : 'Cliente',
+      });
+    } catch (e) { console.error('[ASSIGN] feed log error:', e.message); }
+  }
 }
 
 function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid, status) {
@@ -1513,6 +1550,87 @@ function markNotificationRead(id, vendedorId) {
 
 function markAllNotificationsRead(vendedorId) {
   run('UPDATE notifications SET leida = 1 WHERE vendedor_id = ?', [Number(vendedorId) || 0]);
+}
+
+// --- SP Feed ---
+function createFeedItem({ titulo, descripcion = '', tipo = 'imagen', categoria = 'cultura', mediaUrl = '', mediaPath = '', mediaMime = '', mediaFilename = '', autor = '', creadoPor = null }) {
+  run('INSERT INTO sp_feed (titulo, descripcion, tipo, categoria, media_url, media_path, media_mime, media_filename, autor, creado_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+    String(titulo), String(descripcion), String(tipo), String(categoria),
+    String(mediaUrl), String(mediaPath), String(mediaMime), String(mediaFilename),
+    String(autor), creadoPor != null ? Number(creadoPor) : null,
+  ]);
+  return one('SELECT * FROM sp_feed WHERE id = last_insert_rowid()');
+}
+
+function getFeedItems({ categoria, tipo, busqueda, limite } = {}) {
+  const conditions = ['activo = 1'];
+  const params = [];
+  if (categoria && categoria !== 'todas') { conditions.push('categoria = ?'); params.push(categoria); }
+  if (tipo && tipo !== 'todos') { conditions.push('tipo = ?'); params.push(tipo); }
+  if (busqueda) {
+    conditions.push('(titulo LIKE ? OR descripcion LIKE ? OR autor LIKE ?)');
+    params.push(`%${busqueda}%`, `%${busqueda}%`, `%${busqueda}%`);
+  }
+  const lim = Math.min(Number(limite) || 50, 100);
+  return all(`SELECT * FROM sp_feed WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`, [...params, lim]);
+}
+
+function getFeedItemById(id) {
+  return one('SELECT * FROM sp_feed WHERE id = ?', [Number(id)]);
+}
+
+function deleteFeedItem(id) {
+  const item = one('SELECT id FROM sp_feed WHERE id = ?', [Number(id)]);
+  if (!item) return false;
+  run('UPDATE sp_feed SET activo = 0 WHERE id = ?', [Number(id)]);
+  return true;
+}
+
+// --- SP Feed en Tiempo Real (actividad operativa) ---
+// feed_events: un registro por evento del negocio (lead asignado, respuesta, etapa,
+// venta, reasignación, alerta, asesor conectado, post de capacitación). El Supervisor
+// Center lo consume como un feed social cronológico con filtros por categoria.
+function createFeedEvent({ tipo, categoria = 'operaciones', actorId = null, actorNombre = '', leadId = null, conversationId = null, entidadTipo = '', entidadId = null, titulo, descripcion = '', payload = {} }) {
+  run('INSERT INTO feed_events (tipo, categoria, actor_id, actor_nombre, lead_id, conversation_id, entidad_tipo, entidad_id, titulo, descripcion, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+    String(tipo), String(categoria),
+    actorId != null ? Number(actorId) : null, String(actorNombre || ''),
+    leadId != null ? Number(leadId) : null, conversationId != null ? Number(conversationId) : null,
+    String(entidadTipo || ''), entidadId != null ? Number(entidadId) : null,
+    String(titulo), String(descripcion || ''), JSON.stringify(payload || {}),
+  ]);
+  return one('SELECT * FROM feed_events WHERE id = last_insert_rowid()');
+}
+
+function getFeedEvents({ categoria = '', antesId = null, limite = 50 } = {}) {
+  const conditions = [];
+  const params = [];
+  if (categoria && categoria !== 'todos' && categoria !== 'todas') { conditions.push('categoria = ?'); params.push(categoria); }
+  if (antesId) { conditions.push('id < ?'); params.push(Number(antesId)); }
+  const lim = Math.min(Number(limite) || 50, 100);
+  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  return all(`SELECT * FROM feed_events ${where} ORDER BY id DESC LIMIT ?`, [...params, lim]);
+}
+
+function getFeedEventById(id) {
+  return one('SELECT * FROM feed_events WHERE id = ?', [Number(id)]);
+}
+
+function purgeOldFeedEvents(dias = 90) {
+  try {
+    run("DELETE FROM feed_events WHERE created_at < datetime('now', ?)", [`-${dias} days`]);
+  } catch (e) { /* noop */ }
+}
+
+function addFeedReaction(feedId, vendedorId, nombre, emoji) {
+  try {
+    run('INSERT OR IGNORE INTO feed_reactions (feed_id, vendedor_id, nombre, emoji) VALUES (?, ?, ?, ?)',
+      [Number(feedId), Number(vendedorId), String(nombre || ''), String(emoji)]);
+    return true;
+  } catch (e) { return false; }
+}
+
+function getFeedReactionsForEvent(feedId) {
+  return all('SELECT * FROM feed_reactions WHERE feed_id = ? ORDER BY id ASC', [Number(feedId)]);
 }
 
 // --- Configuración general ---
@@ -2884,4 +3002,9 @@ module.exports = {
   // Campañas SP
   createCampanasSpProject, getCampanasSpProjects, getCampanasSpProject, getCampanasSpProjectBySlug,
   updateCampanasSpProject, deleteCampanasSpProject,
+  // SP Feed (S6)
+  createFeedItem, getFeedItems, getFeedItemById, deleteFeedItem,
+  // SP Feed en Tiempo Real (actividad)
+  createFeedEvent, getFeedEvents, getFeedEventById, purgeOldFeedEvents,
+  addFeedReaction, getFeedReactionsForEvent,
 };

@@ -11,7 +11,11 @@
 //   - POST /api/supervisor/reasignar/:leadId (S3: delega en store.assignLeadToVendedor)
 //   - GET  /api/supervisor/conversaciones    (S4: inbox del equipo con filtros)
 //   - GET  /api/supervisor/alertas           (S5: histórico de alertas del escalado)
-//   - GET  /api/supervisor/feed              (S6: feed multimedia — Sprint 6)
+//   - GET  /api/supervisor/feed           (S6: feed multimedia publicado por admin/supervisor)
+//   - POST /api/supervisor/feed            (S6: publicar por URL)
+//   - POST /api/supervisor/feed/upload     (S6: publicar subiendo archivo)
+//   - GET  /api/supervisor/feed/media/:id  (S6: servir archivo subido con auth)
+//   - DELETE /api/supervisor/feed/:id      (S6: soft delete)
 //   - GET  /api/supervisor/analitica         (S8: embudo + series — Sprint 8)
 //
 // S1 expone ping + me; S2 /dashboard; S3 /equipo, /equipo/leads y /reasignar;
@@ -53,7 +57,7 @@ router.get('/me', (req, res) => {
     { id: 'equipo', sprint: 3, activo: true },
     { id: 'conversaciones', sprint: 4, activo: true },
     { id: 'alertas', sprint: 5, activo: true },
-    { id: 'feed', sprint: 6, activo: false },
+    { id: 'feed', sprint: 6, activo: true },
     { id: 'ia', sprint: 7, activo: false },
     { id: 'analitica', sprint: 8, activo: false },
   ];
@@ -253,11 +257,19 @@ router.post('/reasignar/:leadId', (req, res) => {
     if (Number(lead.assigned_to_id) === Number(vendedor.id)) return res.status(400).json({ error: 'mismo_asesor' });
 
     const anteriorId = lead.assigned_to_id;
+    const vendedorAnterior = anteriorId ? (store.getVendedores() || []).find(v => Number(v.id) === Number(anteriorId)) : null;
     store.reassignLead(lead.id, vendedor, anteriorId);
 
     events.emitToVendedor(vendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
     if (anteriorId) events.emitToVendedor(anteriorId, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
     events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'reasignado', ts: Date.now() });
+    try {
+      require('../services/activity').logReasignacion({
+        leadId: lead.id, customerName: lead.customer_name,
+        de: vendedorAnterior ? vendedorAnterior.nombre : null,
+        a: vendedor.nombre, actorNombre: req.session.nombre,
+      });
+    } catch (e) { /* feed opcional */ }
     notify({ vendedorId: vendedor.id, tipo: 'lead_asignado', leadId: lead.id, push: true,
       titulo: '🆕 Lead asignado a ti', cuerpo: `${lead.customer_name} (${lead.customer_phone})` }).catch(() => {});
     if (anteriorId && Number(anteriorId) !== Number(vendedor.id)) {
@@ -378,9 +390,222 @@ router.post('/alertas/:id/leer', (req, res) => {
   }
 });
 
+// ── S6: SP Feed — contenido multimedia de marca ─────────────────────────────
+// Reels/fotos/enlaces sobre lotes, trafficker y el día a día del equipo.
+// Publican admin y supervisor (el router se monta con requireSupervisorOrAdmin).
+// Archivos subidos → data/feed/ (volumen persistente del contenedor), servidos
+// por GET /feed/media/:id con auth. URL externas (YouTube/Instagram/Drive) se
+// guardan como media_url y el frontend las embeche/abra.
+// ────────────────────────────────────────────────────────────────────────────
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const multer = require('multer');
+
+const FEED_DIR = path.join(__dirname, '..', '..', 'data', 'feed');
+try { fs.mkdirSync(FEED_DIR, { recursive: true }); } catch (e) { console.error('[FEED] mkdir:', e.message); }
+
+const FEED_MIME_OK = {
+  'image/jpeg': 'imagen', 'image/png': 'imagen', 'image/webp': 'imagen', 'image/gif': 'imagen',
+  'video/mp4': 'video', 'video/webm': 'video', 'video/quicktime': 'video',
+};
+
+const feedUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, FEED_DIR),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${path.extname(file.originalname || '').slice(0, 10)}`),
+  }),
+  limits: { fileSize: 80 * 1024 * 1024 }, // 80MB (reels cortos)
+  fileFilter: (req, file, cb) => {
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (FEED_MIME_OK[mime]) cb(null, true);
+    else cb(new Error('tipo_no_soportado: solo imagenes (jpeg/png/webp/gif) y videos (mp4/webm/mov)'));
+  },
+});
+
+// GET /api/supervisor/feed — lista con filtros
+router.get('/feed', (req, res) => {
+  try {
+    const { categoria, tipo, busqueda, limite } = req.query;
+    const items = store.getFeedItems({ categoria, tipo, busqueda, limite }) || [];
+    const itemsPub = items.map(it => ({
+      id: it.id, titulo: it.titulo, descripcion: it.descripcion,
+      tipo: it.tipo, categoria: it.categoria,
+      media_url: it.media_url || '', media_mime: it.media_mime || '', media_filename: it.media_filename || '',
+      autor: it.autor, created_at: it.created_at,
+      // El archivo local NO se expone como path crudo: se sirve por media/:id
+      mediaId: it.media_path ? it.id : null,
+    }));
+    res.json({ items: itemsPub, total: itemsPub.length, generadoEn: new Date().toISOString() });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed error:', e.message);
+    res.status(500).json({ error: 'error_feed', detalle: e.message });
+  }
+});
+
+// POST /api/supervisor/feed — publicar por URL (YouTube, Instagram, Drive, etc.)
+router.post('/feed', (req, res) => {
+  try {
+    const { titulo, descripcion = '', tipo, categoria = 'cultura', mediaUrl = '' } = req.body || {};
+    if (!titulo || !String(titulo).trim()) return res.status(400).json({ error: 'titulo_requerido' });
+    if (!['video', 'imagen', 'link'].includes(tipo)) return res.status(400).json({ error: 'tipo_invalido' });
+    if (!mediaUrl || !String(mediaUrl).trim()) return res.status(400).json({ error: 'url_requerida' });
+
+    const item = store.createFeedItem({
+      titulo: String(titulo).trim(), descripcion: String(descripcion).trim(),
+      tipo, categoria, mediaUrl: String(mediaUrl).trim(),
+      autor: req.session.nombre, creadoPor: req.session.vendedorId,
+    });
+    events.emitToAdmins('feed', { id: item.id, titulo: item.titulo, tipo: item.tipo, categoria: item.categoria, ts: Date.now() });
+    console.log(`[SUPERVISOR] Feed publicado "${item.titulo}" (${item.tipo}/${item.categoria}) por ${req.session.nombre}`);
+    res.json({ ok: true, item });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed crear error:', e.message);
+    res.status(500).json({ error: 'error_feed_crear', detalle: e.message });
+  }
+});
+
+// POST /api/supervisor/feed/upload — publicar subiendo un archivo local
+router.post('/feed/upload', feedUpload.single('archivo'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'archivo_requerido' });
+    const mime = String(req.file.mimetype || '').toLowerCase();
+    const tipoAuto = FEED_MIME_OK[mime] === 'video' ? 'video' : 'imagen';
+    const { titulo, descripcion = '', categoria = 'cultura', tipo } = req.body || {};
+    if (!titulo || !String(titulo).trim()) {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.status(400).json({ error: 'titulo_requerido' });
+    }
+
+    const item = store.createFeedItem({
+      titulo: String(titulo).trim(), descripcion: String(descripcion).trim(),
+      tipo: tipo && ['video', 'imagen'].includes(tipo) ? tipo : tipoAuto,
+      categoria, mediaPath: req.file.filename, mediaMime: mime, mediaFilename: req.file.originalname,
+      autor: req.session.nombre, creadoPor: req.session.vendedorId,
+    });
+    events.emitToAdmins('feed', { id: item.id, titulo: item.titulo, tipo: item.tipo, categoria: item.categoria, ts: Date.now() });
+    console.log(`[SUPERVISOR] Feed upload "${item.titulo}" (${item.tipo}/${item.categoria}, ${mime}, ${req.file.size}b) por ${req.session.nombre}`);
+    res.json({ ok: true, item });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed upload error:', e.message);
+    if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (z) {} }
+    res.status(500).json({ error: 'error_feed_upload', detalle: e.message });
+  }
+});
+
+// GET /api/supervisor/feed/media/:id — sirve el archivo subido (con auth)
+router.get('/feed/media/:id', (req, res) => {
+  try {
+    const item = store.getFeedItemById(req.params.id);
+    if (!item || !item.media_path) return res.status(404).json({ error: 'no_encontrado' });
+    const fp = path.join(FEED_DIR, path.basename(item.media_path));
+    if (!fs.existsSync(fp)) return res.status(404).json({ error: 'archivo_borrado' });
+    const mime = item.media_mime || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(fp);
+  } catch (e) {
+    console.error('[SUPERVISOR] feed media error:', e.message);
+    res.status(500).json({ error: 'error_feed_media', detalle: e.message });
+  }
+});
+
+// DELETE /api/supervisor/feed/:id — soft delete (quita del feed, conserva archivo)
+router.delete('/feed/:id', (req, res) => {
+  try {
+    const ok = store.deleteFeedItem(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'no_encontrado' });
+    console.log(`[SUPERVISOR] Feed item ${req.params.id} eliminado por ${req.session.nombre}`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed delete error:', e.message);
+    res.status(500).json({ error: 'error_feed_delete', detalle: e.message });
+  }
+});
+
 // --- Stubs para próximos sprints (501 hasta que el Sprint correspondiente los implemente) ---
 const stub = (id, sprint) => (req, res) => res.status(501).json({ error: 'no_implementado', seccion: id, sprint });
-router.get('/feed', stub('feed', 6));
+
+// --- S6: SP Feed — actividad de la empresa en tiempo real --------------------
+// Feed social interno: cada evento operativo (lead asignado, respuesta, etapa,
+// venta, reasignación, alerta, asesor conectado, post de capacitación) es una
+// publicación cronológica con actor, título, descripción, payload y reacciones.
+// -----------------------------------------------------------------------------
+
+// GET /api/supervisor/feed — historial paginado por cursor (scroll infinito)
+router.get('/feed', (req, res) => {
+  try {
+    const categoria = String(req.query.categoria || 'todos');
+    const antesId = Number(req.query.antesId) || null;
+    const limite = Math.min(Number(req.query.limite) || 40, 100);
+    const eventos = store.getFeedEvents({ categoria, antesId, limite }) || [];
+    const conReacciones = eventos.map(ev => ({
+      id: ev.id, tipo: ev.tipo, categoria: ev.categoria,
+      actorId: ev.actor_id, actorNombre: ev.actor_nombre,
+      leadId: ev.lead_id, conversationId: ev.conversation_id,
+      entidadTipo: ev.entidad_tipo, entidadId: ev.entidad_id,
+      titulo: ev.titulo, descripcion: ev.descripcion,
+      payload: (() => { try { return JSON.parse(ev.payload || '{}'); } catch (e) { return {}; } })(),
+      reacciones: store.getFeedReactionsForEvent(ev.id) || [],
+      createdAt: ev.created_at,
+    }));
+    res.json({ eventos: conReacciones, limite, generadoEn: new Date().toISOString() });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed error:', e.message);
+    res.status(500).json({ error: 'error_feed', detalle: e.message });
+  }
+});
+
+// POST /api/supervisor/feed/post — publicar capacitación / anuncio interno
+// Accesible también al admin (el mount del router usa requireSupervisorOrAdmin).
+router.post('/feed/post', (req, res) => {
+  try {
+    const { titulo, descripcion, categoria } = req.body || {};
+    if (!titulo || !String(titulo).trim()) return res.status(400).json({ error: 'titulo_requerido' });
+    if (String(titulo).length > 160) return res.status(400).json({ error: 'titulo_muy_largo' });
+    if (String(descripcion || '').length > 2000) return res.status(400).json({ error: 'descripcion_muy_larga' });
+    const cat = String(categoria || 'capacitacion');
+    if (!['capacitacion', 'anuncio'].includes(cat)) return res.status(400).json({ error: 'categoria_invalida' });
+
+    const ev = require('../services/activity').logPost({
+      actorId: req.session.vendedorId, actorNombre: req.session.nombre,
+      titulo: String(titulo).trim(), descripcion: String(descripcion || '').trim(), categoria: cat,
+    });
+    if (!ev) return res.status(500).json({ error: 'error_crear_post' });
+    res.json({ ok: true, id: ev.id });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed/post error:', e.message);
+    res.status(500).json({ error: 'error_post', detalle: e.message });
+  }
+});
+
+// POST /api/supervisor/feed/:id/reaccion — felicitar/reaccionar a una publicación
+// Guarda la reacción y notifica (con push) al asesor protagonista del evento.
+router.post('/feed/:id/reaccion', (req, res) => {
+  try {
+    const { emoji } = req.body || {};
+    if (!emoji || !/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2764}\u{1F440}]$/u.test(String(emoji))) {
+      return res.status(400).json({ error: 'emoji_invalido' });
+    }
+    const ev = store.getFeedEventById(req.params.id);
+    if (!ev) return res.status(404).json({ error: 'evento_no_existe' });
+
+    store.addFeedReaction(ev.id, req.session.vendedorId, req.session.nombre, String(emoji));
+    // Reconocimiento al asesor protagonista (si el evento tiene actor y no es quien reacciona)
+    if (ev.actor_id && Number(ev.actor_id) !== Number(req.session.vendedorId)) {
+      notify({
+        vendedorId: ev.actor_id, tipo: 'reconocimiento', leadId: ev.lead_id, push: true,
+        titulo: `${String(emoji)} ${req.session.nombre} te felicitó`,
+        cuerpo: `${ev.titulo} — ${String(ev.descripcion || '').slice(0, 80)}`,
+      }).catch(() => {});
+    }
+    res.json({ ok: true, reacciones: store.getFeedReactionsForEvent(ev.id) || [] });
+  } catch (e) {
+    console.error('[SUPERVISOR] feed reaccion error:', e.message);
+    res.status(500).json({ error: 'error_reaccion', detalle: e.message });
+  }
+});
+
 router.get('/analitica', stub('analitica', 8));
 
 module.exports = router;
