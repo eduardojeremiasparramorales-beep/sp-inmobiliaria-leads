@@ -194,6 +194,45 @@ function createNewTables(db) {
       updated_at DATETIME DEFAULT (datetime('now'))
     );
   `);
+
+  // Feed en Tiempo Real (SP Feed) — actividad de la empresa como publicaciones.
+  // Cada evento operativo del negocio (lead asignado, respuesta, cambio de etapa,
+  // venta, reasignación, alerta, asesor conectado, post de capacitación) se persiste
+  // aquí para que el Supervisor Center lo muestre en orden cronológico sin depender
+  // del SSE (que es volátil). `categoria` alimenta los filtros del feed.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS feed_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo TEXT NOT NULL,
+      categoria TEXT NOT NULL DEFAULT 'operaciones',
+      actor_id INTEGER,
+      actor_nombre TEXT DEFAULT '',
+      lead_id INTEGER,
+      conversation_id INTEGER,
+      entidad_tipo TEXT DEFAULT '',
+      entidad_id INTEGER,
+      titulo TEXT NOT NULL,
+      descripcion TEXT DEFAULT '',
+      payload TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lead_id) REFERENCES leads(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS feed_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feed_id INTEGER NOT NULL,
+      vendedor_id INTEGER NOT NULL,
+      nombre TEXT DEFAULT '',
+      emoji TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (feed_id) REFERENCES feed_events(id),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_events_created_at ON feed_events(created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_events_categoria ON feed_events(categoria)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_events_lead ON feed_events(lead_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_reactions_feed ON feed_reactions(feed_id)`);
 }
 
 function dropNewTables(db) {

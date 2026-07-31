@@ -21,8 +21,8 @@
     ]},
     { title: 'Inteligencia & Cultura', items: [
       { id: 'feed', label: 'SP Feed', icon: 'spark', href: '/supervisor/feed.html' },
-      { id: 'ia', label: 'IA Copiloto', icon: 'ai' },
-      { id: 'analitica', label: 'Analítica', icon: 'analytics' },
+      { id: 'ia', label: 'IA Copiloto', icon: 'ai', href: '/supervisor/ia.html' },
+      { id: 'analitica', label: 'Analítica', icon: 'analytics', href: '/supervisor/analitica.html' },
     ]},
   ];
 

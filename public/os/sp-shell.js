@@ -78,6 +78,7 @@
       { id: 'reportes', label: 'Reportes', icon: 'analytics', href: '/os/reportes.html' },
     ]},
     { title: 'Organización', items: [
+      { id: 'feed', label: 'SP Feed', icon: 'spark', href: '/os/feed.html' },
       { id: 'ia-chat', label: 'Chat IA', icon: 'ai', href: '/os/ia-chat.html', admin: true },
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
       { id: 'team-chat', label: 'Chat Interno', icon: 'msg', href: '/os/equipo-interno.html', admin: true },

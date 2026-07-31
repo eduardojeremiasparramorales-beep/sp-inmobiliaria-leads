@@ -127,6 +127,12 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
       updateLeadStatus(activeLead.id, 'contactado');
       syncMulticanal(activeLead.id, { direction: 'outgoing', body: messageBody, fromNumber: fromPhone, toNumber: activeLead.customer_phone });
       notificarPanel(vendedor.id, activeLead.id, 'respuesta_vendedor');
+      try {
+        require('./activity').logRespuesta({
+          leadId: activeLead.id, vendedorId: vendedor.id, vendedorNombre: vendedor.nombre,
+          customerName: activeLead.customer_name,
+        });
+      } catch (e) { /* feed opcional */ }
       triggerWorkflow('message:outgoing', activeLead.id, messageBody);
 
       const { sendMessage } = require('./whatsapp');

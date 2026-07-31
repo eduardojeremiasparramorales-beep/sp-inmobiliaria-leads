@@ -375,6 +375,14 @@
     setTimeout(() => openNewChatModal(), 500);
   }
 
+  // Deep-link desde el SP Feed: abrir la conversación del lead indicado
+  const leadIdParam = new URLSearchParams(location.search).get('leadId');
+  if (leadIdParam) {
+    const target = convs.find(c => String(c.lead_id) === String(leadIdParam))
+      || convs.find(c => String(c.id) === String(leadIdParam));
+    if (target) setTimeout(() => abrirConv(target.id), 400);
+  }
+
   /* ── Render lista ── */
   function convsFiltradas() {
     return convs.filter(c => {

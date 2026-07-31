@@ -1586,6 +1586,45 @@ function deleteFeedItem(id) {
   return true;
 }
 
+// --- Analítica (S8) ---
+// Serie temporal por día: entrantes / vendidos / cerrados en los últimos N días.
+function getLeadSeries({ dias = 30, vendedorId } = {}) {
+  const params = [`-${Number(dias) || 30} days`];
+  let extra = '';
+  if (vendedorId) { extra = ' AND assigned_to_id = ?'; params.push(Number(vendedorId)); }
+  return all(`
+    SELECT date(created_at) AS dia,
+      COUNT(*) AS entrantes,
+      SUM(CASE WHEN etiqueta = 'vendido' THEN 1 ELSE 0 END) AS vendidos,
+      SUM(CASE WHEN COALESCE(status, '') = 'cerrado' THEN 1 ELSE 0 END) AS cerrados
+    FROM leads
+    WHERE created_at >= datetime('now', ?)
+    ${extra}
+    GROUP BY dia ORDER BY dia
+  `, params);
+}
+
+// Distribución por canal (conversaciones multicanal).
+function getCanalDistribution() {
+  return all('SELECT channel, COUNT(*) AS n FROM conversations GROUP BY channel ORDER BY n DESC');
+}
+
+// Leads del período con asesor — para CSV de export.
+function getLeadsExport({ dias = 30, vendedorId } = {}) {
+  const params = [`-${Number(dias) || 30} days`];
+  let extra = '';
+  if (vendedorId) { extra = ' AND l.assigned_to_id = ?'; params.push(Number(vendedorId)); }
+  return all(`
+    SELECT l.id, l.created_at, l.customer_name, l.customer_phone, l.etiqueta, l.status,
+      l.first_response_at, l.updated_at, v.nombre AS asesor
+    FROM leads l
+    LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+    WHERE l.created_at >= datetime('now', ?)
+    ${extra}
+    ORDER BY l.created_at DESC
+  `, params);
+}
+
 // --- SP Feed en Tiempo Real (actividad operativa) ---
 // feed_events: un registro por evento del negocio (lead asignado, respuesta, etapa,
 // venta, reasignación, alerta, asesor conectado, post de capacitación). El Supervisor
@@ -3004,6 +3043,7 @@ module.exports = {
   updateCampanasSpProject, deleteCampanasSpProject,
   // SP Feed (S6)
   createFeedItem, getFeedItems, getFeedItemById, deleteFeedItem,
+  getLeadSeries, getCanalDistribution, getLeadsExport,
   // SP Feed en Tiempo Real (actividad)
   createFeedEvent, getFeedEvents, getFeedEventById, purgeOldFeedEvents,
   addFeedReaction, getFeedReactionsForEvent,

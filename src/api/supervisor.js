@@ -1,6 +1,7 @@
 // Supervisor Center — API del rol supervisor.
 //
-// Montado en index.js como `app.use('/api/supervisor', auth.requireSupervisor, require('./api/supervisor'))`,
+// Montado en index.js como `app.use('/api/supervisor', auth.requireSupervisorOrAdmin, require('./api/supervisor'))`,
+// el admin es superset del supervisor: puede ver todo y publicar al SP Feed.
 // por lo que TODA ruta aquí abajo exige sesión con rol='supervisor' (no se mezcla con
 // endpoints admin ni con vendedor). El supervisor reusa los servicios/store existentes
 // — este router solo expresa endpoints agregados nuevos que no existen hoy:
@@ -58,8 +59,8 @@ router.get('/me', (req, res) => {
     { id: 'conversaciones', sprint: 4, activo: true },
     { id: 'alertas', sprint: 5, activo: true },
     { id: 'feed', sprint: 6, activo: true },
-    { id: 'ia', sprint: 7, activo: false },
-    { id: 'analitica', sprint: 8, activo: false },
+    { id: 'ia', sprint: 7, activo: true },
+    { id: 'analitica', sprint: 8, activo: true },
   ];
   res.json({
     nombre: req.session.nombre,
@@ -526,14 +527,15 @@ router.delete('/feed/:id', (req, res) => {
 // --- Stubs para próximos sprints (501 hasta que el Sprint correspondiente los implemente) ---
 const stub = (id, sprint) => (req, res) => res.status(501).json({ error: 'no_implementado', seccion: id, sprint });
 
-// --- S6: SP Feed — actividad de la empresa en tiempo real --------------------
+// --- SP Feed — actividad de la empresa en tiempo real -------------------------
 // Feed social interno: cada evento operativo (lead asignado, respuesta, etapa,
 // venta, reasignación, alerta, asesor conectado, post de capacitación) es una
 // publicación cronológica con actor, título, descripción, payload y reacciones.
+// Convive con el S6 multimedia (GET /feed sobre sp_feed): este es /feed/actividad.
 // -----------------------------------------------------------------------------
 
-// GET /api/supervisor/feed — historial paginado por cursor (scroll infinito)
-router.get('/feed', (req, res) => {
+// GET /api/supervisor/feed/actividad — historial paginado por cursor (scroll infinito)
+router.get('/feed/actividad', (req, res) => {
   try {
     const categoria = String(req.query.categoria || 'todos');
     const antesId = Number(req.query.antesId) || null;
@@ -606,6 +608,184 @@ router.post('/feed/:id/reaccion', (req, res) => {
   }
 });
 
-router.get('/analitica', stub('analitica', 8));
+// --- S8: Analítica del equipo ---
+// Embudo + serie temporal + canales + ranking en el período indicado.
+// Todo calculado en store.js sobre el mismo tenant del request.
+router.get('/analitica', (req, res) => {
+  try {
+    const periodo = Math.min(Math.max(parseInt(req.query.periodo, 10) || 30, 1), 365);
+    const asesorId = req.query.asesorId ? parseInt(req.query.asesorId, 10) : null;
+
+    const agg = store.getLeadAggregates();
+    const { total, porEtiqueta, porEstado, porVendedor } = agg;
+    const vendidosTotal = porEtiqueta['vendido'] || 0;
+    const activosTotal = total - (porEstado['cerrado'] || 0);
+
+    const serie = (store.getLeadSeries({ dias: periodo, vendedorId: asesorId }) || []).map(r => ({
+      dia: r.dia,
+      entrantes: Number(r.entrantes) || 0,
+      vendidos: Number(r.vendidos) || 0,
+      cerrados: Number(r.cerrados) || 0,
+    }));
+
+    const canales = (store.getCanalDistribution() || []).map(r => ({
+      canal: r.channel || 'whatsapp',
+      n: Number(r.n) || 0,
+    }));
+
+    const excl = idsNoAsesores();
+    const ranking = (store.getInsigniaStats() || [])
+      .filter(s => !excl.has(Number(s.vendedor_id)))
+      .filter(s => !asesorId || Number(s.vendedor_id) === asesorId)
+      .map(s => ({
+        vendedorId: s.vendedor_id,
+        nombre: s.nombre,
+        total: Number(s.total) || Number(s.activos) || 0,
+        vendidos: Number(s.vendidos) || 0,
+        vendidosMes: Number(s.vendidos_mes) || 0,
+        activos: Number(s.activos) || 0,
+        conversion: s.total ? Math.round((Number(s.vendidos) || 0) / s.total * 100) : 0,
+      }))
+      .sort((a, b) => (b.vendidosMes - a.vendidosMes) || (b.vendidos - a.vendidos));
+
+    const embudo = Object.entries(porEtiqueta || {}).map(([etiqueta, n]) => ({ etiqueta, n }))
+      .sort((a, b) => b.n - a.n);
+
+    res.json({
+      periodo,
+      resumen: {
+        totalLeads: total,
+        leadsActivos: activosTotal,
+        vendidos: vendidosTotal,
+        conversionGlobal: total ? Math.round((vendidosTotal / total) * 100) : 0,
+        leadsEnPeriodo: serie.reduce((a, r) => a + r.entrantes, 0),
+        vendidosEnPeriodo: serie.reduce((a, r) => a + r.vendidos, 0),
+      },
+      serie,
+      canales,
+      embudo,
+      ranking,
+    });
+  } catch (e) {
+    console.error('[SUPERVISOR] analitica error:', e.message);
+    res.status(500).json({ error: 'error_analitica', detalle: e.message });
+  }
+});
+
+// --- S8: Export CSV de leads en el período ---
+router.get('/analitica/export', (req, res) => {
+  try {
+    const periodo = Math.min(Math.max(parseInt(req.query.periodo, 10) || 30, 1), 365);
+    const asesorId = req.query.asesorId ? parseInt(req.query.asesorId, 10) : null;
+    const rows = store.getLeadsExport({ dias: periodo, vendedorId: asesorId }) || [];
+
+    const csvEsc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const lineas = [
+      ['ID', 'Creado', 'Nombre', 'Telefono', 'Etiqueta', 'Estado', 'Asesor', 'Primera respuesta', 'Ultima actualizacion']
+        .map(csvEsc).join(','),
+      ...rows.map(r => [r.id, r.created_at, r.customer_name, r.customer_phone, r.etiqueta, r.status, r.asesor, r.first_response_at, r.updated_at].map(csvEsc).join(',')),
+    ];
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="analitica-leads-${periodo}d.csv"`);
+    res.send('\uFEFF' + lineas.join('\r\n'));
+  } catch (e) {
+    console.error('[SUPERVISOR] analitica export error:', e.message);
+    res.status(500).json({ error: 'error_export', detalle: e.message });
+  }
+});
+
+// --- S7: IA Copiloto del supervisor ---
+// Estado: si hay proveedor con API key y qué modelo usaría.
+router.get('/copiloto/estado', (req, res) => {
+  try {
+    const nlp = require('../services/nlp');
+    const provider = nlp.getProviders().find(p => p.apiKey);
+    res.json({
+      activo: nlp.isAIEnabled(),
+      proveedor: provider ? provider.id : null,
+      modelo: nlp.getModel(),
+      sugerencias: [
+        '¿Qué asesor necesita más apoyo hoy?',
+        'Resumen del equipo en una frase',
+        '¿Cuántos leads están sin responder?',
+        'Top 3 del ranking de ventas',
+        '¿Qué canal trae más leads?',
+      ],
+    });
+  } catch (e) {
+    console.error('[SUPERVISOR] copiloto estado error:', e.message);
+    res.status(500).json({ error: 'error_estado', detalle: e.message });
+  }
+});
+
+// --- S7: IA Copiloto — consulta con contexto real del equipo ---
+// Construye una snapshot del equipo y la inyecta al LLM. Sin API key configurada
+// responde con reglas locales (sigue siendo útil sin gastar créditos).
+router.post('/copiloto/consulta', async (req, res) => {
+  try {
+    const { mensaje } = req.body || {};
+    if (!mensaje || !String(mensaje).trim()) return res.status(400).json({ error: 'mensaje_requerido' });
+    const q = String(mensaje).trim();
+
+    const agg = store.getLeadAggregates();
+    const { total, porEtiqueta, porEstado, porVendedor } = agg;
+    const excl = idsNoAsesores();
+    const sinRespPorAsesor = {};
+    try {
+      const r = store.getDB().exec("SELECT assigned_to_id, COUNT(*) FROM leads WHERE first_response_at IS NULL AND COALESCE(status,'') != 'cerrado' AND assigned_to_id IS NOT NULL GROUP BY assigned_to_id");
+      if (r && r.length) r[0].values.forEach(row => { sinRespPorAsesor[Number(row[0])] = Number(row[1]); });
+    } catch (e) { /* noop */ }
+    const equipo = (porVendedor || []).filter(v => !excl.has(Number(v.id))).map(v => ({
+      nombre: v.nombre, total: v.total, activos: v.activos,
+      vendidos: v.vendidos, conversion: v.conversion,
+      sinResponder: sinRespPorAsesor[Number(v.id)] || 0,
+    })).sort((a, b) => (b.vendidos - a.vendidos) || (b.total - a.total));
+    const canales = (store.getCanalDistribution() || []).map(r => `${r.channel || 'whatsapp'}: ${r.n}`).join(', ') || 'sin datos';
+    const series = (store.getLeadSeries({ dias: 7 }) || []).reduce((a, r) => a + (Number(r.entrantes) || 0), 0);
+
+    const snapshot = [
+      `Leads totales: ${total}. Activos: ${total - (porEstado['cerrado'] || 0)}. Vendidos: ${porEtiqueta['vendido'] || 0}.`,
+      `Embudo: ${Object.entries(porEtiqueta || {}).map(([e, n]) => `${e}=${n}`).join(', ')}.`,
+      `Leads entrados en 7 días: ${series}. Canales: ${canales}.`,
+      `Equipo (nombre, total, activos, vendidos, conversion%, sinResponder):`,
+      ...equipo.map(a => `- ${a.nombre}: total=${a.total}, activos=${a.activos}, vendidos=${a.vendidos}, conversion=${a.conversion}%, sinResponder=${a.sinResponder}`),
+    ].join('\n');
+
+    const nlp = require('../services/nlp');
+    if (!nlp.isAIEnabled()) {
+      // Fallback local: reglas simples sobre la snapshot real
+      const low = q.toLowerCase();
+      let respuesta = `Copiloto sin IA externa — responde con datos locales.\n\n${snapshot}`;
+      if (low.includes('sin responder') || low.includes('urgencia')) {
+        const peor = equipo.filter(a => a.sinResponder > 0).sort((a, b) => b.sinResponder - a.sinResponder)[0];
+        respuesta = peor
+          ? `${peor.nombre} es quien más necesita apoyo: ${peor.sinResponder} leads sin responder de ${peor.total} asignados (${peor.conversion}% de conversión).`
+          : 'Todo el equipo está al día: no hay leads sin responder.';
+      } else if (low.includes('rank') || low.includes('top') || low.includes('mejor')) {
+        const top = equipo.slice(0, 3).map((a, i) => `${i + 1}. ${a.nombre} — ${a.vendidos} vendidos (${a.conversion}%)`).join('\n');
+        respuesta = `Top del ranking:\n${top}`;
+      } else if (low.includes('canal')) {
+        respuesta = `Distribución por canal: ${canales}.`;
+      } else if (low.includes('resumen') || low.includes('resume')) {
+        respuesta = `Resumen: ${total} leads totales, ${porEtiqueta['vendido'] || 0} vendidos, ${porEstado['cerrado'] || 0} cerrados, ${equipo.length} asesores.\n${snapshot}`;
+      }
+      return res.json({ ok: true, reply: respuesta, model: 'local-fallback', fuente: 'local' });
+    }
+
+    const result = await nlp.chatText(
+      `Eres Copiloto SP, el asistente IA del supervisor de Leons Group (inmobiliaria colombiana de lotes).
+      Tu rol: analizar el equipo comercial y responder en español, con números reales.
+      Datos actuales del equipo:\n${snapshot}\n
+      Sé concreto, cita números, usa listas cuando ayude. Máximo 150 palabras.`,
+      q,
+      45000
+    );
+    res.json({ ok: true, reply: result.text, model: result.model || nlp.getModel(), fuente: 'ia' });
+  } catch (e) {
+    console.error('[SUPERVISOR] copiloto consulta error:', e.message);
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
 
 module.exports = router;

@@ -40,6 +40,7 @@
   let conversaciones = [];
   let actual = null;      // item seleccionado
   let filtros = { busqueda: '', vendedorId: '', etiqueta: '', soloSinResponder: false, canal: '' };
+  const leadIdParam = new URLSearchParams(location.search).get('leadId'); // abrir desde el SP Feed
 
   content.innerHTML = `
    <div class="os-content__max" style="max-width:none">
@@ -258,6 +259,15 @@
   document.getElementById('fRefrescar').addEventListener('click', cargar);
 
   await cargar();
+
+  // Deep-link desde el SP Feed: abrir la conversación del lead indicado
+  if (leadIdParam) {
+    const target = conversaciones.find(c => String(c.lead_id) === String(leadIdParam) && String(c.status || '') !== 'cerrado')
+      || conversaciones.find(c => String(c.id) === String(leadIdParam) && String(c._type || '') === 'lead')
+      || conversaciones.find(c => String(c.id) === String(leadIdParam));
+    if (target) abrir(target);
+    else SPS.toast('Ese lead ya no está en la lista (cerrado o sin conversación)', 'err');
+  }
 })();
 </script>
 </body>
