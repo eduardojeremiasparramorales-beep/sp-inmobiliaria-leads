@@ -42,14 +42,6 @@
   .cp-quality { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; }
   .cp-quality b { color: var(--gold); }
 
-  /* Tabs */
-  .cp-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border-soft); }
-  .cp-tab { padding: 10px 20px; font-size: 13px; font-family: var(--f-ui); font-weight: 500; color: var(--text-3); cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; user-select: none; }
-  .cp-tab:hover { color: var(--text-1); }
-  .cp-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
-  .cp-tab-pane { display: none; }
-  .cp-tab-pane.active { display: block; }
-
   /* Assets preview */
   .cp-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 12px 0; }
   .cp-asset-card { background: var(--bg-3); border-radius: 8px; padding: 8px; text-align: center; border: 1px solid var(--border); }
@@ -98,23 +90,27 @@
 
   // ===== TABS =====
   function renderTabs() {
-    ctx.content.innerHTML = '';
-    const tabsHtml = `
+    ctx.content.innerHTML = `
       <div class="cp-page">
-        <div class="cp-tabs">
-          <div class="cp-tab ${currentTab === 'generar' ? 'active' : ''}" data-tab="generar">Generar Creativos</div>
-          <div class="cp-tab ${currentTab === 'whatsapp' ? 'active' : ''}" data-tab="whatsapp">Envios WhatsApp</div>
+        <div class="tabs">
+          <div class="tabs__item ${currentTab === 'generar' ? 'active' : ''}" data-tab="generar">Generar Creativos</div>
+          <div class="tabs__item ${currentTab === 'whatsapp' ? 'active' : ''}" data-tab="whatsapp">Envios WhatsApp</div>
         </div>
-        <div id="tabGenerar" class="cp-tab-pane ${currentTab === 'generar' ? 'active' : ''}"></div>
-        <div id="tabWhatsapp" class="cp-tab-pane ${currentTab === 'whatsapp' ? 'active' : ''}"></div>
+        <div id="tabGenerar" class="tabs__pane" data-tab="generar" style="${currentTab === 'generar' ? 'display:block' : 'display:none'}"></div>
+        <div id="tabWhatsapp" class="tabs__pane" data-tab="whatsapp" style="${currentTab === 'whatsapp' ? 'display:block' : 'display:none'}"></div>
       </div>`;
-    ctx.content.innerHTML = tabsHtml;
-    ctx.content.querySelectorAll('.cp-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        currentTab = tab.dataset.tab;
-        renderTabs();
+    const tabsRoot = ctx.content.querySelector('.tabs');
+    tabsRoot.querySelectorAll('.tabs__item').forEach(t => t.addEventListener('click', () => {
+      currentTab = t.dataset.tab;
+      tabsRoot.querySelectorAll('.tabs__item').forEach(x => x.classList.toggle('active', x === t));
+      ctx.content.querySelectorAll('.tabs__pane').forEach(p => {
+        const show = p.dataset.tab === currentTab;
+        p.classList.toggle('active', show);
+        p.style.display = show ? 'block' : 'none';
       });
-    });
+      if (currentTab === 'generar') renderGenerar();
+      else renderWhatsapp();
+    }));
     if (currentTab === 'generar') renderGenerar();
     else renderWhatsapp();
   }

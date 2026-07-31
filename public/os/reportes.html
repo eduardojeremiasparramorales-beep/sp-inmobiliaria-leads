@@ -28,9 +28,6 @@
   .rp-table{ width:100%; border-collapse:collapse; font-size:13px; }
   .rp-table th{ text-align:left; padding:8px 10px; color:var(--text-3); font-weight:500; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
   .rp-table td{ padding:8px 10px; border-bottom:1px solid var(--border-soft); }
-  .rp-tabs{ display:flex; gap:4px; margin-bottom:var(--s3); }
-  .rp-tab{ padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg-2); color:var(--text-2); font-size:12px; cursor:pointer; }
-  .rp-tab.active{ background:var(--gold-line); color:#0A0A0A; border-color:var(--gold-line); }
   .rp-metric{ text-align:center; padding:var(--s2); background:var(--bg-3); border-radius:12px; }
   .rp-metric__v{ font-size:28px; font-weight:700; color:var(--gold); }
   .rp-metric__l{ font-size:11px; color:var(--text-3); margin-top:2px; text-transform:uppercase; letter-spacing:.06em; }
@@ -164,11 +161,12 @@
           <div class="t-h3">Rendimiento por vendedor</div>
         </div>
         <table class="rp-table">
-          <thead><tr><th>Asesor</th><th>Leads</th><th>Activos</th><th>Vendidos</th><th>Respondidos</th><th>Conversión</th><th>T. Respuesta</th></tr></thead>
+          <thead><tr><th>Asesor</th><th data-sort-type="num">Leads</th><th data-sort-type="num">Activos</th><th data-sort-type="num">Vendidos</th><th data-sort-type="num">Respondidos</th><th data-sort-type="num">Conversión</th><th data-sort-type="num">T. Respuesta</th></tr></thead>
           <tbody>${vendRows || '<tr><td colspan="7" class="t-dim3" style="text-align:center;padding:var(--s4)">Sin datos</td></tr>'}</tbody>
         </table>
       </div>
     </div>`;
+  SPOS.sortTable(ctx.content.querySelector('.rp-table'));
 })();
 </script>
 </body>

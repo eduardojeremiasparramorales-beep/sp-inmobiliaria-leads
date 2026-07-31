@@ -328,6 +328,54 @@ svg { display: block; flex-shrink: 0; }
 .os-nav__badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--gold); background: var(--gold-soft); padding: 1px 7px; border-radius: 999px; }
 .os-nav__foot { padding: 12px 12px 0; border-top: 1px solid var(--border-soft); margin: 0 12px; }
 
+/* --- Sidebar colapsable --- */
+.os-app { transition: grid-template-columns var(--dur) var(--ease-out); }
+.os-app.nav-collapsed { grid-template-columns: var(--nav-w-collapsed) 1fr; }
+.os-app.has-panel.nav-collapsed { grid-template-columns: var(--nav-w-collapsed) 1fr var(--panel-w); }
+.os-nav { transition: padding var(--dur) var(--ease); }
+
+.os-app.nav-collapsed .os-brand { padding: 6px 0 var(--s3); justify-content: center; gap: 0; }
+.os-app.nav-collapsed .os-brand > div:not(.os-brand__mark) { display: none; }
+.os-app.nav-collapsed .os-workspace { margin: 0 var(--s2) var(--s2); padding: 10px 0; justify-content: center; gap: 0; }
+.os-app.nav-collapsed .os-workspace > :not(.os-workspace__logo) { display: none; }
+
+/* Ocultar textos: títulos de grupo + spans de items (excepto badge) + brand/workspace texto */
+.os-app.nav-collapsed .os-nav__title,
+.os-app.nav-collapsed .os-nav__item > span:not(.os-nav__badge),
+.os-app.nav-collapsed .os-brand__name,
+.os-app.nav-collapsed .os-brand__sub,
+.os-app.nav-collapsed .os-workspace__name,
+.os-app.nav-collapsed .os-workspace__plan { display: none; }
+.os-app.nav-collapsed .os-nav__item { justify-content: center; padding: 8px 0; gap: 0; }
+.os-app.nav-collapsed .os-nav__item.active { border-left: none; border-top: 3px solid var(--gold); }
+.os-app.nav-collapsed .os-nav__badge { position: absolute; top: 4px; right: 8px; margin: 0; min-width: 16px; height: 16px; font-size: 9px; line-height: 16px; padding: 0 4px; }
+.os-app.nav-collapsed .os-nav__item { position: relative; }
+.os-app.nav-collapsed .os-nav__scroll { padding: 0 8px; }
+.os-app.nav-collapsed .os-nav__foot { margin: 0 8px; padding: 12px 0 0; }
+.os-app.nav-collapsed .os-nav__foot .os-nav__item { justify-content: center; padding: 8px 0; gap: 0; }
+
+/* Tooltip lateral custom (solo visible en colapsado) */
+.os-nav__tip {
+  position: fixed;
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  box-shadow: var(--sh-2);
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .12s var(--ease-out);
+  white-space: nowrap;
+  font-family: var(--f-ui);
+}
+.os-nav__tip.show { opacity: 1; }
+
 /* --- Main --- */
 .os-main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .os-topbar {
@@ -497,6 +545,20 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
 .table tbody tr { transition: background var(--dur) var(--ease); }
 .table tbody tr:hover { background: var(--bg-2); }
 .table tbody tr:last-child td { border-bottom: none; }
+.table th[aria-sort] { cursor: pointer; user-select: none; }
+.sort-ar { display: inline-block; margin-left: 4px; font-size: 10px; color: var(--gold); }
+
+/* --- Tabs unificados — reemplaza .cp-tabs / .rp-tabs duplicados --- */
+.tabs { display: flex; gap: 4px; margin-bottom: var(--s3); border-bottom: 1px solid var(--border-soft); }
+.tabs__item { padding: 8px 14px; font-family: var(--f-ui); font-size: 12.5px; font-weight: 500; color: var(--text-3); cursor: pointer; background: none; border: none; border-bottom: 2px solid transparent; transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease); user-select: none; }
+.tabs__item:hover { color: var(--text); background: var(--bg-2); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.tabs__item.active { color: var(--gold); border-bottom-color: var(--gold); }
+.tabs__pane { display: none; }
+.tabs__pane.active { display: block; }
+.tabs--pill { gap: 4px; border-bottom: none; margin-bottom: var(--s3); }
+.tabs--pill .tabs__item { padding: 6px 14px; border: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-2); color: var(--text-2); }
+.tabs--pill .tabs__item:hover { color: var(--text); }
+.tabs--pill .tabs__item.active { background: var(--gold-line); color: #0A0A0A; border-color: var(--gold-line); }
 
 /* ----------------------------------------------------------------------------
    10. KANBAN / PIPELINE
@@ -599,6 +661,19 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
 @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
 
 /* ----------------------------------------------------------------------------
+   17B. FOCUS-VISIBLE — Ring dorado accesible AA en navegación con teclado.
+   Las decenas de `outline: none` inline en inputs/btn se mantienen para el clic
+   con mouse; este :focus-visible restaurado solo aparece con Tab, cumpliendo WCAG.
+   ---------------------------------------------------------------------------- */
+.input:focus-visible, textarea:focus-visible, select:focus-visible,
+.os-search input:focus-visible, .btn:focus-visible,
+.os-nav__item:focus-visible, .chip:focus-visible, .tabs__item:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ----------------------------------------------------------------------------
    18. RESPONSIVE
    ---------------------------------------------------------------------------- */
 @media (max-width: 1100px) {
@@ -609,8 +684,10 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
 }
 @media (max-width: 720px) {
   .os-app, .os-app.has-panel { grid-template-columns: 1fr; }
+  .os-app.nav-collapsed { grid-template-columns: 1fr; }
   .os-nav { position: fixed; left: 0; top: 0; bottom: 0; width: var(--nav-w); z-index: 80; transform: translateX(-100%); transition: transform .28s var(--ease-out); box-shadow: var(--sh-3); }
   .os-nav.open { transform: none; }
+  #osCollapseBtn { display: none !important; }
   .os-content--pad { padding: var(--s3) var(--s2); }
   .grid--4, .grid--3, .grid--2 { grid-template-columns: 1fr; }
   .os-search { min-width: 0; }

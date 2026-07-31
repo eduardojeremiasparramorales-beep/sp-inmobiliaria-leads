@@ -49,6 +49,8 @@
     flame: P('<path d="M12 2s4 4 4 8a4 4 0 0 1-8 0c0-1 .5-2 .5-2S6 10 6 14a6 6 0 0 0 12 0c0-5-6-12-6-12z"/>'),
     spark: P('<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/>'),
     menu: P('<path d="M3 6h18M3 12h18M3 18h18"/>'),
+    collapse: P('<path d="m15 18-6-6 6-6"/>'),
+    expand: P('<path d="m9 18 6-6-6-6"/>'),
     money: P('<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 2.5-5 1-5 3.5a2.5 2 0 0 0 5 0"/>'),
     target: P('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'),
     zap: P('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
@@ -142,14 +144,15 @@
     // Sin sesión activa → login (siempre, sin modo demo)
     if (!me) { location.replace('/login.html'); return null; }
 
+    // Tres roles con tres paneles diferentes: admin (SP OS aquí en /os/*),
+    // supervisor (Supervisor Center en /supervisor/*), vendedor (panel móvil en /m/*).
+    // /os/* es EXCLUSIVO del admin. Cualquiera que no sea admin aquí fue redirigido
+    // a su propio panel — para no romper la UX de un vendedor ni la de un supervisor.
     const isAdmin = me.rol === 'admin';
-
-    // Vendedor intentando entrar a página de admin → su panel
-    if (!isAdmin && opts.adminOnly) { location.replace('/m/'); return null; }
-
-    // Vendedor en cualquier página que no sea su panel → redirigir
-    if (!isAdmin && location.pathname !== '/m/' && !location.pathname.startsWith('/m/')) {
-      location.replace('/m/'); return null;
+    if (!isAdmin) {
+      const destino = me.rol === 'supervisor' ? '/supervisor/' : '/m/';
+      location.replace(destino);
+      return null;
     }
 
     const navGroups = isAdmin ? NAV : NAV_VENDEDOR;
@@ -177,6 +180,7 @@
         <div class="os-nav__scroll">${navHTML}</div>
         <div class="os-nav__foot">
           <div class="os-nav__item" id="osLogout">${ICONS.logout}<span>Cerrar sesión</span></div>
+          <div class="os-nav__item" id="osCollapseBtn" title="Minimizar barra">${ICONS.collapse}<span>Minimizar</span></div>
         </div>
       </aside>
       <main class="os-main">
@@ -214,6 +218,57 @@
     if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
     let _resizeTimer; window.addEventListener('resize',()=>{ clearTimeout(_resizeTimer); _resizeTimer=setTimeout(updateMenuBtn,150); });
     window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
+
+    /* --- Sidebar colapsable: toggle + tooltip lateral custom --- */
+    const osApp = document.querySelector('.os-app');
+    const collapseBtn = document.getElementById('osCollapseBtn');
+    function setCollapseBtnIcon(collapsed) {
+      if (!collapseBtn) return;
+      const span = collapseBtn.querySelector('span');
+      const svg = collapseBtn.querySelector('svg');
+      const newIcon = collapsed ? ICONS.expand : ICONS.collapse;
+      const wrapper = document.createElement('span');
+      wrapper.innerHTML = newIcon;
+      if (svg) svg.replaceWith(wrapper.firstChild); else collapseBtn.insertBefore(wrapper.firstChild, span);
+      if (span) span.textContent = collapsed ? 'Expandir' : 'Minimizar';
+      collapseBtn.title = collapsed ? 'Expandir barra' : 'Minimizar barra';
+    }
+    if (collapseBtn && osApp) {
+      collapseBtn.addEventListener('click', () => {
+        osApp.classList.toggle('nav-collapsed');
+        setCollapseBtnIcon(osApp.classList.contains('nav-collapsed'));
+        const tip = document.getElementById('osNavTip'); if (tip) tip.remove();
+      });
+    }
+    function showNavTip(label, rect) {
+      let tip = document.getElementById('osNavTip');
+      if (tip) tip.remove();
+      tip = document.createElement('div');
+      tip.id = 'osNavTip'; tip.className = 'os-nav__tip'; tip.textContent = label;
+      document.body.appendChild(tip);
+      const top = rect.top + rect.height / 2 - tip.offsetHeight / 2;
+      tip.style.left = (rect.right + 8) + 'px';
+      tip.style.top = Math.max(8, Math.min(window.innerHeight - tip.offsetHeight - 8, top)) + 'px';
+      requestAnimationFrame(() => tip.classList.add('show'));
+    }
+    function hideNavTip() { const tip = document.getElementById('osNavTip'); if (tip) tip.remove(); }
+    nav.querySelectorAll('.os-nav__item').forEach(el => {
+      el.addEventListener('mouseenter', () => {
+        if (!osApp || !osApp.classList.contains('nav-collapsed')) return;
+        const span = el.querySelector('span:not(.os-nav__badge)');
+        if (!span || !span.textContent) return;
+        showNavTip(span.textContent, el.getBoundingClientRect());
+        el.addEventListener('mouseleave', hideNavTip, { once: true });
+      });
+    });
+    nav.querySelectorAll('.os-nav__title').forEach(el => {
+      el.addEventListener('mouseenter', () => {
+        if (!osApp || !osApp.classList.contains('nav-collapsed')) return;
+        if (!el.textContent.trim()) return;
+        showNavTip(el.textContent.trim(), el.getBoundingClientRect());
+        el.addEventListener('mouseleave', hideNavTip, { once: true });
+      });
+    });
 
     initThemeToggle();
     initNotificaciones();
@@ -458,7 +513,54 @@
 
   function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc, on,
+  /* --- Tabs helper: SPOS.tabs(rootEl) — alterna .active entre .tabs__item y .tabs__pane --- */
+  function tabs(root) {
+    if (!root) return;
+    const items = root.querySelectorAll('.tabs__item');
+    items.forEach(t => t.addEventListener('click', () => {
+      const target = t.dataset.tab;
+      root.querySelectorAll('.tabs__item').forEach(x => x.classList.toggle('active', x === t));
+      root.parentNode.querySelectorAll('.tabs__pane').forEach(p => p.classList.toggle('active', p.dataset.tab === target));
+    }));
+  }
+
+  /* --- sortTable helper: SPOS.sortTable(tableEl) — clic en th ordena con flecha + aria-sort --- */
+  function sortTable(table) {
+    if (!table) return;
+    const ths = table.querySelectorAll('thead th');
+    ths.forEach((th, idx) => {
+      if (th.dataset.noSort !== undefined) return;
+      th.style.cursor = 'pointer';
+      th.dataset.sortDir = '';
+      th.addEventListener('click', () => {
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        if (!rows.length) return;
+        const dir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+        ths.forEach(x => { x.dataset.sortDir = ''; const ar = x.querySelector('.sort-ar'); if (ar) ar.remove(); x.removeAttribute('aria-sort'); });
+        th.dataset.sortDir = dir;
+        const ar = document.createElement('span'); ar.className = 'sort-ar'; ar.textContent = dir === 'asc' ? ' ↑' : ' ↓'; th.appendChild(ar);
+        th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
+        const numIdx = th.dataset.sortType === 'num';
+        rows.sort((a, b) => {
+          const va = (a.cells[idx] && a.cells[idx].textContent) ? a.cells[idx].textContent.trim() : '';
+          const vb = (b.cells[idx] && b.cells[idx].textContent) ? b.cells[idx].textContent.trim() : '';
+          let cmp;
+          if (numIdx || th.dataset.sortKey === 'num') {
+            const na = parseFloat(va.replace(/[^\d.-]/g, '')); const nb = parseFloat(vb.replace(/[^\d.-]/g, ''));
+            cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : 0;
+          } else {
+            cmp = va.localeCompare(vb, 'es');
+          }
+          return dir === 'asc' ? cmp : -cmp;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  }
+
+  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc, on, tabs, sortTable,
     fmt: {
       n: (v) => (v == null ? '—' : Number(v).toLocaleString('es-CO')),
       money: (v) => (v == null ? '—' : '$' + Number(v).toLocaleString('es-CO')),
