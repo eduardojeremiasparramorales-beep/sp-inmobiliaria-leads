@@ -28,11 +28,14 @@
   </div>
 <script>
   // Enrutador de entrada: manda a cada quien a donde corresponde.
+  // Tres roles → tres paneles distintos (admin: SP OS, supervisor: Supervisor Center,
+  // vendedor: panel móvil). Cualquier rol no reconocido cae al login.
   fetch('/api/me', { credentials: 'include' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (u) {
       if (!u) { location.replace('/login.html'); return; }
       if (u.rol === 'admin') { location.replace('/os/dashboard.html'); return; }
+      if (u.rol === 'supervisor') { location.replace('/supervisor/'); return; }
       location.replace('/m/');
     })
     .catch(function () { location.replace('/login.html'); });

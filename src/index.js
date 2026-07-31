@@ -531,6 +531,13 @@ app.get('/api/ai/models', auth.requireAdmin, async (req, res) => {
 // ===================== API PÚBLICA v2 =====================
 app.use('/api/v2', require('./api/v2'));
 
+// ===================== SUPERVISOR CENTER API =====================
+// Toda la API del rol supervisor vive aquí abajo. El middleware requireSupervisor
+// aplica al router entero — no hace falta repetirlo en cada ruta. Endpoints de solo
+// lectura (dashboard/equipo) o de acciones operativas (reasignar) reusan store.js sin
+// duplicar queries. Sprints 2-8 van llenando los stubs 501 que el router expone.
+app.use('/api/supervisor', auth.requireSupervisor, require('./api/supervisor'));
+
 // ===================== WEBHOOKS MULTICANAL =====================
 const channels = require('./channels');
 channels.bootstrapChannels();
@@ -699,20 +706,40 @@ app.post('/api/vendedores', auth.requireAdmin, (req, res) => {
 // medio. Queda en estado 'pendiente' (bloqueado en login) hasta que un admin lo
 // aprueba en Equipo → Pendientes. Sin cédula/fecha de nacimiento — biometría se
 // configura después, en el dispositivo, con el flujo ya existente.
+// Registro público: un asesor o supervisor se auto-registra desde /login.html sin
+// admin de por medio. Queda en estado 'pendiente' (bloqueado en login) hasta que un
+// admin lo apruebe en Equipo → Pendientes. El campo `rol` optativo distingue
+// 'asesor' (default, sin fila en usuarios) de 'supervisor' (crea una fila en
+// usuarios.rol='supervisor' vinculada al vendedor — es la marca que después el login
+// respeta para no colapsarlo a 'vendedor'). Sin cédula/fecha de nacimiento — la
+// biometría se configura después, en el dispositivo.
 app.post('/api/vendedores/registro', registroLimiter, (req, res) => {
-  const { nombre, telefono, pin, foto } = req.body || {};
+  const { nombre, telefono, pin, foto, rol } = req.body || {};
   if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'nombre_requerido' });
   if (!telefono || !validarTelefono(telefono)) return res.status(400).json({ error: 'formato_telefono_invalido_debe_ser_57' });
   if (!pin || !/^\d{4}$/.test(String(pin)) || String(pin) === '0000') return res.status(400).json({ error: 'pin_invalido' });
+  // El rol del registro es acotado: solo 'asesor' (default histórico) o 'supervisor'.
+  // Cualquier otro valor (incluido 'admin') se rechaza — el admin nunca se auto-crea.
+  const rolRegistro = String(rol || 'asesor').toLowerCase();
+  if (!['asesor', 'supervisor'].includes(rolRegistro)) return res.status(400).json({ error: 'rol_invalido' });
   const tel = String(telefono).replace(/[\s-]/g, '');
   if (store.getVendedorByTelefono(tel)) return res.status(409).json({ error: 'telefono_ya_registrado' });
   if (foto && String(foto).length > 3 * 1024 * 1024) return res.status(400).json({ error: 'foto_demasiado_grande' });
   const vendedorId = addVendedor(String(nombre).trim(), tel, 'pendiente');
   store.setVendedorPin(vendedorId, auth.hashPassword(String(pin)));
   if (foto && /^data:image\//.test(String(foto))) store.setVendedorFoto(vendedorId, String(foto));
-  console.log(`[REGISTRO] Nuevo asesor pendiente de aprobación: ${nombre} (${tel})`);
-  events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), ts: Date.now() });
-  res.json({ ok: true, vendedorId, estado: 'pendiente' });
+  // Supervisor: crear la fila en usuarios para que el login respete el rol.
+  // El email queda vacío (el supervisor se autentica por teléfono+PIN, no por email);
+  // el password queda null (no se usa en la rama teléfono+PIN). El vínculo
+  // vendedor_id es lo que hace que getUsuarioByVendedorId() lo encuentre en el login.
+  if (rolRegistro === 'supervisor') {
+    const emailSupervisor = `supervisor+${vendedorId}@spinmobiliaria.com`;
+    store.createUsuario(emailSupervisor, null, String(nombre).trim(), 'supervisor', vendedorId);
+  }
+  const label = rolRegistro === 'supervisor' ? 'supervisor' : 'asesor';
+  console.log(`[REGISTRO] Nuevo ${label} pendiente de aprobación: ${nombre} (${tel})`);
+  events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), rol: rolRegistro, ts: Date.now() });
+  res.json({ ok: true, vendedorId, estado: 'pendiente', rol: rolRegistro });
 });
 
 app.post('/api/vendedores/:id/pin', auth.requireAdmin, (req, res) => {
@@ -779,9 +806,14 @@ app.post('/api/login', loginLimiter, (req, res) => {
       console.log('[LOGIN] PIN incorrecto para:', vendedor.nombre, vendedor.id);
       return res.status(401).json({ error: 'credenciales_invalidas' });
     }
-    // Verificar si tiene rol admin
+    // Verificar si tiene usuario asociado (admin o supervisor); sin usuario, es vendedor puro.
+    // usuario.rol es 'admin' | 'supervisor' | 'vendedor' (texto libre, sin CHECK en BD).
+    // Antes se colapsaba a 'vendedor' todo lo que no era exactamente 'admin' — eso impedía
+    // que un tercer rol (supervisor) sobreviviera al login. Hoy se respeta el rol real,
+    // y vendedores sin usuario (caso histórico/legacy) caen naturalmente a 'vendedor'.
     const usuario = store.getUsuarioByVendedorId(vendedor.id);
-    const rol = usuario && usuario.rol === 'admin' ? 'admin' : 'vendedor';
+    let rol = 'vendedor';
+    if (usuario && ['admin', 'supervisor'].includes(usuario.rol)) rol = usuario.rol;
     const token = auth.createSession({ vendedorId: vendedor.id, userId: usuario ? usuario.id : null, rol, nombre: vendedor.nombre, userAgent: req.headers['user-agent'] });
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
     // PIN de fábrica: obligar a cambiarlo antes de usar el panel
@@ -1831,9 +1863,9 @@ app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
   let msgs;
   if (con != null) {
     store.markTeamDirectRead(yo, con);
-    msgs = store.getTeamDirectMessages(yo, con, 80);
+    msgs = store.getTeamDirectMessages(yo, con, req.query.before_id ? Number(req.query.before_id) : null, 200);
   } else {
-    msgs = store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 50);
+    msgs = store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 200);
   }
   // Enriquecer con reacciones
   if (Array.isArray(msgs) && msgs.length) {
@@ -1882,6 +1914,23 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     }
   }
   res.json({ ok: true, mensaje: msg });
+});
+
+// Marcar canal general como leído hasta un mensaje (para tracking en DB)
+app.post('/api/equipo/general/leido', auth.requireAuth, (req, res) => {
+  const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const lastId = req.body && req.body.last_id ? Number(req.body.last_id) : 0;
+  if (yo != null && lastId > 0) store.markTeamGeneralRead(yo, lastId);
+  res.json({ ok: true });
+});
+
+// Devuelve el último id leído en canal general
+app.get('/api/equipo/general/unread', auth.requireAuth, (req, res) => {
+  const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const lastRead = store.getTeamGeneralLastRead(yo);
+  // contar no leídos desde lastRead
+  const row = store.one('SELECT COUNT(*) AS n FROM team_messages WHERE to_vendedor_id IS NULL AND (deleted IS NULL OR deleted = 0) AND id > ?', [lastRead]);
+  res.json({ lastRead, unread: row ? Number(row.n) : 0 });
 });
 
 // Monitoreo admin: todas las conversaciones internas (solo lectura)
@@ -2833,8 +2882,8 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
   });
   res.write(`event: conectado\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
 
-  // Admin escucha en el canal 0; vendedor en su propio id
-  const canal = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
+  // Admin y supervisor escuchan el canal 0 (alertas del equipo); el vendedor en su propio id.
+  const canal = (req.session.rol === 'admin' || req.session.rol === 'supervisor') ? 0 : req.session.vendedorId;
   events.addClient(canal, res);
 
   // Heartbeat para mantener viva la conexión
@@ -3068,7 +3117,17 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
     if (templateId) {
       const tpl = store.getWATemplateById(templateId);
       if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
+      if (tpl.estado !== 'APPROVED') return res.status(400).json({ error: 'template_no_aprobado', detalle: `Template "${tpl.nombre}" tiene estado "${tpl.estado}" — solo APPROVED se puede enviar` });
       const vendedor = lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+      const { resolveTemplateValues, extractVariables } = require('./services/wa-templates');
+      const placeholders = extractVariables(JSON.parse(tpl.componentes || '[]'));
+      if (placeholders.length) {
+        const values = resolveTemplateValues(tpl, lead, vendedor, overrides || {});
+        const emptyVars = placeholders.filter(ph => !values[ph] || String(values[ph]).trim() === '');
+        if (emptyVars.length) {
+          return res.status(400).json({ error: 'variables_vacias', detalle: `Faltan valores para: ${emptyVars.join(', ')}. El vendedor debe completar estos campos.` });
+        }
+      }
       const { sendResolvedTemplate } = require('./services/wa-templates');
       await sendResolvedTemplate(lead.customer_phone, tpl, lead, vendedor, overrides || {});
       tplNombre = tpl.nombre;
@@ -4048,6 +4107,44 @@ function ensureAdminUser() {
   }
 }
 
+// Crea el usuario supervisor inicial + vendedor supervisor (opcional, vía .env).
+// Patrón idéntico a ensureAdminUser(): lee SUPERVISOR_PHONE / SUPERVISOR_PIN / SUPERVISOR_NAME
+// del entorno. Si SUPERVISOR_PHONE no está definido, esta función no hace nada — el flujo
+// principal de creación de supervisores es el autoregistro desde /login.html con aprobación
+// del admin. Este bootstrap solo existe para tener un primer supervisor listo el día del
+// despliegue sin depender de ese flujo (útil para pruebas iniciales del Sprint 1).
+function ensureSupervisor() {
+  const SUPERVISOR_PHONE = process.env.SUPERVISOR_PHONE;
+  const SUPERVISOR_PIN = process.env.SUPERVISOR_PIN || '0000';
+  const SUPERVISOR_NAME = process.env.SUPERVISOR_NAME || 'Supervisor';
+  if (!SUPERVISOR_PHONE) return; // No hay bootstrap de supervisor por .env — ok.
+  if (!/^\+57\d{10}$/.test(SUPERVISOR_PHONE)) {
+    console.warn('⚠ SUPERVISOR_PHONE malformado (esperado +57 + 10 dígitos) — se omite el bootstrap de supervisor');
+    return;
+  }
+  let vendedorSup = store.getVendedorByTelefono(SUPERVISOR_PHONE);
+  if (!vendedorSup) {
+    const vId = store.addVendedor(SUPERVISOR_NAME, SUPERVISOR_PHONE);
+    store.setVendedorPin(vId, auth.hashPassword(SUPERVISOR_PIN));
+    vendedorSup = store.getVendedorByTelefono(SUPERVISOR_PHONE);
+    console.log(`Vendedor supervisor creado: ${SUPERVISOR_PHONE} · PIN: ${SUPERVISOR_PIN} (cambiar tras primer login)`);
+  } else if (!vendedorSup.pin) {
+    store.setVendedorPin(vendedorSup.id, auth.hashPassword(SUPERVISOR_PIN));
+    console.log(`PIN reset para supervisor: ${SUPERVISOR_PIN}`);
+  }
+  // Crear la fila en usuarios.rol='supervisor' vinculada al vendedor, si no existe ya.
+  const usuarioSup = store.getUsuarioByVendedorId(vendedorSup.id);
+  if (!usuarioSup) {
+    const emailSup = `supervisor+${vendedorSup.id}@spinmobiliaria.com`;
+    store.createUsuario(emailSup, null, SUPERVISOR_NAME, 'supervisor', vendedorSup.id);
+    console.log(`Usuario supervisor creado y vinculado a vendedor ID ${vendedorSup.id}`);
+  } else if (usuarioSup.rol !== 'supervisor') {
+    // Promover si ya existía como vendedor puro (sin rol especial).
+    store.updateUsuarioRol(usuarioSup.id, 'supervisor');
+    console.log(`Vendedor ID ${vendedorSup.id} promovido a supervisor`);
+  }
+}
+
 // ===================== VID.A — PANEL DE PLATAFORMA (V2) =====================
 // Separado a propósito de la autenticación de cada negocio (auth.js/sessions): un
 // platform_admin puede ver/crear/suspender TODOS los negocios, así que su sesión NO
@@ -4164,6 +4261,7 @@ function ensurePlatformAdmin() {
   await platformDb.initPlatformDB(); // Vid.a V2 — control plane, BD separada
   ensurePlatformAdmin();
   ensureAdminUser();
+  ensureSupervisor(); // opcional vía .env (SUPERVISOR_PHONE/NAME/PIN)
   // Backfill inbox: re-vincular leads legacy que no tienen conversación en el
   // schema multicanal (p.ej. insertados por scripts). Migra sus mensajes al timeline
   // para que TODOS los chats aparezcan en el inbox del admin.

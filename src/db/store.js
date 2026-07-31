@@ -473,7 +473,30 @@ function createSchema() {
   ensureColumn('team_messages', 'mentions', 'TEXT');      // JSON de vendedor_ids mencionados
   ensureColumn('team_messages', 'read_at', 'DATETIME');   // lectura del destinatario en directos
   ensureColumn('team_messages', 'lead_ref', 'INTEGER');   // lead compartido como tarjeta
+  ensureColumn('team_messages', 'reply_to_id', 'INTEGER'); // respuesta a otro mensaje
+  ensureColumn('team_messages', 'deleted', 'INTEGER');     // soft delete (0=no, 1=borrado)
+  ensureColumn('team_messages', 'deleted_by', 'TEXT');     // quién borró
   execSQL(`CREATE INDEX IF NOT EXISTS idx_team_conv ON team_messages(from_vendedor_id, to_vendedor_id, id)`);
+
+  // Reacciones del chat interno
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS team_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL,
+      emoji TEXT NOT NULL,
+      from_vendedor_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now')),
+      UNIQUE(message_id, emoji, from_vendedor_id)
+    );
+  `);
+
+  // Presencia de asesores (heartbeat)
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS team_presence (
+      vendedor_id INTEGER PRIMARY KEY,
+      last_heartbeat DATETIME DEFAULT (datetime('now'))
+    );
+  `);
 
   // Insignias del asesor (gamificación con datos reales; otorgadas por job diario)
   execSQL(`
@@ -713,25 +736,34 @@ function saveTeamMessage(fromVendedorId, fromNombre, body, opts = {}) {
   const to = opts.toVendedorId != null ? Number(opts.toVendedorId) : null;
   const mentions = Array.isArray(opts.mentions) && opts.mentions.length ? JSON.stringify(opts.mentions) : null;
   const leadRef = opts.leadRef != null ? Number(opts.leadRef) : null;
-  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref) VALUES (?, ?, ?, ?, ?, ?)',
-    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef]);
-  return one('SELECT * FROM team_messages ORDER BY id DESC LIMIT 1');
+  const replyTo = opts.replyToId != null ? Number(opts.replyToId) : null;
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo]);
+  return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id ORDER BY tm.id DESC LIMIT 1');
 }
 // Canal general (to_vendedor_id IS NULL)
 function getTeamMessages(beforeId, limit) {
-  const lim = Math.min(Number(limit) || 50, 100);
+  const lim = Math.min(Number(limit) || 50, 500);
+  const base = `SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from, rt.deleted AS reply_deleted
+    FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id WHERE tm.to_vendedor_id IS NULL AND (tm.deleted IS NULL OR tm.deleted = 0)`;
   if (beforeId) {
-    return all('SELECT * FROM team_messages WHERE to_vendedor_id IS NULL AND id < ? ORDER BY id DESC LIMIT ?', [beforeId, lim]).reverse();
+    return all(base + ' AND tm.id < ? ORDER BY tm.id DESC LIMIT ?', [beforeId, lim]).reverse();
   }
-  return all('SELECT * FROM team_messages WHERE to_vendedor_id IS NULL ORDER BY id DESC LIMIT ?', [lim]).reverse();
+  return all(base + ' ORDER BY tm.id DESC LIMIT ?', [lim]).reverse();
 }
 // Conversación directa entre dos asesores (ambos sentidos)
-function getTeamDirectMessages(vendedorA, vendedorB, limit) {
-  const lim = Math.min(Number(limit) || 60, 120);
-  return all(
-    `SELECT * FROM team_messages
-     WHERE (from_vendedor_id = ? AND to_vendedor_id = ?) OR (from_vendedor_id = ? AND to_vendedor_id = ?)
-     ORDER BY id DESC LIMIT ?`,
+function getTeamDirectMessages(vendedorA, vendedorB, beforeId, limit) {
+  const lim = Math.min(Number(limit) || 60, 500);
+  const base = `SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from, rt.deleted AS reply_deleted
+     FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id
+     WHERE ((tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?) OR (tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?))
+       AND (tm.deleted IS NULL OR tm.deleted = 0)`;
+  if (beforeId) {
+    return all(base + ` AND tm.id < ? ORDER BY tm.id DESC LIMIT ?`,
+      [vendedorA, vendedorB, vendedorB, vendedorA, beforeId, lim]
+    ).reverse();
+  }
+  return all(base + ` ORDER BY tm.id DESC LIMIT ?`,
     [vendedorA, vendedorB, vendedorB, vendedorA, lim]
   ).reverse();
 }
@@ -748,6 +780,15 @@ function getTeamDirectThreads(vendedorId) {
 }
 function markTeamDirectRead(vendedorId, otroId) {
   run("UPDATE team_messages SET read_at = datetime('now') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
+}
+function markTeamGeneralRead(vendedorId, lastMessageId) {
+  const r = one('SELECT value FROM config WHERE key = ?', ['eq_general_last_read_' + vendedorId]);
+  if (r) run('UPDATE config SET value = ? WHERE key = ?', [String(lastMessageId), 'eq_general_last_read_' + vendedorId]);
+  else run('INSERT INTO config (key, value) VALUES (?, ?)', ['eq_general_last_read_' + vendedorId, String(lastMessageId)]);
+}
+function getTeamGeneralLastRead(vendedorId) {
+  const r = one('SELECT value FROM config WHERE key = ?', ['eq_general_last_read_' + vendedorId]);
+  return r ? Number(r.value) || 0 : 0;
 }
 function countTeamUnread(vendedorId) {
   const r = one('SELECT COUNT(*) AS n FROM team_messages WHERE to_vendedor_id = ? AND read_at IS NULL', [vendedorId]);
@@ -812,6 +853,55 @@ function getAdminTeamConversations() {
     } : { last_message: null, msg_count: 0 },
     dms: Object.values(dmMap)
   };
+}
+
+// --- Reacciones del chat interno ---
+function saveTeamReaction(messageId, emoji, fromVendedorId) {
+  try {
+    run('INSERT OR IGNORE INTO team_reactions (message_id, emoji, from_vendedor_id) VALUES (?, ?, ?)',
+      [messageId, emoji, fromVendedorId]);
+    return true;
+  } catch (e) { return false; }
+}
+function removeTeamReaction(messageId, emoji, fromVendedorId) {
+  run('DELETE FROM team_reactions WHERE message_id = ? AND emoji = ? AND from_vendedor_id = ?',
+    [messageId, emoji, fromVendedorId]);
+}
+function getTeamReactionsForMessages(messageIds) {
+  if (!messageIds || !messageIds.length) return {};
+  const ids = messageIds.map(Number).filter(Boolean);
+  if (!ids.length) return {};
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = all(`SELECT * FROM team_reactions WHERE message_id IN (${placeholders})`, ids);
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.message_id]) map[r.message_id] = [];
+    map[r.message_id].push(r);
+  }
+  return map;
+}
+
+// --- Delete de team messages ---
+function deleteTeamMessage(messageId, byName, mode) {
+  if (mode === 'everyone') {
+    run('UPDATE team_messages SET deleted = 1, deleted_by = ? WHERE id = ?', [byName || '', messageId]);
+  }
+  return one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
+}
+
+// --- Presencia ---
+function updatePresence(vendedorId) {
+  run('INSERT OR REPLACE INTO team_presence (vendedor_id, last_heartbeat) VALUES (?, datetime(\'now\'))', [vendedorId]);
+}
+function getPresenceMap() {
+  const rows = all('SELECT vendedor_id, last_heartbeat FROM team_presence');
+  const map = {};
+  const now = Date.now();
+  for (const r of rows) {
+    const hb = r.last_heartbeat ? new Date(String(r.last_heartbeat).replace(' ', 'T') + 'Z').getTime() : 0;
+    map[r.vendedor_id] = { last_heartbeat: r.last_heartbeat, online: (now - hb) < 60000 };
+  }
+  return map;
 }
 
 // --- Borrar para mí ---
@@ -892,13 +982,15 @@ function getWindowExpiresAt(leadId) {
 }
 
 function getVendedoresActivos() {
-  // El admin NO recibe clientes: se excluye a cualquier vendedor vinculado a un usuario con rol 'admin'.
+  // El admin y el supervisor NO reciben clientes del round-robin: el supervisor es
+  // un rol operativo (observa y reasigna), no un asesor de captación. Se excluye a
+  // cualquier vendedor vinculado a un usuario con rol 'admin' o 'supervisor'.
   return all(`
     SELECT v.*, COUNT(l.id) as leads_activos
     FROM vendedores v
     LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != ?
     WHERE v.estado = ?
-      AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE rol = 'admin' AND vendedor_id IS NOT NULL)
+      AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE vendedor_id IS NOT NULL AND rol IN ('admin','supervisor'))
     GROUP BY v.id
     ORDER BY leads_activos ASC
   `, ['cerrado', 'activo']);
@@ -1149,6 +1241,12 @@ function updateUsuarioPassword(id, passwordHash) {
 
 function updateUsuarioVendedorId(id, vendedorId) {
   run('UPDATE usuarios SET vendedor_id = ? WHERE id = ?', [vendedorId, id]);
+}
+
+// Cambiar el rol de un usuario existente ('admin' | 'supervisor' | 'vendedor').
+// Usado por ensureSupervisor() (promoción vía .env) y, futuro, por el admin desde Equipo.
+function updateUsuarioRol(id, rol) {
+  run('UPDATE usuarios SET rol = ? WHERE id = ?', [rol, id]);
 }
 
 // --- Leads y mensajes por vendedor ---
@@ -2725,7 +2823,7 @@ module.exports = {
   marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
-  countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId,
+  countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,
   getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError,
   getTemplates, addTemplate, deleteTemplate,
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
@@ -2776,7 +2874,8 @@ module.exports = {
   toggleStarMessage, getStarredMessages, searchMessages,
   setTranscript, setTranslation,
   createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
-  saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, countTeamUnread, getAllTeamMessagesForAdmin, getAdminTeamConversations,
+  saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, markTeamGeneralRead, getTeamGeneralLastRead, countTeamUnread, getAllTeamMessagesForAdmin, getAdminTeamConversations,
+  saveTeamReaction, removeTeamReaction, getTeamReactionsForMessages, deleteTeamMessage, updatePresence, getPresenceMap,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
   getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,
   // Campañas SP

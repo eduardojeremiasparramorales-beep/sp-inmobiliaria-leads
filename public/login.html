@@ -161,7 +161,25 @@
   }
   @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}.pin-dot .circ,.spin{corner-shape:round}
     [style*="border-radius:50%"],[style*="border-radius: 50%"]{corner-shape:round}}
-</style>
+
+  /* ── Role chips (selector de rol en registro) ── */
+  .role-row{display:flex;gap:8px}
+  .role-chip{
+    flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    padding:12px 12px;border-radius:12px;cursor:pointer;
+    border:1.5px solid var(--glass-border);background:var(--glass);
+    backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
+    color:var(--txt-2);font-size:.8rem;font-weight:500;font-family:inherit;text-align:left;
+    transition:border-color .2s,background .2s,color .2s;position:relative;
+  }
+  .role-chip small{font-size:.62rem;color:var(--txt-3);font-weight:400;letter-spacing:0;line-height:1.25}
+  .role-chip__dot{width:7px;height:7px;border-radius:50%;background:var(--txt-3);transition:background .2s;position:absolute;top:11px;right:11px}
+  .role-chip.active{border-color:var(--gold);background:rgba(200,164,90,.06);color:var(--txt)}
+  .role-chip.active .role-chip__dot{background:var(--gold)}
+  .role-chip.active small{color:var(--txt-2)}
+  .role-chip:active{transform:scale(.98)}
+ </style>
+
 </head>
 <body>
 
@@ -194,7 +212,7 @@
   <div class="reg-body">
     <div class="logo" style="margin:0 auto 18px"><img src="/icons/logo.png" alt="SP Leons Group"></div>
     <div class="brand" style="text-align:center">LEONS GROUP</div>
-    <div class="sub" style="text-align:center">Crear cuenta de asesor</div>
+    <div class="sub" style="text-align:center" id="regSub">Crear cuenta de asesor</div>
     <div class="sp-line" style="margin:0 auto 24px"></div>
 
     <div class="reg-photo" id="regPhotoBox">📷</div>
@@ -212,6 +230,22 @@
     <div class="field">
       <label>PIN de 4 dígitos</label>
       <div class="field-wrap"><input type="password" id="regPin" placeholder="••••" inputmode="numeric" maxlength="4"></div>
+    </div>
+
+    <!-- Selector de rol (Registro): por defecto asesor. Supervisor entra con autoregistro
+         + aprueba el admin después (mismo flujo pendiente que el asesor). -->
+    <div class="field">
+      <label>Quiero registrarme como</label>
+      <div class="role-row" id="roleRow">
+        <button type="button" class="role-chip active" data-role="asesor">
+          <span class="role-chip__dot"></span>Asesor
+          <small>vendo y atiendo mis leads</small>
+        </button>
+        <button type="button" class="role-chip" data-role="supervisor">
+          <span class="role-chip__dot"></span>Supervisor
+          <small>observo y reasigno el equipo</small>
+        </button>
+      </div>
     </div>
 
     <div class="msg" id="msgReg"></div>
@@ -244,9 +278,17 @@
 (function(){
   'use strict';
 
-  fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
-    if(u) location.replace(u.rol==='admin' ? '/os/dashboard.html' : '/m/');
+   fetch('/api/me').then(r=>r.ok?r.json():null).then(u=>{
+    if(u) location.replace(destinoPorRol(u.rol));
   });
+
+  // Tres roles → tres paneles (admin: SP OS, supervisor: Supervisor Center, vendedor: móvil).
+  // Centraliza el destino aquí para no triplicar la lógica en cada rama del login.
+  function destinoPorRol(rol){
+    if(rol === 'admin') return '/os/dashboard.html';
+    if(rol === 'supervisor') return '/supervisor/';
+    return '/m/';
+  }
 
   const $ = id => document.getElementById(id);
   let phone = '';
@@ -366,7 +408,7 @@
         }
         return;
       }
-      const destino = data.usuario && data.usuario.rol === 'admin' ? '/os/dashboard.html' : '/m/';
+      const destino = destinoPorRol(data.usuario && data.usuario.rol);
       if(data.must_change){
         // PIN de fábrica: obligar a crear uno nuevo antes de entrar
         iniciarCambioPin(destino);
@@ -441,11 +483,24 @@
     }
   });
 
-  // ── Crear cuenta (auto-registro de asesor) ──
+  // ── Crear cuenta (auto-registro de asesor / supervisor) ──
   let regFotoBase64 = '';
+  let regRol = 'asesor'; // default — el chip de seleccionar lo cambia
+
+  // Selector de rol: actualiza la variable, el subtítulo y la UI .active
+  function setRegRol(rol){
+    regRol = rol;
+    document.querySelectorAll('.role-chip').forEach(c=>c.classList.toggle('active', c.dataset.role === rol));
+    $('regSub').textContent = rol === 'supervisor' ? 'Crear cuenta de supervisor' : 'Crear cuenta de asesor';
+  }
+  document.querySelectorAll('.role-chip').forEach(c=>{
+    c.addEventListener('click', ()=> setRegRol(c.dataset.role));
+  });
+
   $('linkCrearCuenta').addEventListener('click', ()=>{
     $('s1').classList.add('hidden');
     $('s3').classList.remove('hidden');
+    setRegRol('asesor'); // resetear al valor por defecto al abrir
     $('regNombre').focus();
   });
   $('linkVolverLogin').addEventListener('click', ()=>{
@@ -486,16 +541,17 @@
     try{
       const res = await fetch('/api/vendedores/registro', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ nombre, telefono:'+57'+telRaw, pin:pinReg, foto: regFotoBase64 || undefined }),
+        body: JSON.stringify({ nombre, telefono:'+57'+telRaw, pin:pinReg, foto: regFotoBase64 || undefined, rol: regRol }),
       });
       const data = await res.json();
       if(!res.ok){
-        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde' };
+        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde', rol_invalido:'Rol no válido' };
         msgEl.textContent = errores[data.error] || 'No se pudo registrar'; msgEl.className = 'msg err';
         registrando = false; $('btnRegistrar').disabled = false;
         return;
       }
-      msgEl.textContent = '¡Listo! Tu cuenta está en revisión — el admin te avisará cuando esté activa.'; msgEl.className = 'msg ok';
+      const rolTexto = regRol === 'supervisor' ? 'supervisor' : 'asesor';
+      msgEl.textContent = `¡Listo! Tu cuenta de ${rolTexto} está en revisión — el admin te avisará cuando esté activa.`; msgEl.className = 'msg ok';
       setTimeout(()=>{
         $('s3').classList.add('hidden');
         $('s1').classList.remove('hidden');
