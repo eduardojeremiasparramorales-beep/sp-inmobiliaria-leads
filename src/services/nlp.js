@@ -4,6 +4,15 @@ const CFG = require('../config');
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001';
 
+// Modelos válidos por proveedor — usado para detectar y corregir IDs de provider
+// que se guardaron como "modelo" (ej: "deepseek" en vez de "deepseek-chat").
+const DEFAULT_MODELS = {
+  openrouter: 'google/gemini-2.0-flash-001',
+  openai: 'gpt-4o-mini',
+  deepseek: 'deepseek-chat',
+  groq: 'llama-3.1-8b-instant',
+};
+
 const cache = new Map();
 
 function getFromCache(key) {
@@ -33,7 +42,10 @@ function getApiKey() {
 }
 
 function getModel() {
-  return store.getConfig('openrouter_model') || process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+  const raw = store.getConfig('openrouter_model') || process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+  // Si el modelo guardado parece ser solo un ID de provider (sin "/"), resolverlo
+  if (raw && !raw.includes('/') && DEFAULT_MODELS[raw]) return DEFAULT_MODELS[raw];
+  return raw;
 }
 
 function getSiteUrl() {
@@ -97,7 +109,14 @@ function saveProviders(list, defaultId) {
   const def = clean.find(p => p.id === (defaultId || getDefaultProviderId())) || clean[0];
   if (def) {
     store.setConfig('openrouter_api_key', def.apiKey || '');
-    if (def.models && def.models.length) store.setConfig('openrouter_model', def.models[0]);
+    if (def.models && def.models.length) {
+      store.setConfig('openrouter_model', def.models[0]);
+    }
+    // Si el modelo guardado parece ser solo un ID de provider, resolverlo
+    const saved = store.getConfig('openrouter_model');
+    if (saved && !saved.includes('/') && DEFAULT_MODELS[saved]) {
+      store.setConfig('openrouter_model', DEFAULT_MODELS[saved]);
+    }
   }
 }
 
@@ -210,7 +229,11 @@ async function chatText(systemPrompt, userText, timeoutMs, opts = {}) {
   const provider = opts.providerId ? getProviderById(opts.providerId) : getProviderById(getDefaultProviderId());
   const client = buildClient(provider && provider.baseUrl, (provider && provider.apiKey) || getApiKey());
   const isOpenRouter = provider && String(provider.baseUrl || '').includes('openrouter.ai');
-  const primary = opts.model || (provider && provider.models && provider.models[0]) || getModel();
+  let primary = opts.model || (provider && provider.models && provider.models[0]) || getModel();
+  // Corregir IDs de provider que se guardaron como modelo (ej: "deepseek" → "deepseek-chat")
+  if (primary && !primary.includes('/') && DEFAULT_MODELS[primary]) {
+    primary = DEFAULT_MODELS[primary];
+  }
 
   // Lista de intentos: el modelo pedido + (si es OpenRouter) modelos gratis de respaldo.
   const candidates = [primary];
