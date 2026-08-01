@@ -141,7 +141,7 @@
     const otros = asesores.filter(a => a.id !== asesorId);
 
     detalleEl.innerHTML = `
-      <div class="card rise rise-2" style="overflow:hidden">
+      <div class="card rise rise-2">
         <div class="u-between card--pad" style="padding-bottom:var(--s2);flex-wrap:wrap;gap:var(--s2)">
           <div class="u-row u-gap2 u-align-center">
             <div class="avatar avatar--sm" style="background:${avatarColor(seleccionado.nombre)}">${initials(seleccionado.nombre)}</div>
@@ -155,7 +155,7 @@
         ${leads.length ? `
         <div style="max-height:420px;overflow:auto">
         <table class="table">
-          <thead><tr><th>Cliente</th><th>Etapa</th><th>Última actividad</th><th style="min-width:220px">Reasignar a</th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Etapa</th><th>Última actividad</th><th>Reasignar a</th></tr></thead>
           <tbody>
             ${leads.map(l => `
               <tr>

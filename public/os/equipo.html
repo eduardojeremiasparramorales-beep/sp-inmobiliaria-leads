@@ -140,11 +140,12 @@
       </div>` : ''}
 
       <!-- Tabla de gestión -->
-      <div class="card rise rise-3" style="overflow:hidden">
+      <div class="card rise rise-3">
         <div class="card--pad" style="padding-bottom:var(--s2)">
           <div class="t-h3">Gestión de asesores</div>
           <div class="t-dim3" style="font-size:12px;margin-top:4px">${vends.length} asesores registrados</div>
         </div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table class="table">
           <thead><tr>
             <th>Asesor</th><th>Teléfono</th><th>Estado</th><th>Cuenta</th><th>PIN</th><th>Acción</th>
@@ -175,6 +176,7 @@
             </tr>`;
           }).join('') || '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3)">Sin asesores registrados</td></tr>'}</tbody>
         </table>
+        </div>
       </div>
      </div>`;
 

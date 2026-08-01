@@ -14,6 +14,15 @@
 <body>
 <script src="/os/sp-shell.js"></script>
 <script src="/supervisor/supervisor-shell.js"></script>
+<style>
+  .btn-back { display: none; }
+  @media (max-width: 860px) {
+    #listaCard.hide { display: none; }
+    #detalle.hide { display: none; }
+    .btn-back { display: inline-flex !important; }
+    #detalle { position: fixed; inset: 0; z-index: 70; background: var(--bg-0); overflow: auto; padding: var(--s3); }
+  }
+</style>
 <script>
 (async function () {
   'use strict';
@@ -70,8 +79,8 @@
       <button class="btn btn--ghost" id="fRefrescar">${ICONS.refresh ? ICONS.refresh.replace('<svg ', '<svg style="width:15px;height:15px" ') : '↻'}<span style="margin-left:6px">Refrescar</span></button>
     </div>
 
-    <div class="grid grid--main" style="grid-template-columns:minmax(320px,420px) 1fr;align-items:start">
-      <div class="card rise rise-1" style="overflow:hidden">
+    <div class="grid grid--main" style="align-items:start">
+      <div class="card rise rise-1" id="listaCard" style="overflow:hidden">
         <div class="u-between card--pad" style="padding-bottom:var(--s2)">
           <div class="t-h3" id="tituloLista">Conversaciones</div>
           <span class="t-dim3" style="font-size:12px" id="contador"></span>
@@ -83,8 +92,10 @@
    </div>`;
 
   const listaEl = document.getElementById('lista');
+  const listaCard = document.getElementById('listaCard');
   const detalleEl = document.getElementById('detalle');
   const contadorEl = document.getElementById('contador');
+  const isMobile = () => window.innerWidth <= 860;
 
   /* --- Cargar asesores para el filtro --- */
   const eq = await SPS.api('/api/supervisor/equipo');
@@ -163,11 +174,15 @@
   async function abrir(c) {
     actual = c;
     renderLista();
+    // Mobile toggle: ocultar lista, mostrar detalle
+    if (isMobile() && listaCard) listaCard.classList.add('hide');
+    if (isMobile()) detalleEl.classList.remove('hide');
     const et = ETIQUETAS[c.etiqueta] || ETIQUETAS.sin_clasificar;
     detalleEl.innerHTML = `
       <div class="card rise rise-2" style="overflow:hidden">
         <div class="card--pad u-between" style="padding-bottom:var(--s2);flex-wrap:wrap;gap:var(--s2)">
           <div class="u-row u-gap2 u-align-center">
+            <button class="btn btn-back btn--ghost btn--sm" id="btnVolver" style="margin-right:6px">← Volver</button>
             <div class="avatar avatar--md" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
             <div>
               <div style="font-weight:600">${esc(c.customer_name || 'Cliente')}</div>
@@ -195,6 +210,15 @@
         btn.disabled = false; btn.textContent = 'Archivar';
         SPS.toast('No se pudo archivar', 'err');
       }
+    });
+
+    // Botón volver (móvil)
+    document.getElementById('btnVolver')?.addEventListener('click', () => {
+      actual = null;
+      if (listaCard) listaCard.classList.remove('hide');
+      detalleEl.classList.add('hide');
+      detalleEl.innerHTML = '';
+      renderLista();
     });
 
     const tl = document.getElementById('timeline');

@@ -5,12 +5,12 @@ const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001';
 
 // Modelos válidos por proveedor — usado para detectar y corregir IDs de provider
-// que se guardaron como "modelo" (ej: "deepseek" en vez de "deepseek-chat").
+// que se guardaron como "modelo" (ej: "deepseek" en vez de "deepseek/deepseek-chat").
 const DEFAULT_MODELS = {
   openrouter: 'google/gemini-2.0-flash-001',
   openai: 'gpt-4o-mini',
-  deepseek: 'deepseek-chat',
-  groq: 'llama-3.1-8b-instant',
+  deepseek: 'deepseek/deepseek-chat',
+  groq: 'meta-llama/llama-3.1-8b-instant',
 };
 
 const cache = new Map();
@@ -230,7 +230,7 @@ async function chatText(systemPrompt, userText, timeoutMs, opts = {}) {
   const client = buildClient(provider && provider.baseUrl, (provider && provider.apiKey) || getApiKey());
   const isOpenRouter = provider && String(provider.baseUrl || '').includes('openrouter.ai');
   let primary = opts.model || (provider && provider.models && provider.models[0]) || getModel();
-  // Corregir IDs de provider que se guardaron como modelo (ej: "deepseek" → "deepseek-chat")
+  // Corregir IDs de provider que se guardaron como modelo (ej: "deepseek" → "deepseek/deepseek-chat")
   if (primary && !primary.includes('/') && DEFAULT_MODELS[primary]) {
     primary = DEFAULT_MODELS[primary];
   }
