@@ -1459,6 +1459,14 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
     return res.status(403).json({ error: 'sin_permiso' });
   }
 
+  // Auto-reabrir lead archivado cuando el asesor escribe
+  let reopened = false;
+  if (lead.status === 'cerrado') {
+    store.reopenLead(lead.id);
+    reopened = true;
+    console.log(`[RESponder] Lead ${lead.id} reabierto automáticamente por vendedor ${req.session.vendedorId}`);
+  }
+
   // Detectar el canal del lead: buscar la conversación asociada
   let conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null;
   let channel = conversation ? conversation.channel : 'whatsapp';
@@ -1474,11 +1482,12 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
     const textoParaEnviar = String(mensaje);
+    let smartResult = null;
 
     if (channel === 'whatsapp') {
       // WhatsApp: usar sendMessageSmart (ventana 24h + template auto)
       const mensajeConFirma = buildMensajeConFirma(textoParaEnviar, req.session.nombre);
-      const smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
+      smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
       const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
       store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, wamid, 'sent');
     } else {
@@ -1517,7 +1526,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
         customerName: lead.customer_name,
       });
     } catch (e) { /* feed opcional */ }
-    res.json({ ok: true, templateSent: false });
+    res.json({ ok: true, reopened, templateSent: smartResult ? !!smartResult.templateSent : false, queued: smartResult ? !!smartResult.queued : false });
   } catch (e) {
     console.error('Error enviando respuesta desde panel:', e.message);
     const detail = e.windowClosed ? 'window_closed_no_template' : e.message;

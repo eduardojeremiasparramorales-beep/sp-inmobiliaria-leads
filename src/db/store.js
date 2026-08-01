@@ -1060,6 +1060,15 @@ function resetLead(leadId) {
   WHERE id = ?`, [leadId]);
 }
 
+function reopenLead(leadId) {
+  run(`UPDATE leads SET 
+    status = 'asignado',
+    first_response_at = NULL,
+    escalation_level = 0,
+    updated_at = datetime('now')
+  WHERE id = ? AND status = 'cerrado'`, [leadId]);
+}
+
 function setFirstResponse(leadId) {
   run('UPDATE leads SET first_response_at = datetime(\'now\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
 }
@@ -2985,7 +2994,7 @@ function deleteCampanasSpProject(id) {
 module.exports = {
   initDB, createSchema, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
-  updateLeadStatus, setFirstResponse, resetLead,
+  updateLeadStatus, setFirstResponse, resetLead, reopenLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
