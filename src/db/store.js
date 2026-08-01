@@ -22,6 +22,7 @@ function ensureColumn(table, column, type) {
 async function initDB() {
   await adapter.initDB();
   createSchema();
+  seedGaleria();
   return adapter.getDB();
 }
 
@@ -402,6 +403,18 @@ function createSchema() {
     imagen_url TEXT DEFAULT '',
     created_at DATETIME DEFAULT (datetime('now'))
   )`);
+
+  execSQL(`CREATE TABLE IF NOT EXISTS galeria (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    categoria TEXT NOT NULL DEFAULT 'logos' CHECK (categoria IN ('fondos','logos','banners')),
+    filename TEXT NOT NULL,
+    activa INTEGER NOT NULL DEFAULT 1,
+    orden INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT (datetime('now'))
+  )`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_galeria_cat ON galeria(categoria)`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_galeria_orden ON galeria(orden)`);
 
   createNewTables(adapter.getDB());
 
@@ -2084,6 +2097,7 @@ function deleteVendedor(id) {
   run('DELETE FROM push_subscriptions WHERE vendedor_id = ?', [id]);
   run('DELETE FROM sessions WHERE vendedor_id = ?', [id]);
   run('DELETE FROM usuarios WHERE vendedor_id = ?', [id]);
+  run('DELETE FROM feed_reactions WHERE vendedor_id = ?', [id]);
   run('DELETE FROM vendedores WHERE id = ?', [id]);
   return activos.length > 0 ? activos[0] : null;
 }
@@ -2991,6 +3005,55 @@ function deleteCampanasSpProject(id) {
   run('DELETE FROM campanas_sp_projects WHERE id = ?', [id]);
 }
 
+// --- Galería de activos de marca ---
+function getGaleria(categoria) {
+  if (categoria && categoria !== 'all') {
+    return all('SELECT * FROM galeria WHERE activa = 1 AND categoria = ? ORDER BY orden, created_at DESC', [categoria]);
+  }
+  return all('SELECT * FROM galeria WHERE activa = 1 ORDER BY orden, created_at DESC');
+}
+function getGaleriaAll() {
+  return all('SELECT * FROM galeria ORDER BY categoria, orden, created_at DESC');
+}
+function getGaleriaById(id) {
+  return one('SELECT * FROM galeria WHERE id = ?', [id]);
+}
+function createGaleriaItem(data) {
+  run('INSERT INTO galeria (nombre, categoria, filename, activa, orden) VALUES (?, ?, ?, ?, ?)',
+    [data.nombre, data.categoria, data.filename, data.activa !== undefined ? data.activa : 1, data.orden || 0]);
+  return one('SELECT * FROM galeria WHERE id = (SELECT last_insert_rowid())');
+}
+function updateGaleriaItem(id, data) {
+  if (data.nombre !== undefined) run('UPDATE galeria SET nombre = ? WHERE id = ?', [data.nombre, id]);
+  if (data.categoria !== undefined) run('UPDATE galeria SET categoria = ? WHERE id = ?', [data.categoria, id]);
+  if (data.filename !== undefined) run('UPDATE galeria SET filename = ? WHERE id = ?', [data.filename, id]);
+  if (data.activa !== undefined) run('UPDATE galeria SET activa = ? WHERE id = ?', [data.activa ? 1 : 0, id]);
+  if (data.orden !== undefined) run('UPDATE galeria SET orden = ? WHERE id = ?', [data.orden, id]);
+  return one('SELECT * FROM galeria WHERE id = ?', [id]);
+}
+function deleteGaleriaItem(id) {
+  run('DELETE FROM galeria WHERE id = ?', [id]);
+}
+function seedGaleria() {
+  const count = one('SELECT COUNT(*) as c FROM galeria');
+  if (count && count.c > 0) return;
+  const assets = [
+    { nombre: 'Fondo de pantalla asesores', categoria: 'fondos', filename: 'Fondo de pantalla asesores.png', orden: 0 },
+    { nombre: 'Fondo mensaje', categoria: 'fondos', filename: 'Fondo mensaje.png', orden: 1 },
+    { nombre: 'Logo SP Leons Group', categoria: 'logos', filename: 'logo Sp Leons Group.png', orden: 0 },
+    { nombre: 'Logo Alexandra', categoria: 'logos', filename: 'Logo Alexandra.png', orden: 1 },
+    { nombre: 'SP Logo', categoria: 'logos', filename: 'SPLogo.jpg', orden: 2 },
+    { nombre: 'Icono SP Leons', categoria: 'logos', filename: 'icono.png', orden: 3 },
+    { nombre: 'Banner SP Leons Group', categoria: 'banners', filename: 'Banner Sp Leons Group.png', orden: 0 },
+    { nombre: 'Bienvenida SP Leons Group', categoria: 'banners', filename: 'Bienvenida Sp Leons Group.png', orden: 1 },
+    { nombre: 'SM Banner', categoria: 'banners', filename: 'sm1.png', orden: 2 },
+  ];
+  for (const a of assets) {
+    run('INSERT INTO galeria (nombre, categoria, filename, activa, orden) VALUES (?, ?, ?, 1, ?)',
+      [a.nombre, a.categoria, a.filename, a.orden]);
+  }
+}
+
 module.exports = {
   initDB, createSchema, getDB, saveLead, assignLeadToVendedor, saveMessage,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
@@ -3063,4 +3126,6 @@ module.exports = {
   // SP Feed en Tiempo Real (actividad)
   createFeedEvent, getFeedEvents, getFeedEventById, purgeOldFeedEvents,
   addFeedReaction, getFeedReactionsForEvent,
+  // Galería
+  getGaleria, getGaleriaAll, getGaleriaById, createGaleriaItem, updateGaleriaItem, deleteGaleriaItem, seedGaleria,
 };
