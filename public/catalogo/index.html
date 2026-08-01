@@ -9,19 +9,28 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<script src="/os/theme.js"></script>
 <style>
   :root{
     --negro:#0A0A0A; --oro:#C8A45A; --oro-2:#e4c584; --verde:#4E7B46;
     --marfil:#F5F2EB; --gris:#6D6D6D;
     --bg:#0A0A0A; --bg-2:#141414; --bg-3:#1c1c1c; --txt:#F5F2EB; --txt-2:#b8b3a8; --txt-3:#7a756b;
     --border:rgba(200,164,90,.16);
+    --glow:rgba(200,164,90,.10);
+  }
+  :root[data-theme="light"]{
+    --negro:#221C10; --oro:#A8822F; --oro-2:#A07F2C; --verde:#3F6538;
+    --marfil:#221C10; --gris:#8A7F6A;
+    --bg:#F4EFE3; --bg-2:#FFFCF4; --bg-3:#F3EDDC; --txt:#221C10; --txt-2:#6B6150; --txt-3:#9A8F78;
+    --border:rgba(168,138,78,.22);
+    --glow:rgba(212,175,55,.16);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html{scroll-behavior:smooth;overflow-x:hidden}
   body{
     font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--txt);
     min-height:100vh;line-height:1.5;
-    background-image:radial-gradient(1200px 600px at 50% -10%, rgba(200,164,90,.10), transparent 60%);
+    background-image:radial-gradient(1200px 600px at 50% -10%, var(--glow), transparent 60%);
   }
   a{color:inherit;text-decoration:none}
   img{max-width:100%;display:block}
@@ -29,7 +38,8 @@
 
   /* Header */
   header{padding:28px 0 18px;text-align:center;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20;
-    background:rgba(10,10,10,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+    background:rgba(10,10,10,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  :root[data-theme="light"] header{background:rgba(255,251,241,.62)}
   .brand{font-family:'Cinzel',serif;font-weight:600;letter-spacing:.22em;font-size:1.15rem;color:var(--marfil)}
   .brand b{color:var(--oro);font-weight:600}
   .tagline{font-family:'Cormorant Garamond',serif;font-size:.95rem;color:var(--txt-2);letter-spacing:.12em;margin-top:2px;font-style:italic}
@@ -46,6 +56,7 @@
   .card{background:linear-gradient(180deg,var(--bg-2),var(--bg-3));border:1px solid var(--border);border-radius:18px;overflow:hidden;
     cursor:pointer;transition:transform .25s ease,box-shadow .25s ease,border-color .25s;display:flex;flex-direction:column}
   .card:hover{transform:translateY(-4px);box-shadow:0 18px 40px -18px rgba(0,0,0,.7);border-color:rgba(200,164,90,.4)}
+  :root[data-theme="light"] .card:hover{box-shadow:0 18px 40px -18px rgba(120,98,58,.35)}
   .card .ph{aspect-ratio:16/10;background:var(--bg-3);position:relative;overflow:hidden}
   .card .ph img{width:100%;height:100%;object-fit:cover}
   .card .ph.empty{display:flex;align-items:center;justify-content:center;
@@ -83,7 +94,8 @@
 
   /* CTA */
   .cta-bar{position:fixed;left:0;right:0;bottom:0;z-index:30;padding:14px 20px calc(14px + env(safe-area-inset-bottom));
-    background:linear-gradient(180deg,transparent,rgba(10,10,10,.9)28%);display:flex;justify-content:center}
+    background:linear-gradient(180deg,transparent,rgba(10,10,10,.9) 28%);display:flex;justify-content:center}
+  :root[data-theme="light"] .cta-bar{background:linear-gradient(180deg,transparent,rgba(244,239,227,.94) 28%)}
   .cta{display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,var(--oro),var(--oro-2));color:#1a1400;
     font-weight:700;font-size:1rem;padding:15px 30px;border-radius:999px;border:none;cursor:pointer;letter-spacing:.02em;
     box-shadow:0 12px 30px -8px rgba(200,164,90,.5);transition:transform .15s;max-width:560px;width:100%;justify-content:center}

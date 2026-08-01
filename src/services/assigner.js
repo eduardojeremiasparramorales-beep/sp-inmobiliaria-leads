@@ -1,7 +1,7 @@
 const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse, getConfig, updateCustomerMessageTimestamp } = require('../db/store');
 const { emitToVendedor, emitToAdmins } = require('./events');
 
-const WELCOME_DEFAULT = 'Hola 👋 Gracias por contactar a *Leons Group*. Un asesor te atenderá en los próximos minutos. ¡Estamos para ayudarte!';
+const WELCOME_DEFAULT = 'Hola, somos *Sp Leons Group*. ¡Mucho gusto! *{{asesor}}* será tu asesor comercial.';
 
 function getWelcomeMsg() {
   return getConfig('welcome_message') || WELCOME_DEFAULT;
@@ -180,12 +180,6 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
   const a = getVendedoresActivos();
   const { sendMessageSmart, sendMessage } = require('./whatsapp');
 
-  // Enviar mensaje de bienvenida automático al nuevo lead
-  const welcome = getWelcomeMsg();
-  sendMessageSmart(fromPhone, welcome, r.leadId)
-    .then(() => saveMessage(r.leadId, 'sistema', fromPhone, welcome, 'outgoing'))
-    .catch(e => console.error('Error enviando bienvenida:', e.message));
-
   if (a.length > 0) {
     const vendedorAsignado = a[0];
     try {
@@ -193,6 +187,13 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     } catch (e) {
       console.error('Error asignando lead:', e.message);
     }
+
+    // Enviar mensaje de bienvenida personalizado con nombre del asesor
+    const welcome = getWelcomeMsg().replace(/\{\{asesor\}\}/gi, vendedorAsignado.nombre);
+    sendMessageSmart(fromPhone, welcome, r.leadId)
+      .then(() => saveMessage(r.leadId, 'sistema', fromPhone, welcome, 'outgoing'))
+      .catch(e => console.error('Error enviando bienvenida:', e.message));
+
     saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming', null, null, wamid || null);
     updateCustomerMessageTimestamp(r.leadId);
     syncMulticanal(r.leadId, { direction: 'incoming', body: messageBody, fromNumber: fromPhone, toNumber: vendedorAsignado.telefono });

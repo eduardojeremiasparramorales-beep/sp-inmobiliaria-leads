@@ -26,7 +26,7 @@
 
   function updateThemeColorMeta(resolved) {
     try {
-      var color = resolved === 'light' ? '#F5F2EB' : '#0A0A0A';
+      var color = resolved === 'light' ? '#F4EFE3' : '#0A0A0A';
       var meta = document.querySelector('meta[name="theme-color"]');
       if (!meta) {
         meta = document.createElement('meta');
@@ -47,7 +47,7 @@
         // Style claro de fondo → texto/iconos oscuros de la barra (Style.Dark en la API
         // de Capacitor significa "contenido oscuro", pensado para fondos claros).
         StatusBar.setStyle({ style: resolved === 'light' ? 'Dark' : 'Light' }).catch(function () {});
-        StatusBar.setBackgroundColor({ color: resolved === 'light' ? '#F5F2EB' : '#0A0A0A' }).catch(function () {});
+        StatusBar.setBackgroundColor({ color: resolved === 'light' ? '#F4EFE3' : '#0A0A0A' }).catch(function () {});
       }
     } catch (e) { /* no nativo o plugin ausente — nada que hacer */ }
   }

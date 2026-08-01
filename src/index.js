@@ -2362,6 +2362,73 @@ app.delete('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ===================== GALERIA DE MARCA =====================
+const GALERIA_PATH = path.join(__dirname, '..', 'public', 'galeria', 'assets');
+
+async function ensureDir(dir) {
+  try { await fs.promises.mkdir(dir, { recursive: true }); } catch (e) { /* ok */ }
+}
+
+// Upload de archivo a /public/galeria/assets/ — solo admin
+const uploadGaleria = multer({ storage: multer.diskStorage({
+  destination: async (req, file, cb) => { await ensureDir(GALERIA_PATH); cb(null, GALERIA_PATH); },
+  filename: (req, file, cb) => {
+    const orig = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const safe = orig.replace(/[^a-zA-Z0-9\u00C0-\u00FF () _ . -]/g, '').replace(/\s+/g, '_');
+    cb(null, Date.now() + '_' + safe);
+  }
+}), limits: { fileSize: 20 * 1024 * 1024 } }).single('file');
+
+app.post('/api/galeria/upload', auth.requireAdmin, (req, res) => {
+  uploadGaleria(req, res, (err) => {
+    if (err) return res.status(400).json({ error: 'upload_fallido', detail: err.message });
+    if (!req.file) return res.status(400).json({ error: 'sin_archivo' });
+    res.json({ ok: true, filename: req.file.filename, originalname: req.file.originalname });
+  });
+});
+
+app.get('/api/galeria', (req, res) => {
+  const cat = req.query.categoria || 'all';
+  res.json(store.getGaleria(cat === 'all' ? null : cat));
+});
+
+app.get('/api/galeria/admin', auth.requireAdmin, (req, res) => {
+  res.json(store.getGaleriaAll());
+});
+
+app.get('/api/galeria/:id', (req, res) => {
+  const item = store.getGaleriaById(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'no_existe' });
+  res.json(item);
+});
+
+app.post('/api/galeria', auth.requireAdmin, (req, res) => {
+  const { nombre, categoria, filename, activa, orden } = req.body || {};
+  if (!nombre || !filename) return res.status(400).json({ error: 'nombre_y_filename_requeridos' });
+  const item = store.createGaleriaItem({ nombre, categoria: categoria || 'logos', filename, activa, orden });
+  res.json({ ok: true, item });
+});
+
+app.put('/api/galeria/:id', auth.requireAdmin, (req, res) => {
+  const existente = store.getGaleriaById(Number(req.params.id));
+  if (!existente) return res.status(404).json({ error: 'no_existe' });
+  store.updateGaleriaItem(Number(req.params.id), req.body || {});
+  res.json({ ok: true, item: store.getGaleriaById(Number(req.params.id)) });
+});
+
+app.delete('/api/galeria/:id', auth.requireAdmin, (req, res) => {
+  const item = store.getGaleriaById(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'no_existe' });
+  if (item.filename) {
+    try {
+      const fp = path.join(GALERIA_PATH, item.filename);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    } catch (e) { /* archivo ya no existe o no se puede borrar */ }
+  }
+  store.deleteGaleriaItem(Number(req.params.id));
+  res.json({ ok: true });
+});
+
 // ===================== PROYECTOS / LOTES =====================
 function emitLote(proyectoId, loteId, tipo) {
   events.emitToAdmins('lote_actualizado', { proyectoId: Number(proyectoId), loteId: loteId ? Number(loteId) : null, tipo: tipo || 'update', ts: Date.now() });

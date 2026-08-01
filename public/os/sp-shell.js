@@ -71,6 +71,7 @@
     ]},
     { title: 'Negocio', items: [
       { id: 'proyectos', label: 'Proyectos', icon: 'properties', href: '/os/proyectos.html' },
+      { id: 'galeria', label: 'Galería', icon: 'spark', href: '/os/galeria.html' },
       { id: 'campaigns', label: 'Campañas', icon: 'campaigns', href: '/os/campanas.html' },
       { id: 'campanas-sp', label: 'Campañas SP', icon: 'spark', href: '/os/campanas-sp.html' },
       { id: 'automations', label: 'Automatizaciones', icon: 'automations', href: '/os/automatizaciones.html' },

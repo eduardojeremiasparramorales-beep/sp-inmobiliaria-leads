@@ -241,17 +241,20 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const assets = [
-  { name: 'Fondo de pantalla asesores', file: 'Fondo de pantalla asesores.png', cat: 'fondos', landscape: false },
-  { name: 'Fondo mensaje', file: 'Fondo mensaje.png', cat: 'fondos', landscape: false },
-  { name: 'Logo SP Leons Group', file: 'logo Sp Leons Group.png', cat: 'logos', landscape: false },
-  { name: 'Logo Alexandra', file: 'Logo Alexandra.png', cat: 'logos', landscape: false },
-  { name: 'SP Logo', file: 'SPLogo.jpg', cat: 'logos', landscape: false },
-  { name: 'Ícono SP Leons', file: 'icono.png', cat: 'logos', landscape: false },
-  { name: 'Banner SP Leons Group', file: 'Banner Sp Leons Group.png', cat: 'banners', landscape: true },
-  { name: 'Bienvenida SP Leons Group', file: 'Bienvenida Sp Leons Group.png', cat: 'banners', landscape: true },
-  { name: 'SM Banner', file: 'sm1.png', cat: 'banners', landscape: true }
-];
+let assets = [];
+
+async function fetchAssets(cat) {
+  let url = '/api/galeria';
+  if (cat && cat !== 'all') url += '?categoria=' + encodeURIComponent(cat);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    assets = Array.isArray(j) ? j : [];
+  } catch (e) {
+    assets = [];
+  }
+}
 
 const grid = document.getElementById('grid');
 const pills = document.getElementById('pills');
@@ -274,31 +277,39 @@ function showToast(msg){
 
 function renderGrid(cat){
   currentCat = cat;
-  const filtered = cat === 'all' ? assets : assets.filter(a => a.cat === cat);
+  const filtered = cat === 'all' ? assets : assets.filter(a => a.categoria === cat);
   if(!filtered.length){
     grid.innerHTML = `<div class="empty"><div class="empty-icon">&#128444;</div><div class="empty-msg">Próximamente más recursos</div></div>`;
     return;
   }
-  grid.innerHTML = filtered.map(a => `
-    <div class="item${a.landscape?' item-preview':''}" data-file="${a.file}">
+  grid.innerHTML = filtered.map(a => {
+    const isBanner = a.categoria === 'banners';
+    const catTag = a.categoria === 'fondos' ? 'Fondo' : a.categoria === 'logos' ? 'Logo' : 'Banner';
+    const name = a.nombre || '';
+    const file = a.filename || '';
+    return `<div class="item${isBanner?' item-paysage':''}" data-file="${esc(file)}">
       <div class="item-thumb">
-        <img src="/galeria/assets/${a.file}" alt="${a.name}" loading="lazy">
-        <span class="item-tag">${a.cat === 'fondos' ? 'Fondo' : a.cat === 'logos' ? 'Logo' : 'Banner'}</span>
+        <img src="/galeria/assets/${esc(file)}" alt="${esc(name)}" loading="lazy">
+        <span class="item-tag">${catTag}</span>
       </div>
       <div class="item-info">
-        <span class="item-name">${a.name}</span>
+        <span class="item-name">${esc(name)}</span>
         <div class="item-actions">
-          <a class="btn-download" href="/galeria/assets/${a.file}" download onclick="onDownload(event,'${a.name}')">⬇ Descargar</a>
-          <button class="btn-preview" onclick="event.preventDefault();event.stopPropagation();openPreview('${a.file}','${a.name}')" title="Vista previa">&#x1F50D;</button>
+          <a class="btn-download" href="/galeria/assets/${esc(file)}" download onclick="onDownload(event,'${esc(name)}')">Descargar</a>
+          <button class="btn-preview" onclick="event.preventDefault();event.stopPropagation();openPreview('${esc(file)}','${esc(name)}')" title="Vista previa">&#x1F50D;</button>
         </div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function isBanner(a) { return a && a.categoria === 'banners'; }
+function isLandscape(a) { return a && a.categoria === 'banners'; }
+
 function openPreview(file, name){
-  modalContent.innerHTML = `<img src="/galeria/assets/${file}" alt="${name}">`;
-  modalDownload.href = '/galeria/assets/' + file;
+  modalContent.innerHTML = `<img src="/galeria/assets/${esc(file)}" alt="${esc(name)}">`;
+  modalDownload.href = '/galeria/assets/' + esc(file);
   modalDownload.setAttribute('download', file);
   modalOverlay.classList.add('open');
 }
@@ -336,7 +347,10 @@ modalOverlay.addEventListener('touchmove', function(e){
   if(dy > 80) closePreview();
 });
 
-renderGrid('all');
+(async () => {
+  await fetchAssets('all');
+  renderGrid('all');
+})();
 </script>
 </body>
 </html>
