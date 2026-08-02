@@ -422,7 +422,7 @@ svg { display: block; flex-shrink: 0; }
 .os-topbar__title { font-size: 15px; font-weight: 600; }
 .os-topbar__crumb { font-size: 12px; color: var(--text-3); }
 .os-content { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); }
-.os-content--pad { padding: var(--s4) var(--s5); }
+.os-content--pad { padding: var(--s4) var(--s5) 80px var(--s5); }
 .os-content__max { max-width: 1180px; margin: 0 auto; }
 
 /* --- Right contextual panel --- */
