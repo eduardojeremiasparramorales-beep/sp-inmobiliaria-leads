@@ -61,7 +61,7 @@ function getDatosOperacion() {
     totalLeads: leads.length,
     porEtapa,
     sinRespuestaCount: sinRespuesta.length,
-    sinRespuesta leads: sinRespuesta.slice(0, 10).map(l => ({ id: l.id, nombre: l.customer_name, dias: Math.floor((Date.now() - new Date(l.updated_at || l.created_at).getTime()) / 86400000) })),
+    sinRespuestaLeads: sinRespuesta.slice(0, 10).map(l => ({ id: l.id, nombre: l.customer_name, dias: Math.floor((Date.now() - new Date(l.updated_at || l.created_at).getTime()) / 86400000) })),
     mensajesEntrantes24h: msgsEntrante,
     mensajesSalientes24h: msgsSaliente,
     nuevosHoy,
