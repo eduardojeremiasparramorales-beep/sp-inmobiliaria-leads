@@ -97,36 +97,40 @@
   .field input::placeholder{color:var(--txt-3);font-weight:400}
 
   /* ── PIN dots ── */
-  .pin-row{display:flex;gap:10px;justify-content:center;margin-bottom:24px}
+  .pin-row{display:flex;gap:16px;justify-content:center;margin-bottom:24px}
   .pin-dot{
-    width:52px;height:56px;border-radius:12px;border:1.5px solid var(--glass-border);
-    background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
-    display:grid;place-items:center;
-    transition:border-color .2s,background .2s;
+    width:14px;height:14px;border-radius:50%;border:1.5px solid var(--glass-border);
+    background:var(--glass);
+    transition:border-color .2s,background .2s,box-shadow .2s;
   }
   .pin-dot.active{border-color:var(--gold);background:rgba(200,164,90,.04)}
-  .pin-dot.filled{border-color:var(--gold);background:rgba(200,164,90,.06)}
+  .pin-dot.filled{border-color:var(--gold);background:var(--gold);box-shadow:0 0 10px rgba(200,164,90,.5)}
   .pin-dot.error{border-color:var(--red);animation:shake .35s ease}
-  .pin-dot .circ{width:12px;height:12px;border-radius:50%;background:var(--txt)}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 
   /* ── Keypad (solo PIN) ── */
-  .keypad{width:100%;max-width:280px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .keypad{width:100%;max-width:260px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;justify-items:center}
   .k{
-    height:54px;border-radius:12px;border:none;background:transparent;
-    color:var(--txt);font-size:1.35rem;font-weight:400;font-family:'Inter',sans-serif;
-    cursor:pointer;display:flex;align-items:center;justify-content:center;
-    transition:background .1s;position:relative;
+    width:72px;height:72px;border-radius:50%;border:1px solid var(--glass-border);
+    background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
+    color:var(--txt);font-size:1.6rem;font-weight:500;font-family:'Inter',sans-serif;
+    cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
+    transition:all .12s cubic-bezier(.4,0,0,1);position:relative;line-height:1;
   }
-  .k:active{background:rgba(255,255,255,.06)}
-  .k-del{color:var(--txt-2)}
-  .k-del svg{width:22px;height:22px}
+  .k:active{background:var(--glass-2);transform:scale(.92);border-color:rgba(248,244,230,.2)}
+  .k-num{font-size:1.6rem;font-weight:500;line-height:1}
+  .k-sub{font-size:.5rem;font-weight:500;letter-spacing:.14em;color:var(--txt-3);line-height:1;margin-top:1px}
+  .k-del{color:var(--txt-2);font-size:.9rem;letter-spacing:0}
+  .k-del .k-num{font-size:.9rem;font-weight:500}
+  .k-del .k-sub{font-size:.38rem;letter-spacing:.1em}
+  .k-del:active{color:var(--txt);transform:scale(.92)}
   .k-ok{
     background:var(--grad-gold);color:#0A0A0A;
-    font-weight:600;font-size:.9rem;letter-spacing:.04em;
+    font-weight:700;font-size:.85rem;letter-spacing:.04em;
+    box-shadow:0 4px 20px rgba(212,175,55,.28),inset 0 1px 0 rgba(255,255,255,.35);
   }
-  .k-ok:active{opacity:.8;transform:scale(.96)}
-  .k-ok:disabled{opacity:.25;cursor:not-allowed;transform:none}
+  .k-ok:active{transform:scale(.92)}
+  .k-ok:disabled{opacity:.25;cursor:not-allowed;transform:none;box-shadow:none}
 
   /* ── Bottom button (phone) ── */
   .bottom-btn{
@@ -137,10 +141,11 @@
     width:100%;height:52px;border-radius:12px;border:none;
     background:var(--grad-gold);color:#0A0A0A;
     font-size:.95rem;font-weight:600;font-family:'Inter',sans-serif;letter-spacing:.04em;
-    cursor:pointer;transition:opacity .15s,transform .1s;
+    cursor:pointer;transition:transform .15s cubic-bezier(.4,0,0,1);
+    box-shadow:0 4px 20px rgba(212,175,55,.28),inset 0 1px 0 rgba(255,255,255,.35);
   }
-  .btn-entrar:active{opacity:.85;transform:scale(.98)}
-  .btn-entrar:disabled{opacity:.25;cursor:not-allowed;transform:none}
+  .btn-entrar:active{transform:scale(.97)}
+  .btn-entrar:disabled{opacity:.25;cursor:not-allowed;transform:none;box-shadow:none}
 
   /* ── Mensajes ── */
   .msg{text-align:center;font-size:.78rem;min-height:18px;margin-top:10px;transition:opacity .2s}
@@ -160,10 +165,10 @@
 
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   @media (min-width:768px){
-    .k{height:60px;font-size:1.4rem}
-    .pin-dot{width:58px;height:62px}
+    .k{height:76px;width:76px;font-size:1.7rem}
+    .pin-dot{width:16px;height:16px}
   }
-  @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}.pin-dot .circ,.spin{corner-shape:round}
+  @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}.spin{corner-shape:round}
     [style*="border-radius:50%"],[style*="border-radius: 50%"]{corner-shape:round}}
 
   /* ── Role chips (selector de rol en registro) ── */
@@ -358,9 +363,8 @@
     for(let i=0;i<4;i++){
       const d = $('pd'+i);
       d.className = 'pin-dot';
-      if(i < pin.length){ d.innerHTML = '<div class="circ"></div>'; d.classList.add('filled'); }
-      else if(i === pin.length){ d.classList.add('active'); d.innerHTML = ''; }
-      else { d.innerHTML = ''; }
+      if(i < pin.length){ d.classList.add('filled'); }
+      else if(i === pin.length){ d.classList.add('active'); }
     }
     $('msg2').className = 'msg';
   }
@@ -368,24 +372,28 @@
   // ── Keypad (PIN only) ──
   function renderKeypad(){
     const kp = $('keypad');
-    kp.innerHTML = `
-      <button class="k" data-p="1">1</button>
-      <button class="k" data-p="2">2</button>
-      <button class="k" data-p="3">3</button>
-      <button class="k" data-p="4">4</button>
-      <button class="k" data-p="5">5</button>
-      <button class="k" data-p="6">6</button>
-      <button class="k" data-p="7">7</button>
-      <button class="k" data-p="8">8</button>
-      <button class="k" data-p="9">9</button>
-      <button class="k k-del" id="kBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
-      <button class="k" data-p="0">0</button>
-      <button class="k k-del" id="kDel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg></button>`;
+    const layout = [
+      {n:'1',s:''},  {n:'2',s:'ABC'}, {n:'3',s:'DEF'},
+      {n:'4',s:'GHI'}, {n:'5',s:'JKL'}, {n:'6',s:'MNO'},
+      {n:'7',s:'PQRS'}, {n:'8',s:'TUV'}, {n:'9',s:'WXYZ'},
+    ];
+    let html = layout.map(k =>
+      `<button class="k" data-p="${k.n}"><span class="k-num">${k.n}</span>${k.s ? `<span class="k-sub">${k.s}</span>` : ''}</button>`
+    ).join('');
+    html += `
+      <button class="k k-del" id="kDel"><span class="k-num">⌫</span><span class="k-sub">BORRAR</span></button>
+      <button class="k" data-p="0"><span class="k-num">0</span></button>
+      <button class="k k-ok" id="kOK" disabled>OK</button>`;
+    kp.innerHTML = html;
     kp.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
       if(pin.length<4 && !attempting){ pin+=b.dataset.p; updatePinDots(); if(pin.length===4) procesarPinCompleto(); }
     });
-    $('kBack').onclick = goToPhone;
-    $('kDel').onclick = ()=>{ if(!attempting){ pin=pin.slice(0,-1); updatePinDots(); }};
+    $('kDel').onclick = ()=>{
+      if(!attempting){
+        if(pin.length > 0){ pin=pin.slice(0,-1); updatePinDots(); }
+        else { goToPhone(); }
+      }
+    };
   }
 
   // ── Login ──
