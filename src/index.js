@@ -4598,6 +4598,127 @@ app.post('/api/finanzas/comisiones/:id/pagar', auth.requireAdmin, (req, res) => 
   res.json(finance.marcarComisionPagada(Number(req.params.id)));
 });
 
+// ===================== FASE 3 — DOCS, IA AGENTS, REPUTACIÓN, DASHBOARD BUILDER =====================
+const documents = require('./services/documents');
+const aiAgents = require('./services/ai-agents');
+const reputation = require('./services/reputation');
+const dashboardBuilder = require('./services/dashboard-builder');
+
+// --- Centro Documental ---
+app.get('/api/documentos', auth.requireAuth, (req, res) => {
+  const { tipo, categoria, proyectoId, leadId, busqueda, limite } = req.query;
+  res.json(documents.listarDocumentos({
+    tipo, categoria, proyectoId: Number(proyectoId), leadId: Number(leadId),
+    busqueda, limite: Number(limite),
+  }));
+});
+
+app.get('/api/documentos/:id', auth.requireAuth, (req, res) => {
+  const doc = documents.obtenerDocumento(Number(req.params.id));
+  res.json(doc || { error: 'no_encontrado' });
+});
+
+app.post('/api/documentos', auth.requireAuth, (req, res) => {
+  res.json(documents.crearDocumento(req.body || {}));
+});
+
+app.put('/api/documentos/:id', auth.requireAuth, (req, res) => {
+  res.json(documents.actualizarDocumento(Number(req.params.id), req.body || {}));
+});
+
+app.delete('/api/documentos/:id', auth.requireAuth, (req, res) => {
+  res.json(documents.eliminarDocumento(Number(req.params.id)));
+});
+
+app.get('/api/documentos/buscar/:query', auth.requireAuth, (req, res) => {
+  res.json(documents.buscarDocumentos(req.params.query));
+});
+
+// --- Motor IA Especializado ---
+app.get('/api/ai-agents', auth.requireAuth, (req, res) => {
+  res.json(aiAgents.listarAgentes());
+});
+
+app.post('/api/ai-agents/:id/chat', auth.requireAuth, async (req, res) => {
+  const { mensaje, leadId, vendedorId } = req.body || {};
+  if (!mensaje) return res.status(400).json({ error: 'mensaje requerido' });
+  const r = await aiAgents.chatConAgente(req.params.id, mensaje, { leadId, vendedorId });
+  res.json(r);
+});
+
+// --- Centro de Reputación ---
+app.get('/api/reputacion/nps', auth.requireAdmin, (req, res) => {
+  res.json(reputation.calcularNPS());
+});
+
+app.get('/api/reputacion/encuestas', auth.requireAuth, (req, res) => {
+  const { tipo, vendedorId, limite } = req.query;
+  res.json(reputation.listarEncuestas({ tipo, vendedorId: Number(vendedorId), limite: Number(limite) }));
+});
+
+app.post('/api/reputacion/encuestas', auth.requireAuth, (req, res) => {
+  res.json(reputation.crearEncuesta(req.body || {}));
+});
+
+app.post('/api/reputacion/encuestas/:id/responder', auth.requireAuth, (req, res) => {
+  const { puntuacion, comentario } = req.body || {};
+  res.json(reputation.responderEncuesta(Number(req.params.id), puntuacion, comentario));
+});
+
+app.get('/api/reputacion/referidos', auth.requireAuth, (req, res) => {
+  const { estado, referidorLeadId, limite } = req.query;
+  res.json(reputation.listarReferidos({ estado, referidorLeadId: Number(referidorLeadId), limite: Number(limite) }));
+});
+
+app.post('/api/reputacion/referidos', auth.requireAuth, (req, res) => {
+  res.json(reputation.crearReferido(req.body || {}));
+});
+
+app.put('/api/reputacion/referidos/:id', auth.requireAuth, (req, res) => {
+  res.json(reputation.actualizarReferido(Number(req.params.id), req.body || {}));
+});
+
+app.get('/api/reputacion/stats', auth.requireAdmin, (req, res) => {
+  res.json(reputation.estadisticasReferidos());
+});
+
+// --- Dashboard Builder ---
+app.get('/api/dashboard/widgets', auth.requireAuth, (req, res) => {
+  res.json(dashboardBuilder.getWidgetTypes());
+});
+
+app.get('/api/dashboard/layout', auth.requireAuth, (req, res) => {
+  const userId = req.session && req.session.usuario_id;
+  res.json(dashboardBuilder.getLayout(userId || 0));
+});
+
+app.post('/api/dashboard/layout', auth.requireAuth, (req, res) => {
+  const userId = req.session && req.session.usuario_id;
+  const { widgets } = req.body || {};
+  res.json(dashboardBuilder.saveLayout(userId || 0, widgets || []));
+});
+
+app.post('/api/dashboard/widgets', auth.requireAuth, (req, res) => {
+  const userId = req.session && req.session.usuario_id;
+  const { type, x, y } = req.body || {};
+  res.json(dashboardBuilder.addWidget(userId || 0, type, { x, y }));
+});
+
+app.delete('/api/dashboard/widgets/:id', auth.requireAuth, (req, res) => {
+  const userId = req.session && req.session.usuario_id;
+  res.json(dashboardBuilder.removeWidget(userId || 0, req.params.id));
+});
+
+app.post('/api/dashboard/widgets/:id/move', auth.requireAuth, (req, res) => {
+  const userId = req.session && req.session.usuario_id;
+  const { x, y } = req.body || {};
+  res.json(dashboardBuilder.moveWidget(userId || 0, req.params.id, x, y));
+});
+
+app.get('/api/dashboard/widgets/:type/data', auth.requireAuth, (req, res) => {
+  res.json(dashboardBuilder.fetchWidgetData(req.params.type));
+});
+
 // ===================== VID.A — PANEL DE PLATAFORMA (V2) =====================
 // Separado a propósito de la autenticación de cada negocio (auth.js/sessions): un
 // platform_admin puede ver/crear/suspender TODOS los negocios, así que su sesión NO

@@ -336,6 +336,93 @@ function createNewTables(db) {
     CREATE INDEX IF NOT EXISTS idx_comisiones_vendedor ON comisiones(vendedor_id);
     CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
   `);
+
+  // Fase 3 — Centro Documental
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS documentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT NOT NULL,
+      descripcion TEXT DEFAULT '',
+      tipo TEXT NOT NULL DEFAULT 'otro' CHECK (tipo IN (
+        'escritura', 'contrato', 'render', 'plano', 'licencia',
+        'foto', 'video', 'pdf', 'link', 'otro'
+      )),
+      categoria TEXT DEFAULT 'general' CHECK (categoria IN (
+        'general', 'legal', 'ventas', 'marketing', 'financiero', 'proyecto', 'lead'
+      )),
+      archivo_nombre TEXT DEFAULT '',
+      archivo_path TEXT DEFAULT '',
+      archivo_mime TEXT DEFAULT '',
+      archivo_size INTEGER DEFAULT 0,
+      url_externa TEXT DEFAULT '',
+      proyecto_id INTEGER,
+      lead_id INTEGER,
+      vendedor_id INTEGER,
+      tags TEXT DEFAULT '[]',
+      visible INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
+      FOREIGN KEY (lead_id) REFERENCES leads(id),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_docs_tipo ON documentos(tipo);
+    CREATE INDEX IF NOT EXISTS idx_docs_categoria ON documentos(categoria);
+    CREATE INDEX IF NOT EXISTS idx_docs_proyecto ON documentos(proyecto_id);
+    CREATE INDEX IF NOT EXISTS idx_docs_lead ON documentos(lead_id);
+  `);
+
+  // Fase 3 — Reputación (NPS + Referidos)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS encuestas_satisfaccion (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER,
+      vendedor_id INTEGER,
+      tipo TEXT DEFAULT 'nps' CHECK (tipo IN ('nps', 'csat', 'cierre')),
+      puntuacion INTEGER DEFAULT 0,
+      comentario TEXT DEFAULT '',
+      enviada_at DATETIME DEFAULT (datetime('now')),
+      respondida_at DATETIME,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lead_id) REFERENCES leads(id),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS referidos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referidor_lead_id INTEGER NOT NULL,
+      referido_nombre TEXT NOT NULL,
+      referido_telefono TEXT NOT NULL,
+      referido_email TEXT DEFAULT '',
+      estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'contactado', 'convertido', 'rechazado')),
+      lead_creado_id INTEGER,
+      vendedor_asignado_id INTEGER,
+      recompensa TEXT DEFAULT '',
+      notas TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (referidor_lead_id) REFERENCES leads(id),
+      FOREIGN KEY (lead_creado_id) REFERENCES leads(id),
+      FOREIGN KEY (vendedor_asignado_id) REFERENCES vendedores(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_encuestas_lead ON encuestas_satisfaccion(lead_id);
+    CREATE INDEX IF NOT EXISTS idx_encuestas_tipo ON encuestas_satisfaccion(tipo);
+    CREATE INDEX IF NOT EXISTS idx_referidos_estado ON referidos(estado);
+  `);
+
+  // Fase 3 — Dashboard Builder
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_dashboards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER NOT NULL,
+      widgets TEXT DEFAULT '[]',
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_dashboards_usuario ON user_dashboards(usuario_id);
+  `);
 }
 
 function dropNewTables(db) {
