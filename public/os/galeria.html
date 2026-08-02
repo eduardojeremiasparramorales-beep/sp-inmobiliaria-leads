@@ -63,7 +63,6 @@
   if (!ctx) return;
 
   let items = [];
-  let catFilter = 'all';
 
   async function cargar() {
     const r = await api('/api/galeria/admin');
@@ -76,8 +75,7 @@
   }
 
   function render() {
-    const filtered = catFilter === 'all' ? items : items.filter(i => i.categoria === catFilter);
-    const h = document.querySelector('.os-header');
+    const h = document.querySelector('.os-topbar');
     if (h) { const existing = h.querySelector('.gal-toolbar'); if (existing) existing.remove(); }
     if (h) {
       const tb = document.createElement('div');
@@ -88,10 +86,10 @@
     }
     document.getElementById('btnAdd')?.addEventListener('click', () => abrirModal(null));
 
-    if (!filtered.length) {
+    if (!items.length) {
       ctx.content.innerHTML = '<div class="gal-empty"><h3>✦ Galería de activos de marca</h3><p>Aún no hay assets. Agrega el primero para que aparezca en <a href="/galeria/" style="color:var(--gold)">/galeria/</a>.</p></div>';
     } else {
-      ctx.content.innerHTML = '<div class="gal-grid">' + filtered.map(i => {
+      ctx.content.innerHTML = '<div class="gal-grid">' + items.map(i => {
         const isBanner = i.categoria === 'banners';
         return `<div class="gal-card${i.activa ? '' : ' inactive'}">
           <div class="gal-card__thumb${isBanner ? ' landscape' : ''}">

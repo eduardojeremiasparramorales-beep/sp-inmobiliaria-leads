@@ -304,8 +304,6 @@ function renderGrid(cat){
 }
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function isBanner(a) { return a && a.categoria === 'banners'; }
-function isLandscape(a) { return a && a.categoria === 'banners'; }
 
 function openPreview(file, name){
   modalContent.innerHTML = `<img src="/galeria/assets/${esc(file)}" alt="${esc(name)}">`;
