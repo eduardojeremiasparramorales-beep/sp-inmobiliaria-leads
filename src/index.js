@@ -4527,6 +4527,77 @@ app.post('/api/events/read-all', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ===================== FASE 2 — SP INTELLIGENCE, WORKFLOWS, FINANZAS =====================
+const intelligence = require('./services/intelligence');
+const workflowEngine = require('./services/workflow-engine');
+const finance = require('./services/finance');
+
+// --- SP Intelligence ---
+app.get('/api/intelligence/insights', auth.requireAdmin, async (req, res) => {
+  try {
+    const r = await intelligence.obtenerInsights();
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/intelligence/datos', auth.requireAdmin, (req, res) => {
+  res.json({
+    operacion: intelligence.getDatosOperacion(),
+    vendedores: intelligence.getDatosVendedores(),
+  });
+});
+
+// --- Workflows (extender CRUD existente) ---
+app.get('/api/workflows/:id/executions', auth.requireAdmin, (req, res) => {
+  const logs = store.all(
+    `SELECT * FROM workflow_logs WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 50`,
+    [Number(req.params.id)]
+  );
+  res.json({ executions: logs });
+});
+
+// --- Centro Financiero ---
+app.get('/api/finanzas/resumen', auth.requireAdmin, (req, res) => {
+  const { desde, hasta } = req.query;
+  res.json(finance.obtenerResumen({ desde, hasta }));
+});
+
+app.get('/api/finanzas/transacciones', auth.requireAdmin, (req, res) => {
+  const { tipo, categoria, proyectoId, vendedorId, desde, hasta, limite } = req.query;
+  res.json(finance.listarTransacciones({
+    tipo, categoria, proyectoId: Number(proyectoId), vendedorId: Number(vendedorId),
+    desde, hasta, limite: Number(limite),
+  }));
+});
+
+app.post('/api/finanzas/transacciones', auth.requireAdmin, (req, res) => {
+  const r = finance.crearTransaccion(req.body || {});
+  res.json(r);
+});
+
+app.delete('/api/finanzas/transacciones/:id', auth.requireAdmin, (req, res) => {
+  res.json(finance.eliminarTransaccion(Number(req.params.id)));
+});
+
+app.get('/api/finanzas/comisiones', auth.requireAdmin, (req, res) => {
+  const { vendedorId, estado, desde, limite } = req.query;
+  res.json(finance.listarComisiones({
+    vendedorId: Number(vendedorId), estado, desde, limite: Number(limite),
+  }));
+});
+
+app.post('/api/finanzas/comisiones/calcular', auth.requireAdmin, (req, res) => {
+  const { vendedorId, leadId, montoVenta, porcentaje } = req.body || {};
+  if (!vendedorId || !leadId || !montoVenta) return res.status(400).json({ error: 'faltan_datos' });
+  res.json(finance.calcularComision(vendedorId, leadId, montoVenta, porcentaje || 5));
+});
+
+app.post('/api/finanzas/comisiones/:id/pagar', auth.requireAdmin, (req, res) => {
+  res.json(finance.marcarComisionPagada(Number(req.params.id)));
+});
+
 // ===================== VID.A — PANEL DE PLATAFORMA (V2) =====================
 // Separado a propósito de la autenticación de cada negocio (auth.js/sessions): un
 // platform_admin puede ver/crear/suspender TODOS los negocios, así que su sesión NO

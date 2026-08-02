@@ -294,6 +294,48 @@ function createNewTables(db) {
     CREATE INDEX IF NOT EXISTS idx_system_events_created_at ON system_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_system_events_leido ON system_events(leido);
   `);
+
+  // Fase 2 — Centro Financiero
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transacciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo TEXT NOT NULL CHECK (tipo IN ('ingreso', 'egreso')),
+      categoria TEXT NOT NULL DEFAULT 'venta',
+      concepto TEXT NOT NULL,
+      monto REAL NOT NULL DEFAULT 0,
+      moneda TEXT DEFAULT 'COP',
+      proyecto_id INTEGER,
+      lead_id INTEGER,
+      vendedor_id INTEGER,
+      fecha TEXT DEFAULT (date('now')),
+      notas TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
+      FOREIGN KEY (lead_id) REFERENCES leads(id),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS comisiones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      lead_id INTEGER NOT NULL,
+      monto_venta REAL NOT NULL,
+      porcentaje REAL NOT NULL DEFAULT 5,
+      monto_comision REAL NOT NULL,
+      estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagada', 'cancelada')),
+      fecha_calculo TEXT DEFAULT (date('now')),
+      fecha_pago TEXT,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id),
+      FOREIGN KEY (lead_id) REFERENCES leads(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_transacciones_tipo ON transacciones(tipo);
+    CREATE INDEX IF NOT EXISTS idx_transacciones_fecha ON transacciones(fecha);
+    CREATE INDEX IF NOT EXISTS idx_transacciones_proyecto ON transacciones(proyecto_id);
+    CREATE INDEX IF NOT EXISTS idx_comisiones_vendedor ON comisiones(vendedor_id);
+    CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
+  `);
 }
 
 function dropNewTables(db) {
