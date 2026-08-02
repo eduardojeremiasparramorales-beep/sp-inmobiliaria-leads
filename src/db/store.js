@@ -1199,7 +1199,7 @@ function getLeadAggregates() {
     WHERE first_response_at IS NOT NULL AND created_at IS NOT NULL AND first_response_at >= created_at
   `);
   const porVendedor = all(`
-    SELECT v.id, v.nombre, v.estado,
+    SELECT v.id, v.nombre, v.estado, v.foto,
       COUNT(l.id) AS total,
       SUM(CASE WHEN l.status != 'cerrado' THEN 1 ELSE 0 END) AS activos,
       SUM(CASE WHEN l.etiqueta = 'vendido' THEN 1 ELSE 0 END) AS vendidos
@@ -1208,7 +1208,7 @@ function getLeadAggregates() {
     GROUP BY v.id
     ORDER BY total DESC
   `).map(r => ({
-    id: r.id, nombre: r.nombre, estado: r.estado,
+    id: r.id, nombre: r.nombre, estado: r.estado, foto: r.foto || null,
     total: Number(r.total) || 0, activos: Number(r.activos) || 0, vendidos: Number(r.vendidos) || 0,
     conversion: r.total ? Math.round((Number(r.vendidos) / Number(r.total)) * 100) : 0,
   }));

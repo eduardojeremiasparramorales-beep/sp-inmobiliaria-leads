@@ -161,7 +161,8 @@
   .reg-body{width:100%;max-width:320px;overflow-y:auto;max-height:100%;padding-bottom:12px}
 
   /* ── Footer ── */
-  .foot{position:absolute;bottom:var(--kb,0px);left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.6rem;color:var(--txt-3);letter-spacing:.08em}
+  .foot{position:absolute;bottom:var(--kb,0px);left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.58rem;color:#6D6D6D;letter-spacing:.12em;text-transform:uppercase;font-family:'Inter',sans-serif;font-weight:500}
+  .foot-line{display:block;width:32px;height:1px;background:linear-gradient(90deg,transparent,#C8A45A,transparent);margin:0 auto 6px}
 
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   @media (min-width:768px){
@@ -281,7 +282,7 @@
   <div class="msg" id="msg2"></div>
 </div>
 
-<div class="foot">Línea Patrimonial SP™</div>
+<div class="foot"><span class="foot-line"></span>Desarrollado por Parra Studios</div>
 
 <script>
 (function(){

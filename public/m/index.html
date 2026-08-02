@@ -3561,7 +3561,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         </div>
 
         <button id="btnLogout" style="width:100%;height:48px;border-radius:12px;border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);font-size:15px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;font-family:inherit">${I('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',18)} Cerrar sesión</button>
-        <div style="display:flex;gap:8px;margin-bottom:20px">
+        <div style="display:flex;gap:8px;margin-bottom:calc(var(--nav-h) + var(--safe-b) + 24px)">
           <button id="btnEditarPerfil" style="flex:1;height:44px;border-radius:12px;border:1px solid var(--border-strong);background:var(--bg-2);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;font-family:inherit">${I(SVG.settings,16)} Editar</button>
           <select id="selEstado" style="flex:1;height:44px;border-radius:12px;border:1px solid var(--border-strong);background:var(--bg-2);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;padding:0 10px;outline:none;appearance:none;-webkit-appearance:none">
             ${['activo','ocupado','inactivo','vacaciones'].map(s => `<option value="${s}" ${n.estado===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
