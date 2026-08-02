@@ -152,7 +152,7 @@
   // Modal
   const modal = $('s6Modal');
   const abrir = () => { modal.classList.add('open'); validar(); };
-  const cerrar = () => { modal.classList.remove('open'); $('s6File').value = ''; resetDrop(); validar(); };
+  const cerrar = () => { modal.classList.remove('open'); const fi = getFileInput(); if (fi) fi.value = ''; resetDrop(); validar(); };
   $('s6Publicar').addEventListener('click', abrir);
   $('s6Cerrar').addEventListener('click', cerrar);
   $('s6Cancelar').addEventListener('click', cerrar);
@@ -167,25 +167,26 @@
 
   // Drop zone
   const drop = $('s6Drop');
-  const inputFile = $('s6File');
-  drop.addEventListener('click', () => inputFile.click());
-  inputFile.addEventListener('change', () => { marcarArchivo(inputFile.files[0]); validar(); });
+  function getFileInput() { return drop.querySelector('input[type="file"]'); }
+  drop.addEventListener('click', () => { const fi = getFileInput(); if (fi) fi.click(); });
+  drop.addEventListener('change', () => { const fi = getFileInput(); if (fi && fi.files[0]) { marcarArchivo(fi.files[0]); validar(); } });
   ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('dragging'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('dragging'); }));
   drop.addEventListener('drop', (e) => {
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) { inputFile.files = e.dataTransfer.files; marcarArchivo(f); }
+    if (f) { const fi = getFileInput(); if (fi) fi.files = e.dataTransfer.files; marcarArchivo(f); }
     validar();
   });
   function marcarArchivo(f) {
-    if (f) { drop.classList.add('s6_hasfile'); drop.innerHTML = `<span style="color:var(--green);font-weight:600">${esc(f.name)}</span> <span class="t-dim3" style="font-size:11px">(${fmtBytes(f.size)})</span><input type="file" id="s6File" style="display:none">`; drop.querySelector('input').addEventListener('change', () => marcarArchivo(drop.querySelector('input').files[0])); }
+    if (f) { drop.classList.add('s6_hasfile'); drop.innerHTML = `<span style="color:var(--green);font-weight:600">${esc(f.name)}</span> <span class="t-dim3" style="font-size:11px">(${fmtBytes(f.size)})</span><input type="file" id="s6File" style="display:none">`; const fi = getFileInput(); if (fi) fi.addEventListener('change', () => { if (fi.files[0]) marcarArchivo(fi.files[0]); }); }
     else { resetDrop(); }
   }
-  function resetDrop() { drop.classList.remove('s6_hasfile'); drop.innerHTML = 'Arrastra el archivo aquí o haz clic para elegir<input type="file" id="s6File" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" style="display:none">'; drop.querySelector('input').addEventListener('change', () => marcarArchivo(drop.querySelector('input').files[0])); }
+  function resetDrop() { drop.classList.remove('s6_hasfile'); drop.innerHTML = 'Arrastra el archivo aquí o haz clic para elegir<input type="file" id="s6File" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" style="display:none">'; const fi = getFileInput(); if (fi) fi.addEventListener('change', () => { if (fi.files[0]) marcarArchivo(fi.files[0]); }); }
 
   function validar() {
     const tipoSel = $('s6TipoSel').value;
-    const ok = $('s6Titulo').value.trim() && (tipoSel === 'link' ? $('s6Url').value.trim() : (inputFile.files && inputFile.files[0]));
+    const fi = getFileInput();
+    const ok = $('s6Titulo').value.trim() && (tipoSel === 'link' ? $('s6Url').value.trim() : (fi && fi.files && fi.files[0]));
     $('s6Guardar').disabled = !ok;
   }
   ['s6Titulo', 's6Url'].forEach(id => $(id).addEventListener('input', validar));
@@ -206,7 +207,8 @@
         r = await SPS.api('/api/supervisor/feed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       } else {
         const fd = new FormData();
-        fd.append('archivo', inputFile.files[0]);
+        const fi = getFileInput();
+        fd.append('archivo', fi && fi.files[0]);
         fd.append('titulo', body.titulo); fd.append('descripcion', body.descripcion); fd.append('categoria', body.categoria);
         if (tipoSel === 'video') fd.append('tipo', 'video');
         r = await SPS.api('/api/supervisor/feed/upload', { method: 'POST', body: fd });

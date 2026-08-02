@@ -67,6 +67,7 @@
       { id: 'inbox', label: 'Inbox', icon: 'inbox', href: '/os/inbox.html', badge: 'live' },
       { id: 'crm', label: 'CRM · Leads', icon: 'leads', href: '/os/crm.html' },
       { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', href: '/os/pipeline.html' },
+      { id: 'reservas', label: 'Reservas', icon: 'clock', href: '/os/reservas.html' },
       { id: 'clients', label: 'Clientes', icon: 'clients', href: '/os/clientes.html' },
     ]},
     { title: 'Negocio', items: [
@@ -80,6 +81,7 @@
     ]},
     { title: 'Organización', items: [
       { id: 'feed', label: 'SP Feed', icon: 'spark', href: '/os/feed.html' },
+      { id: 'timeline', label: 'Notificaciones', icon: 'notifications', href: '/os/timeline.html' },
       { id: 'ia-chat', label: 'Chat IA', icon: 'ai', href: '/os/ia-chat.html', admin: true },
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
       { id: 'team-chat', label: 'Chat Interno', icon: 'msg', href: '/os/equipo-interno.html', admin: true },

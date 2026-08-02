@@ -149,16 +149,16 @@
 
     const listaEl = document.getElementById('saLista');
     if (!list.length) { listaEl.innerHTML = '<div class="empty">Ninguna alerta coincide con los filtros.</div>'; return; }
-    listaEl.innerHTML = list.map((a, i) => {
+    listaEl.innerHTML = list.map(a => {
       const tipoInfo = TIPOS[a.tipo] || { label: String(a.tipo), color: 'tag--fade' };
       const clsLeido = a.leida ? 'lero' : '';
-      return `<div class="card card--float card--ripple u-row u-gap3 ${clsLeido}" style="align-items:flex-start;padding:calc(var(--s1)+4px) var(--s2);margin-bottom:var(--s1);cursor:pointer" onclick="s5_leer(${a.id},${i})" data-alert-id="${a.id}">
-        <div class="${a.leida ? 'avtar avtar--faded' : 'avtar'}" style="flex-shrink:0;background:var(--gold);width:24px;height:24px;font-size:12px" title="${tipo.label}">!</div>
+      return `<div class="card card--float card--ripple u-row u-gap3 ${clsLeido}" style="align-items:flex-start;padding:calc(var(--s1)+4px) var(--s2);margin-bottom:var(--s1);cursor:pointer" data-alert-id="${a.id}">
+        <div class="${a.leida ? 'avatar avatar--sm' : 'avatar avatar--sm'}" style="flex-shrink:0;background:var(--gold);width:24px;height:24px;font-size:12px" title="${esc(tipoInfo.label)}">!</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:600">${escapeHtml(a.titulo)}</div>
-          <div style="font-size:12px;color:var(--text-2);margin-top:2px;word-break:break-word">${escapeHtml(a.cuerpo || '')}</div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:4px" class="u-row u-gap2" style="align-items:center">
-            <span class="tag ${tipo.color}" style="flex-shrink:0">${tipo.label}</span>
+          <div style="font-size:14px;font-weight:600">${esc(a.titulo)}</div>
+          <div style="font-size:12px;color:var(--text-2);margin-top:2px;word-break:break-word">${esc(a.cuerpo || '')}</div>
+          <div class="u-row u-gap2" style="font-size:11px;color:var(--text-3);margin-top:4px;align-items:center">
+            <span class="tag ${tipoInfo.color}" style="flex-shrink:0">${tipoInfo.label}</span>
             <span>${fmt.ts(a.created_at)}</span>
             ${a.leida ? '<span class="t-dim3">· Leída</span>' : '<span style="color:var(--gold);font-weight:600">· No leída</span>'}
           </div>
@@ -166,10 +166,13 @@
         ${!a.leida ? `<span style="flex-shrink:0;width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:6px" title="Sin leer"></span>` : ''}
       </div>`;
     }).join('');
+    listaEl.querySelectorAll('[data-alert-id]').forEach(el => {
+      el.addEventListener('click', () => s5_leer(Number(el.getAttribute('data-alert-id'))));
+    });
   }
 
-  function s5_leer(id, idx) {
-    const a = alertas[idx];
+  function s5_leer(id) {
+    const a = alertas.find(x => x.id === id);
     if (!a) return;
     a.leida = 1;
     if (sinLeer > 0) sinLeer--;
@@ -196,7 +199,7 @@
     } catch (e) { /* no soporta SSE */ }
   }
 
-  function escapeHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  // esc() is imported from SPS.mount()
 })();
 </script>
 </body>

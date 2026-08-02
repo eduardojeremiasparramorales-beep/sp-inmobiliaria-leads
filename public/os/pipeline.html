@@ -65,8 +65,17 @@
   }
 
   async function cargar() {
-    const data = await api('/api/leads');
+    const [data, scoresData] = await Promise.all([
+      api('/api/leads'),
+      api('/api/leads/calientes?limite=200'),
+    ]);
     leads = Array.isArray(data) ? data : [];
+    // Merge scores into leads
+    const scores = Array.isArray(scoresData) ? scoresData : [];
+    scores.forEach(s => {
+      const lead = leads.find(l => l.id === s.lead_id);
+      if (lead) lead.score = s.score;
+    });
     render();
   }
 
@@ -101,12 +110,18 @@
 
   function card(l) {
     const idx = ORDEN.indexOf(l.etiqueta || 'sin_clasificar');
+    const score = l.score || 0;
+    const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--text-3)';
+    const scoreBar = `<div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+      <div style="flex:1;height:3px;border-radius:2px;background:var(--bg-4);overflow:hidden"><div style="height:100%;border-radius:2px;background:${scoreColor};width:${score}%"></div></div>
+      <span style="font-size:10px;font-weight:600;color:${scoreColor};font-variant-numeric:tabular-nums">${score}</span>
+    </div>`;
     return `
       <div class="kb-card" draggable="true" data-id="${l.id}">
         <div class="kb-card__top">
           <div class="avatar avatar--sm" style="background:${avatarColor(l.customer_name)};width:30px;height:30px;font-size:11px">${initials(l.customer_name)}</div>
           <span class="kb-card__name">${esc(l.customer_name || 'Sin nombre')}</span>
-          ${l.score >= 70 ? '<span title="Lead prioritario" style="font-size:12px">🔥</span>' : ''}
+          ${score >= 70 ? '<span title="Lead caliente" style="font-size:12px">🔥</span>' : ''}
         </div>
         <div class="kb-card__meta">
           <span>${esc(fmtPhone(l.customer_phone))}</span>
@@ -115,7 +130,8 @@
         <div class="kb-card__meta">
           <span>${esc(l.assigned_to_nombre || 'Sin asignar')}</span>
         </div>
-        <div class="kb-card__actions">
+        ${scoreBar}
+        <div class="kb-card__actions" style="margin-top:8px">
           <button class="kb-move" data-id="${l.id}" data-dir="prev" ${idx <= 0 ? 'disabled' : ''} title="Etapa anterior">‹</button>
           <a class="kb-chat" href="/os/inbox.html">Chat</a>
           <button class="kb-move" data-id="${l.id}" data-dir="next" ${idx >= ORDEN.length - 1 ? 'disabled' : ''} title="Siguiente etapa">›</button>

@@ -4447,6 +4447,86 @@ function ensureSupervisor() {
   }
 }
 
+// ===================== FASE 1 — RESERVAS, LEAD SCORING, TIMELINE =====================
+const reservas = require('./services/reservas');
+const leadScoring = require('./services/lead-scoring');
+const timeline = require('./services/timeline');
+
+// --- Reservas ---
+app.get('/api/reservas', auth.requireAuth, (req, res) => {
+  const { estado } = req.query;
+  res.json(reservas.listarReservas(estado));
+});
+
+app.get('/api/reservas/:leadId', auth.requireAuth, (req, res) => {
+  const r = reservas.obtenerReserva(Number(req.params.leadId));
+  res.json(r || { activa: false });
+});
+
+app.post('/api/reservas', auth.requireAuth, (req, res) => {
+  const { leadId, horas, loteId, proyectoId } = req.body || {};
+  if (!leadId) return res.status(400).json({ error: 'leadId requerido' });
+  const r = reservas.crearReserva(leadId, {
+    horas: horas || 48,
+    loteId, proyectoId,
+    vendedorId: req.session && req.session.vendedor_id,
+  });
+  res.json(r);
+});
+
+app.post('/api/reservas/:id/confirmar', auth.requireAuth, (req, res) => {
+  res.json(reservas.confirmarVenta(Number(req.params.id)));
+});
+
+app.post('/api/reservas/:id/extender', auth.requireAuth, (req, res) => {
+  const { horas } = req.body || {};
+  res.json(reservas.extenderReserva(Number(req.params.id), horas || 24));
+});
+
+app.post('/api/reservas/:id/cancelar', auth.requireAuth, (req, res) => {
+  res.json(reservas.cancelarReserva(Number(req.params.id)));
+});
+
+// --- Lead Scoring ---
+app.get('/api/leads/:id/score', auth.requireAuth, (req, res) => {
+  const s = leadScoring.obtenerScore(Number(req.params.id));
+  res.json(s || { score: 0, factors: {} });
+});
+
+app.get('/api/leads/calientes', auth.requireAdmin, (req, res) => {
+  const limite = Number(req.query.limite) || 20;
+  res.json(leadScoring.leadsCalientes(limite));
+});
+
+app.post('/api/leads/recalcular-scores', auth.requireAdmin, (req, res) => {
+  const count = leadScoring.recalcularTodos();
+  res.json({ ok: true, recalculados: count });
+});
+
+// --- Timeline / Centro de Notificaciones ---
+app.get('/api/events', auth.requireAuth, (req, res) => {
+  const { tipo, categoria, entidad, desde, limite, soloNoLeidos } = req.query;
+  res.json(timeline.obtenerEventos({
+    tipo, categoria, entidad, desde,
+    limite: Number(limite) || 50,
+    soloNoLeidos: soloNoLeidos === '1',
+  }));
+});
+
+app.get('/api/events/unread-count', auth.requireAuth, (req, res) => {
+  res.json({ count: timeline.contarNoLeidos() });
+});
+
+app.post('/api/events/:id/read', auth.requireAuth, (req, res) => {
+  timeline.marcarLeido(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+app.post('/api/events/read-all', auth.requireAuth, (req, res) => {
+  timeline.marcarTodosLeidos();
+  res.json({ ok: true });
+});
+
 // ===================== VID.A — PANEL DE PLATAFORMA (V2) =====================
 // Separado a propósito de la autenticación de cada negocio (auth.js/sessions): un
 // platform_admin puede ver/crear/suspender TODOS los negocios, así que su sesión NO
@@ -4619,6 +4699,10 @@ function ensurePlatformAdmin() {
   setInterval(() => { runForAllTenants(() => checkRecordatorios()).catch(e => console.error('[SCHED] checkRecordatorios:', e.message)); }, 60000);
   setInterval(() => { runForAllTenants(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS)).catch(e => console.error('[SCHED] cleanExpiredSessions:', e.message)); }, CFG.SESSION_CLEANUP_INTERVAL);
   setInterval(() => { runForAllTenants(() => store.purgeOldFeedEvents(90)).catch(e => console.error('[SCHED] purgeOldFeedEvents:', e.message)); }, 6 * 60 * 60 * 1000);
+  // Reservas: verificar vencimientos cada 5 min
+  setInterval(() => { runForAllTenants(() => reservas.verificarVencidas()).catch(e => console.error('[SCHED] reservas:', e.message)); }, 5 * 60 * 1000);
+  // Lead scoring: recalcular scores cada 10 min
+  setInterval(() => { runForAllTenants(() => leadScoring.recalcularTodos()).catch(e => console.error('[SCHED] leadScoring:', e.message)); }, 10 * 60 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
   require('./services/scheduler').start(buildMensajeConFirma, runForAllTenants);
 })();

@@ -201,7 +201,12 @@
     document.getElementById('btnCerrar')?.addEventListener('click', async () => {
       const btn = document.getElementById('btnCerrar');
       btn.disabled = true; btn.textContent = '…';
-      const r = await SPS.api(`/api/leads/${c.id}/cerrar`, { method: 'POST' });
+      let r;
+      if (c._type === 'conversation') {
+        r = await SPS.api(`/api/inbox/conversations/${c.id}/close`, { method: 'POST' });
+      } else {
+        r = await SPS.api(`/api/leads/${c.id}/cerrar`, { method: 'POST' });
+      }
       if (r && r.ok) {
         SPS.toast('Conversación archivada', 'ok');
         actual = null;

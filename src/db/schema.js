@@ -233,6 +233,67 @@ function createNewTables(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_events_categoria ON feed_events(categoria)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_events_lead ON feed_events(lead_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_feed_reactions_feed ON feed_reactions(feed_id)`);
+
+  // Fase 1 — Reservas con countdown
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reservas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL UNIQUE,
+      lote_id INTEGER,
+      proyecto_id INTEGER,
+      vendedor_id INTEGER,
+      horas_limite INTEGER DEFAULT 48,
+      fecha_inicio DATETIME DEFAULT (datetime('now')),
+      fecha_vence DATETIME,
+      estado TEXT DEFAULT 'activa' CHECK (estado IN ('activa', 'vencida', 'completada', 'cancelada')),
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lead_id) REFERENCES leads(id),
+      FOREIGN KEY (lote_id) REFERENCES lotes(id),
+      FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_reservas_estado ON reservas(estado);
+    CREATE INDEX IF NOT EXISTS idx_reservas_lead ON reservas(lead_id);
+    CREATE INDEX IF NOT EXISTS idx_reservas_vence ON reservas(fecha_vence);
+  `);
+
+  // Fase 1 — Lead Scoring
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lead_scores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL UNIQUE,
+      score INTEGER DEFAULT 0,
+      factors TEXT DEFAULT '{}',
+      calculated_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (lead_id) REFERENCES leads(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_lead_scores_lead ON lead_scores(lead_id);
+    CREATE INDEX IF NOT EXISTS idx_lead_scores_score ON lead_scores(score DESC);
+  `);
+
+  // Fase 1 — Timeline de eventos del sistema
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo TEXT NOT NULL,
+      categoria TEXT NOT NULL DEFAULT 'operaciones',
+      entidad TEXT DEFAULT '',
+      entidad_id INTEGER,
+      actor_id INTEGER,
+      actor_nombre TEXT DEFAULT '',
+      titulo TEXT NOT NULL,
+      descripcion TEXT DEFAULT '',
+      datos TEXT DEFAULT '{}',
+      leido INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (actor_id) REFERENCES vendedores(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_system_events_tipo ON system_events(tipo);
+    CREATE INDEX IF NOT EXISTS idx_system_events_categoria ON system_events(categoria);
+    CREATE INDEX IF NOT EXISTS idx_system_events_created_at ON system_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_system_events_leido ON system_events(leido);
+  `);
 }
 
 function dropNewTables(db) {
