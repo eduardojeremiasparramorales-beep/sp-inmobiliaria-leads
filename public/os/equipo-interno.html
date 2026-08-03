@@ -103,6 +103,13 @@
     if(Number(id)===0) return {nombre:'Admin',foto:null};
     return vendedores.find(v=>Number(v.id)===Number(id))||{nombre:'Asesor',foto:null};
   }
+  function eqHexToRgba(hex,a){
+    const c=hex.replace('#','');
+    const r=parseInt(c.substring(0,2),16);
+    const g=parseInt(c.substring(2,4),16);
+    const b=parseInt(c.substring(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
   function eqDayLabel(ts){
     if(!ts) return '';
     const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return '';
@@ -260,10 +267,12 @@
         html += `<div class="eq-msg-row ${isAdmin ? 'mio' : 'otro'}"><div class="bubble bubble--admin" style="max-width:70%;opacity:.5;font-style:italic"><span>Mensaje eliminado</span><div class="bubble__t">${hhmm(m.created_at)}</div></div></div>`;
         return;
       }
+      const vc = eqColor(m.from_vendedor_id);
+      const bubBg = isAdmin ? '' : `background:${eqHexToRgba(vc, .15)};border-left:3px solid ${vc};`;
       html += `<div class="eq-msg-row ${isAdmin ? 'mio' : 'otro'}${grouped ? ' eq-msg-grouped' : ''}" data-msgid="${m.id}">
         ${!isAdmin ? `<div class="eq-avatar" style="${avatarBg}">${avatarContent}</div>` : ''}
-        <div class="bubble ${isAdmin ? 'bubble--admin' : 'bubble--in'}" style="max-width:70%;${isAdmin ? '' : 'background:' + eqColor(m.from_vendedor_id)}">
-          ${!isAdmin && !grouped ? `<div style="font-size:10.5px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:2px">${esc(v.nombre)}</div>` : ''}
+        <div class="bubble ${isAdmin ? 'bubble--admin' : 'bubble--in'}" style="max-width:70%;${bubBg}">
+          ${!isAdmin && !grouped ? `<div style="font-size:10.5px;font-weight:700;color:${vc};margin-bottom:2px">${esc(v.nombre)}</div>` : ''}
           ${renderMedia(m)}
           ${m.body ? `<span>${esc(m.body)}${pinIcon}</span>` : ''}
           <div class="bubble__t">${hhmm(m.created_at)}</div>

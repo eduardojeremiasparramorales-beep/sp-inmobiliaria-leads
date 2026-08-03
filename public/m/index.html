@@ -1122,6 +1122,13 @@ function eqFindVendedor(id){
   if(Number(id)===0) return {nombre:'Admin',foto:null};
   return _eqAsesores.find(v=>Number(v.id)===Number(id))||{nombre:'Asesor',foto:null};
 }
+function eqHexToRgba(hex,a){
+  const c=hex.replace('#','');
+  const r=parseInt(c.substring(0,2),16);
+  const g=parseInt(c.substring(2,4),16);
+  const b=parseInt(c.substring(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
 function eqDayLabel(ts){
   if(!ts) return '';
   const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return '';
@@ -1134,17 +1141,18 @@ function eqMsgHTML(m, idx, arr){
   const mio=esMio(m);
   const hora=horaCorta(m.created_at);
   if(m.deleted) return `<div class="eq-msg-row ${mio?'mio':'otro'}"><div class="bub bub--${mio?'out':'in'}" style="max-width:75%;opacity:.5;font-style:italic"><span class="bub-body">Mensaje eliminado</span><div class="bub__t">${hora}</div></div></div>`;
-  // Check if grouped with previous message from same sender
   const prev=arr[idx-1];
   const grouped=prev && !prev.deleted && prev.from_vendedor_id===m.from_vendedor_id && (new Date(String(m.created_at).replace(' ','T')+'Z')-new Date(String(prev.created_at).replace(' ','T')+'Z'))<120000;
   const v=eqFindVendedor(m.from_vendedor_id);
   const avatarBg=v.foto?'':`background:${eqColor(m.from_vendedor_id)}`;
   const avatarContent=v.foto?`<img src="${esc(v.foto)}" alt="">`:initials(v.nombre);
   const pinIcon=m.pinned_at?' 📌':'';
+  const vc=eqColor(m.from_vendedor_id);
+  const bubBg=mio?'':`background:${eqHexToRgba(vc,.15)};border-left:3px solid ${vc};`;
   return `<div class="eq-msg-row ${mio?'mio':'otro'}${grouped?' eq-msg-grouped':''}" data-msgid="${m.id}">
     ${!mio?`<div class="eq-avatar" style="${avatarBg}">${avatarContent}</div>`:''}
-    <div class="bub bub--${mio?'out':'in'}" style="max-width:75%;${mio?'':'background:'+eqColor(m.from_vendedor_id)}">
-      ${!mio&&!grouped?`<div style="font-size:10.5px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:2px">${esc(v.nombre)}</div>`:''}
+    <div class="bub bub--${mio?'out':'in'}" style="max-width:75%;${bubBg}">
+      ${!mio&&!grouped?`<div style="font-size:10.5px;font-weight:700;color:${vc};margin-bottom:2px">${esc(v.nombre)}</div>`:''}
       ${eqQuoteHTML(m)}
       ${eqMediaHTML(m)}
       ${m.body?`<span class="bub-body">${esc(m.body)}${pinIcon}</span>`:''}
