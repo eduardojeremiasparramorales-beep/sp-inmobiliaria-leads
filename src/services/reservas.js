@@ -133,13 +133,13 @@ function listarReservas(estado) {
   ensureTable();
   const where = estado ? `WHERE r.estado = '${estado}'` : `WHERE r.estado IN ('activa', 'vencida')`;
   return store.all(
-    `SELECT r.*, l.numero as lote_numero, p.nombre as proyecto_nombre, v.nombre as vendedor_nombre,
-            c.customer_name as lead_nombre, c.customer_phone as lead_telefono
+     `SELECT r.*, l.numero as lote_numero, p.nombre as proyecto_nombre, v.nombre as vendedor_nombre,
+            ld.customer_name as lead_nombre, ld.customer_phone as lead_telefono
      FROM reservas r
      LEFT JOIN lotes l ON r.lote_id = l.id
      LEFT JOIN proyectos p ON r.proyecto_id = p.id
      LEFT JOIN vendedores v ON r.vendedor_id = v.id
-     LEFT JOIN conversations c ON r.lead_id = c.id
+     LEFT JOIN leads ld ON r.lead_id = ld.id
      ${where}
      ORDER BY r.fecha_vence ASC`
   );
