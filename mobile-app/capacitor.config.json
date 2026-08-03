@@ -3,8 +3,6 @@
   "appName": "Leons Group",
   "webDir": "www",
   "server": {
-    "url": "https://spcrm.duckdns.org",
-    "cleartext": false,
     "androidScheme": "https"
   },
   "android": {
