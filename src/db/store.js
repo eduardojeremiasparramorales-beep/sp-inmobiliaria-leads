@@ -516,6 +516,10 @@ function createSchema() {
   ensureColumn('team_messages', 'reply_to_id', 'INTEGER'); // respuesta a otro mensaje
   ensureColumn('team_messages', 'deleted', 'INTEGER');     // soft delete (0=no, 1=borrado)
   ensureColumn('team_messages', 'deleted_by', 'TEXT');     // quién borró
+  ensureColumn('team_messages', 'media_type', 'TEXT');     // image, audio, video, document
+  ensureColumn('team_messages', 'media_url', 'TEXT');      // URL/base64 del media adjunto
+  ensureColumn('team_messages', 'pinned_at', 'DATETIME');  // mensaje fijado
+  ensureColumn('team_messages', 'pinned_by', 'INTEGER');   // quién fijó (0=admin)
   execSQL(`CREATE INDEX IF NOT EXISTS idx_team_conv ON team_messages(from_vendedor_id, to_vendedor_id, id)`);
 
   // Reacciones del chat interno
@@ -792,8 +796,10 @@ function saveTeamMessage(fromVendedorId, fromNombre, body, opts = {}) {
   const mentions = Array.isArray(opts.mentions) && opts.mentions.length ? JSON.stringify(opts.mentions) : null;
   const leadRef = opts.leadRef != null ? Number(opts.leadRef) : null;
   const replyTo = opts.replyToId != null ? Number(opts.replyToId) : null;
-  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo]);
+  const mediaType = opts.mediaType || null;
+  const mediaUrl = opts.mediaUrl || null;
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo, mediaType, mediaUrl]);
   return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id ORDER BY tm.id DESC LIMIT 1');
 }
 // Canal general (to_vendedor_id IS NULL)
@@ -942,6 +948,29 @@ function deleteTeamMessage(messageId, byName, mode) {
     run('UPDATE team_messages SET deleted = 1, deleted_by = ? WHERE id = ?', [byName || '', messageId]);
   }
   return one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
+}
+
+// --- Pin de mensajes del equipo ---
+function pinTeamMessage(messageId, vendedorId) {
+  const msg = one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
+  if (!msg) return null;
+  if (msg.pinned_at) {
+    run('UPDATE team_messages SET pinned_at = NULL, pinned_by = NULL WHERE id = ?', [messageId]);
+    return { pinned: false };
+  }
+  run("UPDATE team_messages SET pinned_at = datetime('now'), pinned_by = ? WHERE id = ?", [vendedorId || 0, messageId]);
+  return { pinned: true };
+}
+function getPinnedTeamMessage(channel) {
+  if (channel === 'general') {
+    return one('SELECT tm.*, vf.nombre AS from_nombre_full FROM team_messages tm LEFT JOIN vendedores vf ON tm.from_vendedor_id = vf.id WHERE tm.to_vendedor_id IS NULL AND tm.pinned_at IS NOT NULL AND (tm.deleted IS NULL OR tm.deleted = 0) ORDER BY tm.pinned_at DESC LIMIT 1');
+  }
+  // DM: channel = "a_b" where a and b are vendedor IDs
+  if (channel && channel.includes('_')) {
+    const [a, b] = channel.split('_').map(Number);
+    return one('SELECT tm.*, vf.nombre AS from_nombre_full FROM team_messages tm LEFT JOIN vendedores vf ON tm.from_vendedor_id = vf.id WHERE tm.to_vendedor_id IS NOT NULL AND ((tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?) OR (tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?)) AND tm.pinned_at IS NOT NULL AND (tm.deleted IS NULL OR tm.deleted = 0) ORDER BY tm.pinned_at DESC LIMIT 1', [a, b, b, a]);
+  }
+  return null;
 }
 
 // --- Presencia ---
@@ -3115,6 +3144,7 @@ module.exports = {
   createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
   saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, markTeamGeneralRead, getTeamGeneralLastRead, countTeamUnread, getAllTeamMessagesForAdmin, getAdminTeamConversations,
   saveTeamReaction, removeTeamReaction, getTeamReactionsForMessages, deleteTeamMessage, updatePresence, getPresenceMap,
+  pinTeamMessage, getPinnedTeamMessage,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
   getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,
   // Campañas SP

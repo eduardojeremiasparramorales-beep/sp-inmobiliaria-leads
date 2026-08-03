@@ -196,6 +196,50 @@
   .bub-reaction:active{ transform:scale(.9); }
   .r-count{ font-size:10px; color:var(--text-3); }
 
+  /* Eq date separator */
+  .eq-daysep{ align-self:center; flex-shrink:0; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:10px 0 6px; }
+
+  /* Eq avatar in messages */
+  .eq-msg-row{ display:flex; gap:8px; margin-bottom:4px; align-items:flex-end; }
+  .eq-msg-row.mio{ justify-content:flex-end; }
+  .eq-msg-row.otro{ justify-content:flex-start; }
+  .eq-avatar{ width:30px; height:30px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size:10px; font-weight:700; color:#fff; overflow:hidden; margin-bottom:2px; }
+  .eq-avatar img{ width:100%; height:100%; object-fit:cover; }
+  .eq-msg-row.mio .eq-avatar{ display:none; }
+  .eq-msg-grouped .eq-avatar{ visibility:hidden; }
+  .eq-msg-grouped{ margin-bottom:1px !important; }
+  .eq-msg-row.mio .eq-msg-grouped{ margin-bottom:1px !important; }
+
+  /* Eq pin banner */
+  .eq-pin-banner{ display:none; padding:8px 14px; background:rgba(200,164,90,.08); border-bottom:1px solid var(--border-soft); cursor:pointer; }
+  .eq-pin-banner.show{ display:flex; align-items:center; gap:8px; }
+  .eq-pin-banner__icon{ font-size:14px; flex-shrink:0; }
+  .eq-pin-banner__text{ flex:1; min-width:0; }
+  .eq-pin-banner__label{ font-size:10px; color:var(--gold); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .eq-pin-banner__body{ font-size:12px; color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .eq-pin-banner__clear{ background:none; border:none; color:var(--text-3); font-size:16px; padding:4px; cursor:pointer; }
+
+  /* Eq emoji picker */
+  .eq-emoji-picker{ display:none; position:absolute; bottom:calc(100% + 8px); right:0; background:var(--bg-2); border:1px solid var(--border); border-radius:14px; padding:6px; gap:4px; flex-wrap:wrap; width:200px; box-shadow:0 8px 30px rgba(0,0,0,.5); z-index:20; }
+  .eq-emoji-picker.show{ display:flex; }
+  .eq-emoji-btn{ width:32px; height:32px; border-radius:8px; border:none; background:none; font-size:18px; cursor:pointer; display:grid; place-items:center; transition:background .12s; }
+  .eq-emoji-btn:active{ background:var(--bg-4); transform:scale(.9); }
+
+  /* Eq scroll to bottom */
+  .eq-scroll-bottom{ position:absolute; bottom:80px; right:14px; width:36px; height:36px; border-radius:50%; background:var(--bg-2); border:1px solid var(--border); display:none; place-items:center; box-shadow:0 4px 16px rgba(0,0,0,.4); z-index:10; cursor:pointer; color:var(--text-2); }
+  .eq-scroll-bottom.show{ display:grid; }
+  .eq-scroll-bottom svg{ width:18px; height:18px; }
+
+  /* Eq audio record bar */
+  .eq-rec-bar{ display:none; align-items:center; gap:8px; padding:8px 14px; background:rgba(220,60,60,.08); border-top:1px solid rgba(220,60,60,.2); }
+  .eq-rec-bar.show{ display:flex; }
+  .eq-rec-dot{ width:8px; height:8px; border-radius:50%; background:#e04040; animation:eqRecPulse 1s infinite; }
+  @keyframes eqRecPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
+  .eq-rec-time{ font-size:13px; color:#e04040; font-weight:600; font-variant-numeric:tabular-nums; min-width:40px; }
+  .eq-rec-cancel{ background:none; border:none; color:var(--text-3); font-size:13px; cursor:pointer; padding:4px 8px; }
+  .eq-rec-send{ width:34px; height:34px; border-radius:50%; border:none; background:var(--gold); color:#0A0A0A; display:grid; place-items:center; cursor:pointer; margin-left:auto; }
+  .eq-rec-send svg{ width:16px; height:16px; }
+
   /* Eq reply bar */
   #eqReplyBar.show{ display:flex !important; }
 
@@ -672,12 +716,21 @@
       <div class="eq-typing" id="eqTyping"><div class="eq-typing__dots"><span></span><span></span><span></span></div><span id="eqTypingName"></span></div>
     </div>
     <div id="eqTabs" style="display:flex;gap:6px;padding:8px 12px 4px;overflow-x:auto;border-bottom:1px solid var(--border-soft)"></div>
+    <div id="eqPinBanner" class="eq-pin-banner"></div>
     <div id="eqReplyBar" style="display:none;padding:8px 14px;background:rgba(200,164,90,.08);border-top:1px solid var(--gold);border-bottom:1px solid var(--border-soft);align-items:center;gap:8px">
       <div style="flex:1;min-width:0"><div id="eqReplyLabel" style="font-size:11px;font-weight:700;color:var(--gold)"></div><div id="eqReplyPreview" style="font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div></div>
       <button onclick="eqCancelReply()" style="background:none;border:none;color:var(--text-3);font-size:18px;cursor:pointer;padding:4px">✕</button>
     </div>
-    <div class="m-scroll" id="eqMsgs" style="padding:12px 14px"></div>
-    <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border)">
+    <div class="m-scroll" id="eqMsgs" style="padding:12px 14px;position:relative"></div>
+    <button class="eq-scroll-bottom" id="eqScrollBtn">${I(SVG.arrowUp,18)}</button>
+    <div id="eqRecBar" class="eq-rec-bar">
+      <div class="eq-rec-dot"></div>
+      <span class="eq-rec-time" id="eqRecTime">0:00</span>
+      <button class="eq-rec-cancel" id="eqRecCancel">Cancelar</button>
+      <button class="eq-rec-send" id="eqRecSend">${I(SVG.send,16)}</button>
+    </div>
+    <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border);position:relative">
+      <button id="eqMicBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0">${I(SVG.mic,18)}</button>
       <textarea id="eqInput" placeholder="Mensaje al equipo…" rows="1" style="flex:1;min-height:40px;max-height:100px;padding:10px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
       <button id="eqSend" style="width:42px;height:42px;border-radius:50%;border:none;background:var(--grad-gold);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
     </div>
@@ -1057,23 +1110,58 @@ function eqQuoteHTML(m){
   const label=m.reply_to_from||'Asesor';
   return `<div style="margin-bottom:4px;border-left:3px solid var(--gold);padding:4px 8px;font-size:11.5px;color:var(--text-3);background:rgba(200,164,90,.06);border-radius:4px"><span style="color:var(--gold);font-weight:600">${esc(label)}</span><br>${esc((m.reply_to_body||'').slice(0,100))}</div>`;
 }
-function eqMsgHTML(m){
+function eqMediaHTML(m){
+  if(!m.media_type||!m.media_url) return '';
+  if(m.media_type==='audio') return `<div class="eq-audio-wrap" style="margin-top:4px"><audio controls preload="none" src="${esc(m.media_url)}" style="width:200px;height:36px;border-radius:8px"></audio></div>`;
+  if(m.media_type==='image') return `<div style="margin-top:4px"><img src="${esc(m.media_url)}" style="max-width:200px;border-radius:10px;display:block" loading="lazy"></div>`;
+  if(m.media_type==='video') return `<div style="margin-top:4px"><video src="${esc(m.media_url)}" controls style="max-width:200px;border-radius:10px;display:block"></video></div>`;
+  if(m.media_type==='document') return `<a href="${esc(m.media_url)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:8px 12px;background:rgba(200,164,90,.1);border:1px solid var(--gold);border-radius:10px;color:var(--gold);font-size:12px;text-decoration:none">📄 Documento</a>`;
+  return '';
+}
+function eqFindVendedor(id){
+  if(Number(id)===0) return {nombre:'Admin',foto:null};
+  return _eqAsesores.find(v=>Number(v.id)===Number(id))||{nombre:'Asesor',foto:null};
+}
+function eqDayLabel(ts){
+  if(!ts) return '';
+  const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return '';
+  const now=new Date(), y=new Date(now); y.setDate(y.getDate()-1);
+  if(d.toDateString()===now.toDateString()) return 'Hoy';
+  if(d.toDateString()===y.toDateString()) return 'Ayer';
+  return d.toLocaleDateString('es-CO',{day:'numeric',month:'long'});
+}
+function eqMsgHTML(m, idx, arr){
   const mio=esMio(m);
   const hora=horaCorta(m.created_at);
-  if(m.deleted) return `<div class="msg-wrap" style="justify-content:${mio?'flex-end':'flex-start'};display:flex;margin-bottom:8px"><div class="bub bub--${mio?'out':'in'}" style="max-width:80%;opacity:.5;font-style:italic"><span class="bub-body">Mensaje eliminado</span><div class="bub__t">${hora}</div></div></div>`;
-  const bg=mio?'':'background:'+eqColor(m.from_vendedor_id)+';';
-  return `<div class="msg-wrap" data-msgid="${m.id}" style="justify-content:${mio?'flex-end':'flex-start'};display:flex;margin-bottom:8px">
-    <div class="bub bub--${mio?'out':'in'}" style="max-width:80%;${bg}">
-      ${!mio?`<div style="font-size:11px;font-weight:700;color:${eqColor(m.from_vendedor_id)};margin-bottom:2px">${esc(m.from_nombre||'Asesor')}</div>`:''}
+  if(m.deleted) return `<div class="eq-msg-row ${mio?'mio':'otro'}"><div class="bub bub--${mio?'out':'in'}" style="max-width:75%;opacity:.5;font-style:italic"><span class="bub-body">Mensaje eliminado</span><div class="bub__t">${hora}</div></div></div>`;
+  // Check if grouped with previous message from same sender
+  const prev=arr[idx-1];
+  const grouped=prev && !prev.deleted && prev.from_vendedor_id===m.from_vendedor_id && (new Date(String(m.created_at).replace(' ','T')+'Z')-new Date(String(prev.created_at).replace(' ','T')+'Z'))<120000;
+  const v=eqFindVendedor(m.from_vendedor_id);
+  const avatarBg=v.foto?'':`background:${eqColor(m.from_vendedor_id)}`;
+  const avatarContent=v.foto?`<img src="${esc(v.foto)}" alt="">`:initials(v.nombre);
+  const pinIcon=m.pinned_at?' 📌':'';
+  return `<div class="eq-msg-row ${mio?'mio':'otro'}${grouped?' eq-msg-grouped':''}" data-msgid="${m.id}">
+    ${!mio?`<div class="eq-avatar" style="${avatarBg}">${avatarContent}</div>`:''}
+    <div class="bub bub--${mio?'out':'in'}" style="max-width:75%;${mio?'':'background:'+eqColor(m.from_vendedor_id)}">
+      ${!mio&&!grouped?`<div style="font-size:10.5px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:2px">${esc(v.nombre)}</div>`:''}
       ${eqQuoteHTML(m)}
-      <span class="bub-body">${esc(m.body)}</span>
+      ${eqMediaHTML(m)}
+      ${m.body?`<span class="bub-body">${esc(m.body)}${pinIcon}</span>`:''}
       <div class="bub__t">${hora}</div>
       ${eqReactionsHTML(m.id, m.reactions)}
     </div></div>`;
 }
 function renderEquipo(){
   const box=$('#eqMsgs'); if(!box) return;
-  box.innerHTML=teamMsgs.length?teamMsgs.map(eqMsgHTML).join(''):'<div class="m-empty" style="min-height:200px"><p>Escribe el primer mensaje al equipo 🦁</p></div>';
+  if(!teamMsgs.length){ box.innerHTML='<div class="m-empty" style="min-height:200px"><p>Envía el primer mensaje al equipo 🦁</p></div>'; return; }
+  let html=''; let lastDay='';
+  teamMsgs.forEach((m,i)=>{
+    const day=eqDayLabel(m.created_at);
+    if(day&&day!==lastDay){ html+=`<div class="eq-daysep">${day}</div>`; lastDay=day; }
+    html+=eqMsgHTML(m,i,teamMsgs);
+  });
+  box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
 }
 // Event delegation para el chat del equipo — se una sola vez
@@ -1081,7 +1169,7 @@ function renderEquipo(){
   const box=$('#eqMsgs'); if(!box) return;
   let pressTimer=null, dragX0=0, dragging=false;
   box.addEventListener('touchstart',e=>{
-    const wrap=e.target.closest('.msg-wrap[data-msgid]');
+    const wrap=e.target.closest('.eq-msg-row[data-msgid]');
     const bub=wrap&&wrap.querySelector('.bub');
     if(!bub) return;
     dragX0=e.touches[0].clientX; dragging=false;
@@ -1092,7 +1180,7 @@ function renderEquipo(){
   box.addEventListener('touchmove',e=>{
     clearTimeout(pressTimer);
     const dx=Math.max(0,e.touches[0].clientX-dragX0);
-    if(dx>50&&!dragging){ dragging=true; const wrap=e.target.closest('.msg-wrap[data-msgid]'); const bub=wrap&&wrap.querySelector('.bub'); if(bub){ bub.style.transition='transform .25s var(--spring)'; bub.style.transform='translateX(0)'; } const msgId=wrap?Number(wrap.dataset.msgid):null; const msg=msgId?teamMsgs.find(x=>x.id===msgId):null; if(msgId) eqSetReply(msgId,msg); }
+    if(dx>50&&!dragging){ dragging=true; const wrap=e.target.closest('.eq-msg-row[data-msgid]'); const bub=wrap&&wrap.querySelector('.bub'); if(bub){ bub.style.transition='transform .25s var(--spring)'; bub.style.transform='translateX(0)'; } const msgId=wrap?Number(wrap.dataset.msgid):null; const msg=msgId?teamMsgs.find(x=>x.id===msgId):null; if(msgId) eqSetReply(msgId,msg); }
   },{passive:true});
   box.addEventListener('touchend',e=>{
     clearTimeout(pressTimer); dragging=false;
@@ -1106,10 +1194,14 @@ function renderEquipo(){
 })();
 function eqShowMsgActions(msgId,msg){
   const isMio=msg&&esMio(msg);
+  const isAdmin=me&&me.rol==='admin';
+  const isPinned=msg&&msg.pinned_at;
   const items=[
     `<div class="ctx-item primary" data-eqact="reply"><div class="ctx-ic">💬</div><div>Responder</div></div>`,
     `<div class="ctx-item" data-eqact="react"><div class="ctx-ic">👍</div><div>Reaccionar</div></div>`,
+    `<div class="ctx-item" data-eqact="emoji"><div class="ctx-ic">😊</div><div>Emoji</div></div>`,
   ];
+  if(isMio||isAdmin) items.push(`<div class="ctx-item" data-eqact="pin"><div class="ctx-ic">${isPinned?'📌':'📍'}</div><div>${isPinned?'Desfijar':'Fijar mensaje'}</div></div>`);
   if(isMio) items.push(`<div class="ctx-item danger" data-eqact="delete_everyone"><div class="ctx-ic">🗑️</div><div>Eliminar para todos</div></div>`);
   items.push(`<div class="ctx-item danger" data-eqact="delete_me"><div class="ctx-ic">🗑️</div><div>Eliminar para mí</div></div>`);
   openSheet('Acciones',`<div style="padding:6px 0">${items.join('')}</div>`);
@@ -1120,11 +1212,27 @@ function eqShowMsgActions(msgId,msg){
         closeSheet();
         if(act==='reply') eqSetReply(msgId,msg);
         else if(act==='react') eqToggleReaction(msgId,'👍');
+        else if(act==='emoji') eqShowEmojiPicker(msgId);
+        else if(act==='pin') eqTogglePin(msgId);
         else if(act==='delete_everyone') eqDeleteMsg(msgId,'everyone');
         else if(act==='delete_me') eqDeleteMsg(msgId,'me');
       });
     });
   },50);
+}
+const EQ_EMOJIS=['👍','❤️','😂','😮','👎','🔥','✅','💯','👏','🙌','😎','🤝'];
+function eqShowEmojiPicker(msgId){
+  const html=`<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">${EQ_EMOJIS.map(e=>`<button class="eq-emoji-btn" data-eqemoji="${e}" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);font-size:22px;cursor:pointer;display:grid;place-items:center">${e}</button>`).join('')}</div>`;
+  openSheet('Reaccionar',html);
+  setTimeout(()=>{
+    document.querySelectorAll('[data-eqemoji]').forEach(el=>{
+      el.addEventListener('click',()=>{ closeSheet(); eqToggleReaction(msgId,el.dataset.eqemoji); });
+    });
+  },50);
+}
+async function eqTogglePin(msgId){
+  const r=await api('/api/equipo/messages/'+msgId+'/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  if(r&&r.ok){ toast(r.pinned?'Mensaje fijado':'Mensaje desfijado'); eqLoadPinned(); }
 }
 function eqSetReply(msgId,msg){
   if(!msg) return; _eqReplyTo=msg; haptic(12);
@@ -1135,6 +1243,105 @@ function eqSetReply(msgId,msg){
   const inp=$('#eqInput'); if(inp) inp.focus();
 }
 function eqCancelReply(){ _eqReplyTo=null; const bar=$('#eqReplyBar'); if(bar) bar.classList.remove('show'); }
+
+// ── Pinned message ──
+let _eqPinned=null;
+async function eqLoadPinned(){
+  const ch=_eqCon!=null?String(_eqCon):'general';
+  const r=await api('/api/equipo/pinned?channel='+encodeURIComponent(ch));
+  _eqPinned=r;
+  const banner=$('#eqPinBanner');
+  if(!banner) return;
+  if(r){
+    const from=r.from_nombre_full||r.from_nombre||'Asesor';
+    banner.innerHTML=`<span class="eq-pin-banner__icon">📌</span><div class="eq-pin-banner__text"><div class="eq-pin-banner__label">Fijado por ${esc(from)}</div><div class="eq-pin-banner__body">${esc((r.body||'').slice(0,80))}</div></div><button class="eq-pin-banner__clear" onclick="eqUnpin()">✕</button>`;
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+}
+window.eqUnpin=async function(){
+  if(!_eqPinned) return;
+  await api('/api/equipo/messages/'+_eqPinned.id+'/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  _eqPinned=null;
+  const banner=$('#eqPinBanner'); if(banner) banner.classList.remove('show');
+};
+
+// ── Scroll to bottom button ──
+function eqInitScrollBtn(){
+  const btn=$('#eqScrollBtn'); const box=$('#eqMsgs'); if(!btn||!box) return;
+  box.addEventListener('scroll',()=>{
+    const nearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<100;
+    btn.classList.toggle('show',!nearBottom);
+  });
+  btn.onclick=()=>{ box.scrollTo({top:box.scrollHeight,behavior:'smooth'}); };
+}
+
+// ── Audio recording for team chat ──
+let _eqRec=null,_eqRecChunks=[],_eqRecTimer=null,_eqRecStart=0;
+function eqInitAudio(){
+  const micBtn=$('#eqMicBtn'); const inp=$('#eqInput'); if(!micBtn) return;
+  micBtn.onclick=async()=>{
+    if(_eqRec&&_eqRec.state==='recording'){ eqStopRec(); return; }
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const mt=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>MediaRecorder.isSupported&&MediaRecorder.isTypeSupported(t))||'';
+      _eqRec=new MediaRecorder(stream,{mimeType:mt||undefined});
+      _eqRecChunks=[];
+      _eqRec.ondataavailable=e=>{ if(e.data.size>0) _eqRecChunks.push(e.data); };
+      _eqRec.onstop=()=>{ stream.getTracks().forEach(t=>t.stop()); eqSendAudio(); };
+      _eqRec.start();
+      _eqRecStart=Date.now();
+      const bar=$('#eqRecBar'); if(bar) bar.classList.add('show');
+      _eqRecTimer=setInterval(()=>{
+        const s=Math.floor((Date.now()-_eqRecStart)/1000);
+        const t=$('#eqRecTime'); if(t) t.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+      },1000);
+      if(inp) inp.style.display='none';
+    }catch(e){ toast('No se pudo acceder al micrófono','err'); }
+  };
+  const cancelBtn=$('#eqRecCancel');
+  if(cancelBtn) cancelBtn.onclick=()=>{ if(_eqRec&&_eqRec.state==='recording') _eqRec.stop(); _eqRecChunks=[]; eqCleanRec(); };
+  const sendBtn=$('#eqRecSend');
+  if(sendBtn) sendBtn.onclick=()=>{ if(_eqRec&&_eqRec.state==='recording') eqStopRec(); };
+}
+function eqStopRec(){ if(_eqRec&&_eqRec.state==='recording') _eqRec.stop(); clearInterval(_eqRecTimer); }
+function eqCleanRec(){ clearInterval(_eqRecTimer); _eqRec=null; _eqRecChunks=[]; const bar=$('#eqRecBar'); if(bar) bar.classList.remove('show'); const inp=$('#eqInput'); if(inp) inp.style.display=''; }
+async function eqSendAudio(){
+  if(!_eqRecChunks.length){ eqCleanRec(); return; }
+  const blob=new Blob(_eqRecChunks,{type:_eqRecChunks[0]?.type||'audio/webm'});
+  if(blob.size<100){ eqCleanRec(); toast('Audio muy corto'); return; }
+  const reader=new FileReader();
+  reader.onload=async()=>{
+    const dataUrl=reader.result;
+    const payload={body:'',media_type:'audio',media_url:dataUrl};
+    if(_eqCon!=null) payload.to=_eqCon;
+    eqCleanRec();
+    const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); }
+    else toast('Error al enviar audio','err');
+  };
+  reader.readAsDataURL(blob);
+}
+
+// ── Browser Notifications for team chat ──
+function eqNotifyGeneral(fromNombre, body){
+  if(!_eqAbierto||_eqCon!=null) return; // solo si NO está viendo el canal general
+  if('Notification' in window && Notification.permission==='granted'){
+    try{ new Notification('🦁 '+fromNombre,{body:String(body).slice(0,100),icon:'/icons/logo.png',tag:'eq-general',renotify:true}); }catch(e){}
+  }
+}
+function eqNotifyDM(fromNombre, body){
+  if(!_eqAbierto) return;
+  if('Notification' in window && Notification.permission==='granted'){
+    try{ new Notification('💬 '+fromNombre,{body:String(body).slice(0,100),icon:'/icons/logo.png',tag:'eq-dm',renotify:true}); }catch(e){}
+  }
+}
+function eqRequestNotifPermission(){
+  if('Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+}
 async function eqToggleReaction(msgId,emoji){
   const r=await api('/api/equipo/messages/'+msgId+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
   if(r&&r.ok){ const idx=teamMsgs.findIndex(x=>x.id===msgId); if(idx>=0) teamMsgs[idx].reactions=r.reactions; renderEquipo(); }
@@ -1170,7 +1377,7 @@ function renderEqTabs(){
   const box=$('#eqTabs'); if(!box) return;
   const chip=(id,label)=>`<button class="eq-chip${(_eqCon===id)?' on':''}" data-con="${id===null?'':id}" style="flex-shrink:0;padding:6px 12px;border-radius:999px;border:1px solid ${_eqCon===id?'var(--gold)':'var(--border)'};background:${_eqCon===id?'var(--gold-soft,rgba(200,164,90,.12))':'var(--bg-3)'};color:${_eqCon===id?'var(--gold)':'var(--text-2)'};font-size:12px;font-family:inherit;white-space:nowrap">${label}</button>`;
   box.innerHTML=chip(null,'🦁 General')+_eqAsesores.map(a=>chip(Number(a.id), esc(a.nombre.split(' ')[0]))).join('');
-  box.querySelectorAll('[data-con]').forEach(b=>b.onclick=async()=>{ _eqCon=b.dataset.con===''?null:Number(b.dataset.con); haptic(6); renderEqTabs(); updateEqHeader(); await cargarEquipo(); renderEquipo(); });
+  box.querySelectorAll('[data-con]').forEach(b=>b.onclick=async()=>{ _eqCon=b.dataset.con===''?null:Number(b.dataset.con); haptic(6); renderEqTabs(); updateEqHeader(); await cargarEquipo(); renderEquipo(); eqLoadPinned(); });
 }
 function renderEqBanner(){
   const box=$('#eqBannerContent'); if(!box) return;
@@ -1211,9 +1418,9 @@ async function abrirEquipo(){
   $('#scEquipo').classList.add('show');
   await cargarAsesoresEquipo(); renderEqTabs(); updateEqHeader();
   await cargarEquipo(); renderEquipo(); marcarEquipoLeido(); renderList();
-  eqStartPresence(); eqLoadPresence();
+  eqStartPresence(); eqLoadPresence(); eqLoadPinned(); eqInitScrollBtn(); eqInitAudio(); eqRequestNotifPermission();
 }
-function cerrarEquipo(){ _eqAbierto=false; $('#scEquipo').classList.remove('show'); marcarEquipoLeido(); renderList(); }
+function cerrarEquipo(){ _eqAbierto=false; $('#scEquipo').classList.remove('show'); marcarEquipoLeido(); renderList(); if(_eqRec&&_eqRec.state==='recording') _eqRec.stop(); eqCleanRec(); }
 async function enviarEquipo(){
   const inp=$('#eqInput'); const body=(inp.value||'').trim(); if(!body) return;
   inp.value=''; haptic([10,20]);
@@ -1238,6 +1445,7 @@ function hideEqTyping(){ const el=$('#eqTyping'); if(el) el.classList.remove('sh
 function initEquipo(){
   const back=$('#eqBack'); if(back){ back.innerHTML=I(SVG.back,22); back.onclick=cerrarEquipo; }
   const send=$('#eqSend'); if(send){ send.innerHTML=I(SVG.send,19); send.onclick=enviarEquipo; }
+  const mic=$('#eqMicBtn'); if(mic) mic.innerHTML=I(SVG.mic,18);
   const inp=$('#eqInput');
   if(inp){
     inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviarEquipo(); } });
@@ -4229,12 +4437,12 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
   // Chat interno del equipo en vivo
   es.addEventListener('equipo_mensaje',ev=>{ try{ const m=JSON.parse(ev.data); if(teamMsgs.find(x=>x.id===m.id)) return; hideEqTyping();
     if(_eqAbierto&&_eqCon==null){ teamMsgs.push(m); renderEquipo(); marcarEquipoLeido(); }
-    else if(!esMio(m)){ renderList(); toast('🦁 '+esc(m.from_nombre||'Equipo')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); } }catch(e){} });
+    else if(!esMio(m)){ renderList(); toast('🦁 '+esc(m.from_nombre||'Equipo')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); eqNotifyGeneral(m.from_nombre,m.body); } }catch(e){} });
   // Mensaje directo entre asesores (o del admin monitoreando)
   es.addEventListener('equipo_directo',ev=>{ try{ const m=JSON.parse(ev.data); hideEqTyping();
     const otro = Number(m.from_vendedor_id)===Number(miId()) ? Number(m.to_vendedor_id) : Number(m.from_vendedor_id);
     if(_eqAbierto&&Number(_eqCon)===otro){ if(!teamMsgs.find(x=>x.id===m.id)){ teamMsgs.push(m); renderEquipo(); marcarEquipoLeido(); } }
-    else if(!esMio(m)){ toast('💬 '+esc(m.from_nombre||'Asesor')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); } }catch(e){} });
+    else if(!esMio(m)){ toast('💬 '+esc(m.from_nombre||'Asesor')+': '+esc(String(m.body).slice(0,40))); haptic([60,30,60]); playNotifSound(); eqNotifyDM(m.from_nombre,m.body); } }catch(e){} });
   // Typing indicator del equipo
   es.addEventListener('equipo_typing',ev=>{ try{ const t=JSON.parse(ev.data);
     if(Number(t.from_id)===Number(miId())) return;
@@ -4246,6 +4454,8 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
   es.addEventListener('equipo_reaction',ev=>{ try{ const r=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===r.message_id); if(idx>=0){ teamMsgs[idx].reactions=r.reactions; if(_eqAbierto) renderEquipo(); } }catch(e){} });
   // Mensaje del equipo eliminado en vivo
   es.addEventListener('equipo_message_deleted',ev=>{ try{ const d=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===d.message_id); if(idx>=0){ teamMsgs[idx].deleted=1; if(_eqAbierto) renderEquipo(); } }catch(e){} });
+  // Mensaje fijado/desfijado en vivo
+  es.addEventListener('equipo_message_pinned',ev=>{ try{ if(_eqAbierto) eqLoadPinned(); }catch(e){} });
   // Presencia del equipo en vivo
   es.addEventListener('equipo_presence',ev=>{ try{ const p=JSON.parse(ev.data); _eqPresence[p.vendedor_id]={online:p.online,last_seen:p.last_seen}; updateEqPresenceDots(); if(_eqAbierto) renderEqBanner(); }catch(e){} });
   // Transcripción IA lista para una nota de voz

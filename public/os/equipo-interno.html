@@ -41,11 +41,6 @@
   .ibx-thead__name { font-size: 14px; font-weight: 600; color: var(--text); }
   .ibx-thead__sub { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
   .ibx-msgs { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s2) var(--s3); display: flex; flex-direction: column; gap: 4px; }
-  .bubble { max-width: 70%; padding: 9px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.45; word-wrap: break-word; position: relative; }
-  .bubble--in { align-self: flex-start; background: var(--bg-3); border-bottom-left-radius: 5px; color: var(--text); }
-  .bubble--out { align-self: flex-end; background: linear-gradient(160deg, #2A5C4E, #1E4A3E); color: #F0F5F2; border-bottom-right-radius: 5px; }
-  .bubble--admin { align-self: flex-end; background: var(--gold); color: #0A0A0A; border-bottom-right-radius: 5px; }
-  .bubble__time { font-size: 10.5px; opacity: .45; margin-top: 3px; text-align: right; display: block; font-variant-numeric: tabular-nums; }
   .ibx-daysep { align-self: center; font-size: 11px; color: var(--text-3); background: var(--bg-2); padding: 3px 12px; border-radius: 999px; margin: 6px 0; border: 1px solid var(--border-soft); }
   .ibx-compose { flex-shrink: 0; padding: 10px var(--s3); padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--bg-1); display: flex; flex-direction: column; gap: 6px; }
   .compose-row { display: flex; gap: 8px; align-items: flex-end; }
@@ -69,6 +64,22 @@
   .eq-typing-bar .dots i:nth-child(2){ animation-delay:.2s; }
   .eq-typing-bar .dots i:nth-child(3){ animation-delay:.4s; }
   @keyframes eqTp{ 0%,100%{ opacity:.3;transform:scale(.8); } 50%{ opacity:1;transform:scale(1); } }
+  .eq-msg-row { display:flex; gap:8px; margin-bottom:4px; align-items:flex-end; }
+  .eq-msg-row.mio { justify-content:flex-end; }
+  .eq-msg-row.otro { justify-content:flex-start; }
+  .eq-avatar { width:30px; height:30px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size:10px; font-weight:700; color:#fff; overflow:hidden; margin-bottom:2px; }
+  .eq-avatar img { width:100%; height:100%; object-fit:cover; }
+  .eq-msg-row.mio .eq-avatar { display:none; }
+  .eq-msg-grouped .eq-avatar { visibility:hidden; }
+  .eq-msg-grouped { margin-bottom:1px !important; }
+  .eq-msg-row.mio .eq-msg-grouped { margin-bottom:1px !important; }
+  .eq-pin-banner{ display:none; padding:8px var(--s3); background:rgba(200,164,90,.08); border-bottom:1px solid var(--border-soft); }
+  .eq-pin-banner.show{ display:flex; align-items:center; gap:8px; }
+  .eq-pin-banner__icon{ font-size:14px; flex-shrink:0; }
+  .eq-pin-banner__text{ flex:1; min-width:0; }
+  .eq-pin-banner__label{ font-size:10px; color:var(--gold); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .eq-pin-banner__body{ font-size:12px; color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .eq-pin-banner__clear{ background:none; border:none; color:var(--text-3); font-size:16px; padding:4px; cursor:pointer; }
   @media (max-width: 860px) { .ibx-list { width: 100%; } .ibx-list.hide { display: none; } .ibx-thread.hide { display: none; } .btn-back { display: flex !important; } }
   .btn-back { display: none; }
 </style>
@@ -86,6 +97,21 @@
   function I(d, s) { s = s || 20; return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="${s}" height="${s}">${d}</svg>`; }
   const D = { back:'m12 19-7-7 7-7M19 12H5', send:'m22 2-7 20-4-9-9-4ZM22 2 11 13', inbox:'M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13l3.5 7v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z' };
 
+  const EQ_COLORS=['#2E7D46','#5B7B8C','#7C6BB0','#8C4A4A','#4A7A8C','#6B8C4A','#8C6B2A','#4A5B8C','#8C4A6B','#5B8C4A'];
+  function eqColor(id){ return EQ_COLORS[Number(id||0) % EQ_COLORS.length]; }
+  function eqFindVendedor(id){
+    if(Number(id)===0) return {nombre:'Admin',foto:null};
+    return vendedores.find(v=>Number(v.id)===Number(id))||{nombre:'Asesor',foto:null};
+  }
+  function eqDayLabel(ts){
+    if(!ts) return '';
+    const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return '';
+    const now=new Date(), y=new Date(now); y.setDate(y.getDate()-1);
+    if(d.toDateString()===now.toDateString()) return 'Hoy';
+    if(d.toDateString()===y.toDateString()) return 'Ayer';
+    return d.toLocaleDateString('es-CO',{day:'numeric',month:'long'});
+  }
+
   const ctx = await SPOS.mount({ active: 'team-chat', title: 'Chat Interno', crumb: 'Conversaciones del equipo', padded: false, panel: true });
   if (!ctx) return;
   ctx.content.style.cssText = 'flex:1;min-height:0;overflow:hidden;padding:0;display:flex';
@@ -95,7 +121,7 @@
   ctx.content.appendChild(listEl); ctx.content.appendChild(threadEl);
 
   let conversations = { general: {}, dms: [] };
-  let currentView = null; // null = general, number = vendedorId
+  let currentView = null;
   let messages = [];
   let vendedores = [];
 
@@ -111,7 +137,7 @@
   async function cargar() {
     const [convData, vendData] = await Promise.all([api('/api/equipo/admin/conversations'), api('/api/vendedores')]);
     if (convData) conversations = convData;
-    if (Array.isArray(vendedores = vendData ? vendData : vendedores)) {}
+    if (Array.isArray(vendData)) vendedores = vendData;
     renderList();
   }
 
@@ -120,7 +146,6 @@
     const general = conversations.general || {};
     const dms = conversations.dms || [];
     let html = '';
-    // Canal general
     html += `<div class="ibx-item${currentView === null ? ' active' : ''}" data-view="general">
       <div class="ibx-item__av"><div class="ibx-gen-icon">🦁</div></div>
       <div class="ibx-item__info">
@@ -128,13 +153,10 @@
         <div class="ibx-item__bot"><span class="ibx-item__prev">${general.last_from ? esc(general.last_from) + ': ' : ''}${esc((general.last_message || '').slice(0, 50))}</span>${general.msg_count > 0 ? `<span class="ibx-badge">${general.msg_count}</span>` : ''}</div>
       </div>
     </div>`;
-    // DMs
     dms.forEach(dm => {
       const names = dm.names || [];
       const label = names.join(' ↔ ') || 'Directo';
       const isActive = currentView != null && dm.pair && dm.pair.includes(Number(currentView));
-      const av1 = vendedores.find(v => v.id === dm.pair[0]);
-      const av2 = vendedores.find(v => v.id === dm.pair[1]);
       html += `<div class="ibx-item${isActive ? ' active' : ''}" data-view="dm_${dm.pair ? dm.pair.join('_') : ''}">
         <div class="ibx-item__av">
           <div class="ibx-dm-avs">
@@ -182,6 +204,7 @@
         <span class="conn-dot" id="eqConnDot"></span>
       </div>
       <div class="eq-typing-bar" id="eqTypingBar"><span><span class="dots"><i></i><i></i><i></i></span> <span id="eqTypingName"></span></span></div>
+      <div id="eqPinBanner" class="eq-pin-banner"></div>
       <div class="ibx-msgs" id="eqMsgs"><div class="sk" style="height:40px;width:58%;border-radius:12px;align-self:flex-start"></div></div>
       <div class="ibx-compose">
         <div class="compose-row">
@@ -199,6 +222,7 @@
     inp.addEventListener('input', () => { enviarTyping(); });
 
     await cargarMensajes();
+    cargarPinned();
     conectarStreamChat();
   }
 
@@ -209,22 +233,62 @@
     if (Array.isArray(data)) { messages = data; renderMensajes(); }
   }
 
+  function renderMedia(m) {
+    if (!m.media_type || !m.media_url) return '';
+    if (m.media_type === 'audio') return `<div style="margin-top:4px"><audio controls preload="none" src="${esc(m.media_url)}" style="width:200px;height:36px;border-radius:8px"></audio></div>`;
+    if (m.media_type === 'image') return `<div style="margin-top:4px"><img src="${esc(m.media_url)}" style="max-width:200px;border-radius:10px;display:block" loading="lazy"></div>`;
+    if (m.media_type === 'video') return `<div style="margin-top:4px"><video src="${esc(m.media_url)}" controls style="max-width:200px;border-radius:10px;display:block"></video></div>`;
+    if (m.media_type === 'document') return `<a href="${esc(m.media_url)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:8px 12px;background:rgba(200,164,90,.1);border:1px solid var(--gold);border-radius:10px;color:var(--gold);font-size:12px;text-decoration:none">📄 Documento</a>`;
+    return '';
+  }
+
   function renderMensajes() {
     const box = document.getElementById('eqMsgs'); if (!box) return;
     if (!messages.length) { box.innerHTML = '<div style="text-align:center;color:var(--text-3);padding:40px 20px;font-size:13px">Sin mensajes aún</div>'; return; }
-    box.innerHTML = messages.map(m => {
+    let html = ''; let lastDay = '';
+    messages.forEach((m, i) => {
+      const day = eqDayLabel(m.created_at);
+      if (day && day !== lastDay) { html += `<div class="ibx-daysep">${day}</div>`; lastDay = day; }
       const isAdmin = Number(m.from_vendedor_id) === 0;
-      const cls = isAdmin ? 'bubble--admin' : 'bubble--in';
-      const name = m.from_nombre_full || m.from_nombre || (isAdmin ? 'Admin' : 'Asesor');
-      return `<div style="display:flex;flex-direction:column;align-self:${isAdmin?'flex-end':'flex-start'};max-width:70%;margin-bottom:6px">
-        ${!isAdmin ? `<div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:2px">${esc(name)}</div>` : ''}
-        <div class="bubble ${cls}">
-          <span>${esc(m.body)}</span>
+      const v = eqFindVendedor(m.from_vendedor_id);
+      const prev = messages[i - 1];
+      const grouped = prev && !prev.deleted && prev.from_vendedor_id === m.from_vendedor_id && (new Date(String(m.created_at).replace(' ','T')+'Z') - new Date(String(prev.created_at).replace(' ','T')+'Z')) < 120000;
+      const avatarBg = v.foto ? '' : `background:${eqColor(m.from_vendedor_id)}`;
+      const avatarContent = v.foto ? `<img src="${esc(v.foto)}" alt="">` : initials(v.nombre);
+      const pinIcon = m.pinned_at ? ' 📌' : '';
+      if (m.deleted) {
+        html += `<div class="eq-msg-row ${isAdmin ? 'mio' : 'otro'}"><div class="bubble bubble--admin" style="max-width:70%;opacity:.5;font-style:italic"><span>Mensaje eliminado</span><div class="bubble__t">${hhmm(m.created_at)}</div></div></div>`;
+        return;
+      }
+      html += `<div class="eq-msg-row ${isAdmin ? 'mio' : 'otro'}${grouped ? ' eq-msg-grouped' : ''}" data-msgid="${m.id}">
+        ${!isAdmin ? `<div class="eq-avatar" style="${avatarBg}">${avatarContent}</div>` : ''}
+        <div class="bubble ${isAdmin ? 'bubble--admin' : 'bubble--in'}" style="max-width:70%;${isAdmin ? '' : 'background:' + eqColor(m.from_vendedor_id)}">
+          ${!isAdmin && !grouped ? `<div style="font-size:10.5px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:2px">${esc(v.nombre)}</div>` : ''}
+          ${renderMedia(m)}
+          ${m.body ? `<span>${esc(m.body)}${pinIcon}</span>` : ''}
           <div class="bubble__t">${hhmm(m.created_at)}</div>
-        </div>
-      </div>`;
-    }).join('');
+        </div></div>`;
+    });
+    box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+  }
+
+  async function cargarPinned() {
+    const ch = currentView != null ? String(currentView) : 'general';
+    const r = await api('/api/equipo/pinned?channel=' + encodeURIComponent(ch));
+    const banner = document.getElementById('eqPinBanner');
+    if (!banner) return;
+    if (r) {
+      const from = r.from_nombre_full || r.from_nombre || 'Asesor';
+      banner.innerHTML = `<span class="eq-pin-banner__icon">📌</span><div class="eq-pin-banner__text"><div class="eq-pin-banner__label">Fijado por ${esc(from)}</div><div class="eq-pin-banner__body">${esc((r.body || '').slice(0, 80))}</div></div><button class="eq-pin-banner__clear" id="eqUnpinBtn">✕</button>`;
+      banner.classList.add('show');
+      document.getElementById('eqUnpinBtn').addEventListener('click', async () => {
+        await api('/api/equipo/messages/' + r.id + '/pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        banner.classList.remove('show');
+      });
+    } else {
+      banner.classList.remove('show');
+    }
   }
 
   async function enviarMsg() {
@@ -261,6 +325,7 @@
       _chatStream.addEventListener('equipo_typing', ev => {
         try { const t = JSON.parse(ev.data); if (Number(t.from_id) === 0) return; const bar = document.getElementById('eqTypingBar'); const nm = document.getElementById('eqTypingName'); if (bar && nm) { const canal = t.to == null && currentView == null; const dm = t.to != null && currentView != null && Number(t.from_id) === currentView; if (canal || dm) { nm.textContent = t.from_nombre + ' está escribiendo…'; bar.classList.add('show'); setTimeout(() => bar.classList.remove('show'), 5000); } } } catch (e) {}
       });
+      _chatStream.addEventListener('equipo_message_pinned', () => { cargarPinned(); });
       _chatStream.onerror = () => { dot()?.classList.remove('on'); _chatStream.close(); setTimeout(conectarStreamChat, 5000); };
     } catch (e) {}
   }

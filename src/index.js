@@ -2052,14 +2052,14 @@ app.get('/api/equipo/directos', auth.requireAuth, (req, res) => {
 });
 
 app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
-  const { body, to, mentions, leadRef, replyTo } = req.body || {};
-  if (!body || !String(body).trim()) return res.status(400).json({ error: 'body_requerido' });
+  const { body, to, mentions, leadRef, replyTo, media_type, media_url } = req.body || {};
+  if (!body && !media_type) return res.status(400).json({ error: 'body_requerido' });
   const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
   const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
   const toVendedorId = (to != null && to !== '') ? Number(to) : null;
   const menciones = Array.isArray(mentions) ? mentions.map(Number).filter(Boolean) : [];
   const replyToId = replyTo ? Number(replyTo) : null;
-  const msg = store.saveTeamMessage(fromId, nombre, String(body).trim(), { toVendedorId, mentions: menciones, leadRef, replyToId });
+  const msg = store.saveTeamMessage(fromId, nombre, String(body || '').trim(), { toVendedorId, mentions: menciones, leadRef, replyToId, mediaType: media_type || null, mediaUrl: media_url || null });
 
   if (toVendedorId != null) {
     // Directo: al destinatario y a los admins (monitoreo transparente)
@@ -2068,16 +2068,27 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     events.emitToAdmins('equipo_directo', msg);
     try {
       const push = require('./services/push');
-      push.sendToVendedor(toVendedorId, { title: `💬 ${nombre}`, body: String(body).slice(0, 120), tipo: 'equipo_directo', from: String(fromId) }).catch(() => {});
+      push.sendToVendedor(toVendedorId, { title: `💬 ${nombre}`, body: String(body || '').slice(0, 120), tipo: 'equipo_directo', from: String(fromId) }).catch(() => {});
     } catch (e) { console.error('[EQUIPO] push directo falló:', e.message); }
   } else {
     events.emitToTodos('equipo_mensaje', msg);
+    // Push a TODOS los vendedores activos del canal general (excepto remitente)
+    try {
+      const push = require('./services/push');
+      const activos = store.getVendedoresActivos();
+      for (const v of activos) {
+        if (Number(v.id) !== fromId) {
+          const label = media_type ? `📎 ${nombre}` : `🦁 ${nombre}`;
+          push.sendToVendedor(v.id, { title: label, body: String(body || '').slice(0, 120), tipo: 'equipo_general', from: String(fromId) }).catch(() => {});
+        }
+      }
+    } catch (e) { console.error('[EQUIPO] push general falló:', e.message); }
     // Push a los mencionados en el canal general
     if (menciones.length) {
       try {
         const push = require('./services/push');
         for (const vid of menciones) {
-          if (vid !== fromId) push.sendToVendedor(vid, { title: `📣 ${nombre} te mencionó`, body: String(body).slice(0, 120), tipo: 'equipo_mencion' }).catch(() => {});
+          if (vid !== fromId) push.sendToVendedor(vid, { title: `📣 ${nombre} te mencionó`, body: String(body || '').slice(0, 120), tipo: 'equipo_mencion' }).catch(() => {});
         }
       } catch (e) { console.error('[EQUIPO] push mención falló:', e.message); }
     }
@@ -2180,6 +2191,24 @@ app.post('/api/equipo/messages/:id/delete', auth.requireAuth, (req, res) => {
     events.emitToTodos('equipo_message_deleted', { messageId: msgId, by: nombre });
   }
   res.json({ ok: true, mode });
+});
+
+// ── Fijar/desfijar mensaje del chat interno ──
+app.post('/api/equipo/messages/:id/pin', auth.requireAuth, (req, res) => {
+  const msgId = Number(req.params.id);
+  if (!msgId) return res.status(400).json({ error: 'id_requerido' });
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const result = store.pinTeamMessage(msgId, fromId);
+  if (!result) return res.status(404).json({ error: 'mensaje_no_existe' });
+  events.emitToTodos('equipo_message_pinned', { messageId: msgId, pinned: result.pinned, by: fromId });
+  res.json({ ok: true, pinned: result.pinned });
+});
+
+// Mensaje fijado de un canal
+app.get('/api/equipo/pinned', auth.requireAuth, (req, res) => {
+  const channel = req.query.channel || 'general';
+  const msg = store.getPinnedTeamMessage(channel);
+  res.json(msg || null);
 });
 
 // ── Presencia de asesores ──
