@@ -2068,8 +2068,9 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     events.emitToAdmins('equipo_directo', msg);
     try {
       const push = require('./services/push');
-      push.sendToVendedor(toVendedorId, { title: `💬 ${nombre}`, body: String(body || '').slice(0, 120), tipo: 'equipo_directo', from: String(fromId) }).catch(() => {});
-    } catch (e) { console.error('[EQUIPO] push directo falló:', e.message); }
+      const r = push.sendToVendedor(toVendedorId, { title: `💬 ${nombre}`, body: String(body || '').slice(0, 120), tipo: 'equipo_directo', from: String(fromId) });
+      r.then(ok => console.log(`[EQUIPO-PUSH] DM enviado a vendor ${toVendedorId}`)).catch(e => console.error(`[EQUIPO-PUSH] DM fallo a vendor ${toVendedorId}:`, e.message || e));
+    } catch (e) { console.error('[EQUIPO-PUSH] DM setup fallo:', e.message); }
   } else {
     events.emitToTodos('equipo_mensaje', msg);
     // Push a TODOS los vendedores activos del canal general (excepto remitente)
@@ -2079,18 +2080,22 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
       for (const v of activos) {
         if (Number(v.id) !== fromId) {
           const label = media_type ? `📎 ${nombre}` : `🦁 ${nombre}`;
-          push.sendToVendedor(v.id, { title: label, body: String(body || '').slice(0, 120), tipo: 'equipo_general', from: String(fromId) }).catch(() => {});
+          const r = push.sendToVendedor(v.id, { title: label, body: String(body || '').slice(0, 120), tipo: 'equipo_general', from: String(fromId) });
+          r.then(ok => console.log(`[EQUIPO-PUSH] general enviado a vendor ${v.id}`)).catch(e => console.error(`[EQUIPO-PUSH] general fallo a vendor ${v.id}:`, e.message || e));
         }
       }
-    } catch (e) { console.error('[EQUIPO] push general falló:', e.message); }
+    } catch (e) { console.error('[EQUIPO-PUSH] general setup fallo:', e.message); }
     // Push a los mencionados en el canal general
     if (menciones.length) {
       try {
         const push = require('./services/push');
         for (const vid of menciones) {
-          if (vid !== fromId) push.sendToVendedor(vid, { title: `📣 ${nombre} te mencionó`, body: String(body || '').slice(0, 120), tipo: 'equipo_mencion' }).catch(() => {});
+          if (vid !== fromId) {
+            const r = push.sendToVendedor(vid, { title: `📣 ${nombre} te mencionó`, body: String(body || '').slice(0, 120), tipo: 'equipo_mencion' });
+            r.then(ok => console.log(`[EQUIPO-PUSH] mencion enviado a vendor ${vid}`)).catch(e => console.error(`[EQUIPO-PUSH] mencion fallo a vendor ${vid}:`, e.message || e));
+          }
         }
-      } catch (e) { console.error('[EQUIPO] push mención falló:', e.message); }
+      } catch (e) { console.error('[EQUIPO-PUSH] mencion setup fallo:', e.message); }
     }
   }
   res.json({ ok: true, mensaje: msg });
@@ -3236,6 +3241,42 @@ app.post('/api/push/suscribir-fcm', auth.requireAuth, (req, res) => {
   if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
   store.saveFcmToken(vendedorId, token);
   res.json({ ok: true });
+});
+
+// Diagnóstico de push (admin) — muestra suscripciones FCM y Web Push
+app.get('/api/push/diagnostico', auth.requireAdmin, (req, res) => {
+  try {
+    const storeDb = require('./db/store');
+    const allSubs = storeDb.getAllPushSubscriptions();
+    const fcmCount = allSubs.filter(s => s.tipo === 'fcm').length;
+    const webpushCount = allSubs.filter(s => s.tipo !== 'fcm').length;
+    res.json({
+      fcmEnabled: push.isFcmEnabled(),
+      webpushEnabled: push.isEnabled(),
+      totalSubscriptions: allSubs.length,
+      fcmSubscriptions: fcmCount,
+      webpushSubscriptions: webpushCount,
+      subscriptions: allSubs,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Enviar push de prueba al admin (admin)
+app.post('/api/push/test', auth.requireAdmin, async (req, res) => {
+  try {
+    const adminId = 0;
+    const r = await push.sendToVendedor(adminId, {
+      title: '🔔 Prueba Leons Group',
+      body: 'Si ves esta notificación, las push notifications están funcionando correctamente.',
+      tipo: 'test',
+      tag: 'test-push-' + Date.now(),
+    });
+    res.json({ ok: true, mensaje: 'Push de prueba enviado al admin (vendedorId=0)' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ===================== SALUD DEL SISTEMA (admin) =====================

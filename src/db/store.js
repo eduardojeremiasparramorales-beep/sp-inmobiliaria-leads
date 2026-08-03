@@ -1495,6 +1495,10 @@ function deletePushSubscription(endpoint) {
   run('DELETE FROM push_subscriptions WHERE endpoint = ?', [endpoint]);
 }
 
+function getAllPushSubscriptions() {
+  return all('SELECT vendedor_id, tipo, substr(endpoint,1,30) as endpoint_preview, created_at FROM push_subscriptions ORDER BY created_at DESC');
+}
+
 function getVendedores() {
   return all('SELECT * FROM vendedores ORDER BY nombre');
 }
@@ -3134,7 +3138,7 @@ module.exports = {
   getTemplates, addTemplate, deleteTemplate,
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
-  savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken,
+  savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken, getAllPushSubscriptions,
   createDBSession, getDBSession, deleteDBSession, refreshSession, expireSessionSoon, cleanExpiredSessions,
   getSessionsByOwner, touchSessionLastSeen, deleteOtherSessions,
   createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,

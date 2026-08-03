@@ -1796,6 +1796,17 @@ async function init(){
   if(!DEMO) initEquipo();
   initBioLock();
   setTimeout(suscribirPush, 3000);
+  // Re-registrar token FCM cuando la app vuelve al foreground (Capacitor)
+  // FCM tokens pueden expirar/rotar en segundo plano — esto asegura que siempre
+  // haya un token válido guardado en el servidor.
+  if(esNativo()){
+    try{
+      const App=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App;
+      if(App&&typeof App.addListener==='function'){
+        App.addListener('appStateChange',({isActive})=>{ if(isActive) setTimeout(()=>{ try{suscribirPushNativo();}catch(e){} },2000); });
+      }
+    }catch(e){}
+  }
   if(!DEMO) initTemplates();
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
