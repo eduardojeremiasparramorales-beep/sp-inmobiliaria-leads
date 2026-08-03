@@ -191,6 +191,11 @@ app.use(express.static('public', {
     } else if (filePath.includes('icons')) {
       res.setHeader('Cache-Control', 'public, max-age=86400');
     }
+    if (filePath.endsWith('.apk')) {
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment');
+      res.setHeader('Cache-Control', 'no-store');
+    }
   },
 }));
 
