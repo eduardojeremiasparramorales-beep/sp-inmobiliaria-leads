@@ -730,6 +730,7 @@
       <button class="eq-rec-send" id="eqRecSend">${I(SVG.send,16)}</button>
     </div>
     <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border);position:relative">
+      <button id="eqClipBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0">${I(SVG.clip,18)}</button>
       <button id="eqMicBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0">${I(SVG.mic,18)}</button>
       <textarea id="eqInput" placeholder="Mensaje al equipo…" rows="1" style="flex:1;min-height:40px;max-height:100px;padding:10px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
       <button id="eqSend" style="width:42px;height:42px;border-radius:50%;border:none;background:var(--grad-gold);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
@@ -1127,11 +1128,55 @@ function eqQuoteHTML(m){
 }
 function eqMediaHTML(m){
   if(!m.media_type||!m.media_url) return '';
-  if(m.media_type==='audio') return `<div class="eq-audio-wrap" style="margin-top:4px"><audio controls preload="none" src="${esc(m.media_url)}" style="width:200px;height:36px;border-radius:8px"></audio></div>`;
-  if(m.media_type==='image') return `<div style="margin-top:4px;cursor:pointer" onclick="eqOpenLB('${esc(m.media_url)}')"><img src="${esc(m.media_url)}" style="max-width:200px;border-radius:10px;display:block" loading="lazy"></div>`;
-  if(m.media_type==='video') return `<div style="margin-top:4px"><video src="${esc(m.media_url)}" controls style="max-width:200px;border-radius:10px;display:block"></video></div>`;
-  if(m.media_type==='document') return `<a href="${esc(m.media_url)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:8px 12px;background:rgba(200,164,90,.1);border:1px solid var(--gold);border-radius:10px;color:var(--gold);font-size:12px;text-decoration:none">📄 Documento</a>`;
+  if(m.media_type==='location'){
+    let lat,lng,name,address;
+    try{ const d=JSON.parse(m.body||m.media_url||'{}'); lat=d.latitude; lng=d.longitude; name=d.name; address=d.address; }catch(e){ return '<div style="margin-top:4px;padding:8px 12px;background:rgba(200,164,90,.1);border-radius:10px;font-size:12px;color:var(--gold)">📍 Ubicación</div>'; }
+    const mapsUrl=`https://www.google.com/maps?q=${lat},${lng}`;
+    const label=[name,address].filter(Boolean).join(' — ')||'Ubicación';
+    const mapId='eqm_'+((m.id||Math.random().toString(36).slice(2,8)));
+    return `<div style="margin-top:4px;border-radius:10px;overflow:hidden;border:1px solid var(--border-soft);cursor:pointer" onclick="window.open('${mapsUrl}','_blank')"><div class="leaflet-map" id="${mapId}" data-lat="${lat}" data-lng="${lng}" style="height:120px;width:100%"></div><div style="padding:8px 10px;display:flex;align-items:center;gap:6px"><span>📍</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div><div style="font-size:10px;color:var(--text-3)">${lat.toFixed(5)}, ${lng.toFixed(5)}</div></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" style="flex-shrink:0;color:var(--gold)"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg></div></div>`;
+  }
+  if(m.media_type==='sticker'){
+    const src=m.id?`/api/media/${m.id}`:(m.media_url||'');
+    return src?`<div style="margin-top:4px"><img src="${esc(src)}" style="max-width:160px;border-radius:8px;display:block" loading="lazy"></div>`:'';
+  }
+  if(m.media_type==='audio'){
+    const src=m.id?`/api/media/${m.id}`:(m.media_url||'');
+    return src?eqRenderAudioPlayer(m.id,src):'';
+  }
+  if(m.media_type==='image'){
+    const src=m.id?`/api/media/${m.id}`:(m.media_url||'');
+    return src?`<div style="margin-top:4px;cursor:pointer" onclick="eqOpenLB('${esc(src)}')"><img src="${esc(src)}" style="max-width:210px;border-radius:10px;display:block" loading="lazy"></div>`:'';
+  }
+  if(m.media_type==='video'){
+    const src=m.id?`/api/media/${m.id}`:(m.media_url||'');
+    return src?`<div style="margin-top:4px"><video src="${esc(src)}" controls style="max-width:210px;border-radius:10px;display:block"></video></div>`:'';
+  }
+  if(m.media_type==='document'){
+    const src=m.id?`/api/media/${m.id}`:(m.media_url||'');
+    return `<a href="${esc(src)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:8px 12px;background:rgba(200,164,90,.1);border:1px solid var(--gold);border-radius:10px;color:var(--gold);font-size:12px;text-decoration:none">📄 ${esc(m.media_filename||'Documento')}</a>`;
+  }
   return '';
+}
+function eqGenerateWaveform(id){let h=0;const s=String(id);for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}const b=[];for(let i=0;i<20;i++){b.push(Math.round(Math.abs(Math.sin(h*(i+1)*137.5))*18+4));}return b;}
+let _eqAudioPlayers={};
+window.eqTogglePlay=function(id){
+  const btn=document.getElementById(id+'_eqbtn');const wave=document.getElementById(id+'_eqwave');const timeEl=document.getElementById(id+'_eqtime');
+  if(!btn||!wave)return;const container=btn.closest('.eq-audio-player');if(!container)return;const src=container.dataset.src;if(!src)return;
+  Object.keys(_eqAudioPlayers).forEach(k=>{if(k!==id&&_eqAudioPlayers[k]&&!_eqAudioPlayers[k].paused){_eqAudioPlayers[k].pause();const ob=document.getElementById(k+'_eqbtn');if(ob)ob.classList.remove('playing');}});
+  if(_eqAudioPlayers[id]){if(!_eqAudioPlayers[id].paused){_eqAudioPlayers[id].pause();btn.classList.remove('playing');return;}_eqAudioPlayers[id].play().then(()=>btn.classList.add('playing')).catch(()=>{});return;}
+  const a=new Audio();a.preload='auto';a.src=src;a.playbackRate=Number(localStorage.getItem('sp_audio_rate'))||1;
+  a.addEventListener('timeupdate',()=>{if(a.duration){const bars=wave.querySelectorAll('.eq-ap-bar');bars.forEach((bar,i)=>bar.classList.toggle('active',i<Math.floor((a.currentTime/a.duration)*bars.length)));}if(timeEl)timeEl.textContent=Math.floor(a.currentTime/60)+':'+String(Math.floor(a.currentTime%60)).padStart(2,'0');});
+  a.addEventListener('ended',()=>{btn.classList.remove('playing');if(wave)wave.querySelectorAll('.eq-ap-bar').forEach(b=>b.classList.remove('active'));});
+  _eqAudioPlayers[id]=a;a.play().then(()=>btn.classList.add('playing')).catch(()=>{delete _eqAudioPlayers[id];});
+};
+function eqRenderAudioPlayer(id,src){
+  const bars=eqGenerateWaveform(id);
+  return `<div class="eq-audio-player" id="${id}_eqwrap" data-src="${src}" style="margin-top:4px;display:flex;align-items:center;gap:6px;padding:8px 10px;background:rgba(200,164,90,.08);border-radius:12px;max-width:220px">
+    <button class="eq-ap-btn" id="${id}_eqbtn" onclick="eqTogglePlay('${id}')" style="width:30px;height:30px;border-radius:50%;border:none;background:var(--gold);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14"><polygon points="6,3 20,12 6,21" fill="currentColor"/></svg></button>
+    <div class="eq-ap-wave" id="${id}_eqwave" style="display:flex;align-items:center;gap:2px;flex:1">${bars.map(h=>`<div class="eq-ap-bar" style="height:${h}px;width:3px;border-radius:2px;background:var(--gold);opacity:.35"></div>`).join('')}</div>
+    <span id="${id}_eqtime" style="font-size:10px;color:var(--text-3);min-width:30px;text-align:right">0:00</span>
+  </div>`;
 }
 function eqLinkify(text){
   return esc(text).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" style="color:var(--gold);text-decoration:underline">$1</a>');
@@ -1166,7 +1211,7 @@ function eqMsgHTML(m, idx, arr){
   const avatarContent=v.foto?`<img src="${esc(v.foto)}" alt="">`:initials(v.nombre);
   const pinIcon=m.pinned_at?' 📌':'';
   const editIcon=m.edited_at?'<span style="font-size:9px;color:var(--text-3);font-style:italic;margin-left:3px">editado</span>':'';
-  const readCheck=m.to_vendedor_id&&!mio?(m.read_at?'<span style="font-size:9px;color:var(--gold);margin-left:3px">✓✓</span>':'<span style="font-size:9px;color:var(--text-3);margin-left:3px;opacity:.5">✓</span>'):'';
+  const readCheck=m.to_vendedor_id&&mio?(m.read_at?'<span style="font-size:9px;color:var(--gold);margin-left:3px">✓✓</span>':'<span style="font-size:9px;color:var(--text-3);margin-left:3px;opacity:.5">✓</span>'):'';
   const vc=eqColor(m.from_vendedor_id);
   const bubBg=mio?'':`background:${eqHexToRgba(vc,.15)};border-left:3px solid ${vc};`;
   return `<div class="eq-msg-row ${mio?'mio':'otro'}${grouped?' eq-msg-grouped':''}" data-msgid="${m.id}">
@@ -1191,6 +1236,7 @@ function renderEquipo(){
   });
   box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
+  initLocationMaps();
 }
 // Event delegation para el chat del equipo — se una sola vez
 (function(){
@@ -1388,6 +1434,172 @@ async function eqSendAudio(){
   reader.readAsDataURL(blob);
 }
 
+// ── Adjuntos del chat de equipo ──
+function eqAbrirAdjuntos(){
+  const items=[['image','Imagen',SVG.image],['video','Video',SVG.video],['sticker','Sticker',SVG.smile],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin]];
+  openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-eqatt="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
+  $('#sheetBody').querySelectorAll('[data-eqatt]').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.eqatt; closeSheet();
+    if(k==='image'){ const fi=$('#eqFileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*'; fi.click(); } }
+    else if(k==='video'){ const fi=$('#eqFileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } }
+    else if(k==='file'){ const fi=$('#eqFileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } }
+    else if(k==='sticker') eqAbrirStickers();
+    else if(k==='location') eqAbrirUbicacion();
+  });
+}
+function eqInitFileInput(){
+  const fi=document.createElement('input'); fi.type='file'; fi.id='eqFileInput'; fi.style.display='none'; fi.accept='image/*,video/*,.pdf,.doc,.docx';
+  fi.onchange=async()=>{ const file=fi.files[0]; if(!file) return; fi.value=''; haptic(10); closeSheet();
+    if((file.type||'').startsWith('image/')){ eqAbrirEditorImagen(file); return; }
+    const toBase64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
+    const dataBase64=await toBase64(file); const mime=file.type||'application/octet-stream';
+    await eqEnviarArchivo(dataBase64, mime, file.name);
+  };
+  document.body.appendChild(fi);
+}
+async function eqEnviarArchivo(dataBase64, mime, filename, caption){
+  const payload={body:'',media_type:mime.startsWith('image/')?'image':mime.startsWith('video/')?'video':mime.startsWith('audio/')?'audio':'document',media_url:'data:'+mime+';base64,'+dataBase64};
+  if(caption) payload.body=caption;
+  if(_eqCon!=null) payload.to=_eqCon;
+  toast('Enviando…');
+  const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); toast('Enviado'); }
+  else toast('Error al enviar archivo','err');
+}
+function eqAbrirEditorImagen(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const dataUrl=reader.result;
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;z-index:300;background:rgba(10,10,10,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px';
+    ov.innerHTML=`<div style="position:relative;width:100%;max-width:400px;max-height:60vh;overflow:hidden;border-radius:12px"><img id="eqIeImg" src="${dataUrl}" style="width:100%;display:block;object-fit:contain"></div>
+      <textarea id="eqIeCaption" placeholder="Agregar caption…" rows="2" style="width:100%;max-width:400px;padding:10px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;resize:none;outline:none"></textarea>
+      <div style="display:flex;gap:10px;width:100%;max-width:400px">
+        <button id="eqIeCancel" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;cursor:pointer">Cancelar</button>
+        <button id="eqIeSend" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--gold);color:#0A0A0A;font-size:14px;font-weight:700;cursor:pointer">Enviar</button>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#eqIeCancel').onclick=()=>ov.remove();
+    ov.querySelector('#eqIeSend').onclick=async()=>{
+      ov.remove(); toast('Procesando imagen…');
+      const toBase64=url=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(url); });
+      // Redimensionar a max 1280px
+      const img=new Image();
+      img.onload=async()=>{
+        const maxDim=1280; let w=img.width,h=img.height;
+        if(w>maxDim||h>maxDim){ const ratio=Math.min(maxDim/w,maxDim/h); w=Math.round(w*ratio); h=Math.round(h*ratio); }
+        const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.9));
+        const dataBase64=await new Promise((res,rej)=>{ const reader2=new FileReader(); reader2.onload=()=>res(reader2.result.split(',')[1]); reader2.onerror=rej; reader2.readAsDataURL(blob); });
+        const caption=ov.querySelector('#eqIeCaption')?.value||'';
+        await eqEnviarArchivo(dataBase64,'image/jpeg','foto.jpg',caption);
+      };
+      img.src=dataUrl;
+    };
+  };
+  reader.readAsDataURL(file);
+}
+async function eqAbrirStickers(){
+  let lista=[];
+  try{ const r=await fetch('/stickers/index.json',{credentials:'include'}); if(r.ok) lista=await r.json(); }catch(e){}
+  if(!Array.isArray(lista)||!lista.length){ toast('Sin stickers disponibles aún'); return; }
+  openSheet('Stickers', `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:6px 0">${lista.map(f=>`<button data-eqstk="${esc(f)}" style="border:none;background:var(--bg-3);border-radius:14px;padding:8px;cursor:pointer"><img src="/stickers/${esc(f)}" style="width:100%;aspect-ratio:1;object-fit:contain"></button>`).join('')}</div>`);
+  $('#sheetBody').querySelectorAll('[data-eqstk]').forEach(b=>b.onclick=async()=>{
+    haptic(10); closeSheet(); toast('Enviando sticker…');
+    try{
+      const resp=await fetch('/stickers/'+b.dataset.eqstk,{credentials:'include'});
+      const blob=await resp.blob();
+      const dataBase64=await new Promise((res,rej)=>{ const r2=new FileReader(); r2.onload=()=>res(r2.result.split(',')[1]); r2.onerror=rej; r2.readAsDataURL(blob); });
+      const payload={body:'',media_type:'image',media_url:'data:image/webp;base64,'+dataBase64};
+      if(_eqCon!=null) payload.to=_eqCon;
+      const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); toast('Sticker enviado'); }
+      else toast('Error al enviar sticker');
+    }catch(e){ toast('Error al enviar sticker'); }
+  });
+}
+function eqAbrirUbicacion(){
+  const DEFAULT_POS={lat:4.7110,lng:-74.0721};
+  let picker={lat:DEFAULT_POS.lat,lng:DEFAULT_POS.lng,name:'',address:''};
+  let pMap=null,pMarker=null;
+  const formHtml=`<div class="loc-picker-map" id="eqLocMap"><button class="loc-picker-locate" id="eqLocateBtn" title="Mi ubicación">${I(SVG.target,18)}</button></div>
+    <div class="loc-picker-hint">Toca el mapa o arrastra el pin</div>
+    <div class="loc-picker-info"><span class="loc-ic">📍</span><span class="loc-picker-addr" id="eqLocAddr">Obteniendo ubicación…</span></div>
+    <button class="loc-picker-send" id="eqLocSend">${I(SVG.send,15)} Enviar ubicación</button>
+    <div class="loc-search-wrap"><input id="eqLocSearch" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="eqLocResults"></div></div>`;
+  openSheet('Enviar ubicación', formHtml);
+  const addrEl=$('#eqLocAddr');
+  const setAddr=(txt)=>{ if(addrEl) addrEl.textContent=txt; };
+  const movePicker=async(lat,lng,{name='',address='',skipGeocode=false}={})=>{
+    picker={lat,lng,name,address};
+    if(pMarker) pMarker.setLatLng([lat,lng]);
+    if(pMap) pMap.setView([lat,lng],pMap.getZoom()<14?15:pMap.getZoom());
+    if(address){setAddr(name?`${name} — ${address}`:address);return;}
+    if(skipGeocode)return;
+    setAddr('Buscando dirección…');
+    try{ const g=await reverseGeocodeUbic(lat,lng); picker.name=g.name; picker.address=g.address; setAddr(g.address||`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
+    catch(e){ setAddr(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
+  };
+  (async()=>{
+    const mapEl=$('#eqLocMap'); if(!mapEl)return;
+    try{ await cargarLeaflet(); }catch(e){ if(mapEl) mapEl.innerHTML='<div style="display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px">No se pudo cargar el mapa</div>'; return; }
+    if(!$('#eqLocMap'))return;
+    pMap=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([picker.lat,picker.lng],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(pMap);
+    pMarker=L.marker([picker.lat,picker.lng],{draggable:true}).addTo(pMap);
+    pMarker.on('dragend',()=>{const p=pMarker.getLatLng();movePicker(p.lat,p.lng);});
+    pMap.on('click',e=>movePicker(e.latlng.lat,e.latlng.lng));
+    setTimeout(()=>pMap&&pMap.invalidateSize(),150);
+    try{ const pos=await obtenerPosicionActual(); if($('#eqLocMap')){movePicker(pos.latitude,pos.longitude);pMap.setView([pos.latitude,pos.longitude],16);} }
+    catch(e){ setAddr('Activa GPS o marca el punto en el mapa'); }
+  })();
+  const locateBtn=$('#eqLocateBtn');
+  if(locateBtn) locateBtn.onclick=async()=>{
+    haptic(8); setAddr('Obteniendo tu ubicación…');
+    try{ const pos=await obtenerPosicionActual(); movePicker(pos.latitude,pos.longitude); if(pMap)pMap.setView([pos.latitude,pos.longitude],16); }
+    catch(e){ setAddr('No se pudo obtener GPS — marca en el mapa'); toast('GPS no disponible','err'); }
+  };
+  const sendBtn=$('#eqLocSend');
+  if(sendBtn) sendBtn.onclick=async()=>{
+    sendBtn.disabled=true;
+    const{lat,lng,name,address}=picker;
+    closeSheet();
+    const locBody=JSON.stringify({latitude:lat,longitude:lng,name,address});
+    const payload={body:locBody,media_type:'location',media_url:locBody};
+    if(_eqCon!=null) payload.to=_eqCon;
+    toast('Enviando ubicación…');
+    const r=await api('/api/equipo/mensajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(r&&r.mensaje){ if(!teamMsgs.find(m=>m.id===r.mensaje.id)) teamMsgs.push(r.mensaje); renderEquipo(); marcarEquipoLeido(); toast('📍 Ubicación enviada'); }
+    else toast('Error al enviar ubicación','err');
+  };
+  let searchTimer;
+  const searchInput=$('#eqLocSearch');const resultsEl=$('#eqLocResults');
+  if(searchInput){
+    searchInput.oninput=()=>{
+      clearTimeout(searchTimer);
+      const q=searchInput.value.trim();
+      if(q.length<3){resultsEl.style.display='none';return;}
+      searchTimer=setTimeout(async()=>{
+        try{
+          const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);
+          if(!r.ok)throw new Error('err');
+          const data=await r.json();
+          if(!resultsEl)return;
+          if(data&&data.length){
+            resultsEl.innerHTML=data.map((res,i)=>`<button class="loc-result" data-idx="${i}"><span class="loc-r-icon">📍</span><span>${esc(res.display_name)}</span></button>`).join('');
+            resultsEl.style.display='block';
+            resultsEl.querySelectorAll('.loc-result').forEach(btn=>btn.onclick=()=>{
+              const r2=data[parseInt(btn.dataset.idx)];resultsEl.style.display='none';searchInput.value=r2.display_name;
+              movePicker(parseFloat(r2.lat),parseFloat(r2.lon),{name:r2.name||'',address:r2.display_name||''});
+            });
+          }else{resultsEl.innerHTML='<div class="loc-result" style="cursor:default">Sin resultados</div>';resultsEl.style.display='block';}
+        }catch(e){toast('Error al buscar','err');}
+      },400);
+    };
+    document.addEventListener('click',e=>{if(resultsEl&&!resultsEl.contains(e.target)&&e.target!==searchInput)resultsEl.style.display='none';});
+  }
+}
+
 // ── Browser Notifications for team chat ──
 function eqNotifyGeneral(fromNombre, body){
   if(!_eqAbierto||_eqCon!=null) return; // solo si NO está viendo el canal general
@@ -1517,6 +1729,9 @@ function initEquipo(){
   const back=$('#eqBack'); if(back){ back.innerHTML=I(SVG.back,22); back.onclick=cerrarEquipo; }
   const send=$('#eqSend'); if(send){ send.innerHTML=I(SVG.send,19); send.onclick=enviarEquipo; }
   const mic=$('#eqMicBtn'); if(mic) mic.innerHTML=I(SVG.mic,18);
+  const clip=$('#eqClipBtn'); if(clip){ clip.innerHTML=I(SVG.clip,18); clip.onclick=eqAbrirAdjuntos; }
+  eqInitFileInput();
+  eqInitAudio();
   const inp=$('#eqInput');
   if(inp){
     inp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviarEquipo(); } });
