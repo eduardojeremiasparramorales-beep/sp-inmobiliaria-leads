@@ -881,13 +881,28 @@ async function suscribirPushNativo(){
     const perm = await PushNotifications.requestPermissions();
     if(perm.receive!=='granted') return;
     await PushNotifications.addListener('registration', async token=>{
-      try{ await api('/api/push/suscribir-fcm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token.value})}); }catch(e){}
+      try{ await api('/api/push/suscribir-fcm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token.value})}); console.log('[FCM] Token registrado:',token.value.slice(0,20)+'...'); }catch(e){ console.error('[FCM] Error registrando token:',e.message); }
     });
-    await PushNotifications.addListener('registrationError', err=>console.error('FCM registration error:', err));
+    await PushNotifications.addListener('registrationError', err=>console.error('[FCM] Registration error:', err));
+    // Notificación recibida con app en foreground — mostrar toast local
+    await PushNotifications.addListener('pushNotificationReceived', action=>{
+      try{
+        const n=action.notification||{};
+        const tipo=n.data&&n.data.tipo;
+        if(tipo==='equipo_directo'||tipo==='equipo_general'||tipo==='equipo_mencion'){
+          toast((n.title||'Equipo')+': '+((n.body||'').slice(0,60))); haptic([60,30,60]); playNotifSound();
+        }
+      }catch(e){}
+    });
     // Tocar la notificación con la app en background debe abrir el lead correspondiente
     await PushNotifications.addListener('pushNotificationActionPerformed', action=>{
-      const leadId = action.notification && action.notification.data && action.notification.data.leadId;
-      if(leadId) abrirChat(Number(leadId));
+      try{
+        const data=action.notification&&action.notification.data;
+        const leadId=data&&data.leadId;
+        const tipo=data&&data.tipo;
+        if(leadId) abrirChat(Number(leadId));
+        else if(tipo&&tipo.startsWith('equipo')){ /* TODO: abrir chat de equipo */ }
+      }catch(e){}
     });
     await PushNotifications.register();
   }catch(e){ console.error('suscribirPushNativo:', e.message); }
@@ -3841,6 +3856,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           <div class="sec-label">Almacenamiento</div>
           <div class="sec-body">
             <div class="sec-row"><button class="sec-btn" id="btnClearCache">${I(SVG.trash||'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',14)} Limpiar caché de medios</button></div>
+            <div class="sec-row"><button class="sec-btn" id="btnReregisterPush" style="border-color:rgba(200,164,90,.3);color:var(--gold)">🔔 Re-registrar notificaciones push</button></div>
           </div>
         </div>
 
@@ -3903,6 +3919,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if(rsBtn) rsBtn.addEventListener('click',function(){ localStorage.removeItem('sp_notif_sound_custom'); toast('Tono eliminado'); irTab('perfil'); });
       const ccBtn=document.getElementById('btnClearCache');
       if(ccBtn) ccBtn.addEventListener('click',limpiarCache);
+      const rrBtn=document.getElementById('btnReregisterPush');
+      if(rrBtn) rrBtn.addEventListener('click',async()=>{ haptic([20,40,20]); toast('Re-registrando token FCM...'); try{ await suscribirPushNativo(); toast('✅ Token FCM re-registrado'); }catch(e){ toast('❌ Error: '+e.message,'err'); } });
       const permRow=document.getElementById('rowPermisos');
       if(permRow) permRow.addEventListener('click',()=>{ haptic(8); abrirPermisos(); });
       // ⭐ Mensajes destacados

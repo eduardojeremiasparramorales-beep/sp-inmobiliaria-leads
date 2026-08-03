@@ -101,9 +101,12 @@ async function sendFcm(s, payload) {
     console.log(`[FCM] OK → ${tokenPreview}`);
   } catch (e) {
     const code = e.code || e.message;
-    if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token' || code === 'messaging/invalid-argument') {
+    if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token') {
       console.warn(`[FCM] Token inválido (${code}), eliminando suscripción: ${tokenPreview}`);
       store.deletePushSubscription(s.endpoint);
+    } else if (code === 'messaging/invalid-argument') {
+      // invalid-argument generalmente es payload issue, NO token issue. No eliminar.
+      console.error(`[FCM] Payload inválido (${code}) para ${tokenPreview} — verificar title/body/data`);
     } else {
       console.error(`[FCM] Error ${code} para ${tokenPreview}`);
     }
