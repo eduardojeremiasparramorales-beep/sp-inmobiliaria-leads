@@ -1,7 +1,9 @@
 // Reset de datos del CRM: borra clientes e historial dejando el equipo intacto.
 //
-// BORRA: leads, mensajes, reacciones, notas, citas, conversaciones, timeline,
-//        customers/canales multicanal y logs de workflows. Resetea contadores.
+// BORRA: leads, mensajes, reacciones, notas, citas, tareas, conversaciones, timeline,
+//        customers/canales multicanal, scores, reservas, finanzas, documentos,
+//        encuestas, referidos, campaign_recipients, pending_outbound, notifications,
+//        feed_events/reactions y logs de workflows. Resetea contadores.
 // CONSERVA: vendedores, usuarios/admin, plantillas, propiedades, workflows,
 //           plantillas de WhatsApp y configuración.
 //
@@ -16,10 +18,25 @@ const adapter = require('../src/db/adapter');
 const { MEDIA_DIR } = require('../src/services/media');
 
 // Tablas de datos transaccionales a vaciar (en orden hijo→padre por las FKs).
+// IMPORTANTE: todas las tablas con FK a leads DEBEN ir antes de 'leads'.
 const TABLAS_A_BORRAR = [
   'message_reactions',
   'lead_notes',
+  'lead_scores',
+  'scheduled_messages',
+  'pending_outbound',
+  'campaign_recipients',
   'citas',
+  'tareas',
+  'notifications',
+  'feed_reactions',
+  'feed_events',
+  'reservas',
+  'transacciones',
+  'comisiones',
+  'documentos',
+  'encuestas_satisfaccion',
+  'referidos',
   'messages',
   'workflow_logs',
   'timeline',
@@ -99,7 +116,7 @@ async function main() {
   try {
     const vs = adapter.all(`
       SELECT v.nombre, v.telefono, v.estado,
-             CASE WHEN u.rol = 'admin' THEN 'admin (no recibe clientes)' ELSE 'vendedor' END AS tipo
+             CASE WHEN u.rol = 'admin' THEN 'admin (no recibe clientes)' WHEN u.rol = 'supervisor' THEN 'supervisor' ELSE 'asesor' END AS tipo
       FROM vendedores v
       LEFT JOIN usuarios u ON u.vendedor_id = v.id
       ORDER BY v.nombre

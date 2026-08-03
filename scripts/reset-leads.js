@@ -21,6 +21,15 @@ const adapter = require('../src/db/adapter');
 // Se borran completas (no tienen la noción de "suelta"/personal).
 const TABLES_FULL = [
   'message_reactions',
+  'lead_scores',
+  'feed_reactions',
+  'feed_events',
+  'reservas',
+  'transacciones',
+  'comisiones',
+  'documentos',
+  'encuestas_satisfaccion',
+  'referidos',
   'workflow_logs',
   'timeline',
   'scheduled_messages',

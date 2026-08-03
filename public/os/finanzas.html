@@ -105,7 +105,7 @@
           <div class="fila"><span class="fila__label">Pagadas</span><span class="fila__value" style="color:var(--green)">${fmt(r.comisionesPagadas)}</span></div>
         </div>
         <div class="card" style="padding:var(--s3)">
-          <div class="t-h3" style="margin-bottom:var(--s2)">Top vendedores</div>
+          <div class="t-h3" style="margin-bottom:var(--s2)">Top asesores</div>
           ${r.topVendedores && r.topVendedores.length ? r.topVendedores.map((v, i) => `
             <div class="fila">
               <span class="fila__label">${i + 1}. ${esc(v.nombre)}</span>

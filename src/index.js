@@ -2211,6 +2211,46 @@ app.get('/api/equipo/pinned', auth.requireAuth, (req, res) => {
   res.json(msg || null);
 });
 
+// ── Editar mensaje del equipo ──
+app.put('/api/equipo/messages/:id', auth.requireAuth, (req, res) => {
+  const msgId = Number(req.params.id);
+  const { body: newBody } = req.body || {};
+  if (!msgId || !newBody || !String(newBody).trim()) return res.status(400).json({ error: 'id_y_body_requeridos' });
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const updated = store.editTeamMessage(msgId, fromId, String(newBody).trim());
+  if (!updated) return res.status(404).json({ error: 'mensaje_no_existe_o_sin_permiso' });
+  events.emitToTodos('equipo_message_edited', { messageId: msgId, body: updated.body, edited_at: updated.edited_at });
+  res.json({ ok: true, message: updated });
+});
+
+// ── Buscar mensajes del equipo ──
+app.get('/api/equipo/search', auth.requireAuth, (req, res) => {
+  const q = req.query.q || '';
+  const channel = req.query.channel || null;
+  const results = store.searchTeamMessages(q, 0, channel);
+  res.json(results || []);
+});
+
+// ── Reenviar mensaje del equipo ──
+app.post('/api/equipo/messages/:id/forward', auth.requireAuth, (req, res) => {
+  const msgId = Number(req.params.id);
+  const { to } = req.body || {};
+  if (!msgId) return res.status(400).json({ error: 'id_requerido' });
+  const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  const nombre = req.session.rol === 'admin' ? 'Admin' : (req.session.nombre || 'Asesor');
+  const toVendedorId = (to != null && to !== '') ? Number(to) : null;
+  const newMsg = store.forwardTeamMessage(msgId, toVendedorId, fromId, nombre);
+  if (!newMsg) return res.status(404).json({ error: 'mensaje_no_existe' });
+  if (toVendedorId != null) {
+    events.emitToVendedor(toVendedorId, 'equipo_directo', newMsg);
+    events.emitToVendedor(fromId, 'equipo_directo', newMsg);
+    events.emitToAdmins('equipo_directo', newMsg);
+  } else {
+    events.emitToTodos('equipo_mensaje', newMsg);
+  }
+  res.json({ ok: true, mensaje: newMsg });
+});
+
 // ── Presencia de asesores ──
 app.post('/api/equipo/presence', auth.requireAuth, (req, res) => {
   const fromId = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;

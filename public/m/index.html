@@ -948,11 +948,11 @@ function apiUpload(url, body, pb){
 }
 /* ════════ Datos demo ════════ */
 function demoLeads(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
-  {id:1,customer_name:'Juan Díaz',customer_phone:'+573001234567',etiqueta:'negociacion',status:'activo',updated_at:now,created_at:now,unread_count:3,last_message:'¿Cuál es el precio del lote de 250m²?',messages_count:14,assigned_to_nombre:'Vendedor Test'},
-  {id:2,customer_name:'María Gómez',customer_phone:'+573019876543',etiqueta:'interesado',status:'activo',updated_at:now,created_at:now,unread_count:0,last_message:'Perfecto, quedo atenta 🙏',messages_count:6,assigned_to_nombre:'Vendedor Test'},
-  {id:3,customer_name:'Pedro Ruiz',customer_phone:'+573025551122',etiqueta:'cita',status:'activo',updated_at:'2026-07-02 10:00:00',created_at:'2026-06-19 09:00:00',unread_count:1,last_message:'Nos vemos el sábado en el proyecto',messages_count:22,assigned_to_nombre:'Vendedor Test'},
-  {id:4,customer_name:'Laura Ortiz',customer_phone:'+573036667788',etiqueta:'sin_clasificar',status:'nuevo',updated_at:now,created_at:now,unread_count:2,last_message:'Hola, vi el anuncio en Facebook',messages_count:2,assigned_to_nombre:'Vendedor Test'},
-  {id:5,customer_name:'Andrés Peña',customer_phone:'+573041239876',etiqueta:'vendido',status:'cerrado',updated_at:'2026-06-10 12:00:00',created_at:'2026-05-01 09:00:00',unread_count:0,last_message:'¡Muchas gracias por todo!',messages_count:40,assigned_to_nombre:'Vendedor Test'},
+  {id:1,customer_name:'Juan Díaz',customer_phone:'+573001234567',etiqueta:'negociacion',status:'activo',updated_at:now,created_at:now,unread_count:3,last_message:'¿Cuál es el precio del lote de 250m²?',messages_count:14,assigned_to_nombre:'Asesor Test'},
+  {id:2,customer_name:'María Gómez',customer_phone:'+573019876543',etiqueta:'interesado',status:'activo',updated_at:now,created_at:now,unread_count:0,last_message:'Perfecto, quedo atenta 🙏',messages_count:6,assigned_to_nombre:'Asesor Test'},
+  {id:3,customer_name:'Pedro Ruiz',customer_phone:'+573025551122',etiqueta:'cita',status:'activo',updated_at:'2026-07-02 10:00:00',created_at:'2026-06-19 09:00:00',unread_count:1,last_message:'Nos vemos el sábado en el proyecto',messages_count:22,assigned_to_nombre:'Asesor Test'},
+  {id:4,customer_name:'Laura Ortiz',customer_phone:'+573036667788',etiqueta:'sin_clasificar',status:'nuevo',updated_at:now,created_at:now,unread_count:2,last_message:'Hola, vi el anuncio en Facebook',messages_count:2,assigned_to_nombre:'Asesor Test'},
+  {id:5,customer_name:'Andrés Peña',customer_phone:'+573041239876',etiqueta:'vendido',status:'cerrado',updated_at:'2026-06-10 12:00:00',created_at:'2026-05-01 09:00:00',unread_count:0,last_message:'¡Muchas gracias por todo!',messages_count:40,assigned_to_nombre:'Asesor Test'},
 ]; }
 function demoMsgs(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
   {id:101,body:'Hola, vi el anuncio de los lotes en Tocaima.',direction:'incoming',timestamp:now},
@@ -1113,10 +1113,13 @@ function eqQuoteHTML(m){
 function eqMediaHTML(m){
   if(!m.media_type||!m.media_url) return '';
   if(m.media_type==='audio') return `<div class="eq-audio-wrap" style="margin-top:4px"><audio controls preload="none" src="${esc(m.media_url)}" style="width:200px;height:36px;border-radius:8px"></audio></div>`;
-  if(m.media_type==='image') return `<div style="margin-top:4px"><img src="${esc(m.media_url)}" style="max-width:200px;border-radius:10px;display:block" loading="lazy"></div>`;
+  if(m.media_type==='image') return `<div style="margin-top:4px;cursor:pointer" onclick="eqOpenLB('${esc(m.media_url)}')"><img src="${esc(m.media_url)}" style="max-width:200px;border-radius:10px;display:block" loading="lazy"></div>`;
   if(m.media_type==='video') return `<div style="margin-top:4px"><video src="${esc(m.media_url)}" controls style="max-width:200px;border-radius:10px;display:block"></video></div>`;
   if(m.media_type==='document') return `<a href="${esc(m.media_url)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:8px 12px;background:rgba(200,164,90,.1);border:1px solid var(--gold);border-radius:10px;color:var(--gold);font-size:12px;text-decoration:none">📄 Documento</a>`;
   return '';
+}
+function eqLinkify(text){
+  return esc(text).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" style="color:var(--gold);text-decoration:underline">$1</a>');
 }
 function eqFindVendedor(id){
   if(Number(id)===0) return {nombre:'Admin',foto:null};
@@ -1147,6 +1150,8 @@ function eqMsgHTML(m, idx, arr){
   const avatarBg=v.foto?'':`background:${eqColor(m.from_vendedor_id)}`;
   const avatarContent=v.foto?`<img src="${esc(v.foto)}" alt="">`:initials(v.nombre);
   const pinIcon=m.pinned_at?' 📌':'';
+  const editIcon=m.edited_at?'<span style="font-size:9px;color:var(--text-3);font-style:italic;margin-left:3px">editado</span>':'';
+  const readCheck=m.to_vendedor_id&&!mio?(m.read_at?'<span style="font-size:9px;color:var(--gold);margin-left:3px">✓✓</span>':'<span style="font-size:9px;color:var(--text-3);margin-left:3px;opacity:.5">✓</span>'):'';
   const vc=eqColor(m.from_vendedor_id);
   const bubBg=mio?'':`background:${eqHexToRgba(vc,.15)};border-left:3px solid ${vc};`;
   return `<div class="eq-msg-row ${mio?'mio':'otro'}${grouped?' eq-msg-grouped':''}" data-msgid="${m.id}">
@@ -1155,8 +1160,8 @@ function eqMsgHTML(m, idx, arr){
       ${!mio&&!grouped?`<div style="font-size:10.5px;font-weight:700;color:${vc};margin-bottom:2px">${esc(v.nombre)}</div>`:''}
       ${eqQuoteHTML(m)}
       ${eqMediaHTML(m)}
-      ${m.body?`<span class="bub-body">${esc(m.body)}${pinIcon}</span>`:''}
-      <div class="bub__t">${hora}</div>
+      ${m.body?`<span class="bub-body">${eqLinkify(m.body)}${pinIcon}${editIcon}</span>`:''}
+      <div class="bub__t">${hora}${readCheck}</div>
       ${eqReactionsHTML(m.id, m.reactions)}
     </div></div>`;
 }
@@ -1208,7 +1213,10 @@ function eqShowMsgActions(msgId,msg){
     `<div class="ctx-item primary" data-eqact="reply"><div class="ctx-ic">💬</div><div>Responder</div></div>`,
     `<div class="ctx-item" data-eqact="react"><div class="ctx-ic">👍</div><div>Reaccionar</div></div>`,
     `<div class="ctx-item" data-eqact="emoji"><div class="ctx-ic">😊</div><div>Emoji</div></div>`,
+    `<div class="ctx-item" data-eqact="copy"><div class="ctx-ic">📋</div><div>Copiar texto</div></div>`,
+    `<div class="ctx-item" data-eqact="forward"><div class="ctx-ic">↪️</div><div>Reenviar</div></div>`,
   ];
+  if(isMio||isAdmin) items.push(`<div class="ctx-item" data-eqact="edit"><div class="ctx-ic">✏️</div><div>Editar</div></div>`);
   if(isMio||isAdmin) items.push(`<div class="ctx-item" data-eqact="pin"><div class="ctx-ic">${isPinned?'📌':'📍'}</div><div>${isPinned?'Desfijar':'Fijar mensaje'}</div></div>`);
   if(isMio) items.push(`<div class="ctx-item danger" data-eqact="delete_everyone"><div class="ctx-ic">🗑️</div><div>Eliminar para todos</div></div>`);
   items.push(`<div class="ctx-item danger" data-eqact="delete_me"><div class="ctx-ic">🗑️</div><div>Eliminar para mí</div></div>`);
@@ -1222,6 +1230,9 @@ function eqShowMsgActions(msgId,msg){
         else if(act==='react') eqToggleReaction(msgId,'👍');
         else if(act==='emoji') eqShowEmojiPicker(msgId);
         else if(act==='pin') eqTogglePin(msgId);
+        else if(act==='edit') eqStartEdit(msgId,msg);
+        else if(act==='forward') eqForwardMsg(msgId);
+        else if(act==='copy') eqCopyMsg(msgId);
         else if(act==='delete_everyone') eqDeleteMsg(msgId,'everyone');
         else if(act==='delete_me') eqDeleteMsg(msgId,'me');
       });
@@ -1242,6 +1253,36 @@ async function eqTogglePin(msgId){
   const r=await api('/api/equipo/messages/'+msgId+'/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
   if(r&&r.ok){ toast(r.pinned?'Mensaje fijado':'Mensaje desfijado'); eqLoadPinned(); }
 }
+let _eqEditingId=null;
+function eqStartEdit(msgId,msg){
+  if(!msg)return;
+  _eqEditingId=msgId;
+  const inp=$('#eqInput');if(inp){inp.value=msg.body||'';inp.focus();}
+}
+function eqCancelEdit(){_eqEditingId=null;}
+async function eqForwardMsg(msgId){
+  const items=_eqAsesores.map(a=>`<div class="ctx-item" data-eqfwd="${a.id}"><div class="ctx-ic">↪️</div><div>${esc(a.nombre)}</div></div>`).join('');
+  openSheet('Reenviar a…',`<div style="padding:6px 0"><div class="ctx-item" data-eqfwd="general"><div class="ctx-ic">🦁</div><div>Canal General</div></div>${items}</div>`);
+  setTimeout(()=>{
+    document.querySelectorAll('[data-eqfwd]').forEach(el=>{
+      el.addEventListener('click',async()=>{
+        const to=el.dataset.eqfwd==='general'?null:Number(el.dataset.eqfwd);
+        closeSheet();
+        const r=await api('/api/equipo/messages/'+msgId+'/forward',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to})});
+        if(r&&r.mensaje){toast('↪️ Reenviado');}
+        else toast('Error','err');
+      });
+    });
+  },50);
+}
+function eqCopyMsg(msgId){
+  const msg=teamMsgs.find(x=>x.id===msgId);if(!msg)return;
+  navigator.clipboard.writeText(msg.body||'').then(()=>toast('📋 Copiado')).catch(()=>{});
+}
+window.eqOpenLB=function(src){
+  const lb=document.getElementById('eqLB');if(!lb)return;
+  document.getElementById('eqLBImg').src=src;lb.classList.add('show');
+};
 function eqSetReply(msgId,msg){
   if(!msg) return; _eqReplyTo=msg; haptic(12);
   const bar=$('#eqReplyBar'); if(bar) bar.classList.add('show');
@@ -1430,8 +1471,15 @@ async function abrirEquipo(){
 }
 function cerrarEquipo(){ _eqAbierto=false; $('#scEquipo').classList.remove('show'); marcarEquipoLeido(); renderList(); if(_eqRec&&_eqRec.state==='recording') _eqRec.stop(); eqCleanRec(); }
 async function enviarEquipo(){
-  const inp=$('#eqInput'); const body=(inp.value||'').trim(); if(!body) return;
+  const inp=$('#eqInput'); const body=(inp.value||'').trim(); if(!body&&!_eqEditingId) return;
   inp.value=''; haptic([10,20]);
+  if(_eqEditingId){
+    const r=await api('/api/equipo/messages/'+_eqEditingId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+    eqCancelEdit();
+    if(r&&r.message){const idx=teamMsgs.findIndex(x=>x.id===_eqEditingId);if(idx>=0)teamMsgs[idx]=r.message;renderEquipo();}
+    else toast('Error al editar','err');
+    return;
+  }
   const mentions=[]; _eqAsesores.forEach(a=>{ const f=(a.nombre||'').split(' ')[0]; if(f && new RegExp('@'+f,'i').test(body)) mentions.push(Number(a.id)); });
   const payload={body}; if(_eqCon!=null) payload.to=_eqCon; if(mentions.length) payload.mentions=mentions;
   if(_eqReplyTo){ payload.replyTo=_eqReplyTo.id; eqCancelReply(); }
@@ -1728,7 +1776,7 @@ async function init(){
   // consumir en popstate, para que el back nunca se salga de la app al login.
   if(!history.state || !history.state.base) history.replaceState({ base:true }, '');
   renderNav();
-  if(DEMO){ me={nombre:'Vendedor Test',rol:'vendedor'}; leads=demoLeads(); renderFilters(); renderList(); }
+  if(DEMO){ me={nombre:'Asesor Test',rol:'vendedor'}; leads=demoLeads(); renderFilters(); renderList(); }
   else {
     me = await api('/api/me');
     if(!me){ location.replace('/login.html'); return; }
@@ -3641,7 +3689,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
   // await encuentren su elemento y no salgan con return silencioso ("Cargando" eterno).
   $('#scHome').insertBefore(box, $('#fab'));
   if(t==='perfil'){
-    const n=me||{nombre:'Vendedor',rol:'vendedor',estado:'activo'};
+    const n=me||{nombre:'Asesor',rol:'vendedor',estado:'activo'};
     const m=metricas||{leadsActivos:0,leadsHoy:0,leadsCerrados:0,tasaRespuesta:0,ultimaActividad:null};
     const ec=estadoColores[n.estado||'activo']||estadoColores.activo;
     box.innerHTML=`

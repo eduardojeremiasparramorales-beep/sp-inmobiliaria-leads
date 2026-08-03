@@ -283,7 +283,7 @@
 
       <div class="cfg-sec">
         <h3>Chat interno de equipo</h3>
-        <p>🛡️ El chat directo entre asesores es supervisado por administración — cada vendedor ve un aviso al entrar a un chat 1 a 1 con un compañero. No es desactivable (transparencia por diseño).</p>
+        <p>🛡️ El chat directo entre asesores es supervisado por administración — cada asesor ve un aviso al entrar a un chat 1 a 1 con un compañero. No es desactivable (transparencia por diseño).</p>
       </div>
 
       <div class="cfg-sec">
@@ -427,7 +427,7 @@
 
       <div class="cfg-sec" id="secPlantillas">
         <h3>Plantillas de WhatsApp (Meta)</h3>
-        <p>Sincroniza el catálogo real de plantillas aprobadas en Meta Business Suite (nunca se escriben a mano). Luego asigna qué dato del CRM llena cada variable de cada plantilla — así el vendedor puede iniciar conversaciones con los datos reales del lead ya completados.</p>
+        <p>Sincroniza el catálogo real de plantillas aprobadas en Meta Business Suite (nunca se escriben a mano). Luego asigna qué dato del CRM llena cada variable de cada plantilla — así el asesor puede iniciar conversaciones con los datos reales del lead ya completados.</p>
         <button type="button" class="cfg-save" id="btnSyncTpl">Sincronizar desde Meta</button>
         <div id="tplList" style="margin-top:14px"></div>
       </div>
@@ -457,12 +457,12 @@
 
       <form class="cfg-sec" id="fEscalation">
         <h3>⏰ Escalado inteligente</h3>
-        <p>Tiempos para alertar y reasignar leads cuando un vendedor no responde. Los leads nuevos se reasignan automáticamente; los recurrentes solo reciben alertas.</p>
-        <div class="cfg-field"><label>Alerta al vendedor (minutos)</label><input id="escalation_alerta_min" value="${v('escalation_alerta_min') || '15'}" placeholder="15"></div>
+        <p>Tiempos para alertar y reasignar leads cuando un asesor no responde. Los leads nuevos se reasignan automáticamente; los recurrentes solo reciben alertas.</p>
+        <div class="cfg-field"><label>Alerta al asesor (minutos)</label><input id="escalation_alerta_min" value="${v('escalation_alerta_min') || '15'}" placeholder="15"></div>
         <div class="cfg-field"><label>Reasignar lead nuevo (minutos)</label><input id="escalation_reasignar_min" value="${v('escalation_reasignar_min') || '30'}" placeholder="30"></div>
         <div class="cfg-field"><label>Notificar admin (minutos)</label><input id="escalation_admin_min" value="${v('escalation_admin_min') || '60'}" placeholder="60"></div>
         <div class="cfg-field"><label>Lead se considera "asentado" (horas)</label><input id="escalation_asentado_horas" value="${v('escalation_asentado_horas') || '24'}" placeholder="24">
-        <div class="cfg-hint">Después de este tiempo, el lead ya no se reasigna — solo recibe alertas el vendedor actual.</div></div>
+        <div class="cfg-hint">Después de este tiempo, el lead ya no se reasigna — solo recibe alertas el asesor actual.</div></div>
         <button type="submit" class="cfg-save">Guardar tiempos de escalado</button>
       </form>
 
@@ -490,7 +490,7 @@
 
       <div class="cfg-sec">
         <h3>Canales y equipo</h3>
-        <p>La conexión de WhatsApp/Messenger/Instagram se gestiona en <a href="/os/integraciones.html" style="color:var(--gold-ink, var(--gold))">Integraciones</a>. Los vendedores, PIN y plantillas en <a href="/os/equipo.html" style="color:var(--gold-ink, var(--gold))">Equipo</a>.</p>
+        <p>La conexión de WhatsApp/Messenger/Instagram se gestiona en <a href="/os/integraciones.html" style="color:var(--gold-ink, var(--gold))">Integraciones</a>. Los asesores, PIN y plantillas en <a href="/os/equipo.html" style="color:var(--gold-ink, var(--gold))">Equipo</a>.</p>
       </div>`;
 
     document.getElementById('fBienvenida').addEventListener('submit', async ev => {

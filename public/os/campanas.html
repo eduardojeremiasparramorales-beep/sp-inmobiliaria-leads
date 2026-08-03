@@ -643,7 +643,7 @@ Servicios públicos">${project && project.features ? (Array.isArray(project.feat
             <div class="cp-field"><label>Ciudad</label>
               <select id="segCiudad"><option value="">Cualquiera</option>${segmentOptions.ciudades.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
             </div>
-            <div class="cp-field"><label>Vendedor</label>
+            <div class="cp-field"><label>Asesor</label>
               <select id="segVendedor"><option value="">Cualquiera</option>${vendedores.map(v => `<option value="${v.id}">${esc(v.nombre)}</option>`).join('')}</select>
             </div>
           </div>

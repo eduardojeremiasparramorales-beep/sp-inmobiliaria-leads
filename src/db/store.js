@@ -520,6 +520,7 @@ function createSchema() {
   ensureColumn('team_messages', 'media_url', 'TEXT');      // URL/base64 del media adjunto
   ensureColumn('team_messages', 'pinned_at', 'DATETIME');  // mensaje fijado
   ensureColumn('team_messages', 'pinned_by', 'INTEGER');   // quién fijó (0=admin)
+  ensureColumn('team_messages', 'edited_at', 'DATETIME');  // mensaje editado
   execSQL(`CREATE INDEX IF NOT EXISTS idx_team_conv ON team_messages(from_vendedor_id, to_vendedor_id, id)`);
 
   // Reacciones del chat interno
@@ -971,6 +972,43 @@ function getPinnedTeamMessage(channel) {
     return one('SELECT tm.*, vf.nombre AS from_nombre_full FROM team_messages tm LEFT JOIN vendedores vf ON tm.from_vendedor_id = vf.id WHERE tm.to_vendedor_id IS NOT NULL AND ((tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?) OR (tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?)) AND tm.pinned_at IS NOT NULL AND (tm.deleted IS NULL OR tm.deleted = 0) ORDER BY tm.pinned_at DESC LIMIT 1', [a, b, b, a]);
   }
   return null;
+}
+
+// --- Editar mensaje del equipo ---
+function editTeamMessage(messageId, vendedorId, newBody) {
+  const msg = one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
+  if (!msg) return null;
+  if (Number(msg.from_vendedor_id) !== vendedorId && vendedorId !== 0) return null; // solo autor o admin
+  run("UPDATE team_messages SET body = ?, edited_at = datetime('now') WHERE id = ?", [String(newBody).slice(0, 2000), messageId]);
+  return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id WHERE tm.id = ?', [messageId]);
+}
+
+// --- Buscar mensajes del equipo ---
+function searchTeamMessages(query, vendedorId, channel) {
+  if (!query || !String(query).trim()) return [];
+  const q = '%' + String(query).trim() + '%';
+  let base = `SELECT tm.*, vf.nombre AS from_nombre_full FROM team_messages tm LEFT JOIN vendedores vf ON tm.from_vendedor_id = vf.id WHERE (tm.deleted IS NULL OR tm.deleted = 0) AND (tm.body LIKE ? OR tm.from_nombre LIKE ?)`;
+  const params = [q, q];
+  if (channel === 'general') {
+    base += ' AND tm.to_vendedor_id IS NULL';
+  } else if (channel && channel.includes('_')) {
+    const [a, b] = channel.split('_').map(Number);
+    base += ' AND tm.to_vendedor_id IS NOT NULL AND ((tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?) OR (tm.from_vendedor_id = ? AND tm.to_vendedor_id = ?))';
+    params.push(a, b, b, a);
+  }
+  base += ' ORDER BY tm.id DESC LIMIT 50';
+  return all(base, params);
+}
+
+// --- Reenviar mensaje a otro canal ---
+function forwardTeamMessage(messageId, toVendedorId, fromVendedorId, fromNombre) {
+  const msg = one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
+  if (!msg) return null;
+  return saveTeamMessage(fromVendedorId, fromNombre, msg.body, {
+    toVendedorId: toVendedorId || null,
+    mediaType: msg.media_type,
+    mediaUrl: msg.media_url,
+  });
 }
 
 // --- Presencia ---
@@ -3144,7 +3182,7 @@ module.exports = {
   createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
   saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, markTeamGeneralRead, getTeamGeneralLastRead, countTeamUnread, getAllTeamMessagesForAdmin, getAdminTeamConversations,
   saveTeamReaction, removeTeamReaction, getTeamReactionsForMessages, deleteTeamMessage, updatePresence, getPresenceMap,
-  pinTeamMessage, getPinnedTeamMessage,
+  pinTeamMessage, getPinnedTeamMessage, editTeamMessage, searchTeamMessages, forwardTeamMessage,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
   getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,
   // Campañas SP

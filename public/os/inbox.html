@@ -459,7 +459,7 @@
         <select id="etqSel">
           ${Object.entries(ETQ).map(([v,t])=>`<option value="${v}" ${(c.etiqueta||'sin_clasificar')===v?'selected':''}>${t}</option>`).join('')}
         </select>
-        <label style="margin-left:6px">Vendedor:</label>
+        <label style="margin-left:6px">Asesor:</label>
         <select id="asigSel">
           <option value="">Sin asignar</option>
           ${vendedores.map(v=>`<option value="${v.id}" ${Number(c.assigned_to_id)===Number(v.id)?'selected':''}>${esc(v.nombre)}</option>`).join('')}
