@@ -51,6 +51,10 @@ function getPublicKey() { return process.env.VAPID_PUBLIC_KEY || ''; }
 async function sendToVendedor(vendedorId, payload) {
   if (vendedorId == null) return; // 0 es válido: canal de admins
   const subs = store.getPushSubscriptionsByVendedor(vendedorId);
+  if (!subs.length) {
+    console.warn(`[PUSH] vendor ${vendedorId} no tiene suscripciones push (FCM/WebPush) registradas`);
+    return;
+  }
   for (const s of subs) {
     if (s.tipo === 'fcm') {
       await sendFcm(s, payload);

@@ -2031,7 +2031,14 @@ app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
   const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
   let msgs;
   if (con != null) {
-    store.markTeamDirectRead(yo, con);
+    const readSenders = store.markTeamDirectRead(yo, con);
+    // Notificar a los emisores que sus mensajes fueron leídos (✓✓ en tiempo real)
+    if (readSenders && readSenders.length) {
+      const senderIds = [...new Set(readSenders)];
+      for (const senderId of senderIds) {
+        events.emitToVendedor(senderId, 'equipo_read', { by: yo, con: con });
+      }
+    }
     msgs = store.getTeamDirectMessages(yo, con, req.query.before_id ? Number(req.query.before_id) : null, 200);
   } else {
     msgs = store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 200);
@@ -2073,19 +2080,24 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     } catch (e) { console.error('[EQUIPO-PUSH] DM setup fallo:', e.message); }
   } else {
     events.emitToTodos('equipo_mensaje', msg);
-    // Push a TODOS los vendedores activos del canal general (excepto remitente)
+    // Push a TODOS los vendedores activos del canal general (excepto remitente y mencionados
+    // — los mencionados reciben una push dedicada más abajo con título "te mencionó")
     try {
       const push = require('./services/push');
       const activos = store.getVendedoresActivos();
+      const mencionSet = new Set(menciones.map(Number));
       for (const v of activos) {
-        if (Number(v.id) !== fromId) {
+        if (Number(v.id) !== fromId && !mencionSet.has(Number(v.id))) {
           const label = media_type ? `📎 ${nombre}` : `🦁 ${nombre}`;
           const r = push.sendToVendedor(v.id, { title: label, body: String(body || '').slice(0, 120), tipo: 'equipo_general', from: String(fromId) });
           r.then(ok => console.log(`[EQUIPO-PUSH] general enviado a vendor ${v.id}`)).catch(e => console.error(`[EQUIPO-PUSH] general fallo a vendor ${v.id}:`, e.message || e));
         }
       }
+      // Push al admin (vendedorId=0) en canal general
+      const rAdmin = push.sendToVendedor(0, { title: media_type ? `📎 ${nombre}` : `🦁 ${nombre}`, body: String(body || '').slice(0, 120), tipo: 'equipo_general', from: String(fromId) });
+      rAdmin.then(ok => console.log(`[EQUIPO-PUSH] general enviado a admin`)).catch(e => console.error(`[EQUIPO-PUSH] general fallo a admin:`, e.message || e));
     } catch (e) { console.error('[EQUIPO-PUSH] general setup fallo:', e.message); }
-    // Push a los mencionados en el canal general
+    // Push a los mencionados en el canal general (con título "te mencionó")
     if (menciones.length) {
       try {
         const push = require('./services/push');

@@ -841,7 +841,11 @@ function getTeamDirectThreads(vendedorId) {
   );
 }
 function markTeamDirectRead(vendedorId, otroId) {
+  // Devuelve los from_vendedor_id de los mensajes que se marcaron como leídos,
+  // para poder emitir SSE `equipo_read` al emisor y que vea ✓✓ en tiempo real.
+  const unread = all("SELECT DISTINCT from_vendedor_id FROM team_messages WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
   run("UPDATE team_messages SET read_at = datetime('now') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
+  return unread.map(r => r.from_vendedor_id);
 }
 function markTeamGeneralRead(vendedorId, lastMessageId) {
   const r = one('SELECT value FROM config WHERE key = ?', ['eq_general_last_read_' + vendedorId]);

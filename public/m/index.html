@@ -4523,6 +4523,12 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
   es.addEventListener('equipo_message_deleted',ev=>{ try{ const d=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===d.message_id); if(idx>=0){ teamMsgs[idx].deleted=1; if(_eqAbierto) renderEquipo(); } }catch(e){} });
   // Mensaje fijado/desfijado en vivo
   es.addEventListener('equipo_message_pinned',ev=>{ try{ if(_eqAbierto) eqLoadPinned(); }catch(e){} });
+  // ✓✓ Leído en tiempo real — el receptor abrió el DM y el emisor ve los doble checks
+  es.addEventListener('equipo_read',ev=>{ try{ const x=JSON.parse(ev.data);
+    // x.by = quien leyó, x.con = con quién está chatiendo (el emisor original)
+    // Si yo soy el emisor (x.con === miId()), actualizar read_at de mis mensajes
+    if(Number(x.con)===Number(miId())){ teamMsgs.forEach(m=>{ if(Number(m.from_vendedor_id)===Number(miId())&&Number(m.to_vendedor_id)===Number(x.by)&&!m.read_at) m.read_at=new Date().toISOString().replace('T',' ').slice(0,19); }); if(_eqAbierto) renderEquipo(); }
+  }catch(e){} });
   // Presencia del equipo en vivo
   es.addEventListener('equipo_presence',ev=>{ try{ const p=JSON.parse(ev.data); _eqPresence[p.vendedor_id]={online:p.online,last_seen:p.last_seen}; updateEqPresenceDots(); if(_eqAbierto) renderEqBanner(); }catch(e){} });
   // Transcripción IA lista para una nota de voz
