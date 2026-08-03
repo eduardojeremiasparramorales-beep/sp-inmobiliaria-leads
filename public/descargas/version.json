@@ -1,10 +1,10 @@
 {
-  "versionCode": 10,
-  "versionName": "1.5.2",
-  "apkUrl": "/descargas/leons-group.apk",
-  "size": 11009877,
-  "sha256": "f477c1da21b0692eedfa87bf029956ec63678254b21539fcce4bc20b952efc23",
-  "notas": "Teclado garantizado: la barra de mensaje sube siempre encima del teclado (plugin nativo). Pantalla universal en cualquier teléfono: sin recortes por notch ni barra inferior",
+  "versionCode": 11,
+  "versionName": "2.1.0",
+  "apkUrl": "/descargas/leons-group-v2.1.0.apk",
+  "size": 8951232,
+  "sha256": "91EA9BA10FE2703DD8EE3EE94BC599435E6EC068B777F2F9A5EB9B771469672F",
+  "notas": "Auth con Bearer token, logout robusto, sesión stuck, icono nuevo Leons Group",
   "obligatoria": false,
-  "fecha": "2026-07-31"
+  "fecha": "2026-08-03"
 }
