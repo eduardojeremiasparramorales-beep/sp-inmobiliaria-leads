@@ -1,10 +1,10 @@
 {
-  "versionCode": 11,
-  "versionName": "2.1.0",
-  "apkUrl": "/descargas/leons-group-v2.1.0.apk",
-  "size": 8951232,
-  "sha256": "91EA9BA10FE2703DD8EE3EE94BC599435E6EC068B777F2F9A5EB9B771469672F",
-  "notas": "Auth con Bearer token, logout robusto, sesión stuck, icono nuevo Leons Group",
+  "versionCode": 12,
+  "versionName": "3.0.0",
+  "apkUrl": "/descargas/leons-group.apk",
+  "size": 18074187,
+  "sha256": "",
+  "notas": "App Capacitor — WebView nativo, auto-actualización, push notifications, biometría",
   "obligatoria": false,
   "fecha": "2026-08-03"
 }
