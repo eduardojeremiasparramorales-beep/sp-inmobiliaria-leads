@@ -3131,6 +3131,7 @@ function seedGaleria() {
 
 module.exports = {
   initDB, createSchema, getDB, saveLead, assignLeadToVendedor, saveMessage,
+  all,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse, resetLead, reopenLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,

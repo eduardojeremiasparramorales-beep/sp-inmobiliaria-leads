@@ -77,25 +77,35 @@ async function sendWebPush(s, payload) {
 
 async function sendFcm(s, payload) {
   if (!fcmEnabled) return;
+  if (!s.endpoint || s.endpoint.length < 20) {
+    console.warn(`[FCM] Token inválido/corto, eliminando: ${s.endpoint || '(vacío)'}`);
+    store.deletePushSubscription(s.endpoint);
+    return;
+  }
+  const tokenPreview = String(s.endpoint || '').slice(0, 20) + '...';
   try {
     const admin = require('firebase-admin');
+    // Excluir title/body del data payload (ya están en notification) para evitar
+    // messaging/invalid-argument por duplicación de campos.
+    const dataFields = Object.fromEntries(
+      Object.entries(payload)
+        .filter(([k]) => k !== 'title' && k !== 'body')
+        .map(([k, v]) => [k, String(v)])
+    );
     await require('firebase-admin/messaging').getMessaging().send({
-      token: s.endpoint, // el token FCM se guarda en la columna endpoint (ver store.saveFcmToken)
+      token: s.endpoint,
       notification: { title: payload.title || 'Leons Group', body: payload.body || '' },
-      data: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
-      // Prioridad alta: sin esto, Android puede retrasar la entrega en Doze/segundo
-      // plano — crítico en fabricantes agresivos con batería (Tecno/HiOS, Xiaomi/MIUI,
-      // Huawei) donde una notificación de prioridad normal simplemente nunca despierta el dispositivo.
-      // channelId debe coincidir con el canal creado en MainActivity.java (mobile-app) —
-      // si no coincide con un canal que exista en el dispositivo, Android descarta el push.
+      data: dataFields,
       android: { priority: 'high', notification: { channelId: 'leons_group_push', sound: 'default', defaultSound: true, visibility: 'public' } },
     });
+    console.log(`[FCM] OK → ${tokenPreview}`);
   } catch (e) {
-    // Token inválido/desinstalado → eliminarlo, igual que una suscripción Web Push expirada
-    if (e.code === 'messaging/registration-token-not-registered' || e.code === 'messaging/invalid-registration-token') {
+    const code = e.code || e.message;
+    if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token' || code === 'messaging/invalid-argument') {
+      console.warn(`[FCM] Token inválido (${code}), eliminando suscripción: ${tokenPreview}`);
       store.deletePushSubscription(s.endpoint);
     } else {
-      console.error('Error FCM:', e.code || e.message);
+      console.error(`[FCM] Error ${code} para ${tokenPreview}`);
     }
   }
 }
