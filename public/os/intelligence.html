@@ -39,7 +39,7 @@
 
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  content.innerHTML = `
+  ctx.content.innerHTML = `
    <div class="os-content__max">
     <div class="u-between" style="margin-bottom:var(--s3)">
       <div>
