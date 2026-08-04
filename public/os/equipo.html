@@ -47,11 +47,6 @@
     const topId = team.slice().sort((a,b)=>b.vendidos-a.vendidos)[0]?.id;
     const vendsAll = Array.isArray(vendedores) ? vendedores : [];
     const usrs = Array.isArray(usuarios) ? usuarios : [];
-    // Auto-registrados desde /login.html, esperando aprobación — no entran a la
-    // tabla de gestión normal hasta que el admin decide.
-    const pendientes = vendsAll.filter(v => v.estado === 'pendiente');
-    const vends = vendsAll.filter(v => v.estado !== 'pendiente');
-
     // Mapa: vendedor_id → nombre de usuario (para saber quién tiene cuenta)
     const vUserMap = {};
     usrs.forEach(u => { if(u.vendedor_id) vUserMap[u.vendedor_id] = u.email; });
@@ -63,6 +58,10 @@
     // Cuentas admin: no se pueden suspender/eliminar desde aquí — borrar esa fila
     // borra también su login (usuarios + sesión) y deja al admin bloqueado fuera del sistema.
     const adminVendedorIds = new Set(usrs.filter(u => u.rol === 'admin' && u.vendedor_id).map(u => u.vendedor_id));
+    // Auto-registrados desde /login.html, esperando aprobación — no entran a la
+    // tabla de gestión normal hasta que el admin decide.
+    const pendientes = vendsAll.filter(v => v.estado === 'pendiente');
+    const vends = vendsAll.filter(v => v.estado !== 'pendiente' && !adminVendedorIds.has(v.id) && (vRolMap[v.id] || 'vendedor') !== 'supervisor');
 
     ctx.content.innerHTML = `
      <div class="os-content__max">
@@ -237,20 +236,30 @@
       const feed = document.getElementById('monFeed'); if(!feed) return;
       const msgs = await api('/api/equipo/monitor?limit=150');
       if(!Array.isArray(msgs) || !msgs.length){ feed.innerHTML = '<div class="t-dim3" style="text-align:center;padding:var(--s3);font-size:13px">Sin mensajes internos aún</div>'; return; }
-      feed.innerHTML = msgs.map(m => {
+      const general = msgs.filter(m => m.to_vendedor_id == null).reverse();
+      const directos = msgs.filter(m => m.to_vendedor_id != null).reverse();
+      function renderMsg(m){
         const directo = m.to_vendedor_id != null;
         const quien = m.from_nombre_full || m.from_nombre || (Number(m.from_vendedor_id)===0?'Admin':'Asesor');
-        const destino = directo ? ('→ ' + (m.to_nombre || 'Asesor')) : '· General';
+        const destino = directo ? ('→ ' + (m.to_nombre || 'Asesor')) : '';
         const hora = new Date(String(m.created_at).replace(' ','T')).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
         return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-soft)">
           <div class="avatar avatar--sm" style="background:${avatarColor(quien)};flex-shrink:0">${initials(quien)}</div>
           <div style="flex:1;min-width:0">
             <div class="u-row u-gap1" style="font-size:12px"><span style="font-weight:600">${esc(quien)}</span>
-              <span class="badge ${directo?'badge--gold':'badge--mute'}" style="font-size:10px">${directo?'Directo':'General'} ${esc(destino)}</span>
+              ${directo?`<span class="badge badge--gold" style="font-size:10px">${esc(destino)}</span>`:''}
               <span class="t-dim3" style="margin-left:auto;font-size:11px">${hora}</span></div>
             <div style="font-size:13px;margin-top:2px;color:var(--txt)">${esc(m.body)}</div>
           </div></div>`;
-      }).join('');
+      }
+      let html = '';
+      if(general.length){
+        html += `<div style="margin-bottom:var(--s2)"><div class="u-row u-gap1" style="margin-bottom:8px"><span style="font-weight:600;font-size:13px">Canal General</span><span class="badge badge--mute" style="font-size:10px">${general.length}</span></div>${general.map(renderMsg).join('')}</div>`;
+      }
+      if(directos.length){
+        html += `<div><div class="u-row u-gap1" style="margin-bottom:8px"><span style="font-weight:600;font-size:13px">Mensajes Directos</span><span class="badge badge--gold" style="font-size:10px">${directos.length}</span></div>${directos.map(renderMsg).join('')}</div>`;
+      }
+      feed.innerHTML = html;
     }
     cargarMonitor();
     const monBtn = document.getElementById('monRefresh'); if(monBtn) monBtn.addEventListener('click', cargarMonitor);
