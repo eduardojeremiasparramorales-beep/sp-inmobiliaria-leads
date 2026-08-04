@@ -62,11 +62,12 @@
     // tabla de gestión normal hasta que el admin decide.
     const pendientes = vendsAll.filter(v => v.estado === 'pendiente');
     const vends = vendsAll.filter(v => v.estado !== 'pendiente' && !adminVendedorIds.has(v.id) && (vRolMap[v.id] || 'vendedor') !== 'supervisor');
+    const adminsSup = vendsAll.filter(v => adminVendedorIds.has(v.id) || (vRolMap[v.id] || 'vendedor') === 'supervisor');
 
     ctx.content.innerHTML = `
      <div class="os-content__max">
       <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
-        ${metric('team','Asesores', fmt.n((stats||{}).totalVendedores||0))}
+        ${metric('team','Asesores', fmt.n(vends.length))}
         ${metric('activity','Activos ahora', fmt.n((stats||{}).vendedoresActivos||0))}
         ${metric('money','Cierres del equipo', fmt.n(totalVend))}
         ${metric('target','Conversión media', avgConv+'%')}
@@ -181,6 +182,36 @@
         </table>
         </div>
       </div>
+
+      <!-- Gestión de admin y supervisores -->
+      ${adminsSup.length ? `
+      <div class="card rise rise-3" style="margin-top:var(--s3)">
+        <div class="card--pad" style="padding-bottom:var(--s2)">
+          <div class="t-h3">Admins y Supervisores</div>
+          <div class="t-dim3" style="font-size:12px;margin-top:4px">${adminsSup.length} cuentas</div>
+        </div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table class="table">
+          <thead><tr>
+            <th>Usuario</th><th>Teléfono</th><th>Rol</th><th>Estado</th><th>PIN</th>
+          </tr></thead>
+          <tbody>${adminsSup.map(v => {
+            const esAdmin = adminVendedorIds.has(v.id);
+            const rol = esAdmin ? 'Admin' : 'Supervisor';
+            return `<tr>
+              <td><div class="u-row u-gap2">
+                <div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div>
+                <span style="font-weight:500">${esc(v.nombre)}</span>
+              </div></td>
+              <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}</td>
+              <td><span class="badge ${esAdmin?'badge--gold':'badge--green'}" style="font-size:10px">${rol}</span></td>
+              <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
+              <td><button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button></td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-3)">Sin cuentas admin/supervisor</td></tr>'}</tbody>
+        </table>
+        </div>
+      </div>` : ''}
      </div>`;
 
     // ── Agregar asesor ──
