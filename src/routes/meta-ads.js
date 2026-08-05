@@ -22,7 +22,7 @@ function requireConfig(req, res, next) {
 
 // ─── Estado general ──────────────────────────────────────────
 
-router.get('/status', requireConfig, async (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const status = await metaAds.getStatus();
     res.json(status);
