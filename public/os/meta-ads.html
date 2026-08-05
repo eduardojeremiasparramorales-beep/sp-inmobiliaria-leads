@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0A0A0A">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Leons Group · Meta Ads</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -140,10 +143,11 @@
   }
 
   function renderNotConfigured() {
+    const d = window.__metaDebug || {};
     return `
       <div class="ma-banner">
         <h4>Meta Ads no está configurado</h4>
-        <p>Necesitas crear una app de Marketing API en developers.facebook.com y generar un token con permisos <code>ads_management</code> + <code>ads_read</code>.</p>
+        <p>${d.tokenSet === false ? '❌ Falta META_MARKETING_API_TOKEN' : (d.tokenSet ? '✅ Token detectado (' + d.tokenLength + ' chars)' : '')}${d.accountIdSet === false ? ' · ❌ Falta META_AD_ACCOUNT_ID' : (d.accountIdSet ? ' · ✅ Cuenta: ' + d.accountId : '')}${d.pixelIdSet === false ? ' · ❌ Falta META_PIXEL_ID' : (d.pixelIdSet ? ' · ✅ Pixel: ' + d.pixelId : '')}</p>
         <p style="font-size:11.5px; color:var(--text-3); margin-bottom:6px;">Agrega estas variables en tu archivo <code>.env</code>:</p>
         <code>META_MARKETING_API_TOKEN=tu_token_permanente
 META_AD_ACCOUNT_ID=act_XXXXXXXXX
@@ -509,7 +513,12 @@ META_PIXEL_ID=tu_pixel_id (opcional)</code>
   // ─── Data loading ───────────────────────
   async function loadAll() {
     loading = true; render();
+    try {
+      const dbg = await fetch('/api/meta-ads-debug').then(r => r.json());
+      window.__metaDebug = dbg;
+    } catch (e) {}
     status = await api('/api/meta-ads/status');
+    console.log('[META-ADS] status response:', JSON.stringify(status));
     if (status && status.configured) {
       campaigns = await api('/api/meta-ads/campaigns') || [];
       await loadAudiences();
