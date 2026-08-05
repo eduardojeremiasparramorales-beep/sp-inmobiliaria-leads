@@ -603,6 +603,23 @@ app.get('/api/pixel-config', (req, res) => {
   res.json({ pixelId: process.env.META_PIXEL_ID || '' });
 });
 
+// ===================== META ADS DEBUG (público) =====================
+app.get('/api/meta-ads-debug', (req, res) => {
+  const token = process.env.META_MARKETING_API_TOKEN || '';
+  const accountId = process.env.META_AD_ACCOUNT_ID || '';
+  const pixelId = process.env.META_PIXEL_ID || '';
+  res.json({
+    tokenSet: !!token,
+    tokenLength: token.length,
+    tokenPrefix: token ? token.substring(0, 10) : '',
+    accountIdSet: !!accountId,
+    accountId,
+    pixelIdSet: !!pixelId,
+    pixelId,
+    nodeEnv: process.env.NODE_ENV || 'unknown',
+  });
+});
+
 // ===================== API PÚBLICA v2 =====================
 app.use('/api/v2', require('./api/v2'));
 
