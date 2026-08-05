@@ -271,7 +271,7 @@ app.get('/api/capacidades', auth.requireAdmin, (req, res) => {
     { id: 'catalogo', label: 'Catálogo público', status: 'on', detail: 'Activo — proyectos en preventa/venta se publican automáticamente', link: '/catalogo/' },
     { id: 'cadencia', label: 'Cadencia automática', status: cadenciaOn ? 'on' : 'warn', detail: cadenciaOn ? 'Activa' : 'Apagada (opt-in)', link: '/os/automatizaciones.html' },
     { id: 'campanas_sp', label: 'Generador de creativos', status: pythonOk ? (geminiOk ? 'on' : 'warn') : 'off', detail: !pythonOk ? 'Python no disponible en el contenedor' : (geminiOk ? 'Python + IA Gemini' : 'Python OK, sin GOOGLE_API_KEY (fondos IA desactivados, cae a Pillow)'), link: '/os/campanas-sp.html' },
-    { id: 'meta_ads', label: 'Meta Ads', status: 'off', detail: 'Pendiente de implementar (Fase 4)', link: null },
+    { id: 'meta_ads', label: 'Meta Ads', status: (process.env.META_MARKETING_API_TOKEN && process.env.META_AD_ACCOUNT_ID) ? 'on' : 'off', detail: (process.env.META_MARKETING_API_TOKEN && process.env.META_AD_ACCOUNT_ID) ? 'Marketing API conectada' : 'Falta META_MARKETING_API_TOKEN o META_AD_ACCOUNT_ID', link: '/os/meta-ads.html' },
     { id: 'calendario', label: 'Calendario', status: 'on', detail: 'Activo', link: '/os/calendario.html' },
     { id: 'insignias', label: 'Insignias', status: 'on', detail: 'Activo', link: '/os/equipo.html' },
     { id: 'webhook_firma', label: 'Firma del webhook', status: process.env.APP_SECRET ? 'on' : 'off', detail: process.env.APP_SECRET ? 'Verificación de firma activa (APP_SECRET configurado)' : 'Sin APP_SECRET — el webhook acepta requests sin verificar firma', link: null },
@@ -598,6 +598,11 @@ app.get('/api/ai/models', auth.requireAdmin, async (req, res) => {
   }
 });
 
+// ===================== PIXEL CONFIG (público) =====================
+app.get('/api/pixel-config', (req, res) => {
+  res.json({ pixelId: process.env.META_PIXEL_ID || '' });
+});
+
 // ===================== API PÚBLICA v2 =====================
 app.use('/api/v2', require('./api/v2'));
 
@@ -608,6 +613,9 @@ app.use('/api/v2', require('./api/v2'));
 // reusan store.js sin duplicar queries. Sprints 2-8 van llenando los stubs 501 que el
 // router expone.
 app.use('/api/supervisor', auth.requireSupervisorOrAdmin, require('./api/supervisor'));
+
+// ===================== META ADS (Marketing API) =====================
+app.use('/api/meta-ads', auth.requireAdmin, require('./routes/meta-ads'));
 
 // ===================== WEBHOOKS MULTICANAL =====================
 const channels = require('./channels');
