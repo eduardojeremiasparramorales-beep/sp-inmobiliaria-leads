@@ -677,6 +677,7 @@
       <span class="ic">⬆️</span>
       <span class="tx" id="updBannerTxt">Hay una nueva versión de la app</span>
       <button id="updBannerBtn">Actualizar</button>
+      <button class="perm-x" id="updBannerX" aria-label="Cerrar">✕</button>
     </div>
     <div class="perm-banner" id="permBanner" hidden>
       <span class="ic">🎙️</span>
@@ -1077,6 +1078,12 @@ function mostrarUpdBanner(v){
     ? 'Actualización descargada — toca para instalar'
     : 'Nueva versión '+v.versionName+' disponible';
   $('#updBannerBtn').onclick = ()=>{ haptic(10); mostrarPantallaUpdate(v); };
+  const x=$('#updBannerX');
+  if(x) x.onclick = async ()=>{
+    haptic(8);
+    try{ await window.Capacitor.Plugins.Preferences.set({key:'sp_upd_skip', value:String(v.versionCode)}); }catch(e){}
+    b.hidden = true;
+  };
   b.hidden=false;
 }
 
@@ -3909,6 +3916,89 @@ function abrirEditarPerfil(){
   });
 }
 
+/* ════════ Cuenta y seguridad (avanzado) ════════ */
+function abrirCambiarPin(){
+  openSheet('Cambiar PIN', `
+    <form id="pinForm" style="display:flex;flex-direction:column;gap:14px">
+      <label style="font-size:12px;color:var(--text-3);font-weight:500">Nuevo PIN (4 dígitos)</label>
+      <input id="pinNuevo" type="password" inputmode="numeric" maxlength="4" placeholder="••••" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:18px;text-align:center;letter-spacing:.5em;font-family:inherit;outline:none">
+      <label style="font-size:12px;color:var(--text-3);font-weight:500">Confirmar PIN</label>
+      <input id="pinConfirm" type="password" inputmode="numeric" maxlength="4" placeholder="••••" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:18px;text-align:center;letter-spacing:.5em;font-family:inherit;outline:none">
+      <button type="submit" class="cop-use" style="margin-top:4px">${I(SVG.check,16)} Guardar PIN</button>
+    </form>`);
+  const form = document.getElementById('pinForm');
+  if(form) form.addEventListener('submit', async function(e){
+    e.preventDefault(); haptic(10);
+    const p1 = document.getElementById('pinNuevo').value.trim();
+    const p2 = document.getElementById('pinConfirm').value.trim();
+    if(!/^\d{4}$/.test(p1)){ toast('El PIN debe tener 4 dígitos','err'); return; }
+    if(p1 === '0000'){ toast('Elige un PIN distinto a 0000','err'); return; }
+    if(p1 !== p2){ toast('Los PIN no coinciden','err'); return; }
+    const r = await api('/api/mi-pin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ pin: p1 }) });
+    if(r){ closeSheet(); toast('PIN actualizado'); }
+    else toast('No se pudo cambiar el PIN','err');
+  });
+}
+function abrirSesiones(){
+  openSheet('Sesiones activas', '<div id="sesList" style="max-height:340px;overflow-y:auto"><div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Cargando…</div></div>');
+  (async()=>{
+    const list = await api('/api/me/sesiones') || [];
+    const box = document.getElementById('sesList');
+    if(!box) return;
+    if(!list.length){ box.innerHTML = '<div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Sin sesiones activas</div>'; return; }
+    box.innerHTML = list.map(s=>`<div class="ctx-item" data-ses="${encodeURIComponent(s.token)}"><div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600">${esc(s.dispositivo||'Dispositivo')}${s.actual?' <span style="color:var(--gold);font-size:11px;font-weight:500">· este dispositivo</span>':''}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">${fmtTs(s.ultima_actividad)}</div></div>${s.actual?'':'<span style="flex-shrink:0;color:var(--red);font-size:12px">Cerrar</span>'}</div>`).join('') +
+      '<button id="btnCerrarTodas" style="width:100%;height:44px;margin-top:10px;border-radius:12px;border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cerrar sesiones de otros dispositivos</button>';
+    box.querySelectorAll('[data-ses]').forEach(el=>el.onclick=async()=>{
+      const tok = decodeURIComponent(el.dataset.ses);
+      const r = await api('/api/me/sesiones/'+tok, { method:'DELETE' });
+      if(r){ toast('Sesión cerrada'); abrirSesiones(); }
+      else toast('No se pudo cerrar la sesión','err');
+    });
+    const ct = document.getElementById('btnCerrarTodas');
+    if(ct) ct.onclick = async ()=>{
+      const r = await api('/api/me/cerrar-todas', { method:'POST' });
+      if(r){ toast('Sesiones cerradas'); abrirSesiones(); }
+      else toast('No se pudo cerrar','err');
+    };
+  })();
+}
+function exportarPerfil(){
+  (async()=>{
+    if(!me || !me.vendedorId){ toast('Sin cuenta asociada','err'); return; }
+    const data = await api('/api/vendedores/'+me.vendedorId+'/perfil');
+    if(!data){ toast('No se pudo exportar','err'); return; }
+    const blob = new Blob([JSON.stringify(data,null,2)], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'mi-perfil-'+me.vendedorId+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+    toast('Perfil exportado');
+  })();
+}
+async function toggle2FA(){
+  const tg = document.getElementById('btnToggle2FA'); if(!tg) return;
+  const on = tg.classList.contains('on');
+  haptic(10);
+  const r = await api('/api/me/2fa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ enable: !on }) });
+  if(r){ tg.classList.toggle('on', !!r.two_fa); if(me) me.two_fa = !!r.two_fa; toast(r.two_fa ? 'Verificación 2FA activada' : 'Verificación 2FA desactivada'); }
+  else toast('No se pudo cambiar la verificación','err');
+}
+function fmtTs(ts){
+  if(!ts) return '—';
+  const n = typeof ts === 'number' ? (ts > 1e12 ? ts : ts*1000) : new Date(ts).getTime();
+  if(!n || isNaN(n)) return '—';
+  const d = new Date(n);
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return d.getDate()+' '+meses[d.getMonth()]+' · '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function cargarVersionApp(){
+  api('/api/app/version').then(v=>{
+    const lbl = document.getElementById('lblVersion');
+    if(lbl && v && v.versionName) lbl.textContent = v.versionName;
+  });
+}
+
 /* ════════ Bottom Nav / tabs ════════ */
 const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
 function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
@@ -3972,6 +4062,18 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           <div class="sec-body"><div class="sec-row">
             <input id="inpAbout" placeholder="¿Qué haces ahora?" value="${esc((me&&me.about)||localStorage.getItem('sp_about_text')||'')}">
           </div></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Cuenta y seguridad</div>
+          <div class="sec-body">
+            <div class="sec-row" id="rowCambiarPin"><label>🔒 Cambiar PIN</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Cambiar</button></div>
+            <div class="sec-row" id="rowSesiones"><label>📱 Sesiones activas</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Ver</button></div>
+            <div class="sec-row" id="rowExportar"><label>⬇️ Exportar mi perfil</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">JSON</button></div>
+            <div class="sec-row"><label>🛡️ Verificación en 2 pasos</label><button class="toggle-sw${me&&me.two_fa?' on':''}" id="btnToggle2FA"></button></div>
+            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Pide tu PIN en cada dispositivo nuevo al iniciar sesión.</div>
+            <div class="sec-row"><label>ℹ️ Versión de la app</label><span id="lblVersion" style="color:var(--text-2);font-size:12.5px">…</span></div>
+          </div>
         </div>
 
         <div class="sec">
@@ -4175,6 +4277,16 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       });
       const edBtn = document.getElementById('btnEditarPerfil');
       if (edBtn) edBtn.addEventListener('click', () => abrirEditarPerfil());
+      // Cuenta y seguridad
+      const pinRow = document.getElementById('rowCambiarPin');
+      if (pinRow) pinRow.addEventListener('click', () => { haptic(8); abrirCambiarPin(); });
+      const sesRow = document.getElementById('rowSesiones');
+      if (sesRow) sesRow.addEventListener('click', () => { haptic(8); abrirSesiones(); });
+      const expRow = document.getElementById('rowExportar');
+      if (expRow) expRow.addEventListener('click', () => { haptic(8); exportarPerfil(); });
+      const t2fa = document.getElementById('btnToggle2FA');
+      if (t2fa) t2fa.addEventListener('click', toggle2FA);
+      cargarVersionApp();
       // Mis respuestas
       cargarMisTpl();
       // Recordatorios

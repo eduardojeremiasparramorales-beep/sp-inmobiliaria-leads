@@ -189,6 +189,21 @@
           <div class="cfg-field" style="flex:1"><label>Confirmar</label><input id="pinConfirmar" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
         </div>
         <button type="button" class="cfg-save" id="btnGuardarPin">Cambiar PIN</button>
+      </div>
+
+      <div class="cfg-sec">
+        <h3>Verificación en 2 pasos</h3>
+        <p>Pide tu PIN en cada dispositivo nuevo al iniciar sesión.</p>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" id="twofaCheck" ${me.two_fa ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--gold)">
+          Activar verificación en dos pasos
+        </label>
+        <button type="button" class="cfg-save" id="btnGuardar2FA">Guardar</button>
+      </div>
+
+      <div class="cfg-sec">
+        <h3>Versión de la app</h3>
+        <p id="lblVersion" style="margin:0">…</p>
       </div>` : ''}
 
       <div class="cfg-sec">
@@ -227,6 +242,16 @@
       if (r && r.ok) { toast('PIN actualizado', 'ok'); document.getElementById('pinNuevo').value = ''; document.getElementById('pinConfirmar').value = ''; }
       else toast((r && r.error) || 'Error al cambiar PIN', 'err');
     });
+    document.getElementById('btnGuardar2FA')?.addEventListener('click', async () => {
+      const enable = document.getElementById('twofaCheck').checked;
+      const r = await api('/api/me/2fa', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enable }) });
+      toast(r ? (enable ? 'Verificación 2FA activada' : 'Verificación 2FA desactivada') : 'Error al guardar', r ? 'ok' : 'err');
+    });
+    (async () => {
+      const v = await api('/api/app/version');
+      const lbl = document.getElementById('lblVersion');
+      if (lbl) lbl.textContent = v && v.versionName ? 'Leons Group ' + v.versionName : '—';
+    })();
     document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('click', async () => {
       await api('/api/me/sesiones/' + b.dataset.cerrar, { method: 'DELETE' });
       toast('Sesión cerrada', 'ok'); renderSection('cuenta');
