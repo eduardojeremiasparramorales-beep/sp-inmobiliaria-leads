@@ -620,7 +620,11 @@ app.get('/api/meta-ads-debug', (req, res) => {
   });
 });
 
-// ===================== API PÚBLICA v2 =====================
+app.get('/os/meta-ads.html', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, '..', 'public', 'os', 'meta-ads.html'));
+});
+
 app.use('/api/v2', require('./api/v2'));
 
 // ===================== SUPERVISOR CENTER API =====================
