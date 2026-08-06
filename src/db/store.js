@@ -40,6 +40,7 @@ function createSchema() {
       email TEXT DEFAULT '',
       estado TEXT DEFAULT 'activo',
       rol TEXT DEFAULT 'vendedor',
+      two_fa INTEGER DEFAULT 0,
       total_leads INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT (datetime('now'))
     );
@@ -470,6 +471,7 @@ function createSchema() {
 
   // Texto libre "Acerca de" del perfil del vendedor (antes vivía solo en localStorage)
   ensureColumn('vendedores', 'about', 'TEXT');
+  ensureColumn('vendedores', 'two_fa', 'INTEGER DEFAULT 0');
 
   // Centro de notificaciones persistente (vendedor_id = 0 → admins)
   execSQL(`
@@ -2007,6 +2009,10 @@ function setVendedorFoto(id, fotoBase64) {
   run('UPDATE vendedores SET foto = ? WHERE id = ?', [fotoBase64, id]);
 }
 
+function setVendedor2FA(id, enabled) {
+  run('UPDATE vendedores SET two_fa = ? WHERE id = ?', [enabled ? 1 : 0, Number(id)]);
+}
+
 function getVendedorMetricas(id) {
   const a = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND status != ?", [id, 'cerrado']);
   const h = one("SELECT COUNT(*) as c FROM leads WHERE assigned_to_id = ? AND date(created_at) = date('now')", [id]);
@@ -3136,7 +3142,7 @@ module.exports = {
   updateLeadStatus, setFirstResponse, resetLead, reopenLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution,
-  addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin,
+  addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin, setVendedor2FA,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,
   getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError,

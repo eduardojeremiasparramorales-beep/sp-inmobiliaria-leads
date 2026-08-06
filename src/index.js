@@ -1034,7 +1034,15 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
     about: v ? (v.about || '') : '',
     foto: v ? v.foto : null,
     estado: v ? v.estado : null,
+    two_fa: v ? (v.two_fa ? true : false) : false,
   });
+});
+
+app.post('/api/me/2fa', auth.requireAuth, (req, res) => {
+  const { enable } = req.body || {};
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.setVendedor2FA(req.session.vendedorId, Boolean(enable));
+  res.json({ ok: true, two_fa: Boolean(enable) });
 });
 
 app.post('/api/me/nombre', auth.requireAuth, (req, res) => {
