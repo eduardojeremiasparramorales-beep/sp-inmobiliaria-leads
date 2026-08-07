@@ -4908,7 +4908,11 @@ async function refrescarLead(leadId){
     leads=leads.filter(x=>Number(x.id)!==Number(leadId)); renderList(); return;
   }
   const idx=leads.findIndex(x=>Number(x.id)===Number(leadId));
-  if(idx>=0) leads[idx]=Object.assign({},leads[idx],l); else leads.unshift(l);
+  if(idx>=0) {
+    leads[idx]=Object.assign({},leads[idx],l);
+  } else if(Number(l.assigned_to_id)===Number(miId()) || miId()===0) {
+    leads.unshift(l);
+  }
   leads.sort((a,b)=>new Date(String(b.updated_at||b.created_at).replace(' ','T'))-new Date(String(a.updated_at||a.created_at).replace(' ','T')));
 }
 let _primeraConexion=true;
