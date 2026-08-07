@@ -67,8 +67,7 @@ async function sendMessage(to, text) {
   const { url, headers } = getApiConfig();
   const digits = (to || '').replace(/[^\d]/g, '');
   if (digits.startsWith('57') && digits.length !== 12) {
-    console.error(`[WhatsApp] sendMessage RECHAZADO — teléfono colombiano inválido: ${to}. Se esperaban 12 dígitos, se recibieron ${digits.length}.`);
-    throw new Error(`Teléfono colombiano inválido: ${to}. Debe tener exactamente 10 dígitos después de +57.`);
+    console.warn(`[WhatsApp] sendMessage WARNING — teléfono colombiano inusual: ${to} (${digits.length} dígitos). Meta validará la entrega.`);
   }
   try {
     const res = await axios.post(url, {
@@ -107,7 +106,21 @@ async function sendMessageSmart(to, text, leadId) {
     }
 
     console.log(`[WhatsApp] Ventana cerrada para ${to} — enviando template "${templateName}" y encolando el mensaje`);
-    const tplResult = await sendTemplate(to, templateName);
+    let tplResult;
+    try {
+      const { sendResolvedTemplate } = require('./wa-templates');
+      const tplRecord = store.getWATemplateByName(templateName);
+      const lead = leadId ? store.getLeadById(leadId) : null;
+      const vendedor = lead && lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+      if (tplRecord) {
+        tplResult = await sendResolvedTemplate(to, tplRecord, lead, vendedor, {});
+      } else {
+        tplResult = await sendTemplate(to, templateName);
+      }
+    } catch (tplErr) {
+      console.error(`[WhatsApp] sendMessageSmart template fallback: ${tplErr.message}`);
+      tplResult = await sendTemplate(to, templateName);
+    }
 
     // Un template ENTREGADO no reabre la ventana de 24h — solo lo hace una respuesta del
     // cliente. Reintentar el free-form aquí siempre fallaba con el mismo 131047 y el mensaje
@@ -124,16 +137,9 @@ async function sendMessageSmart(to, text, leadId) {
 //   permite header (texto o media) y botones además del body, con variables nombradas.
 async function sendTemplate(to, templateName, params, languageCode) {
   const { url, headers } = getApiConfig();
-  // Validar teléfono: código país + número local
   const digits = (to || '').replace(/[^\d]/g, '');
-  if (digits.length < 11 || digits.length > 15) {
-    console.error(`[WhatsApp] sendTemplate RECHAZADO — teléfono inválido: ${to} (${digits.length} dígitos). Se esperan 11-15 dígitos.`);
-    throw new Error(`Teléfono inválido: ${to}. Debe tener código de país + número.`);
-  }
-  // Detectar Colombia (+57) y validar que el número local tenga 10 dígitos
   if (digits.startsWith('57') && digits.length !== 12) {
-    console.error(`[WhatsApp] sendTemplate RECHAZADO — teléfono colombiano inválido: ${to}. Se esperan 12 dígitos (+57 + 10 dígitos), se recibieron ${digits.length}.`);
-    throw new Error(`Teléfono colombiano inválido: ${to}. Debe tener exactamente 10 dígitos después de +57.`);
+    console.warn(`[WhatsApp] sendTemplate WARNING — teléfono colombiano inusual: ${to} (${digits.length} dígitos). Meta validará la entrega.`);
   }
   let components = [];
   if (Array.isArray(params) && params.length && typeof params[0] === 'object' && params[0] !== null && params[0].type) {

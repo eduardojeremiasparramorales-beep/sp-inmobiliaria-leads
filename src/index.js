@@ -3348,8 +3348,15 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
     } else {
       const tplName = templateName || store.getConfig('reengagement_template');
       if (tplName) {
-        const { sendTemplate: sendT } = require('./services/whatsapp');
-        await sendT(cleanPhone, tplName);
+        const tplRecord = store.getWATemplateByName(tplName);
+        const vendedor = activos.length > 0 ? activos[0] : null;
+        if (tplRecord) {
+          const { sendResolvedTemplate: sendRT } = require('./services/wa-templates');
+          await sendRT(cleanPhone, tplRecord, lead, vendedor, templateVars || {});
+        } else {
+          const { sendTemplate: sendT } = require('./services/whatsapp');
+          await sendT(cleanPhone, tplName);
+        }
         tplSent = true;
       }
     }
