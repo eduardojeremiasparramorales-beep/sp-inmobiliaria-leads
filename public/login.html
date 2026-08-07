@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>Leons Group — Acceso</title>
+<title>Leons Group â€” Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
@@ -18,20 +18,19 @@
 <script src="/os/safe-area.js"></script>
 <style>
   :root{
-    --bg:#0A0A0A; --gold:#D4AF37; --gold-ink:#D4AF37; --gold-2:#8E7028; --gold-3:#EDCC60;
+    --bg:#060606; --gold:#FFD76A; --gold-ink:#FFD76A; --gold-2:#C07F1E; --gold-3:#FFE08A;
     --green:#4E7B46; --txt:#F8F8F8; --txt-2:rgba(248,248,248,.5);
     --txt-3:rgba(248,248,248,.22); --border:#1A1A1A; --surface:#111;
     --red:#E5484D; --ease:cubic-bezier(.22,1,.36,1); --kb:0px; /* altura del teclado (safe-area.js) */
     /* Glass (sync sp-os.css) */
     --glass:rgba(42,38,30,.10); --glass-2:rgba(50,45,35,.16);
     --glass-border:rgba(248,244,230,.14); --blur-sm:saturate(1.6) blur(10px);
-    --grad-gold:linear-gradient(140deg,#EDCC60,var(--gold) 60%,#A08028);
-    --grad-gold-text:linear-gradient(135deg,#EDCC60,var(--gold) 55%,#8E7028);
-    /* Aurora tokenizada — ver nota igual en sp-os.css §1B */
+    --grad-gold:linear-gradient(140deg,var(--gold-3),var(--gold) 52%,#E8A93E);
+    --grad-gold-text:linear-gradient(135deg,var(--gold-3),var(--gold) 55%,var(--gold-2));
+    /* Aurora tokenizada â€” ver nota igual en sp-os.css Â§1B */
     --aurora-1a:rgba(248,248,248,.15); --aurora-1b:rgba(248,248,248,.05);
     --aurora-2a:rgba(248,248,248,.11); --aurora-2b:rgba(248,248,248,.04);
-    --aurora-gold-1:rgba(212,175,55,.22); --aurora-green:rgba(78,123,70,.16); --aurora-gold-2:rgba(212,175,55,.10);
-    --aurora-gold-3:rgba(237,204,96,.07);
+    --aurora-gold-1:rgba(255,215,106,.32); --aurora-green:rgba(78,123,70,.18); --aurora-gold-2:rgba(255,215,106,.16); --aurora-gold-3:rgba(255,223,140,.10);
   }
   :root[data-theme="light"]{
     --bg:#F4EFE3; --gold-ink:#7D5F24; --green:#3F6538;
@@ -61,19 +60,19 @@
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   }
 
-  /* ── Layout ── */
+  /* â”€â”€ Layout â”€â”€ */
   .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;padding-bottom:calc(28px + var(--kb,0px));transition:opacity .3s var(--ease),transform .3s var(--ease);z-index:1}
   .screen.hidden{opacity:0;pointer-events:none;transform:translateY(12px)}
 
-  /* ── Logo ── */
+  /* â”€â”€ Logo â”€â”€ */
   .logo{
-    width:72px;height:72px;border-radius:18px;
+    width:84px;height:84px;border-radius:50%;
     background:var(--glass-2);
     backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
     display:grid;place-items:center;margin-bottom:18px;
-    box-shadow:0 8px 32px rgba(0,0,0,.3),0 0 0 1px rgba(200,164,90,.2),0 0 30px rgba(200,164,90,.08);
+    box-shadow:0 8px 32px rgba(0,0,0,.3),0 0 0 4px rgba(255,215,106,.14),0 0 46px rgba(255,215,106,.4);
   }
-  .logo img{width:100%;height:100%;object-fit:cover;border-radius:18px}
+  .logo img{width:100%;height:100%;object-fit:cover;border-radius:50%}
   .brand{font-family:'Cinzel',serif;font-weight:600;font-size:1.1rem;letter-spacing:.16em;text-align:center;margin-bottom:4px;
     background:var(--grad-gold-text);
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
@@ -82,22 +81,22 @@
   .sub{font-family:'Cormorant Garamond',serif;font-size:.85rem;color:var(--txt-2);letter-spacing:.1em;text-align:center;margin-bottom:24px;font-weight:400}
   .sp-line{width:40px;height:1.5px;background:var(--gold);opacity:.35;margin-bottom:28px;border-radius:1px}
 
-  /* ── Input field ── */
+  /* â”€â”€ Input field â”€â”€ */
   .field{width:100%;max-width:320px;margin-bottom:14px}
   .field label{display:block;font-size:.7rem;color:var(--txt-3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;font-weight:500}
   .field-wrap{position:relative;width:100%}
   .field-wrap .prefix{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1rem;color:var(--txt-2);font-weight:500;pointer-events:none;z-index:1}
   .field input{
-    width:100%;height:52px;border-radius:12px;border:1.5px solid var(--glass-border);
+    width:100%;height:54px;border-radius:999px;border:1.5px solid rgba(255,215,106,.4);
     background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
     color:var(--txt);font-size:1.05rem;font-family:'Inter',sans-serif;
-    padding:0 16px;padding-left:46px;outline:none;transition:border-color .2s,box-shadow .2s;
-    -webkit-appearance:none;appearance:none;
+    padding:0 20px;padding-left:48px;outline:none;transition:border-color .2s,box-shadow .2s;
+    -webkit-appearance:none;appearance:none;box-shadow:inset 0 2px 10px rgba(0,0,0,.6);
   }
-  .field input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(200,164,90,.08)}
+  .field input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(255,215,106,.14),0 0 22px rgba(255,215,106,.16)}
   .field input::placeholder{color:var(--txt-3);font-weight:400}
 
-  /* ── PIN dots ── */
+  /* â”€â”€ PIN dots â”€â”€ */
   .pin-row{display:flex;gap:16px;justify-content:center;margin-bottom:24px}
   .pin-dot{
     width:14px;height:14px;border-radius:50%;border:1.5px solid var(--glass-border);
@@ -105,22 +104,23 @@
     transition:border-color .2s,background .2s,box-shadow .2s;
   }
   .pin-dot.active{border-color:var(--gold);background:rgba(200,164,90,.04)}
-  .pin-dot.filled{border-color:var(--gold);background:var(--gold);box-shadow:0 0 10px rgba(200,164,90,.5)}
+  .pin-dot.filled{border-color:var(--gold);background:linear-gradient(150deg,var(--gold-3),var(--gold));box-shadow:0 0 14px rgba(255,215,106,.85)}
   .pin-dot.error{border-color:var(--red);animation:shake .35s ease}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 
-  /* ── Keypad (solo PIN) ── */
+  /* â”€â”€ Keypad (solo PIN) â”€â”€ */
   .keypad{width:100%;max-width:260px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;justify-items:center}
   .k{
-    width:72px;height:72px;border-radius:50%;border:1px solid var(--glass-border);
+    width:72px;height:72px;border-radius:50%;border:1.5px solid rgba(255,215,106,.3);
     background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
     color:var(--txt);font-size:1.6rem;font-weight:500;font-family:'Inter',sans-serif;
     cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
     transition:all .12s cubic-bezier(.4,0,0,1);position:relative;line-height:1;
+    box-shadow:inset 0 2px 8px rgba(0,0,0,.4);
   }
-  .k:active{background:var(--glass-2);transform:scale(.92);border-color:rgba(248,244,230,.2)}
+  .k:active{background:rgba(255,215,106,.14);transform:scale(.9);border-color:rgba(255,215,106,.6)}
   .k-num{font-size:1.6rem;font-weight:500;line-height:1}
-  .k-sub{font-size:.5rem;font-weight:500;letter-spacing:.14em;color:var(--txt-3);line-height:1;margin-top:1px}
+  .k-sub{font-size:.5rem;font-weight:700;letter-spacing:.14em;color:var(--txt-3);line-height:1;margin-top:1px}
   .k-del{color:var(--txt-2);font-size:.9rem;letter-spacing:0}
   .k-del .k-num{font-size:.9rem;font-weight:500}
   .k-del .k-sub{font-size:.38rem;letter-spacing:.1em}
@@ -128,32 +128,32 @@
   .k-ok{
     background:var(--grad-gold);color:#0A0A0A;
     font-weight:700;font-size:.85rem;letter-spacing:.04em;
-    box-shadow:0 4px 20px rgba(212,175,55,.28),inset 0 1px 0 rgba(255,255,255,.35);
+    box-shadow:0 8px 28px rgba(255,190,60,.5),inset 0 1px 0 rgba(255,255,255,.5);
   }
   .k-ok:active{transform:scale(.92)}
   .k-ok:disabled{opacity:.25;cursor:not-allowed;transform:none;box-shadow:none}
 
-  /* ── Bottom button (phone) ── */
+  /* â”€â”€ Bottom button (phone) â”€â”€ */
   .bottom-btn{
     position:absolute;bottom:0;left:0;right:0;
     padding:0 28px calc(24px + env(safe-area-inset-bottom));
   }
   .btn-entrar{
-    width:100%;height:52px;border-radius:12px;border:none;
+    width:100%;height:54px;border-radius:999px;border:none;
     background:var(--grad-gold);color:#0A0A0A;
-    font-size:.95rem;font-weight:600;font-family:'Inter',sans-serif;letter-spacing:.04em;
+    font-size:.95rem;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:.04em;
     cursor:pointer;transition:transform .15s cubic-bezier(.4,0,0,1);
-    box-shadow:0 4px 20px rgba(212,175,55,.28),inset 0 1px 0 rgba(255,255,255,.35);
+    box-shadow:0 8px 28px rgba(255,190,60,.5),inset 0 1px 0 rgba(255,255,255,.5);
   }
   .btn-entrar:active{transform:scale(.97)}
   .btn-entrar:disabled{opacity:.25;cursor:not-allowed;transform:none;box-shadow:none}
 
-  /* ── Mensajes ── */
+  /* â”€â”€ Mensajes â”€â”€ */
   .msg{text-align:center;font-size:.78rem;min-height:18px;margin-top:10px;transition:opacity .2s}
   .msg.err{color:var(--red)}
   .msg.ok{color:var(--green)}
 
-  /* ── Crear cuenta ── */
+  /* â”€â”€ Crear cuenta â”€â”€ */
   .link-row{text-align:center;margin-top:18px;font-size:.78rem;color:var(--txt-2)}
   .link-row a{color:var(--gold);text-decoration:none;font-weight:600;cursor:pointer}
   .reg-photo{width:76px;height:76px;border-radius:20px;margin:0 auto 16px;background:var(--glass);border:1.5px dashed var(--glass-border);display:grid;place-items:center;cursor:pointer;overflow:hidden;font-size:1.4rem;color:var(--txt-3)}
@@ -161,7 +161,7 @@
   .reg-photo-label{text-align:center;font-size:.68rem;color:var(--txt-3);margin:-10px 0 16px}
   .reg-body{width:100%;max-width:320px;overflow-y:auto;max-height:100%;padding-bottom:12px}
 
-  /* ── Footer ── */
+  /* â”€â”€ Footer â”€â”€ */
   .foot{position:absolute;bottom:var(--kb,0px);left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.58rem;color:#6D6D6D;letter-spacing:.12em;text-transform:uppercase;font-family:'Inter',sans-serif;font-weight:500}
   .foot-line{display:block;width:32px;height:1px;background:linear-gradient(90deg,transparent,#C8A45A,transparent);margin:0 auto 6px}
 
@@ -173,7 +173,7 @@
   @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}.spin{corner-shape:round}
     [style*="border-radius:50%"],[style*="border-radius: 50%"]{corner-shape:round}}
 
-  /* ── Role chips (selector de rol en registro) ── */
+  /* â”€â”€ Role chips (selector de rol en registro) â”€â”€ */
   .role-row{display:flex;gap:8px}
   .role-chip{
     flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
@@ -194,15 +194,15 @@
 </head>
 <body>
 
-<!-- ═══ SCREEN 1: Teléfono ═══ -->
+<!-- â•â•â• SCREEN 1: TelÃ©fono â•â•â• -->
 <div class="screen" id="s1">
   <div class="logo"><img src="/icons/logo.png" alt="SP Leons Group"></div>
   <div class="brand">LEONS GROUP</div>
-  <div class="sub">Inversiones &amp; Finca Raíz</div>
+  <div class="sub">Inversiones &amp; Finca RaÃ­z</div>
   <div class="sp-line"></div>
 
   <div class="field">
-    <label>Teléfono</label>
+    <label>TelÃ©fono</label>
     <div class="field-wrap">
       <span class="prefix">+57</span>
       <input type="tel" id="phone" placeholder="300 123 4567" inputmode="numeric" maxlength="12" autocomplete="tel">
@@ -211,14 +211,14 @@
 
   <div class="msg" id="msg"></div>
 
-  <div class="link-row">¿Eres asesor nuevo? <a id="linkCrearCuenta">Crear cuenta</a></div>
+  <div class="link-row">Â¿Eres asesor nuevo? <a id="linkCrearCuenta">Crear cuenta</a></div>
 
   <div class="bottom-btn">
     <button class="btn-entrar" id="btnEntrar" disabled>Entrar</button>
   </div>
 </div>
 
-<!-- ═══ SCREEN 3: Crear cuenta (auto-registro de asesor) ═══ -->
+<!-- â•â•â• SCREEN 3: Crear cuenta (auto-registro de asesor) â•â•â• -->
 <div class="screen hidden" id="s3">
   <div class="reg-body">
     <div class="logo" style="margin:0 auto 18px"><img src="/icons/logo.png" alt="SP Leons Group"></div>
@@ -226,7 +226,7 @@
     <div class="sub" style="text-align:center" id="regSub">Crear cuenta de asesor</div>
     <div class="sp-line" style="margin:0 auto 24px"></div>
 
-    <div class="reg-photo" id="regPhotoBox">📷</div>
+    <div class="reg-photo" id="regPhotoBox">ðŸ“·</div>
     <div class="reg-photo-label">Foto de perfil (opcional)</div>
     <input type="file" id="regFotoInput" accept="image/*" style="display:none">
 
@@ -235,16 +235,16 @@
       <div class="field-wrap"><input type="text" id="regNombre" placeholder="Tu nombre" autocomplete="name"></div>
     </div>
     <div class="field">
-      <label>Teléfono</label>
+      <label>TelÃ©fono</label>
       <div class="field-wrap"><span class="prefix">+57</span><input type="tel" id="regPhone" placeholder="300 123 4567" inputmode="numeric" maxlength="12"></div>
     </div>
     <div class="field">
-      <label>PIN de 4 dígitos</label>
-      <div class="field-wrap"><input type="password" id="regPin" placeholder="••••" inputmode="numeric" maxlength="4"></div>
+      <label>PIN de 4 dÃ­gitos</label>
+      <div class="field-wrap"><input type="password" id="regPin" placeholder="â€¢â€¢â€¢â€¢" inputmode="numeric" maxlength="4"></div>
     </div>
 
     <!-- Selector de rol (Registro): por defecto asesor. Supervisor entra con autoregistro
-         + aprueba el admin después (mismo flujo pendiente que el asesor). -->
+         + aprueba el admin despuÃ©s (mismo flujo pendiente que el asesor). -->
     <div class="field">
       <label>Quiero registrarme como</label>
       <div class="role-row" id="roleRow">
@@ -261,11 +261,11 @@
 
     <div class="msg" id="msgReg"></div>
     <button class="btn-entrar" id="btnRegistrar" style="margin-top:6px">Solicitar cuenta</button>
-    <div class="link-row"><a id="linkVolverLogin">Volver al inicio de sesión</a></div>
+    <div class="link-row"><a id="linkVolverLogin">Volver al inicio de sesiÃ³n</a></div>
   </div>
 </div>
 
-<!-- ═══ SCREEN 2: PIN ═══ -->
+<!-- â•â•â• SCREEN 2: PIN â•â•â• -->
 <div class="screen hidden" id="s2">
   <div class="logo"><img src="/icons/logo.png" alt="SP Leons Group"></div>
   <div class="brand">LEONS GROUP</div>
@@ -293,8 +293,8 @@
     if(u) location.replace(destinoPorRol(u.rol));
   });
 
-  // Tres roles → tres paneles (admin: SP OS, supervisor: Supervisor Center, vendedor: móvil).
-  // Centraliza el destino aquí para no triplicar la lógica en cada rama del login.
+  // Tres roles â†’ tres paneles (admin: SP OS, supervisor: Supervisor Center, vendedor: mÃ³vil).
+  // Centraliza el destino aquÃ­ para no triplicar la lÃ³gica en cada rama del login.
   function destinoPorRol(rol){
     if(rol === 'admin') return '/os/dashboard.html';
     if(rol === 'supervisor') return '/supervisor/';
@@ -306,7 +306,7 @@
   let pin = '';
   let attempting = false;
 
-  // ── Phone input ──
+  // â”€â”€ Phone input â”€â”€
   const phoneEl = $('phone');
   const btnEntrar = $('btnEntrar');
 
@@ -319,7 +319,7 @@
 
   phoneEl.addEventListener('input', e=>{
     let raw = e.target.value.replace(/\D/g,'');
-    // Si el usuario escribió el código de país, tomar solo los últimos 10 dígitos
+    // Si el usuario escribiÃ³ el cÃ³digo de paÃ­s, tomar solo los Ãºltimos 10 dÃ­gitos
     if(raw.length > 10) raw = raw.slice(-10);
     phone = raw;
     e.target.value = formatPhone(raw);
@@ -333,7 +333,7 @@
 
   btnEntrar.addEventListener('click', goToPin);
 
-  // ── Transitions ──
+  // â”€â”€ Transitions â”€â”€
   function goToPin(){
     if(phone.length < 10) return;
     $('pinSub').textContent = '+57 ' + formatPhone(phone);
@@ -360,7 +360,7 @@
     phoneEl.focus();
   }
 
-  // ── PIN dots ──
+  // â”€â”€ PIN dots â”€â”€
   function updatePinDots(){
     for(let i=0;i<4;i++){
       const d = $('pd'+i);
@@ -371,7 +371,7 @@
     $('msg2').className = 'msg';
   }
 
-  // ── Keypad (PIN only) ──
+  // â”€â”€ Keypad (PIN only) â”€â”€
   function renderKeypad(){
     const kp = $('keypad');
     const layout = [
@@ -383,7 +383,7 @@
       `<button class="k" data-p="${k.n}"><span class="k-num">${k.n}</span>${k.s ? `<span class="k-sub">${k.s}</span>` : ''}</button>`
     ).join('');
     html += `
-      <button class="k k-del" id="kDel"><span class="k-num">⌫</span><span class="k-sub">BORRAR</span></button>
+      <button class="k k-del" id="kDel"><span class="k-num">âŒ«</span><span class="k-sub">BORRAR</span></button>
       <button class="k" data-p="0"><span class="k-num">0</span></button>
       <button class="k k-ok" id="kOK" disabled>OK</button>`;
     kp.innerHTML = html;
@@ -398,10 +398,10 @@
     };
   }
 
-  // ── Login ──
+  // â”€â”€ Login â”€â”€
   async function doLogin(){
     attempting = true;
-    $('msg2').textContent = 'Verificando…'; $('msg2').className = 'msg';
+    $('msg2').textContent = 'Verificandoâ€¦'; $('msg2').className = 'msg';
     try {
       const res = await fetch('/api/login', {
         method:'POST',
@@ -412,10 +412,10 @@
       if(!res.ok){
         if(data.error === 'credenciales_invalidas'){
           for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
-          $('msg2').textContent = 'Número o PIN incorrecto'; $('msg2').className = 'msg err';
+          $('msg2').textContent = 'NÃºmero o PIN incorrecto'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
         } else if(data.error === 'cuenta_pendiente_aprobacion'){
-          $('msg2').textContent = 'Tu cuenta está en revisión. El admin te avisará cuando esté activa.'; $('msg2').className = 'msg err';
+          $('msg2').textContent = 'Tu cuenta estÃ¡ en revisiÃ³n. El admin te avisarÃ¡ cuando estÃ© activa.'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 900);
         } else {
           throw new Error(data.error || 'Error');
@@ -424,32 +424,32 @@
       }
       const destino = destinoPorRol(data.usuario && data.usuario.rol);
       if(data.must_change){
-        // PIN de fábrica: obligar a crear uno nuevo antes de entrar
+        // PIN de fÃ¡brica: obligar a crear uno nuevo antes de entrar
         iniciarCambioPin(destino);
         return;
       }
       $('msg2').textContent = 'Bienvenido'; $('msg2').className = 'msg ok';
       setTimeout(()=>{ location.replace(destino); }, 300);
     } catch(err) {
-      $('msg2').textContent = 'Error de conexión'; $('msg2').className = 'msg err';
+      $('msg2').textContent = 'Error de conexiÃ³n'; $('msg2').className = 'msg err';
       setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
     }
   }
 
-  // ── Cambio de PIN obligatorio (PIN de fábrica) ──
-  let cambioPin = null; // null = login normal · {paso:'nuevo'|'confirmar', nuevo, destino}
+  // â”€â”€ Cambio de PIN obligatorio (PIN de fÃ¡brica) â”€â”€
+  let cambioPin = null; // null = login normal Â· {paso:'nuevo'|'confirmar', nuevo, destino}
   function iniciarCambioPin(destino){
     cambioPin = { paso:'nuevo', nuevo:'', destino };
     pin = ''; attempting = false; updatePinDots();
     $('pinSub').textContent = 'Crea tu PIN nuevo';
-    $('msg2').textContent = 'Tu PIN es el de fábrica. Elige uno propio.';
+    $('msg2').textContent = 'Tu PIN es el de fÃ¡brica. Elige uno propio.';
     $('msg2').className = 'msg';
   }
   async function procesarPinCompleto(){
     if(!cambioPin) return doLogin();
     if(cambioPin.paso === 'nuevo'){
       if(pin === '0000'){
-        $('msg2').textContent = 'Ese PIN no está permitido'; $('msg2').className = 'msg err';
+        $('msg2').textContent = 'Ese PIN no estÃ¡ permitido'; $('msg2').className = 'msg err';
         setTimeout(()=>{ pin=''; updatePinDots(); }, 600);
         return;
       }
@@ -468,7 +468,7 @@
       return;
     }
     attempting = true;
-    $('msg2').textContent = 'Guardando…'; $('msg2').className = 'msg';
+    $('msg2').textContent = 'Guardandoâ€¦'; $('msg2').className = 'msg';
     try {
       const res = await fetch('/api/mi-pin', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -484,7 +484,7 @@
     }
   }
 
-  // ── Keyboard (desktop only) ──
+  // â”€â”€ Keyboard (desktop only) â”€â”€
   document.addEventListener('keydown', e=>{
     if($('s2').classList.contains('hidden')) return;
     if(e.key >= '0' && e.key <= '9' && pin.length < 4 && !attempting){
@@ -497,11 +497,11 @@
     }
   });
 
-  // ── Crear cuenta (auto-registro de asesor / supervisor) ──
+  // â”€â”€ Crear cuenta (auto-registro de asesor / supervisor) â”€â”€
   let regFotoBase64 = '';
-  let regRol = 'asesor'; // default — el chip de seleccionar lo cambia
+  let regRol = 'asesor'; // default â€” el chip de seleccionar lo cambia
 
-  // Selector de rol: actualiza la variable, el subtítulo y la UI .active
+  // Selector de rol: actualiza la variable, el subtÃ­tulo y la UI .active
   function setRegRol(rol){
     regRol = rol;
     document.querySelectorAll('.role-chip').forEach(c=>c.classList.toggle('active', c.dataset.role === rol));
@@ -547,11 +547,11 @@
     const pinReg = $('regPin').value.trim();
     const msgEl = $('msgReg');
     if(!nombre){ msgEl.textContent = 'Escribe tu nombre completo'; msgEl.className = 'msg err'; return; }
-    if(telRaw.length < 10){ msgEl.textContent = 'Teléfono inválido'; msgEl.className = 'msg err'; return; }
-    if(pinReg.length !== 4 || pinReg === '0000'){ msgEl.textContent = 'Elige un PIN de 4 dígitos distinto de 0000'; msgEl.className = 'msg err'; return; }
+    if(telRaw.length < 10){ msgEl.textContent = 'TelÃ©fono invÃ¡lido'; msgEl.className = 'msg err'; return; }
+    if(pinReg.length !== 4 || pinReg === '0000'){ msgEl.textContent = 'Elige un PIN de 4 dÃ­gitos distinto de 0000'; msgEl.className = 'msg err'; return; }
     registrando = true;
     $('btnRegistrar').disabled = true;
-    msgEl.textContent = 'Enviando…'; msgEl.className = 'msg';
+    msgEl.textContent = 'Enviandoâ€¦'; msgEl.className = 'msg';
     try{
       const res = await fetch('/api/vendedores/registro', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -559,20 +559,20 @@
       });
       const data = await res.json();
       if(!res.ok){
-        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde', rol_invalido:'Rol no válido' };
+        const errores = { telefono_ya_registrado:'Ese telÃ©fono ya estÃ¡ registrado', pin_invalido:'PIN invÃ¡lido', formato_telefono_invalido_debe_ser_57:'TelÃ©fono invÃ¡lido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta mÃ¡s tarde', rol_invalido:'Rol no vÃ¡lido' };
         msgEl.textContent = errores[data.error] || 'No se pudo registrar'; msgEl.className = 'msg err';
         registrando = false; $('btnRegistrar').disabled = false;
         return;
       }
       const rolTexto = regRol === 'supervisor' ? 'supervisor' : 'asesor';
-      msgEl.textContent = `¡Listo! Tu cuenta de ${rolTexto} está en revisión — el admin te avisará cuando esté activa.`; msgEl.className = 'msg ok';
+      msgEl.textContent = `Â¡Listo! Tu cuenta de ${rolTexto} estÃ¡ en revisiÃ³n â€” el admin te avisarÃ¡ cuando estÃ© activa.`; msgEl.className = 'msg ok';
       setTimeout(()=>{
         $('s3').classList.add('hidden');
         $('s1').classList.remove('hidden');
         registrando = false; $('btnRegistrar').disabled = false;
       }, 2200);
     }catch(err){
-      msgEl.textContent = 'Error de conexión'; msgEl.className = 'msg err';
+      msgEl.textContent = 'Error de conexiÃ³n'; msgEl.className = 'msg err';
       registrando = false; $('btnRegistrar').disabled = false;
     }
   });

@@ -8,20 +8,22 @@
    1. TOKENS
    ---------------------------------------------------------------------------- */
 :root {
-  /* Superficies (negros por capas) */
-  --bg-0: #0A0A0A;   /* fondo raíz */
-  --bg-1: #121212;   /* paneles */
-  --bg-2: #171717;   /* cards */
-  --bg-3: #1C1C1C;   /* cards elevadas / hover */
+  /* Superficies (negros por capas — dirección Fusión: negro profundo + glow) */
+  --bg-0: #060606;   /* fondo raíz */
+  --bg-1: #101010;   /* paneles */
+  --bg-2: #161616;   /* cards */
+  --bg-3: #1B1B1B;   /* cards elevadas / hover */
   --bg-4: #232323;   /* inputs, chips */
   --border: #252525;
   --border-soft: #1E1E1E;
   --border-strong: #313131;
 
-  /* Marca */
-  --gold: #D4AF37;
-  --gold-soft: rgba(212, 175, 55, .14);
-  --gold-line: rgba(212, 175, 55, .30);
+  /* Marca — Oro ejecutivo encendido (radical + orgánico) */
+  --gold: #FFD76A;
+  --gold2: #FFE08A;
+  --gold-deep: #C07F1E;
+  --gold-soft: rgba(255, 215, 106, .16);
+  --gold-line: rgba(255, 215, 106, .38);
   --green: #4E7B46;
   --green-soft: rgba(78, 123, 70, .14);
 
@@ -42,8 +44,8 @@
   /* Espaciado (múltiplos de 8) */
   --s1: 8px;  --s2: 16px; --s3: 24px; --s4: 32px; --s5: 48px; --s6: 64px;
 
-  /* Radios (generosos, estilo glassmorphism minimal) */
-  --r-sm: 12px; --r: 18px; --r-lg: 24px; --r-xl: 28px; --r-full: 999px;
+  /* Radios (generosos, estilo glassmorphism minimal → Fusión: orgánico) */
+  --r-sm: 14px; --r: 20px; --r-lg: 26px; --r-xl: 30px; --r-full: 999px;
 
   /* Sombras (muy suaves, con tinte cálido para la profundidad glass) */
   --sh-1: 0 1px 2px rgba(0,0,0,.30);
@@ -75,10 +77,10 @@
   --track-body:   -0.012em;  /* body (heredado) */
 
   /* Gradientes oro (token único reemplaza ~15 duplicados en todo el sistema) */
-  --grad-gold:      linear-gradient(140deg, #EDCC60, var(--gold) 60%, #A08028);
-  --grad-gold-deep: linear-gradient(140deg, #EDCC60, var(--gold) 55%, #8E7028);
-  --grad-gold-text: linear-gradient(135deg, #EDCC60, var(--gold) 55%, #8E7028);
-  --grad-gold-bar:  linear-gradient(90deg, #C8A830, var(--gold));
+  --grad-gold:      linear-gradient(140deg, #FFE08A, var(--gold) 52%, #E8A93E);
+  --grad-gold-deep: linear-gradient(140deg, #FFE08A, var(--gold) 50%, #C07F1E);
+  --grad-gold-text: linear-gradient(135deg, #FFE08A, var(--gold) 55%, #C07F1E);
+  --grad-gold-bar:  linear-gradient(90deg, #C07F1E, var(--gold));
   --grad-surface:   linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,0) 48%);
 
   /* Movimiento */
@@ -98,10 +100,16 @@
   --aurora-1a: rgba(248,248,248,.15); --aurora-1b: rgba(248,248,248,.05);
   --aurora-2a: rgba(248,248,248,.11); --aurora-2b: rgba(248,248,248,.04);
   --aurora-3a: rgba(248,248,248,.08); --aurora-3b: rgba(248,248,248,.03);
-  --aurora-gold-1: rgba(212,175,55,.22);
-  --aurora-green: rgba(78,123,70,.16);
-  --aurora-gold-2: rgba(212,175,55,.10);
-  --aurora-gold-3: rgba(237,204,96,.07);
+  /* Aurora — orbes difusos detrás del vidrio (ver body{background} en §2).
+     Tokenizados para que el tema claro pueda invertirlos sin duplicar el gradiente
+     completo: mismas 6 formas/posiciones, solo cambian los colores. */
+  --aurora-1a: rgba(248,248,248,.15); --aurora-1b: rgba(248,248,248,.05);
+  --aurora-2a: rgba(248,248,248,.11); --aurora-2b: rgba(248,248,248,.04);
+  --aurora-3a: rgba(248,248,248,.08); --aurora-3b: rgba(248,248,248,.03);
+  --aurora-gold-1: rgba(255,215,106,.30);
+  --aurora-green: rgba(78,123,70,.18);
+  --aurora-gold-2: rgba(255,215,106,.14);
+  --aurora-gold-3: rgba(255,223,140,.09);
   color-scheme: dark;
 }
 
@@ -906,4 +914,39 @@ body.glass-lite .btn--ghost { background: var(--bg-2); border-color: var(--borde
   .feed-filters { top: 8px; }
   .feed-pill { top: 56px; }
   .feed-card__foot { align-items: flex-start; }
+}
+
+/* ----------------------------------------------------------------------------
+   22. DIRECCIÓN FUSIÓN — radical + orgánico (aprobada en redesign-compare.html)
+   Aplicada como capa final para todos los módulos. Negro profundo + oro
+   encendido + glow, con formas redondeadas/pill. 100% aditiva: solo refuerza
+   los tokens — el tema claro conserva su champagne con acentos actualizados.
+   ---------------------------------------------------------------------------- */
+/* Edges dorados superiores en superficies (hero/cards/columnas) */
+:root:not([data-theme="light"]) .card,
+:root:not([data-theme="light"]) .surface,
+:root:not([data-theme="light"]) .metric,
+:root:not([data-theme="light"]) .kan-col,
+:root:not([data-theme="light"]) .kan-card,
+:root:not([data-theme="light"]) .feed-card { border-top: 1px solid rgba(255,215,106,.30); }
+
+:root:not([data-theme="light"]) .btn--gold,
+:root:not([data-theme="light"]) .tabs--pill .tabs__item.active,
+:root:not([data-theme="light"]) .os-search:focus-within,
+:root:not([data-theme="light"]) .input:focus {
+  box-shadow: 0 0 22px rgba(255,215,106,.22), 0 4px 18px rgba(212,175,55,.18);
+}
+
+.badge { border-radius: var(--r-full); }
+
+/* Nav: item activo con glow dorado + edge */
+:root:not([data-theme="light"]) .os-nav__item.active {
+  box-shadow: inset 3px 0 0 var(--gold), 0 0 22px rgba(255,215,106,.18);
+}
+
+/* Gradientes radiales de hover más cálidos */
+:root:not([data-theme="light"]) .card--hover:hover,
+:root:not([data-theme="light"]) .card--float:hover,
+:root:not([data-theme="light"]) .metric:hover {
+  box-shadow: 0 10px 40px rgba(255,215,106,.22), 0 0 0 1px var(--gold-line);
 }
