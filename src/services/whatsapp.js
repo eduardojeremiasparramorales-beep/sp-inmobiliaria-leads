@@ -102,22 +102,7 @@ async function sendMessageSmart(to, text, leadId) {
     }
 
     console.log(`[WhatsApp] Ventana cerrada para ${to} — enviando template "${templateName}" y encolando el mensaje`);
-    let tplResult;
-    try {
-      const tplRecord = require('../db/store').getWATemplateByName(templateName);
-      if (tplRecord && tplRecord.id) {
-        const { sendResolvedTemplate } = require('./wa-templates');
-        const lead = require('../db/store').getLeadByCustomerPhone(to);
-        tplResult = await sendResolvedTemplate(to, tplRecord, lead, null, {});
-        console.log(`[WhatsApp] Reengagement template enviado con variables resueltas`);
-      } else {
-        tplResult = await sendTemplate(to, templateName);
-        console.log(`[WhatsApp] Reengagement template enviado sin variables (legacy)`);
-      }
-    } catch (tplErr) {
-      console.error(`[WhatsApp] Error enviando reengagement template: ${tplErr.message}`);
-      tplResult = await sendTemplate(to, templateName);
-    }
+    const tplResult = await sendTemplate(to, templateName);
 
     // Un template ENTREGADO no reabre la ventana de 24h — solo lo hace una respuesta del
     // cliente. Reintentar el free-form aquí siempre fallaba con el mismo 131047 y el mensaje
@@ -134,6 +119,12 @@ async function sendMessageSmart(to, text, leadId) {
 //   permite header (texto o media) y botones además del body, con variables nombradas.
 async function sendTemplate(to, templateName, params, languageCode) {
   const { url, headers } = getApiConfig();
+  // Validar formato de teléfono colombiano: +57 + 10 dígitos
+  const digits = (to || '').replace(/[^\d]/g, '');
+  if (digits.length < 12 || digits.length > 15) {
+    console.error(`[WhatsApp] sendTemplate RECHAZADO — teléfono inválido: ${to} (${digits.length} dígitos). Se esperan 12-15 dígitos (código país + número).`);
+    throw new Error(`Teléfono inválido: ${to}. Debe tener código de país + número.`);
+  }
   let components = [];
   if (Array.isArray(params) && params.length && typeof params[0] === 'object' && params[0] !== null && params[0].type) {
     components = params;
