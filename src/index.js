@@ -868,6 +868,31 @@ app.post('/api/vendedores/:id/telefono', auth.requireAdmin, (req, res) => {
   res.json({ ok: true, telefono: t });
 });
 
+app.post('/api/vendedores/:id/rol', auth.requireAdmin, (req, res) => {
+  const { rol } = req.body || {};
+  const rolesValidos = ['vendedor', 'supervisor', 'jefe'];
+  if (!rolesValidos.includes(String(rol))) return res.status(400).json({ error: 'rol_invalido' });
+  const v = store.getVendedorById(req.params.id);
+  if (!v) return res.status(404).json({ error: 'vendedor_no_existe' });
+  const usuario = store.getUsuarioByVendedorId(v.id);
+  if (usuario && usuario.rol === 'admin') return res.status(400).json({ error: 'no_se_puede_cambiar_el_rol_de_un_admin' });
+  const rolFinal = String(rol);
+  if (rolFinal === 'vendedor') {
+    // Degradar: sin rol especial → el login lo trata como vendedor puro.
+    if (usuario) store.updateUsuarioRol(usuario.id, 'vendedor');
+  } else {
+    if (usuario) {
+      store.updateUsuarioRol(usuario.id, rolFinal);
+    } else {
+      // Vendedor sin fila en usuarios (solo teléfono+PIN): crear la fila marcando el rol.
+      const email = `${rolFinal}+${v.id}@spinmobiliaria.com`;
+      store.createUsuario(email, null, v.nombre, rolFinal, v.id);
+    }
+  }
+  console.log(`[ADMIN] ${req.session.nombre} cambió el rol de ${v.nombre} a ${rolFinal}`);
+  res.json({ ok: true, rol: rolFinal, vendedorId: Number(v.id) });
+});
+
 app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
   const { estado } = req.body;
   const estadosValidos = ['activo', 'ocupado', 'inactivo', 'vacaciones', 'suspendido'];

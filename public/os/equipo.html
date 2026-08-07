@@ -22,6 +22,7 @@
     refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
     activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
   };
 
   const ctx = await SPOS.mount({
@@ -61,8 +62,8 @@
     // Auto-registrados desde /login.html, esperando aprobación — no entran a la
     // tabla de gestión normal hasta que el admin decide.
     const pendientes = vendsAll.filter(v => v.estado === 'pendiente');
-    const vends = vendsAll.filter(v => v.estado !== 'pendiente' && !adminVendedorIds.has(v.id) && (vRolMap[v.id] || 'vendedor') !== 'supervisor');
-    const adminsSup = vendsAll.filter(v => adminVendedorIds.has(v.id) || (vRolMap[v.id] || 'vendedor') === 'supervisor');
+    const vends = vendsAll.filter(v => v.estado !== 'pendiente' && !adminVendedorIds.has(v.id) && !['supervisor', 'jefe'].includes(vRolMap[v.id] || 'vendedor'));
+    const adminsSup = vendsAll.filter(v => adminVendedorIds.has(v.id) || ['supervisor', 'jefe'].includes(vRolMap[v.id] || 'vendedor'));
 
     ctx.content.innerHTML = `
      <div class="os-content__max">
@@ -158,12 +159,15 @@
             const tieneCuenta = vUserMap[v.id] ? true : false;
             const esAdmin = adminVendedorIds.has(v.id);
             const esSupervisor = (vRolMap[v.id] || 'vendedor') === 'supervisor';
-            // Badge de rol: Admin (gold) toma precedencia, luego Supervisor (green soft).
+            const esJefe = (vRolMap[v.id] || 'vendedor') === 'jefe';
+            // Badge de rol: Admin (gold) toma precedencia, luego Jefe, luego Supervisor (green soft).
             const rolBadge = esAdmin
               ? `<span class="badge badge--gold" style="font-size:10px">Admin</span>`
-              : esSupervisor
-                ? `<span class="badge" style="font-size:10px;background:rgba(78,123,70,.15);color:var(--green);border:1px solid rgba(78,123,70,.3)">Supervisor</span>`
-                : '';
+              : esJefe
+                ? `<span class="badge badge--gold" style="font-size:10px">Jefe</span>`
+                : esSupervisor
+                  ? `<span class="badge" style="font-size:10px;background:rgba(78,123,70,.15);color:var(--green);border:1px solid rgba(78,123,70,.3)">Supervisor</span>`
+                  : '';
             return `<tr>
               <td><div class="u-row u-gap2"><div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div><span style="font-weight:500">${esc(v.nombre)}</span>${rolBadge}</div></td>
               <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}${v.telefono && !v.telefono.startsWith('+57') ? ` <button class="btn btn--ghost btn--xs" data-action="fixPhone" data-id="${v.id}" data-tel="${esc(v.telefono)}" title="Corregir teléfono (agregar +57)">${S.refresh}Fix</button>` : ''}</td>
@@ -171,8 +175,9 @@
               <td>${tieneCuenta ? '<span class="badge badge--green" style="font-size:10px">Sí</span>' : '<span class="t-dim3" style="font-size:11px">—</span>'}</td>
               <td><button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button></td>
               <td>
-                ${esAdmin ? `<span class="t-dim3" style="font-size:11px" title="Las cuentas admin no se pueden suspender ni eliminar desde aquí">Protegida</span>` : `
+                ${esAdmin ? `<span class="t-dim3" style="font-size:11px" title="Las cuentas admin no se pueden suspendir ni eliminar desde aquí">Protegida</span>` : `
                 <div class="u-row u-gap1">
+                  <button class="btn btn--ghost btn--xs" data-action="rol" data-id="${v.id}" data-name="${esc(v.nombre)}" data-rol="${(vRolMap[v.id]||'vendedor')}">${S.user} Ascender</button>
                   <button class="btn btn--ghost btn--xs" data-action="estado" data-id="${v.id}" data-name="${esc(v.nombre)}" data-estado="${v.estado}">${S.activity} ${v.estado==='activo'?'Suspender':'Activar'}</button>
                   <button class="btn btn--ghost btn--xs t-red" data-action="delete" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.trash} Eliminar</button>
                 </div>`}
@@ -183,11 +188,11 @@
         </div>
       </div>
 
-      <!-- Gestión de admin y supervisores -->
+      <!-- Gestión de admin, supervisores y jefes -->
       ${adminsSup.length ? `
       <div class="card rise rise-3" style="margin-top:var(--s3)">
         <div class="card--pad" style="padding-bottom:var(--s2)">
-          <div class="t-h3">Admins y Supervisores</div>
+          <div class="t-h3">Admins, supervisores y jefes</div>
           <div class="t-dim3" style="font-size:12px;margin-top:4px">${adminsSup.length} cuentas</div>
         </div>
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
@@ -197,16 +202,23 @@
           </tr></thead>
           <tbody>${adminsSup.map(v => {
             const esAdmin = adminVendedorIds.has(v.id);
-            const rol = esAdmin ? 'Admin' : 'Supervisor';
+            const rol = esAdmin ? 'Admin' : (vRolMap[v.id] === 'jefe' ? 'Jefe' : 'Supervisor');
+            const esJefe = vRolMap[v.id] === 'jefe';
+            const rolBadge = esAdmin
+              ? `<span class="badge badge--gold" style="font-size:10px">Admin</span>`
+              : `<span class="badge ${esJefe?'badge--gold':'badge--green'}" style="font-size:10px">${rol}</span>`;
             return `<tr>
               <td><div class="u-row u-gap2">
                 <div class="avatar avatar--sm" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div>
                 <span style="font-weight:500">${esc(v.nombre)}</span>
               </div></td>
               <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}</td>
-              <td><span class="badge ${esAdmin?'badge--gold':'badge--green'}" style="font-size:10px">${rol}</span></td>
+              <td>${rolBadge}</td>
               <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
-              <td><button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button></td>
+              <td><div class="u-row u-gap1">
+                <button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button>
+                ${esAdmin ? '' : `<button class="btn btn--ghost btn--xs" data-action="rol" data-id="${v.id}" data-name="${esc(v.nombre)}" data-rol="${esJefe?'jefe':'supervisor'}">${S.user} ${esJefe?'Descender':'Ascender'}</button>`}
+              </div></td>
             </tr>`;
           }).join('') || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-3)">Sin cuentas admin/supervisor</td></tr>'}</tbody>
         </table>
@@ -331,6 +343,38 @@
         if(r && r.ok){ toast('Teléfono corregido'); cargar(); }
         else toast(r?.error || 'Error','err');
       } catch(err){ toast('Error de conexión','err'); }
+    }));
+
+    document.querySelectorAll('[data-action="rol"]').forEach(btn => btn.addEventListener('click', ()=>{
+      const id = btn.dataset.id;
+      const name = btn.dataset.name;
+      const actual = btn.dataset.rol;
+      const actualLabel = {vendedor:'Asesor', supervisor:'Supervisor', jefe:'Jefe'}[actual] || actual;
+      const opciones = [
+        { rol:'vendedor',  label:'Asesor',  desc:'Chats asignados, sin acceso global' },
+        { rol:'supervisor',label:'Supervisor', desc:'Chats + comentarios de todo el equipo' },
+        { rol:'jefe',      label:'Jefe',    desc:'Acceso global y Supervisión desde el móvil' },
+      ];
+      abrirModal(`Cambiar rol · ${name}`, `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="t-dim3" style="font-size:13px;margin-bottom:2px">Rol actual: <b style="color:var(--txt)">${esc(actualLabel)}</b></div>
+          ${opciones.map(o=>`
+            <button data-setrol="${o.rol}" class="btn btn--ghost" style="text-align:left;justify-content:space-between;display:flex;gap:10px;align-items:center">
+              <span>${esc(o.label)}</span><span class="t-dim3" style="font-size:11.5px">${esc(o.desc)}</span>
+            </button>`).join('')}
+          <button type="button" class="btn btn--ghost" id="modalCancel" style="margin-top:6px">Cancelar</button>`);
+      document.getElementById('modalCancel').addEventListener('click', cerrarModal);
+      modalBg.querySelectorAll('[data-setrol]').forEach(b => b.addEventListener('click', async ()=>{
+        const nuevo = b.dataset.setrol;
+        if(nuevo === actual){ cerrarModal(); return; }
+        if(!confirm(`¿Aplicar rol ${newLabel(nuevo)} a ${name}?`)) return;
+        try {
+          const r = await api('/api/vendedores/'+id+'/rol', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rol: nuevo }) });
+          if(r && r.ok){ toast(`${name} ahora es ${newLabel(nuevo)}`); cerrarModal(); cargar(); }
+          else toast(r?.error || 'Error al cambiar rol','err');
+        } catch(err){ toast('Error de conexión','err'); }
+      }));
+      function newLabel(rol){ return { vendedor:'Asesor', supervisor:'Supervisor', jefe:'Jefe' }[rol] || rol; }
     }));
 
     document.querySelectorAll('[data-action="estado"]').forEach(btn => btn.addEventListener('click', async ()=>{

@@ -79,7 +79,7 @@ router.get('/me', (req, res) => {
 function idsNoAsesores() {
   const excl = new Set();
   try {
-    const r = store.getDB().exec("SELECT vendedor_id FROM usuarios WHERE rol IN ('admin','supervisor') AND vendedor_id IS NOT NULL");
+    const r = store.getDB().exec("SELECT vendedor_id FROM usuarios WHERE rol IN ('admin','supervisor','jefe') AND vendedor_id IS NOT NULL");
     if (r && r.length) r[0].values.forEach(row => excl.add(Number(row[0])));
   } catch (e) { /* noop */ }
   return excl;
