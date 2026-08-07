@@ -102,7 +102,22 @@ async function sendMessageSmart(to, text, leadId) {
     }
 
     console.log(`[WhatsApp] Ventana cerrada para ${to} — enviando template "${templateName}" y encolando el mensaje`);
-    const tplResult = await sendTemplate(to, templateName);
+    let tplResult;
+    try {
+      const tplRecord = require('../db/store').getWATemplateByName(templateName);
+      if (tplRecord && tplRecord.id) {
+        const { sendResolvedTemplate } = require('./wa-templates');
+        const lead = require('../db/store').getLeadByCustomerPhone(to);
+        tplResult = await sendResolvedTemplate(to, tplRecord, lead, null, {});
+        console.log(`[WhatsApp] Reengagement template enviado con variables resueltas`);
+      } else {
+        tplResult = await sendTemplate(to, templateName);
+        console.log(`[WhatsApp] Reengagement template enviado sin variables (legacy)`);
+      }
+    } catch (tplErr) {
+      console.error(`[WhatsApp] Error enviando reengagement template: ${tplErr.message}`);
+      tplResult = await sendTemplate(to, templateName);
+    }
 
     // Un template ENTREGADO no reabre la ventana de 24h — solo lo hace una respuesta del
     // cliente. Reintentar el free-form aquí siempre fallaba con el mismo 131047 y el mensaje
@@ -125,15 +140,22 @@ async function sendTemplate(to, templateName, params, languageCode) {
   } else if (Array.isArray(params) && params.length) {
     components = [{ type: 'body', parameters: params.map(p => ({ type: 'text', text: String(p) })) }];
   }
+  const payload = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: { name: templateName, language: { code: languageCode || 'es' }, components },
+  };
+  console.log(`[WhatsApp] sendTemplate → to=${to} template=${templateName} lang=${languageCode || 'es'} components=${JSON.stringify(components)}`);
   try {
-    const res = await axios.post(url, {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'template',
-      template: { name: templateName, language: { code: languageCode || 'es' }, components },
-    }, { headers });
+    const res = await axios.post(url, payload, { headers });
+    console.log(`[WhatsApp] sendTemplate ← OK wamid=${res.data && res.data.messages && res.data.messages[0] ? res.data.messages[0].id : 'no_id'}`);
     return res.data;
-  } catch (err) { throw reportGraphError(err); }
+  } catch (err) {
+    const errDetail = err.response ? JSON.stringify(err.response.data) : err.message;
+    console.error(`[WhatsApp] sendTemplate ← ERROR: ${errDetail}`);
+    throw reportGraphError(err);
+  }
 }
 
 async function markAsRead(messageId) {
