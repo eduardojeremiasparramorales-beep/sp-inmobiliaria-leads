@@ -409,7 +409,7 @@
         body: JSON.stringify({ telefono: '+57' + phone, pin }),
       });
       const data = await res.json();
-      if(!res.ok){
+        if(!res.ok){
         if(data.error === 'credenciales_invalidas'){
           for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
           $('msg2').textContent = 'Número o PIN incorrecto'; $('msg2').className = 'msg err';
@@ -417,8 +417,15 @@
         } else if(data.error === 'cuenta_pendiente_aprobacion'){
           $('msg2').textContent = 'Tu cuenta está en revisión. El admin te avisará cuando esté activa.'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 900);
+        } else if(data.error === 'demasiados_intentos' || data.error === 'demasiadas_peticiones'){
+          $('msg2').textContent = 'Demasiados intentos. Espera unos minutos e intenta de nuevo.'; $('msg2').className = 'msg err';
+          setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
+        } else if(data.error === 'error_interno' || data.error === 'error_empresa'){
+          $('msg2').textContent = 'Error del servidor. Intenta de nuevo en un momento.'; $('msg2').className = 'msg err';
+          setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
         } else {
-          throw new Error(data.error || 'Error');
+          $('msg2').textContent = 'Error inesperado. Intenta de nuevo.'; $('msg2').className = 'msg err';
+          setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
         }
         return;
       }
@@ -431,7 +438,7 @@
       $('msg2').textContent = 'Bienvenido'; $('msg2').className = 'msg ok';
       setTimeout(()=>{ location.replace(destino); }, 300);
     } catch(err) {
-      $('msg2').textContent = 'Error de conexión'; $('msg2').className = 'msg err';
+      $('msg2').textContent = 'Sin conexión. Verifica tu internet e intenta de nuevo.'; $('msg2').className = 'msg err';
       setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
     }
   }

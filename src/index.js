@@ -908,6 +908,7 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 // ===================== AUTENTICACIÓN =====================
 
 app.post('/api/login', loginLimiter, (req, res) => {
+  try {
   const { email, password, telefono, pin } = req.body || {};
   const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
   const MAX_AGE = CFG.SESSION_TTL_MS / 1000; // 30 días en segundos
@@ -961,10 +962,6 @@ app.post('/api/login', loginLimiter, (req, res) => {
       return res.status(401).json({ error: 'credenciales_invalidas' });
     }
     // Verificar si tiene usuario asociado (admin o supervisor); sin usuario, es vendedor puro.
-    // usuario.rol es 'admin' | 'supervisor' | 'vendedor' (texto libre, sin CHECK en BD).
-    // Antes se colapsaba a 'vendedor' todo lo que no era exactamente 'admin' — eso impedía
-    // que un tercer rol (supervisor) sobreviviera al login. Hoy se respeta el rol real,
-    // y vendedores sin usuario (caso histórico/legacy) caen naturalmente a 'vendedor'.
     const usuario = store.getUsuarioByVendedorId(vendedor.id);
     let rol = 'vendedor';
     if (usuario && ['admin', 'supervisor', 'jefe'].includes(usuario.rol)) rol = usuario.rol;
@@ -989,6 +986,12 @@ app.post('/api/login', loginLimiter, (req, res) => {
   }
 
   return res.status(400).json({ error: 'credenciales_requeridas' });
+  } catch (err) {
+    console.error('[LOGIN] ERROR INTERNO:', err && err.stack ? err.stack : err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'error_interno' });
+    }
+  }
 });
 
 // Cambiar el PIN propio (obligatorio tras primer login con PIN de fábrica 0000)
