@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>Leons Group â€” Acceso</title>
+<title>Leons Group — Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
@@ -27,7 +27,7 @@
     --glass-border:rgba(248,244,230,.14); --blur-sm:saturate(1.6) blur(10px);
     --grad-gold:linear-gradient(140deg,var(--gold-3),var(--gold) 52%,#E8A93E);
     --grad-gold-text:linear-gradient(135deg,var(--gold-3),var(--gold) 55%,var(--gold-2));
-    /* Aurora tokenizada â€” ver nota igual en sp-os.css Â§1B */
+    /* Aurora tokenizada — ver nota igual en sp-os.css §1B */
     --aurora-1a:rgba(248,248,248,.15); --aurora-1b:rgba(248,248,248,.05);
     --aurora-2a:rgba(248,248,248,.11); --aurora-2b:rgba(248,248,248,.04);
     --aurora-gold-1:rgba(255,215,106,.32); --aurora-green:rgba(78,123,70,.18); --aurora-gold-2:rgba(255,215,106,.16); --aurora-gold-3:rgba(255,223,140,.10);
@@ -60,11 +60,11 @@
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   }
 
-  /* â”€â”€ Layout â”€â”€ */
+  /* ── Layout ── */
   .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;padding-bottom:calc(28px + var(--kb,0px));transition:opacity .3s var(--ease),transform .3s var(--ease);z-index:1}
   .screen.hidden{opacity:0;pointer-events:none;transform:translateY(12px)}
 
-  /* â”€â”€ Logo â”€â”€ */
+  /* ── Logo ── */
   .logo{
     width:84px;height:84px;border-radius:50%;
     background:var(--glass-2);
@@ -81,7 +81,7 @@
   .sub{font-family:'Cormorant Garamond',serif;font-size:.85rem;color:var(--txt-2);letter-spacing:.1em;text-align:center;margin-bottom:24px;font-weight:400}
   .sp-line{width:40px;height:1.5px;background:var(--gold);opacity:.35;margin-bottom:28px;border-radius:1px}
 
-  /* â”€â”€ Input field â”€â”€ */
+  /* ── Input field ── */
   .field{width:100%;max-width:320px;margin-bottom:14px}
   .field label{display:block;font-size:.7rem;color:var(--txt-3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;font-weight:500}
   .field-wrap{position:relative;width:100%}
@@ -96,7 +96,7 @@
   .field input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(255,215,106,.14),0 0 22px rgba(255,215,106,.16)}
   .field input::placeholder{color:var(--txt-3);font-weight:400}
 
-  /* â”€â”€ PIN dots â”€â”€ */
+  /* ── PIN dots ── */
   .pin-row{display:flex;gap:16px;justify-content:center;margin-bottom:24px}
   .pin-dot{
     width:14px;height:14px;border-radius:50%;border:1.5px solid var(--glass-border);
@@ -108,7 +108,7 @@
   .pin-dot.error{border-color:var(--red);animation:shake .35s ease}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 
-  /* â”€â”€ Keypad (solo PIN) â”€â”€ */
+  /* ── Keypad (solo PIN) ── */
   .keypad{width:100%;max-width:260px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;justify-items:center}
   .k{
     width:72px;height:72px;border-radius:50%;border:1.5px solid rgba(255,215,106,.3);
@@ -133,7 +133,7 @@
   .k-ok:active{transform:scale(.92)}
   .k-ok:disabled{opacity:.25;cursor:not-allowed;transform:none;box-shadow:none}
 
-  /* â”€â”€ Bottom button (phone) â”€â”€ */
+  /* ── Bottom button (phone) ── */
   .bottom-btn{
     position:absolute;bottom:0;left:0;right:0;
     padding:0 28px calc(24px + env(safe-area-inset-bottom));
@@ -148,12 +148,12 @@
   .btn-entrar:active{transform:scale(.97)}
   .btn-entrar:disabled{opacity:.25;cursor:not-allowed;transform:none;box-shadow:none}
 
-  /* â”€â”€ Mensajes â”€â”€ */
+  /* ── Mensajes ── */
   .msg{text-align:center;font-size:.78rem;min-height:18px;margin-top:10px;transition:opacity .2s}
   .msg.err{color:var(--red)}
   .msg.ok{color:var(--green)}
 
-  /* â”€â”€ Crear cuenta â”€â”€ */
+  /* ── Crear cuenta ── */
   .link-row{text-align:center;margin-top:18px;font-size:.78rem;color:var(--txt-2)}
   .link-row a{color:var(--gold);text-decoration:none;font-weight:600;cursor:pointer}
   .reg-photo{width:76px;height:76px;border-radius:20px;margin:0 auto 16px;background:var(--glass);border:1.5px dashed var(--glass-border);display:grid;place-items:center;cursor:pointer;overflow:hidden;font-size:1.4rem;color:var(--txt-3)}
@@ -161,7 +161,7 @@
   .reg-photo-label{text-align:center;font-size:.68rem;color:var(--txt-3);margin:-10px 0 16px}
   .reg-body{width:100%;max-width:320px;overflow-y:auto;max-height:100%;padding-bottom:12px}
 
-  /* â”€â”€ Footer â”€â”€ */
+  /* ── Footer ── */
   .foot{position:absolute;bottom:var(--kb,0px);left:0;right:0;text-align:center;padding-bottom:calc(12px + env(safe-area-inset-bottom));font-size:.58rem;color:#6D6D6D;letter-spacing:.12em;text-transform:uppercase;font-family:'Inter',sans-serif;font-weight:500}
   .foot-line{display:block;width:32px;height:1px;background:linear-gradient(90deg,transparent,#C8A45A,transparent);margin:0 auto 6px}
 
@@ -173,7 +173,7 @@
   @supports(corner-shape:squircle){*,*::before,*::after{corner-shape:squircle}.spin{corner-shape:round}
     [style*="border-radius:50%"],[style*="border-radius: 50%"]{corner-shape:round}}
 
-  /* â”€â”€ Role chips (selector de rol en registro) â”€â”€ */
+  /* ── Role chips (selector de rol en registro) ── */
   .role-row{display:flex;gap:8px}
   .role-chip{
     flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
@@ -194,15 +194,15 @@
 </head>
 <body>
 
-<!-- â•â•â• SCREEN 1: TelÃ©fono â•â•â• -->
+<!-- ═══ SCREEN 1: Teléfono ═══ -->
 <div class="screen" id="s1">
   <div class="logo"><img src="/icons/logo.png" alt="SP Leons Group"></div>
   <div class="brand">LEONS GROUP</div>
-  <div class="sub">Inversiones &amp; Finca RaÃ­z</div>
+  <div class="sub">Inversiones &amp; Finca Raíz</div>
   <div class="sp-line"></div>
 
   <div class="field">
-    <label>TelÃ©fono</label>
+    <label>Teléfono</label>
     <div class="field-wrap">
       <span class="prefix">+57</span>
       <input type="tel" id="phone" placeholder="300 123 4567" inputmode="numeric" maxlength="12" autocomplete="tel">
@@ -211,14 +211,14 @@
 
   <div class="msg" id="msg"></div>
 
-  <div class="link-row">Â¿Eres asesor nuevo? <a id="linkCrearCuenta">Crear cuenta</a></div>
+  <div class="link-row">¿Eres asesor nuevo? <a id="linkCrearCuenta">Crear cuenta</a></div>
 
   <div class="bottom-btn">
     <button class="btn-entrar" id="btnEntrar" disabled>Entrar</button>
   </div>
 </div>
 
-<!-- â•â•â• SCREEN 3: Crear cuenta (auto-registro de asesor) â•â•â• -->
+<!-- ═══ SCREEN 3: Crear cuenta (auto-registro de asesor) ═══ -->
 <div class="screen hidden" id="s3">
   <div class="reg-body">
     <div class="logo" style="margin:0 auto 18px"><img src="/icons/logo.png" alt="SP Leons Group"></div>
@@ -226,7 +226,7 @@
     <div class="sub" style="text-align:center" id="regSub">Crear cuenta de asesor</div>
     <div class="sp-line" style="margin:0 auto 24px"></div>
 
-    <div class="reg-photo" id="regPhotoBox">ðŸ“·</div>
+    <div class="reg-photo" id="regPhotoBox">📷</div>
     <div class="reg-photo-label">Foto de perfil (opcional)</div>
     <input type="file" id="regFotoInput" accept="image/*" style="display:none">
 
@@ -235,16 +235,16 @@
       <div class="field-wrap"><input type="text" id="regNombre" placeholder="Tu nombre" autocomplete="name"></div>
     </div>
     <div class="field">
-      <label>TelÃ©fono</label>
+      <label>Teléfono</label>
       <div class="field-wrap"><span class="prefix">+57</span><input type="tel" id="regPhone" placeholder="300 123 4567" inputmode="numeric" maxlength="12"></div>
     </div>
     <div class="field">
-      <label>PIN de 4 dÃ­gitos</label>
-      <div class="field-wrap"><input type="password" id="regPin" placeholder="â€¢â€¢â€¢â€¢" inputmode="numeric" maxlength="4"></div>
+      <label>PIN de 4 dígitos</label>
+      <div class="field-wrap"><input type="password" id="regPin" placeholder="••••" inputmode="numeric" maxlength="4"></div>
     </div>
 
     <!-- Selector de rol (Registro): por defecto asesor. Supervisor entra con autoregistro
-         + aprueba el admin despuÃ©s (mismo flujo pendiente que el asesor). -->
+         + aprueba el admin después (mismo flujo pendiente que el asesor). -->
     <div class="field">
       <label>Quiero registrarme como</label>
       <div class="role-row" id="roleRow">
@@ -261,11 +261,11 @@
 
     <div class="msg" id="msgReg"></div>
     <button class="btn-entrar" id="btnRegistrar" style="margin-top:6px">Solicitar cuenta</button>
-    <div class="link-row"><a id="linkVolverLogin">Volver al inicio de sesiÃ³n</a></div>
+    <div class="link-row"><a id="linkVolverLogin">Volver al inicio de sesión</a></div>
   </div>
 </div>
 
-<!-- â•â•â• SCREEN 2: PIN â•â•â• -->
+<!-- ═══ SCREEN 2: PIN ═══ -->
 <div class="screen hidden" id="s2">
   <div class="logo"><img src="/icons/logo.png" alt="SP Leons Group"></div>
   <div class="brand">LEONS GROUP</div>
@@ -293,8 +293,8 @@
     if(u) location.replace(destinoPorRol(u.rol));
   });
 
-  // Tres roles â†’ tres paneles (admin: SP OS, supervisor: Supervisor Center, vendedor: mÃ³vil).
-  // Centraliza el destino aquÃ­ para no triplicar la lÃ³gica en cada rama del login.
+  // Tres roles → tres paneles (admin: SP OS, supervisor: Supervisor Center, vendedor: móvil).
+  // Centraliza el destino aquí para no triplicar la lógica en cada rama del login.
   function destinoPorRol(rol){
     if(rol === 'admin') return '/os/dashboard.html';
     if(rol === 'supervisor') return '/supervisor/';
@@ -306,7 +306,7 @@
   let pin = '';
   let attempting = false;
 
-  // â”€â”€ Phone input â”€â”€
+  // ── Phone input ──
   const phoneEl = $('phone');
   const btnEntrar = $('btnEntrar');
 
@@ -319,7 +319,7 @@
 
   phoneEl.addEventListener('input', e=>{
     let raw = e.target.value.replace(/\D/g,'');
-    // Si el usuario escribiÃ³ el cÃ³digo de paÃ­s, tomar solo los Ãºltimos 10 dÃ­gitos
+    // Si el usuario escribió el código de país, tomar solo los últimos 10 dígitos
     if(raw.length > 10) raw = raw.slice(-10);
     phone = raw;
     e.target.value = formatPhone(raw);
@@ -333,7 +333,7 @@
 
   btnEntrar.addEventListener('click', goToPin);
 
-  // â”€â”€ Transitions â”€â”€
+  // ── Transitions ──
   function goToPin(){
     if(phone.length < 10) return;
     $('pinSub').textContent = '+57 ' + formatPhone(phone);
@@ -360,7 +360,7 @@
     phoneEl.focus();
   }
 
-  // â”€â”€ PIN dots â”€â”€
+  // ── PIN dots ──
   function updatePinDots(){
     for(let i=0;i<4;i++){
       const d = $('pd'+i);
@@ -371,7 +371,7 @@
     $('msg2').className = 'msg';
   }
 
-  // â”€â”€ Keypad (PIN only) â”€â”€
+  // ── Keypad (PIN only) ──
   function renderKeypad(){
     const kp = $('keypad');
     const layout = [
@@ -383,7 +383,7 @@
       `<button class="k" data-p="${k.n}"><span class="k-num">${k.n}</span>${k.s ? `<span class="k-sub">${k.s}</span>` : ''}</button>`
     ).join('');
     html += `
-      <button class="k k-del" id="kDel"><span class="k-num">âŒ«</span><span class="k-sub">BORRAR</span></button>
+      <button class="k k-del" id="kDel"><span class="k-num">⌫</span><span class="k-sub">BORRAR</span></button>
       <button class="k" data-p="0"><span class="k-num">0</span></button>
       <button class="k k-ok" id="kOK" disabled>OK</button>`;
     kp.innerHTML = html;
@@ -398,10 +398,10 @@
     };
   }
 
-  // â”€â”€ Login â”€â”€
+  // ── Login ──
   async function doLogin(){
     attempting = true;
-    $('msg2').textContent = 'Verificandoâ€¦'; $('msg2').className = 'msg';
+    $('msg2').textContent = 'Verificando…'; $('msg2').className = 'msg';
     try {
       const res = await fetch('/api/login', {
         method:'POST',
@@ -412,10 +412,10 @@
       if(!res.ok){
         if(data.error === 'credenciales_invalidas'){
           for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
-          $('msg2').textContent = 'NÃºmero o PIN incorrecto'; $('msg2').className = 'msg err';
+          $('msg2').textContent = 'Número o PIN incorrecto'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
         } else if(data.error === 'cuenta_pendiente_aprobacion'){
-          $('msg2').textContent = 'Tu cuenta estÃ¡ en revisiÃ³n. El admin te avisarÃ¡ cuando estÃ© activa.'; $('msg2').className = 'msg err';
+          $('msg2').textContent = 'Tu cuenta está en revisión. El admin te avisará cuando esté activa.'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 900);
         } else {
           throw new Error(data.error || 'Error');
@@ -424,32 +424,32 @@
       }
       const destino = destinoPorRol(data.usuario && data.usuario.rol);
       if(data.must_change){
-        // PIN de fÃ¡brica: obligar a crear uno nuevo antes de entrar
+        // PIN de fábrica: obligar a crear uno nuevo antes de entrar
         iniciarCambioPin(destino);
         return;
       }
       $('msg2').textContent = 'Bienvenido'; $('msg2').className = 'msg ok';
       setTimeout(()=>{ location.replace(destino); }, 300);
     } catch(err) {
-      $('msg2').textContent = 'Error de conexiÃ³n'; $('msg2').className = 'msg err';
+      $('msg2').textContent = 'Error de conexión'; $('msg2').className = 'msg err';
       setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
     }
   }
 
-  // â”€â”€ Cambio de PIN obligatorio (PIN de fÃ¡brica) â”€â”€
-  let cambioPin = null; // null = login normal Â· {paso:'nuevo'|'confirmar', nuevo, destino}
+  // ── Cambio de PIN obligatorio (PIN de fábrica) ──
+  let cambioPin = null; // null = login normal · {paso:'nuevo'|'confirmar', nuevo, destino}
   function iniciarCambioPin(destino){
     cambioPin = { paso:'nuevo', nuevo:'', destino };
     pin = ''; attempting = false; updatePinDots();
     $('pinSub').textContent = 'Crea tu PIN nuevo';
-    $('msg2').textContent = 'Tu PIN es el de fÃ¡brica. Elige uno propio.';
+    $('msg2').textContent = 'Tu PIN es el de fábrica. Elige uno propio.';
     $('msg2').className = 'msg';
   }
   async function procesarPinCompleto(){
     if(!cambioPin) return doLogin();
     if(cambioPin.paso === 'nuevo'){
       if(pin === '0000'){
-        $('msg2').textContent = 'Ese PIN no estÃ¡ permitido'; $('msg2').className = 'msg err';
+        $('msg2').textContent = 'Ese PIN no está permitido'; $('msg2').className = 'msg err';
         setTimeout(()=>{ pin=''; updatePinDots(); }, 600);
         return;
       }
@@ -468,7 +468,7 @@
       return;
     }
     attempting = true;
-    $('msg2').textContent = 'Guardandoâ€¦'; $('msg2').className = 'msg';
+    $('msg2').textContent = 'Guardando…'; $('msg2').className = 'msg';
     try {
       const res = await fetch('/api/mi-pin', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -484,7 +484,7 @@
     }
   }
 
-  // â”€â”€ Keyboard (desktop only) â”€â”€
+  // ── Keyboard (desktop only) ──
   document.addEventListener('keydown', e=>{
     if($('s2').classList.contains('hidden')) return;
     if(e.key >= '0' && e.key <= '9' && pin.length < 4 && !attempting){
@@ -497,11 +497,11 @@
     }
   });
 
-  // â”€â”€ Crear cuenta (auto-registro de asesor / supervisor) â”€â”€
+  // ── Crear cuenta (auto-registro de asesor / supervisor) ──
   let regFotoBase64 = '';
-  let regRol = 'asesor'; // default â€” el chip de seleccionar lo cambia
+  let regRol = 'asesor'; // default — el chip de seleccionar lo cambia
 
-  // Selector de rol: actualiza la variable, el subtÃ­tulo y la UI .active
+  // Selector de rol: actualiza la variable, el subtítulo y la UI .active
   function setRegRol(rol){
     regRol = rol;
     document.querySelectorAll('.role-chip').forEach(c=>c.classList.toggle('active', c.dataset.role === rol));
@@ -547,11 +547,11 @@
     const pinReg = $('regPin').value.trim();
     const msgEl = $('msgReg');
     if(!nombre){ msgEl.textContent = 'Escribe tu nombre completo'; msgEl.className = 'msg err'; return; }
-    if(telRaw.length < 10){ msgEl.textContent = 'TelÃ©fono invÃ¡lido'; msgEl.className = 'msg err'; return; }
-    if(pinReg.length !== 4 || pinReg === '0000'){ msgEl.textContent = 'Elige un PIN de 4 dÃ­gitos distinto de 0000'; msgEl.className = 'msg err'; return; }
+    if(telRaw.length < 10){ msgEl.textContent = 'Teléfono inválido'; msgEl.className = 'msg err'; return; }
+    if(pinReg.length !== 4 || pinReg === '0000'){ msgEl.textContent = 'Elige un PIN de 4 dígitos distinto de 0000'; msgEl.className = 'msg err'; return; }
     registrando = true;
     $('btnRegistrar').disabled = true;
-    msgEl.textContent = 'Enviandoâ€¦'; msgEl.className = 'msg';
+    msgEl.textContent = 'Enviando…'; msgEl.className = 'msg';
     try{
       const res = await fetch('/api/vendedores/registro', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -559,20 +559,20 @@
       });
       const data = await res.json();
       if(!res.ok){
-        const errores = { telefono_ya_registrado:'Ese telÃ©fono ya estÃ¡ registrado', pin_invalido:'PIN invÃ¡lido', formato_telefono_invalido_debe_ser_57:'TelÃ©fono invÃ¡lido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta mÃ¡s tarde', rol_invalido:'Rol no vÃ¡lido' };
+        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde', rol_invalido:'Rol no válido' };
         msgEl.textContent = errores[data.error] || 'No se pudo registrar'; msgEl.className = 'msg err';
         registrando = false; $('btnRegistrar').disabled = false;
         return;
       }
       const rolTexto = regRol === 'supervisor' ? 'supervisor' : 'asesor';
-      msgEl.textContent = `Â¡Listo! Tu cuenta de ${rolTexto} estÃ¡ en revisiÃ³n â€” el admin te avisarÃ¡ cuando estÃ© activa.`; msgEl.className = 'msg ok';
+      msgEl.textContent = `¡Listo! Tu cuenta de ${rolTexto} está en revisión — el admin te avisará cuando esté activa.`; msgEl.className = 'msg ok';
       setTimeout(()=>{
         $('s3').classList.add('hidden');
         $('s1').classList.remove('hidden');
         registrando = false; $('btnRegistrar').disabled = false;
       }, 2200);
     }catch(err){
-      msgEl.textContent = 'Error de conexiÃ³n'; msgEl.className = 'msg err';
+      msgEl.textContent = 'Error de conexión'; msgEl.className = 'msg err';
       registrando = false; $('btnRegistrar').disabled = false;
     }
   });

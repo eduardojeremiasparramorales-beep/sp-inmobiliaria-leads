@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0A0A0A">
-<title>GalerÃ­a SP Leons Group</title>
+<title>Galería SP Leons Group</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
@@ -49,7 +49,7 @@
     background-attachment:fixed;
   }
 
-  /* Navegacion superior â€” glass premium */
+  /* Navegacion superior — glass premium */
   .nav{
     position:sticky;top:0;z-index:100;
     padding:14px 20px;
@@ -219,7 +219,7 @@
 
 <nav class="nav">
   <a href="/" class="nav-back" title="Volver">&larr;</a>
-  <span class="nav-title">GALERÃA SP LEONS</span>
+  <span class="nav-title">GALERÍA SP LEONS</span>
   <span class="nav-sub">Recursos del grupo</span>
 </nav>
 
@@ -234,7 +234,7 @@
 
 <div class="modal-overlay" id="modalOverlay">
   <button class="modal-close" id="modalClose">&times;</button>
-  <a class="modal-download" id="modalDownload" href="#" download>â¬‡ Descargar</a>
+  <a class="modal-download" id="modalDownload" href="#" download>⬇ Descargar</a>
   <div class="modal" id="modalContent"></div>
 </div>
 
@@ -279,7 +279,7 @@ function renderGrid(cat){
   currentCat = cat;
   const filtered = cat === 'all' ? assets : assets.filter(a => a.categoria === cat);
   if(!filtered.length){
-    grid.innerHTML = `<div class="empty"><div class="empty-icon">&#128444;</div><div class="empty-msg">PrÃ³ximamente mÃ¡s recursos</div></div>`;
+    grid.innerHTML = `<div class="empty"><div class="empty-icon">&#128444;</div><div class="empty-msg">Próximamente más recursos</div></div>`;
     return;
   }
   grid.innerHTML = filtered.map(a => {

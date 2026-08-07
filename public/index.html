@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -29,8 +29,8 @@
   </div>
 <script>
   // Enrutador de entrada: manda a cada quien a donde corresponde.
-  // Tres roles â†’ tres paneles distintos (admin: SP OS, supervisor: Supervisor Center,
-  // vendedor: panel mÃ³vil). Cualquier rol no reconocido cae al login.
+  // Tres roles → tres paneles distintos (admin: SP OS, supervisor: Supervisor Center,
+  // vendedor: panel móvil). Cualquier rol no reconocido cae al login.
   fetch('/api/me', { credentials: 'include' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (u) {

@@ -474,7 +474,7 @@
           <button type="submit">Guardar</button>
         </form>
       </div>
-      ${waTemplates.length ? `<div id="reactivarPanel" style="display:none;padding:8px 20px;background:var(--bg-2);border-bottom:1px solid var(--border-soft);display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px"><span style="color:var(--text-3)">Plantilla:</span>${waTemplates.map(t=>`<button onclick="enviarWATemplate(${c.id},'${esc(t.nombre)}','${esc(t.idioma)}')" class="btn btn--ghost btn--sm" style="font-size:11.5px">${esc(t.nombre)}</button>`).join('')}</div>` : ''}
+      ${waTemplates.length ? `<div id="reactivarPanel" style="display:none;padding:8px 20px;background:var(--bg-2);border-bottom:1px solid var(--border-soft);display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px"><span style="color:var(--text-3)">Plantilla:</span>${waTemplates.map(t=>`<button onclick="enviarWATemplate(${c.id},'${esc(t.id)}','${esc(t.nombre)}','${esc(t.idioma)}')" class="btn btn--ghost btn--sm" style="font-size:11.5px">${esc(t.nombre)}</button>`).join('')}</div>` : ''}
       <div class="ibx-msgs" id="ibxMsgs" role="log" aria-live="polite">
         <div class="sk" style="height:40px;width:58%;border-radius:12px;align-self:flex-start"></div>
       </div>
@@ -830,12 +830,12 @@
     } catch (e) { toast('Error: ' + e.message, 'err'); }
   }
 
-  window.enviarWATemplate = async function (id, nombre, idioma) {
+  window.enviarWATemplate = async function (id, templateId, nombre, idioma) {
     const conv = convs.find(x => x.id === id);
     if (!conv) return;
     if (!conv.lead_id) { toast('Esta conversación aún no tiene lead vinculado', 'err'); return; }
     if (!confirm(`¿Enviar plantilla "${nombre}"?`)) return;
-    const r = await api('/api/leads/' + conv.lead_id + '/enviar-template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, idioma }) });
+    const r = await api('/api/leads/' + conv.lead_id + '/enviar-template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId }) });
     if (r !== null) { toast('Plantilla enviada', 'ok'); await recargarMensajes(id); }
     else toast('Error al enviar plantilla', 'err');
     const p = document.getElementById('reactivarPanel'); if (p) p.style.display = 'none';

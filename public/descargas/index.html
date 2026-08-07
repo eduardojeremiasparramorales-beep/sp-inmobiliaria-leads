@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -84,27 +84,27 @@
   <div class="card">
     <div class="logo"><img src="/icons/logo.png" alt="Leons Group"></div>
     <h1>LEONS GROUP</h1>
-    <div class="ver" id="ver">Panel de asesores â€” Android</div>
+    <div class="ver" id="ver">Panel de asesores — Android</div>
     <a class="btn" href="/descargas/leons-group.apk" download>Descargar App</a>
-    <div class="btn-sub">App nativa Â· auto-actualizaciÃ³n Â· push notifications</div>
+    <div class="btn-sub">App nativa · auto-actualización · push notifications</div>
     <div class="pasos">
       <ol>
-        <li>Toca <b>Descargar App v2.1</b> (si estÃ¡s en WhatsApp, primero abre esta pÃ¡gina en <b>Chrome</b>: menÃº â‹® â†’ "Abrir en Chrome").</li>
-        <li>Cuando termine la descarga, <b>baja la barra de notificaciones y toca el archivo</b> (o Chrome â†’ â‹® â†’ Descargas).</li>
-        <li>Si el telÃ©fono pregunta, activa <b>"Permitir instalar aplicaciones desconocidas"</b> para Chrome y vuelve atrÃ¡s.</li>
-        <li>Toca <b>Instalar</b> y abre la app. Entra con tu telÃ©fono y PIN.</li>
+        <li>Toca <b>Descargar App v2.1</b> (si estás en WhatsApp, primero abre esta página en <b>Chrome</b>: menú ⋮ → "Abrir en Chrome").</li>
+        <li>Cuando termine la descarga, <b>baja la barra de notificaciones y toca el archivo</b> (o Chrome → ⋮ → Descargas).</li>
+        <li>Si el teléfono pregunta, activa <b>"Permitir instalar aplicaciones desconocidas"</b> para Chrome y vuelve atrás.</li>
+        <li>Toca <b>Instalar</b> y abre la app. Entra con tu teléfono y PIN.</li>
       </ol>
     </div>
     <div class="nota">
-      <b>Â¿Dice "App no instalada"?</b> Desinstala la versiÃ³n anterior primero y repite. Desde esta versiÃ³n la app se actualiza sola, sin desinstalar nada.
+      <b>¿Dice "App no instalada"?</b> Desinstala la versión anterior primero y repite. Desde esta versión la app se actualiza sola, sin desinstalar nada.
     </div>
-    <div class="foot">SERGIO PARRA INVERSIONES & FINCA RAÃZ</div>
+    <div class="foot">SERGIO PARRA INVERSIONES & FINCA RAÍZ</div>
   </div>
 <script>
   fetch('/api/app/version').then(r=>r.ok?r.json():null).then(v=>{
     if(!v) return;
     document.getElementById('ver').textContent =
-      'VersiÃ³n '+v.versionName+' Â· '+(v.size/1048576).toFixed(1)+' MB Â· '+(v.fecha||'');
+      'Versión '+v.versionName+' · '+(v.size/1048576).toFixed(1)+' MB · '+(v.fecha||'');
   }).catch(()=>{});
 </script>
 </body>
