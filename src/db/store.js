@@ -42,8 +42,9 @@ function createSchema() {
       rol TEXT DEFAULT 'vendedor',
       two_fa INTEGER DEFAULT 0,
       total_leads INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now'))
-    );
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      );
+
     CREATE TABLE IF NOT EXISTS leads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_phone TEXT NOT NULL,
@@ -56,8 +57,8 @@ function createSchema() {
       last_message TEXT,
       first_response_at DATETIME,
       escalation_level INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +67,7 @@ function createSchema() {
       to_number TEXT NOT NULL,
       body TEXT NOT NULL,
       direction TEXT DEFAULT 'incoming',
-      timestamp DATETIME DEFAULT (datetime('now')),
+      timestamp DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
     CREATE TABLE IF NOT EXISTS usuarios (
@@ -76,13 +77,13 @@ function createSchema() {
       nombre TEXT,
       rol TEXT DEFAULT 'vendedor',
       vendedor_id INTEGER,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       titulo TEXT NOT NULL,
       cuerpo TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
 
@@ -183,7 +184,7 @@ function createSchema() {
       intentos INTEGER DEFAULT 0,
       last_error TEXT,
       sent_at DATETIME,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
   `);
@@ -222,7 +223,7 @@ function createSchema() {
       from_nombre TEXT DEFAULT '',
       to_vendedor_id INTEGER,
       body TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
 
@@ -233,7 +234,7 @@ function createSchema() {
       emoji TEXT NOT NULL,
       sender_number TEXT NOT NULL,
       direction TEXT DEFAULT 'incoming',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       UNIQUE(message_id, emoji, sender_number),
       FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
     );
@@ -245,7 +246,7 @@ function createSchema() {
       lead_id INTEGER NOT NULL,
       autor TEXT DEFAULT '',
       nota TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_lead_notes_lead ON lead_notes(lead_id)`);
@@ -286,7 +287,7 @@ function createSchema() {
       nombre TEXT NOT NULL UNIQUE,
       idioma TEXT DEFAULT 'es',
       params TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
   // Columnas del catálogo real de plantillas de Meta (sincronizado, no escrito a mano):
@@ -315,8 +316,8 @@ function createSchema() {
       total_entregados INTEGER DEFAULT 0,
       total_leidos INTEGER DEFAULT 0,
       total_fallidos INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       started_at DATETIME,
       finished_at DATETIME
     );
@@ -333,7 +334,7 @@ function createSchema() {
       estado TEXT DEFAULT 'queued',
       error_detail TEXT,
       wamid TEXT,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       sent_at DATETIME,
       delivered_at DATETIME,
       read_at DATETIME,
@@ -352,7 +353,7 @@ function createSchema() {
       phone TEXT PRIMARY KEY,
       canal TEXT DEFAULT 'whatsapp',
       motivo TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
 
@@ -376,7 +377,7 @@ function createSchema() {
       endpoint TEXT NOT NULL UNIQUE,
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_push_vendedor ON push_subscriptions(vendedor_id)`);
@@ -388,7 +389,7 @@ function createSchema() {
     vendedor_id INTEGER NOT NULL,
     titulo TEXT NOT NULL,
     cuerpo TEXT NOT NULL,
-    created_at DATETIME DEFAULT (datetime('now'))
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
   )`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_vt_vendedor ON vendedor_templates(vendedor_id)`);
 
@@ -402,7 +403,7 @@ function createSchema() {
     tipo TEXT DEFAULT 'lote',
     estado TEXT DEFAULT 'disponible' CHECK (estado IN ('disponible','reservado','vendido')),
     imagen_url TEXT DEFAULT '',
-    created_at DATETIME DEFAULT (datetime('now'))
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
   )`);
 
   execSQL(`CREATE TABLE IF NOT EXISTS galeria (
@@ -412,7 +413,7 @@ function createSchema() {
     filename TEXT NOT NULL,
     activa INTEGER NOT NULL DEFAULT 1,
     orden INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT (datetime('now'))
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
   )`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_galeria_cat ON galeria(categoria)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_galeria_orden ON galeria(orden)`);
@@ -445,7 +446,7 @@ function createSchema() {
       fecha DATETIME NOT NULL,
       notas TEXT DEFAULT '',
       estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'hecha', 'cancelada')),
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_fecha ON citas(fecha)`);
@@ -457,7 +458,7 @@ function createSchema() {
       lead_id INTEGER,
       phone TEXT NOT NULL,
       body TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_pending_outbound_phone ON pending_outbound(phone)`);
@@ -505,7 +506,7 @@ function createSchema() {
       autor TEXT DEFAULT '',
       creado_por INTEGER,
       activo INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
   execSQL('CREATE INDEX IF NOT EXISTS idx_sp_feed_fecha ON sp_feed(activo, created_at)');
@@ -532,7 +533,7 @@ function createSchema() {
       message_id INTEGER NOT NULL,
       emoji TEXT NOT NULL,
       from_vendedor_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       UNIQUE(message_id, emoji, from_vendedor_id)
     );
   `);
@@ -541,7 +542,7 @@ function createSchema() {
   execSQL(`
     CREATE TABLE IF NOT EXISTS team_presence (
       vendedor_id INTEGER PRIMARY KEY,
-      last_heartbeat DATETIME DEFAULT (datetime('now'))
+      last_heartbeat DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
 
@@ -551,7 +552,7 @@ function createSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vendedor_id INTEGER NOT NULL,
       codigo TEXT NOT NULL,
-      otorgada_at DATETIME DEFAULT (datetime('now')),
+      otorgada_at DATETIME DEFAULT (datetime('now','localtime')),
       UNIQUE(vendedor_id, codigo)
     );
   `);
@@ -598,7 +599,7 @@ function saveLead(customerPhone, customerName, messageBody) {
 
   // No existe ningún lead con este teléfono → insertar nuevo
   try {
-    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct) VALUES (?, ?, ?, ?, 1, datetime(\'now\'), \'sin_clasificar\', 5)', [phone, customerName || 'Cliente', messageBody, messageBody]);
+    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct) VALUES (?, ?, ?, ?, 1, datetime(\'now\',\'localtime\'), \'sin_clasificar\', 5)', [phone, customerName || 'Cliente', messageBody, messageBody]);
   } catch (e) {
     // Condición de carrera: otro webhook concurrente insertó/reabrió este teléfono entre
     // el SELECT y el INSERT (o el UNIQUE INDEX lo bloqueó). Se trata como actualización
@@ -619,9 +620,9 @@ function saveLead(customerPhone, customerName, messageBody) {
 
 function reopenOrUpdateLead(leadId, wasClosed, messageBody) {
   if (wasClosed) {
-    run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', ['asignado', messageBody, leadId]);
+    run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\',\'localtime\'), last_customer_message_at = datetime(\'now\',\'localtime\') WHERE id = ?', ['asignado', messageBody, leadId]);
   } else {
-    run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\'), last_customer_message_at = datetime(\'now\') WHERE id = ?', [messageBody, leadId]);
+    run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\',\'localtime\'), last_customer_message_at = datetime(\'now\',\'localtime\') WHERE id = ?', [messageBody, leadId]);
   }
 }
 
@@ -639,7 +640,7 @@ function assignLeadToVendedor(leadId, vendedor) {
   const prev = one('SELECT assigned_to_id, customer_name FROM leads WHERE id = ?', [leadId]);
   const esAsignacionInicial = !prev || prev.assigned_to_id == null || Number(prev.assigned_to_id) === 0;
 
-  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
+  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
 
   // SP Feed: publicar "nuevo lead asignado" solo en la asignación inicial (las
@@ -663,7 +664,7 @@ function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid,
     m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
     replyToId ? Number(replyToId) : null, wamid || null, st,
   ]);
-  run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
+  run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
   // Incrementar unread_count para mensajes entrantes del cliente
   if (direction === 'incoming') {
     run('UPDATE leads SET unread_count = COALESCE(unread_count,0) + 1 WHERE id = ?', [leadId]);
@@ -681,11 +682,11 @@ function setMessageError(wamid, detail) {
 }
 
 function markMessageAsRead(messageId) {
-  run("UPDATE messages SET status = 'read', read_at = datetime('now') WHERE id = ? AND status != 'read'", [messageId]);
+  run("UPDATE messages SET status = 'read', read_at = datetime('now','localtime') WHERE id = ? AND status != 'read'", [messageId]);
 }
 
 function markLeadMessagesAsRead(leadId, fromNumber) {
-  run("UPDATE messages SET status = 'read', read_at = datetime('now') WHERE lead_id = ? AND from_number = ? AND (status IS NULL OR status != 'read')", [leadId, fromNumber]);
+  run("UPDATE messages SET status = 'read', read_at = datetime('now','localtime') WHERE lead_id = ? AND from_number = ? AND (status IS NULL OR status != 'read')", [leadId, fromNumber]);
 }
 
 function getMessageById(id) {
@@ -722,7 +723,7 @@ function getReactionsForMessages(messageIds) {
 
 // --- Editar mensaje ---
 function editMessage(messageId, newBody) {
-  run("UPDATE messages SET body = ?, edited_at = datetime('now') WHERE id = ?", [String(newBody).trim(), messageId]);
+  run("UPDATE messages SET body = ?, edited_at = datetime('now','localtime') WHERE id = ?", [String(newBody).trim(), messageId]);
 }
 
 // --- Mensajes destacados ⭐ ---
@@ -731,7 +732,7 @@ function toggleStarMessage(messageId) {
   if (!m) return null;
   const nuevo = !m.starred_at;
   run(nuevo
-    ? "UPDATE messages SET starred_at = datetime('now') WHERE id = ?"
+    ? "UPDATE messages SET starred_at = datetime('now','localtime') WHERE id = ?"
     : 'UPDATE messages SET starred_at = NULL WHERE id = ?', [messageId]);
   return nuevo;
 }
@@ -846,7 +847,7 @@ function markTeamDirectRead(vendedorId, otroId) {
   // Devuelve los from_vendedor_id de los mensajes que se marcaron como leídos,
   // para poder emitir SSE `equipo_read` al emisor y que vea ✓✓ en tiempo real.
   const unread = all("SELECT DISTINCT from_vendedor_id FROM team_messages WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
-  run("UPDATE team_messages SET read_at = datetime('now') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
+  run("UPDATE team_messages SET read_at = datetime('now','localtime') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
   return unread.map(r => r.from_vendedor_id);
 }
 function markTeamGeneralRead(vendedorId, lastMessageId) {
@@ -965,7 +966,7 @@ function pinTeamMessage(messageId, vendedorId) {
     run('UPDATE team_messages SET pinned_at = NULL, pinned_by = NULL WHERE id = ?', [messageId]);
     return { pinned: false };
   }
-  run("UPDATE team_messages SET pinned_at = datetime('now'), pinned_by = ? WHERE id = ?", [vendedorId || 0, messageId]);
+  run("UPDATE team_messages SET pinned_at = datetime('now','localtime'), pinned_by = ? WHERE id = ?", [vendedorId || 0, messageId]);
   return { pinned: true };
 }
 function getPinnedTeamMessage(channel) {
@@ -985,7 +986,7 @@ function editTeamMessage(messageId, vendedorId, newBody) {
   const msg = one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
   if (!msg) return null;
   if (Number(msg.from_vendedor_id) !== vendedorId && vendedorId !== 0) return null; // solo autor o admin
-  run("UPDATE team_messages SET body = ?, edited_at = datetime('now') WHERE id = ?", [String(newBody).slice(0, 2000), messageId]);
+  run("UPDATE team_messages SET body = ?, edited_at = datetime('now','localtime') WHERE id = ?", [String(newBody).slice(0, 2000), messageId]);
   return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id WHERE tm.id = ?', [messageId]);
 }
 
@@ -1019,7 +1020,7 @@ function forwardTeamMessage(messageId, toVendedorId, fromVendedorId, fromNombre)
 
 // --- Presencia ---
 function updatePresence(vendedorId) {
-  run('INSERT OR REPLACE INTO team_presence (vendedor_id, last_heartbeat) VALUES (?, datetime(\'now\'))', [vendedorId]);
+  run('INSERT OR REPLACE INTO team_presence (vendedor_id, last_heartbeat) VALUES (?, datetime(\'now\',\'localtime\'))', [vendedorId]);
 }
 function getPresenceMap() {
   const rows = all('SELECT vendedor_id, last_heartbeat FROM team_presence');
@@ -1059,7 +1060,7 @@ function getMessageByWamid(wamid) {
 // --- Pin de lead ---
 function pinLead(leadId, pinned) {
   if (pinned) {
-    run("UPDATE leads SET pinned_at = datetime('now') WHERE id = ?", [leadId]);
+    run("UPDATE leads SET pinned_at = datetime('now','localtime') WHERE id = ?", [leadId]);
   } else {
     run("UPDATE leads SET pinned_at = NULL WHERE id = ?", [leadId]);
   }
@@ -1073,7 +1074,7 @@ function clearLeadMessages(leadId) {
 
 function muteLead(leadId, muted) {
   if (muted) {
-    run("UPDATE leads SET muted_at = datetime('now') WHERE id = ?", [leadId]);
+    run("UPDATE leads SET muted_at = datetime('now','localtime') WHERE id = ?", [leadId]);
   } else {
     run("UPDATE leads SET muted_at = NULL WHERE id = ?", [leadId]);
   }
@@ -1084,11 +1085,11 @@ function muteLead(leadId, muted) {
 function updateCustomerMessageTimestamp(leadId) {
   // Al responder el cliente, se limpia el guard para que pueda generarse un nuevo
   // seguimiento automático si el asesor vuelve a quedar como último en escribir.
-  run('UPDATE leads SET last_customer_message_at = datetime(\'now\'), followup_task_at = NULL WHERE id = ?', [leadId]);
+  run('UPDATE leads SET last_customer_message_at = datetime(\'now\',\'localtime\'), followup_task_at = NULL WHERE id = ?', [leadId]);
   try {
     const lead = one('SELECT lead_id FROM conversations WHERE lead_id = ?', [leadId]);
     if (lead) {
-      run('UPDATE conversations SET last_customer_message_at = datetime(\'now\') WHERE lead_id = ?', [leadId]);
+      run('UPDATE conversations SET last_customer_message_at = datetime(\'now\',\'localtime\') WHERE lead_id = ?', [leadId]);
     }
   } catch (e) { /* conversación puede no existir aún */ }
 }
@@ -1133,7 +1134,7 @@ function getLeadByCustomerPhone(phone) {
 }
 
 function updateLeadStatus(leadId, status) {
-  run('UPDATE leads SET status = ?, updated_at = datetime(\'now\') WHERE id = ?', [status, leadId]);
+  run('UPDATE leads SET status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [status, leadId]);
 }
 
 function resetLead(leadId) {
@@ -1142,7 +1143,7 @@ function resetLead(leadId) {
     first_response_at = NULL,
     escalation_level = 0,
     unread_count = 0,
-    updated_at = datetime('now')
+    updated_at = datetime('now','localtime')
   WHERE id = ?`, [leadId]);
 }
 
@@ -1151,12 +1152,12 @@ function reopenLead(leadId) {
     status = 'asignado',
     first_response_at = NULL,
     escalation_level = 0,
-    updated_at = datetime('now')
+    updated_at = datetime('now','localtime')
   WHERE id = ? AND status = 'cerrado'`, [leadId]);
 }
 
 function setFirstResponse(leadId) {
-  run('UPDATE leads SET first_response_at = datetime(\'now\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
+  run('UPDATE leads SET first_response_at = datetime(\'now\',\'localtime\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
 }
 
 function getDuplicateGroups() {
@@ -1206,7 +1207,7 @@ function mergeLeads(keepLeadId, removeLeadId) {
     const convs = all('SELECT id FROM conversations WHERE lead_id = ?', [removeLeadId]);
     if (convs.length > 0) {
       const ids = convs.map(c => c.id).join(',');
-      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ?, status = 'cerrado', updated_at = datetime('now') WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
+      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ?, status = 'cerrado', updated_at = datetime('now','localtime') WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
     }
   } catch(e) {}
 
@@ -1223,7 +1224,7 @@ function closeOrphanConversations() {
     WHERE l.id IS NULL OR l.status = 'cerrado'
   `);
   orphans.forEach(o => {
-    run("UPDATE conversations SET status = 'cerrado', updated_at = datetime('now') WHERE id = ?", [o.id]);
+    run("UPDATE conversations SET status = 'cerrado', updated_at = datetime('now','localtime') WHERE id = ?", [o.id]);
   });
   return { closed: orphans.length };
 }
@@ -1304,7 +1305,7 @@ function setUnreadCount(leadId, count) {
 
 // Editar el nombre del contacto
 function setLeadNombre(leadId, nombre) {
-  run('UPDATE leads SET customer_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [String(nombre), Number(leadId)]);
+  run('UPDATE leads SET customer_name = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [String(nombre), Number(leadId)]);
 }
 
 function setLeadOrigen(leadId, origen) {
@@ -1845,9 +1846,9 @@ function getCampaignById(id) {
 }
 
 function updateCampaignEstado(id, estado) {
-  const timestampCol = estado === 'running' ? ', started_at = datetime(\'now\')'
-    : (estado === 'done' || estado === 'failed') ? ', finished_at = datetime(\'now\')' : '';
-  run(`UPDATE campaigns SET estado = ?, updated_at = datetime('now')${timestampCol} WHERE id = ?`, [estado, id]);
+  const timestampCol = estado === 'running' ? ', started_at = datetime(\'now\',\'localtime\')'
+    : (estado === 'done' || estado === 'failed') ? ', finished_at = datetime(\'now\',\'localtime\')' : '';
+  run(`UPDATE campaigns SET estado = ?, updated_at = datetime('now','localtime')${timestampCol} WHERE id = ?`, [estado, id]);
 }
 
 function deleteCampaign(id) {
@@ -1874,7 +1875,7 @@ function updateCampaignRecipient(id, fields) {
   if (fields.estado) {
     sets.push('estado = ?'); vals.push(fields.estado);
     const col = colByEstado[fields.estado];
-    if (col) sets.push(`${col} = datetime('now')`);
+    if (col) sets.push(`${col} = datetime('now','localtime')`);
   }
   if (fields.wamid !== undefined) { sets.push('wamid = ?'); vals.push(fields.wamid); }
   if (fields.errorDetail !== undefined) { sets.push('error_detail = ?'); vals.push(fields.errorDetail); }
@@ -2034,18 +2035,18 @@ const PROGRESS_MAP = { sin_clasificar: 5, interesado: 30, negociacion: 60, cita:
 // --- Etiqueta de pipeline del lead ---
 function setLeadEtiqueta(leadId, etiqueta) {
   const pct = PROGRESS_MAP[etiqueta] || 0;
-  run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, pct, leadId]);
+  run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [etiqueta, pct, leadId]);
 }
 
 function updateLeadProgress(leadId, pct) {
   const clamped = Math.max(0, Math.min(100, pct));
-  run('UPDATE leads SET progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [clamped, leadId]);
+  run('UPDATE leads SET progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [clamped, leadId]);
 }
 
 // Calificación IA de temperatura del lead (caliente|tibio|frio).
 function setLeadTemperatura(leadId, temp) {
   if (!['caliente', 'tibio', 'frio'].includes(temp)) return;
-  run('UPDATE leads SET temperatura = ?, temperatura_at = datetime(\'now\') WHERE id = ?', [temp, leadId]);
+  run('UPDATE leads SET temperatura = ?, temperatura_at = datetime(\'now\',\'localtime\') WHERE id = ?', [temp, leadId]);
 }
 
 // Posponer chat (C2): guarda hasta cuándo queda pospuesto (ISO o null para reactivar).
@@ -2137,7 +2138,7 @@ function deleteNota(id) {
 
 // --- Reasignación de un lead (admin o automática) ---
 function reassignLead(leadId, vendedor, vendedorAnteriorId) {
-  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, leadId]);
+  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [vendedor.id, vendedor.telefono, leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
   if (vendedorAnteriorId) {
     run('UPDATE vendedores SET total_leads = MAX(0, total_leads - 1) WHERE id = ?', [vendedorAnteriorId]);
@@ -2152,7 +2153,7 @@ function deleteVendedor(id) {
   if (activos.length > 0) {
     const siguiente = activos[0];
     leadsReasignar.forEach(lead => {
-      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
+      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
       run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [siguiente.id]);
     });
     // Reasignar también las conversaciones del schema multicanal — tienen su propia
@@ -2163,7 +2164,7 @@ function deleteVendedor(id) {
   } else {
     // No hay vendedores activos: marcar leads como huérfanos (sin asignar) y cambiar status a 'nuevo' para que round-robin los reasigne
     leadsReasignar.forEach(lead => {
-      run('UPDATE leads SET assigned_to_id = NULL, assigned_to_phone = NULL, status = ?, updated_at = datetime(\'now\') WHERE id = ?', ['nuevo', lead.id]);
+      run('UPDATE leads SET assigned_to_id = NULL, assigned_to_phone = NULL, status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', ['nuevo', lead.id]);
     });
     run('UPDATE conversations SET assigned_to_id = NULL, status = ? WHERE assigned_to_id = ?', ['nuevo', id]);
   }
@@ -2316,7 +2317,7 @@ function createConversation(channel, channelConversationId, customerId) {
 
 function getConversationById(id) {
   return one(`
-    SELECT conv.*, v.nombre AS assigned_to_nombre
+    SELECT conv.*, v.nombre AS assigned_to_nombre, v.foto AS assigned_to_foto
     FROM conversations conv
     LEFT JOIN vendedores v ON v.id = conv.assigned_to_id
     WHERE conv.id = ?
@@ -2374,16 +2375,16 @@ function getChannelUserIdForLead(leadId, channel) {
 }
 
 function updateConversationStatus(id, status) {
-  run('UPDATE conversations SET status = ?, updated_at = datetime(\'now\') WHERE id = ?', [status, id]);
+  run('UPDATE conversations SET status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [status, id]);
 }
 
 function updateConversationTag(id, etiqueta) {
   const pct = PROGRESS_MAP[etiqueta] || 0;
-  run('UPDATE conversations SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\') WHERE id = ?', [etiqueta, pct, id]);
+  run('UPDATE conversations SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [etiqueta, pct, id]);
 }
 
 function updateConversationPriority(id, priority) {
-  run('UPDATE conversations SET priority = ?, updated_at = datetime(\'now\') WHERE id = ?', [priority, id]);
+  run('UPDATE conversations SET priority = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [priority, id]);
 }
 
 function getConversations({ channel, status, etiqueta, busqueda, vendedorId, limite, offset } = {}) {
@@ -2401,7 +2402,7 @@ function getConversations({ channel, status, etiqueta, busqueda, vendedorId, lim
   const lim = Number(limite) || 50;
   const off = Number(offset) || 0;
   return all(`
-    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, c.avatar_url AS customer_avatar, v.nombre AS assigned_to_nombre,
+    SELECT conv.*, c.name AS customer_name, c.phone AS customer_phone, c.avatar_url AS customer_avatar, v.nombre AS assigned_to_nombre, v.foto AS assigned_to_foto,
       CASE WHEN l.id IS NOT NULL THEN l.unread_count ELSE conv.unread_count END AS unread_count,
       l.status AS lead_status
     FROM conversations conv
@@ -2501,7 +2502,7 @@ function syncLeadToConversation(lead, data = {}) {
     // 3. Mantener asignación/etiqueta/estado en espejo con el lead
     const eta = lead.etiqueta || conv.etiqueta || 'sin_clasificar';
     const convPct = PROGRESS_MAP[eta] || 5;
-    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, progress_pct = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?', [
+    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, progress_pct = ?, status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [
       lead.assigned_to_id || null,
       eta, convPct,
       lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
@@ -2524,7 +2525,7 @@ function syncLeadToConversation(lead, data = {}) {
         metadata: data.messageId ? { legacy_message_id: data.messageId } : undefined,
       });
       const inc = data.direction === 'incoming' ? 1 : 0;
-      run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\'), unread_count = CASE WHEN ? = 1 THEN COALESCE(unread_count,0) + 1 ELSE unread_count END, updated_at = datetime(\'now\') WHERE id = ?',
+      run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\',\'localtime\'), unread_count = CASE WHEN ? = 1 THEN COALESCE(unread_count,0) + 1 ELSE unread_count END, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?',
         [String(data.body || `[${(data.media || {}).media_type || 'media'}]`).slice(0, 200), inc, conv.id]);
     }
     return conv;
@@ -2561,7 +2562,7 @@ function getLastMessageByConversation(conversationId) {
 // --- Inbox unificado: legacy leads + nuevo schema ---
 function getUnlinkedLeads() {
   return all(`
-    SELECT l.*, v.nombre AS assigned_to_nombre
+    SELECT l.*, v.nombre AS assigned_to_nombre, v.foto AS assigned_to_foto
     FROM leads l
     LEFT JOIN vendedores v ON v.id = l.assigned_to_id
     WHERE l.id NOT IN (SELECT lead_id FROM conversations WHERE lead_id IS NOT NULL)
@@ -2616,16 +2617,16 @@ function getUnifiedConversations({ busqueda, vendedorId, limite } = {}) {
       if (!(String(l.customer_name || '')).toLowerCase().includes(q) && !(String(l.customer_phone || '')).includes(q)) return;
     }
     if (vendedorId && Number(l.assigned_to_id) !== Number(vendedorId)) return;
-    unified.push({
-      _type: 'lead',
-      id: l.id, channel: 'whatsapp',
-      customer_name: l.customer_name, customer_phone: l.customer_phone,
-      assigned_to_id: l.assigned_to_id, assigned_to_nombre: l.assigned_to_nombre,
-      status: l.status, unread_count: l.unread_count || 0,
-      last_message: l.last_message, last_message_at: l.updated_at || l.created_at,
-      etiqueta: l.etiqueta, lead_id: l.id,
-      updated_at: l.updated_at || l.created_at, created_at: l.created_at,
-    });
+unified.push({
+        _type: 'lead',
+        id: l.id, channel: 'whatsapp',
+        customer_name: l.customer_name, customer_phone: l.customer_phone,
+        assigned_to_id: l.assigned_to_id, assigned_to_nombre: l.assigned_to_nombre, assigned_to_foto: l.assigned_to_foto || null,
+        status: l.status, unread_count: l.unread_count || 0,
+        last_message: l.last_message, last_message_at: l.updated_at || l.created_at,
+        etiqueta: l.etiqueta, lead_id: l.id,
+        updated_at: l.updated_at || l.created_at, created_at: l.created_at,
+      });
   });
   unified.sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
   return unified;
@@ -2764,7 +2765,7 @@ function createProyecto(d = {}) {
 function updateProyecto(id, d = {}) {
   const p = getProyectoById(id);
   if (!p) return null;
-  run(`UPDATE proyectos SET nombre=?, ciudad=?, departamento=?, descripcion=?, imagen_url=?, estado=?, fecha_inicio=?, plano_url=?, plano_bounds=?, updated_at=datetime('now') WHERE id=?`,
+  run(`UPDATE proyectos SET nombre=?, ciudad=?, departamento=?, descripcion=?, imagen_url=?, estado=?, fecha_inicio=?, plano_url=?, plano_bounds=?, updated_at=datetime('now','localtime') WHERE id=?`,
     [d.nombre ?? p.nombre, d.ciudad ?? p.ciudad, d.departamento ?? p.departamento, d.descripcion ?? p.descripcion,
      d.imagen_url ?? p.imagen_url, d.estado ?? p.estado, d.fecha_inicio ?? p.fecha_inicio,
      d.plano_url ?? p.plano_url, d.plano_bounds ?? p.plano_bounds, id]);
@@ -2848,7 +2849,7 @@ function bulkCreateLotes(proyectoId, lotes = []) {
 function updateLote(id, d = {}) {
   const l = getLoteById(id);
   if (!l) return null;
-  run(`UPDATE lotes SET numero=?, manzana=?, area=?, dimensiones=?, precio=?, cliente_id=?, asesor_id=?, poligono=?, observaciones=?, updated_at=datetime('now') WHERE id=?`,
+  run(`UPDATE lotes SET numero=?, manzana=?, area=?, dimensiones=?, precio=?, cliente_id=?, asesor_id=?, poligono=?, observaciones=?, updated_at=datetime('now','localtime') WHERE id=?`,
     [d.numero ?? l.numero, d.manzana ?? l.manzana, d.area ?? l.area, d.dimensiones ?? l.dimensiones,
      d.precio ?? l.precio, d.cliente_id ?? l.cliente_id, d.asesor_id ?? l.asesor_id,
      d.poligono != null ? (typeof d.poligono === 'string' ? d.poligono : JSON.stringify(d.poligono)) : l.poligono,
@@ -2869,8 +2870,8 @@ function getLoteHistorial(loteId) {
 function updateLoteEstado(id, estado, opts = {}) {
   const l = getLoteById(id);
   if (!l) return null;
-  const now = "datetime('now')";
-  let sets = ['estado = ?', "updated_at = datetime('now')"];
+  const now = "datetime('now','localtime')";
+  let sets = ['estado = ?', "updated_at = datetime('now','localtime')"];
   const params = [estado];
   if (opts.cliente_id !== undefined) { sets.push('cliente_id = ?'); params.push(opts.cliente_id || null); }
   if (opts.asesor_id !== undefined) { sets.push('asesor_id = ?'); params.push(opts.asesor_id || null); }
@@ -2885,7 +2886,7 @@ function updateLoteEstado(id, estado, opts = {}) {
 function setLoteObservacion(id, texto, autor) {
   const l = getLoteById(id);
   if (!l) return null;
-  run(`UPDATE lotes SET observaciones = ?, updated_at = datetime('now') WHERE id = ?`, [texto || '', id]);
+  run(`UPDATE lotes SET observaciones = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [texto || '', id]);
   addLoteHistorial(id, 'observacion', texto || '', autor || '');
   return getLoteById(id);
 }
@@ -2893,7 +2894,7 @@ function setLoteObservacion(id, texto, autor) {
 function setLotePrecio(id, precio, autor) {
   const l = getLoteById(id);
   if (!l) return null;
-  run(`UPDATE lotes SET precio = ?, updated_at = datetime('now') WHERE id = ?`, [precio || 0, id]);
+  run(`UPDATE lotes SET precio = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [precio || 0, id]);
   addLoteHistorial(id, 'precio', `$${l.precio} → $${precio}`, autor || '');
   return getLoteById(id);
 }
@@ -2905,7 +2906,7 @@ function addLoteMedia(id, campo, item) {
   let arr = [];
   try { arr = JSON.parse(l[campo] || '[]'); } catch (e) { arr = []; }
   arr.push(item);
-  run(`UPDATE lotes SET ${campo} = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(arr), id]);
+  run(`UPDATE lotes SET ${campo} = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [JSON.stringify(arr), id]);
   return getLoteById(id);
 }
 
@@ -2997,7 +2998,7 @@ function getLeadsNecesitanSeguimiento() {
   ).filter(l => l.last_dir === 'outgoing' && l.last_ts && (Date.now() - new Date(String(l.last_ts).replace(' ', 'T')).getTime()) > 24 * 3600 * 1000);
 }
 function setFollowupCreated(leadId) {
-  run("UPDATE leads SET followup_task_at = datetime('now') WHERE id = ?", [leadId]);
+  run("UPDATE leads SET followup_task_at = datetime('now','localtime') WHERE id = ?", [leadId]);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -3077,7 +3078,7 @@ function updateCampanasSpProject(id, d = {}) {
   const sets = fields.filter(f => input[f] !== undefined).map(f => `${f}=?`).join(', ');
   if (!sets) return p;
   const vals = fields.filter(f => input[f] !== undefined).map(f => input[f]);
-  run(`UPDATE campanas_sp_projects SET ${sets}, updated_at=datetime('now') WHERE id=?`, [...vals, id]);
+  run(`UPDATE campanas_sp_projects SET ${sets}, updated_at=datetime('now','localtime') WHERE id=?`, [...vals, id]);
   const updated = one('SELECT * FROM campanas_sp_projects WHERE id = ?', [id]);
   return updated;
 }

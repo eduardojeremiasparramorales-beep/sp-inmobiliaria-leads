@@ -49,6 +49,9 @@
   let conversaciones = [];
   let actual = null;      // item seleccionado
   let filtros = { busqueda: '', vendedorId: '', etiqueta: '', soloSinResponder: false, canal: '' };
+  let totalConversaciones = 0;
+  let offsetConversaciones = 0;
+  const LIMIT_PAG = 50;
   const leadIdParam = new URLSearchParams(location.search).get('leadId'); // abrir desde el SP Feed
 
   content.innerHTML = `
@@ -106,8 +109,11 @@
   }
 
   /* --- Cargar conversaciones --- */
-  async function cargar() {
+  async function cargar(append) {
+    if (!append) offsetConversaciones = 0;
     const qs = new URLSearchParams();
+    qs.set('limit', String(LIMIT_PAG));
+    qs.set('offset', String(append ? offsetConversaciones : 0));
     if (filtros.busqueda) qs.set('busqueda', filtros.busqueda);
     if (filtros.vendedorId) qs.set('vendedorId', filtros.vendedorId);
     if (filtros.etiqueta) qs.set('etiqueta', filtros.etiqueta);
@@ -115,9 +121,19 @@
     if (filtros.soloSinResponder) qs.set('soloSinResponder', '1');
     const r = await SPS.api('/api/supervisor/conversaciones' + (qs.toString() ? '?' + qs : ''));
     if (!r) return;
-    conversaciones = r.conversaciones || [];
-    contadorEl.textContent = fmt.n(conversaciones.length) + ' conversaciones';
+    const nuevos = r.conversaciones || [];
+    totalConversaciones = r.total || nuevos.length;
+    if (!append) {
+      conversaciones = nuevos;
+      offsetConversaciones = nuevos.length;
+    } else {
+      conversaciones = conversaciones.concat(nuevos);
+      offsetConversaciones += nuevos.length;
+    }
+    const tieneMas = totalConversaciones > conversaciones.length;
+    contadorEl.textContent = fmt.n(conversaciones.length) + ' / ' + fmt.n(totalConversaciones) + ' conversaciones';
     renderLista();
+    return { hasMore: tieneMas, count: nuevos.length };
   }
 
   function timeAgo(ts) {
@@ -135,7 +151,8 @@
       listaEl.innerHTML = `<div class="empty">${ICONS.inbox || ''}<div>No hay conversaciones con estos filtros.</div></div>`;
       return;
     }
-    listaEl.innerHTML = conversaciones.map(c => {
+    const tieneMas = totalConversaciones > conversaciones.length;
+    const html = conversaciones.map(c => {
       const sel = actual && actual.id === c.id && actual._type === c._type;
       const et = ETIQUETAS[c.etiqueta] || ETIQUETAS.sin_clasificar;
       return `<div class="os-inbox-item" data-id="${c.id}" data-type="${c._type}" style="padding:12px var(--s3);cursor:pointer;border-bottom:1px solid var(--border-soft);background:${sel ? 'linear-gradient(160deg,var(--bg-2),rgba(200,164,90,.06))' : 'transparent'};${sel ? 'box-shadow:inset 2px 0 0 var(--gold)' : ''}">
@@ -143,12 +160,11 @@
           <div class="avatar avatar--sm" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
           <div class="u-grow" style="min-width:0">
             <div class="u-between">
-              <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.customer_name || 'Cliente')}</div>
+              <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.customer_name || 'Cliente')}${Number(c.unread_count) > 0 ? `<span class="os-unread-bub" style="display:inline-flex;min-width:18px;height:18px;border-radius:999px;background:var(--btn-danger,#D44);color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;padding:0 4px;margin-left:6px;vertical-align:middle">${Number(c.unread_count)}</span>` : ''}</div>
               <span class="t-dim3" style="font-size:11px;flex-shrink:0">${timeAgo(c.updated_at || c.last_message_at)}</span>
             </div>
             <div class="u-between" style="margin-top:2px">
               <div style="font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.last_message || 'Sin mensajes')}</div>
-              ${Number(c.unread_count) > 0 ? `<span class="os-nav__badge" style="display:inline-flex;min-width:16px;height:16px;border-radius:999px;background:var(--gold,#D4AF37);color:#0A0A0A;font-size:9.5px;font-weight:700;align-items:center;justify-content:center;padding:0 4px">${Number(c.unread_count)}</span>` : ''}
             </div>
             <div class="u-row u-gap1" style="margin-top:5px;flex-wrap:wrap">
               <span class="badge badge--${et.cls}" style="font-size:9.5px">${et.label}</span>
@@ -159,6 +175,11 @@
         </div>
       </div>`;
     }).join('');
+    if (tieneMas) {
+      listaEl.innerHTML = html + `<div class="card--pad" style="text-align:center;padding:var(--s2)"><button class="btn btn--ghost" id="btnCargarMas">Cargar más (${fmt.n(totalConversaciones - conversaciones.length)})</button></div>`;
+    } else {
+      listaEl.innerHTML = html;
+    }
 
     listaEl.querySelectorAll('.os-inbox-item').forEach(item => {
       item.addEventListener('click', () => {
@@ -168,6 +189,14 @@
         if (c) abrir(c);
       });
     });
+    const btnMas = listaEl.querySelector('#btnCargarMas');
+    if (btnMas) {
+      btnMas.addEventListener('click', async () => {
+        btnMas.disabled = true; btnMas.textContent = 'Cargando…';
+        const r = await cargar(true);
+        if (!r || r.count === 0) { btnMas.remove(); }
+      });
+    }
   }
 
   /* --- Abrir una conversación: header + timeline --- */
@@ -185,8 +214,8 @@
             <button class="btn btn-back btn--ghost btn--sm" id="btnVolver" style="margin-right:6px">← Volver</button>
             <div class="avatar avatar--md" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
             <div>
-              <div style="font-weight:600">${esc(c.customer_name || 'Cliente')}</div>
-              <div class="t-dim3" style="font-size:12px">${esc(c.customer_phone || c.channel_conversation_id || '')} · ${esc(c.channel || 'whatsapp')} · ${esc(c.assigned_to_nombre || 'sin asesor')}</div>
+              <div style="font-weight:600">${esc(c.customer_name || 'Cliente')}<span id="typingInd" class="t-dim3" style="display:none;margin-left:8px;font-size:11px;font-weight:400;color:var(--green,#4E7B46);animation:pulse-typing 1s infinite">escribiendo...</span></div>
+              <div class="t-dim3" style="font-size:12px">${esc(c.customer_phone || c.channel_conversation_id || '')} · ${esc(c.channel || 'whatsapp')} · ${esc(c.assigned_to_nombre || 'sin asesor')}${c.assigned_to_foto ? ` <img src="${esc(c.assigned_to_foto)}" style="display:inline-block;width:14px;height:14px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-left:2px" alt="">` : ''}</div>
             </div>
           </div>
           <div class="u-row u-gap1 u-align-center">
@@ -197,6 +226,14 @@
         </div>
         <div id="timeline" style="min-height:320px;max-height:calc(100vh - 320px);overflow:auto;background:var(--bg-2);padding:var(--s3)"></div>
       </div>`;
+
+    //Typing animation CSS
+    if (!document.getElementById('_cssTyping')) {
+      const s = document.createElement('style');
+      s.id='_cssTyping';
+      s.textContent='@keyframes pulse-typing{0%,100%{opacity:1}50%{opacity:0.3}}';
+      document.head.appendChild(s);
+    }
 
     document.getElementById('btnCerrar')?.addEventListener('click', async () => {
       const btn = document.getElementById('btnCerrar');
@@ -253,14 +290,14 @@
         ? `<img src="/api/media/${m.msgId}" alt="media" style="max-width:240px;max-height:240px;border-radius:10px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="window.open('/api/media/${m.msgId}','_blank')">`
         : (m.media_type ? `<div class="t-dim3" style="font-size:11.5px;margin-bottom:4px">📎 ${esc(m.media_type)}</div>` : '');
       return `<div class="u-row u-gap1" style="justify-content:${out ? 'flex-end' : 'flex-start'};margin-bottom:10px">
-        <div style="max-width:75%;background:${out ? 'var(--gold-soft,rgba(212,175,55,.12))' : 'var(--bg-3)'};border:1px solid ${out ? 'var(--gold-line,rgba(212,175,55,.25))' : 'var(--border-soft)'};border-radius:14px 14px ${out ? '4px 14px' : '14px 4px'};padding:9px 12px">
+        <div style="max-width:75%;background:${out ? 'var(--gold-soft,rgba(212,175,55,.1))' : 'var(--bg-3)'};border:1px solid ${out ? 'var(--gold-line,rgba(212,175,55,.25))' : 'var(--border-soft)'};border-radius:14px 14px ${out ? '4px 14px' : '14px 4px'};padding:9px 12px">
           ${media}
           <div style="font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${esc(m.body || '')}</div>
           <div class="t-dim3" style="font-size:10px;margin-top:4px;text-align:right">${m.timestamp ? esc(String(m.timestamp).slice(0, 16)) : ''}${m.status === 'read' ? ' · leído' : ''}</div>
         </div>
       </div>`;
     }).join('');
-    tl.scrollTop = tl.scrollHeight;
+    setTimeout(function(){ tl.scrollTop = tl.scrollHeight; }, 100);
   }
 
   /* --- Filtros --- */
@@ -297,6 +334,76 @@
     if (target) abrir(target);
     else SPS.toast('Ese lead ya no está en la lista (cerrado o sin conversación)', 'err');
   }
+
+  /* --- SSE Live: actualizar lista de conversaciones en tiempo real --- */
+  let _sseConv = null;
+  let _pendingRefresh = 0;
+  function _initSSEConv() {
+    if (_sseConv) { try { _sseConv.close(); } catch(e){} }
+    try {
+      _sseConv = new EventSource('/api/stream');
+      _sseConv.addEventListener('nuevo_mensaje', function(e) {
+        try {
+          var d = JSON.parse(e.data);
+          var cid = d.conversationId || d.leadId;
+          if (!cid) return;
+          var found = conversaciones.find(function(x){ return String(x.id) === String(cid) || String(x.id) === String(d.leadId) || String(x.lead_id) === String(d.leadId); });
+          if (found) {
+            found.last_message = d.body || found.last_message;
+            found.last_message_at = new Date().toISOString().slice(0,19).replace('T',' ');
+            found.updated_at = new Date().toISOString().slice(0,19).replace('T',' ');
+            found.unread_count = (Number(found.unread_count)||0) + 1;
+            // Mover al tope
+            var idx = conversaciones.indexOf(found);
+            if (idx > 0) { conversaciones.splice(idx,1); conversaciones.unshift(found); }
+            renderLista();
+            // Auto-scroll si la conversación está abierta y el usuario está en el fondo
+            if (actual && (String(actual.id)===String(cid) || String(actual.lead_id)===String(d.leadId))) {
+              var tl = document.getElementById('timeline');
+              if (tl && _sAtBottom(tl)) {
+                setTimeout(function(){ if(tl) tl.scrollTop = tl.scrollHeight; }, 150);
+              }
+            }
+          } else {
+            _pendingRefresh++;
+          }
+        } catch(er){}
+      });
+      _sseConv.addEventListener('lead_actualizado', function(e) {
+        try {
+          var d = JSON.parse(e.data);
+          if (!actual) return;
+          if (String(d.leadId) === String(actual.id) || String(d.leadId) === String(actual.lead_id)) {
+            abrir(actual);
+          }
+        } catch(er){}
+      });
+      _sseConv.addEventListener('equipo_typing', function(e) {
+        try {
+          var d = JSON.parse(e.data);
+          if (!actual) return;
+          var ti = document.getElementById('typingInd');
+          if (!ti) return;
+          if (d.from_nombre && String(actual.assigned_to_nombre||'') === String(d.from_nombre)) {
+            ti.style.display = 'inline';
+            clearTimeout(window._ptypingTimer);
+            window.typingTimer = setTimeout(function(){ var t2=document.getElementById('typingInd'); if(t2) t2.style.display='none'; }, 3000);
+          }
+        } catch(er){}
+      });
+      _sseConv.addEventListener('conectado', function() {
+        cargar();
+      });
+      _sseConv.onerror = function() {
+        try { _sseConv.close(); } catch(e) {}
+        _sseConv = null;
+        setTimeout(_initSSEConv, 5000);
+      };
+    } catch(e) {}
+  }
+  function _sAtBottom(el) { return el && (el.scrollHeight - el.scrollTop - el.clientHeight) < 100; }
+  _initSSEConv();
+
 })();
 </script>
 </body>

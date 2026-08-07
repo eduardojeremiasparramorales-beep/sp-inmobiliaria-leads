@@ -3,8 +3,11 @@ FROM node:20-alpine
 # ffmpeg: conversión de notas de voz (webm/mp4 → ogg/opus) para WhatsApp
 # python3 + pillow: generador de creativos de Campañas SP (CAMPAÑAS_SP/, spawn desde Node)
 # google-genai: análisis de fotos y fondos con IA (CAMPAÑAS_SP/generators/ai_generator.py)
-RUN apk add --no-cache ffmpeg python3 py3-pillow py3-pip \
-  && pip install --no-cache-dir --break-system-packages google-genai
+RUN apk add --no-cache tzdata ffmpeg python3 py3-pillow py3-pip \
+  && pip install --no-cache-dir --break-system-packages google-genai \
+  && cp /usr/share/zoneinfo/America/Bogota /etc/localtime \
+  && echo "America/Bogota" > /etc/timezone
+ENV TZ=America/Bogota
 
 WORKDIR /app
 

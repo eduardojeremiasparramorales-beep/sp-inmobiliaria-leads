@@ -11,8 +11,8 @@ function ensureTable() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       usuario_id INTEGER NOT NULL,
       widgets TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_dashboards_usuario ON user_dashboards(usuario_id);
@@ -43,7 +43,7 @@ function saveLayout(usuarioId, widgets) {
   ensureTable();
   const existente = store.one(`SELECT id FROM user_dashboards WHERE usuario_id = ?`, [usuarioId]);
   if (existente) {
-    store.run(`UPDATE user_dashboards SET widgets = ?, updated_at = datetime('now') WHERE usuario_id = ?`, [JSON.stringify(widgets), usuarioId]);
+    store.run(`UPDATE user_dashboards SET widgets = ?, updated_at = datetime('now','localtime') WHERE usuario_id = ?`, [JSON.stringify(widgets), usuarioId]);
   } else {
     store.run(`INSERT INTO user_dashboards (usuario_id, widgets) VALUES (?, ?)`, [usuarioId, JSON.stringify(widgets)]);
   }

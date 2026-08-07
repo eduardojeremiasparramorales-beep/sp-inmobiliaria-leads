@@ -20,7 +20,7 @@ function ensureTable() {
       descripcion TEXT DEFAULT '',
       datos TEXT DEFAULT '{}',
       leido INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (actor_id) REFERENCES vendedores(id)
     );
     CREATE INDEX IF NOT EXISTS idx_system_events_tipo ON system_events(tipo);

@@ -9,6 +9,8 @@ services:
       - ./data:/app/data
     env_file:
       - .env
+    environment:
+      - TZ=America/Bogota
     # Tope de memoria: sin esto, una fuga de memoria o un pico de trafico puede
     # consumir todo el RAM de la VM (1GB en e2-micro) y tumbar hasta el acceso SSH.
     # Deja ~300MB libres para el sistema operativo, Caddy y el propio Docker daemon.

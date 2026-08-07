@@ -258,7 +258,7 @@ function getHourlyDistribution(from, to) {
   const porHora = Array.from({ length: 24 }, (_, hora) => ({ hora, count: 0 }));
   convs.forEach(c => {
     if (!c.created_at) return;
-    const hora = new Date(c.created_at.replace(' ', 'T') + 'Z').getUTCHours();
+    const hora = new Date(c.created_at.replace(' ', 'T')).getHours();
     porHora[hora].count++;
   });
 

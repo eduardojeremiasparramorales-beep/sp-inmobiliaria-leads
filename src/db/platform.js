@@ -90,7 +90,7 @@ function createPlatformSchema() {
       db_path TEXT NOT NULL,
       plan_status TEXT DEFAULT 'fundador',
       activo INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS empresa_dominios (
       hostname TEXT PRIMARY KEY,
@@ -103,14 +103,14 @@ function createPlatformSchema() {
       canal_id TEXT NOT NULL UNIQUE,
       token_cifrado TEXT NOT NULL,
       extra_json TEXT DEFAULT '{}',
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS platform_admins (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
       nombre TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS platform_sessions (
       token TEXT PRIMARY KEY,

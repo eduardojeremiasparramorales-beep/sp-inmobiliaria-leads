@@ -132,7 +132,7 @@ function logAsesorConectado({ vendedorId, nombre, rol = 'asesor' }) {
     actorId: vendedorId, actorNombre: nombre,
     entidadTipo: 'vendedor', entidadId: vendedorId,
     titulo: 'Nuevo asesor en el equipo',
-    descripcion: `${nombre} se registró como ${rol === 'supervisor' ? 'supervisor' : 'asesor'} y espera aprobación.`,
+    descripcion: `${nombre} se registró como ${rol === 'supervisor' ? 'supervisor' : rol === 'jefe' ? 'jefe' : 'asesor'} y espera aprobación.`,
     payload: { rol },
   });
 }

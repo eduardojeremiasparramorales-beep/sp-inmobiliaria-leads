@@ -7,7 +7,7 @@ router.use(auth.requireAuth);
 
 // Un vendedor solo puede tocar conversaciones asignadas a él; el admin, todas.
 function puedeVer(req, conversation) {
-  return req.session.rol === 'admin' || Number(conversation.assigned_to_id) === Number(req.session.vendedorId);
+  return req.session.rol === 'admin' || req.session.rol === 'jefe' || Number(conversation.assigned_to_id) === Number(req.session.vendedorId);
 }
 
 // GET / → lista filtrable
@@ -17,7 +17,7 @@ router.get('/', (req, res) => {
   const off = Number(offset) || 0;
 
   // Vendedor: forzar filtro a sus propias conversaciones
-  const vendedorId = req.session.rol === 'admin' ? req.query.vendedorId : req.session.vendedorId;
+  const vendedorId = (req.session.rol === 'admin' || req.session.rol === 'jefe') ? req.query.vendedorId : req.session.vendedorId;
   const data = store.getConversations({ channel, status, etiqueta, busqueda, vendedorId, limite: lim, offset: off });
   const total = store.getConversationCount();
 

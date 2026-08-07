@@ -24,7 +24,7 @@ function ensureTable() {
       lead_id INTEGER NOT NULL UNIQUE,
       score INTEGER DEFAULT 0,
       factors TEXT DEFAULT '{}',
-      calculated_at DATETIME DEFAULT (datetime('now')),
+      calculated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
     CREATE INDEX IF NOT EXISTS idx_lead_scores_lead ON lead_scores(lead_id);
@@ -128,8 +128,8 @@ function calcularScore(leadId) {
   // Persistir
   store.run(
     `INSERT INTO lead_scores (lead_id, score, factors, calculated_at)
-     VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(lead_id) DO UPDATE SET score = ?, factors = ?, calculated_at = datetime('now')`,
+     VALUES (?, ?, ?, datetime('now','localtime'))
+     ON CONFLICT(lead_id) DO UPDATE SET score = ?, factors = ?, calculated_at = datetime('now','localtime')`,
     [leadId, score, JSON.stringify(factors), score, JSON.stringify(factors)]
   );
 

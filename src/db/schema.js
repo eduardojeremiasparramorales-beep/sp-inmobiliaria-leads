@@ -12,7 +12,7 @@ function createNewTables(db) {
       notes TEXT DEFAULT '',
       custom_fields TEXT DEFAULT '{}',
       tags TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS customer_channels (
@@ -21,7 +21,7 @@ function createNewTables(db) {
       channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'messenger', 'instagram')),
       channel_user_id TEXT NOT NULL,
       channel_username TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (customer_id) REFERENCES customers(id),
       UNIQUE (channel, channel_user_id)
     );
@@ -39,8 +39,8 @@ function createNewTables(db) {
       last_message_at DATETIME,
       etiqueta TEXT DEFAULT 'sin_clasificar',
       progress_pct INTEGER DEFAULT 5,
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (customer_id) REFERENCES customers(id),
       FOREIGN KEY (assigned_to_id) REFERENCES vendedores(id)
     );
@@ -59,7 +59,7 @@ function createNewTables(db) {
       media_mime TEXT,
       media_filename TEXT,
       metadata TEXT DEFAULT '{}',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     );
 
@@ -70,7 +70,7 @@ function createNewTables(db) {
       trigger_event TEXT NOT NULL,
       conditions TEXT DEFAULT '[]',
       actions TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS workflow_logs (
@@ -79,7 +79,7 @@ function createNewTables(db) {
       conversation_id INTEGER,
       trigger_event TEXT DEFAULT '',
       result TEXT DEFAULT '{}',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (workflow_id) REFERENCES workflows(id),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     );
@@ -90,7 +90,7 @@ function createNewTables(db) {
       texto TEXT NOT NULL,
       fecha_vencimiento TEXT DEFAULT '',
       completada INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
 
@@ -101,7 +101,7 @@ function createNewTables(db) {
       direccion TEXT DEFAULT '',
       lat REAL NOT NULL,
       lng REAL NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
     );
 
@@ -116,8 +116,8 @@ function createNewTables(db) {
       fecha_inicio TEXT DEFAULT '',
       plano_url TEXT DEFAULT '',
       plano_bounds TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS lotes (
@@ -138,8 +138,8 @@ function createNewTables(db) {
       fotografias TEXT DEFAULT '[]',
       fecha_separacion TEXT DEFAULT '',
       fecha_venta TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
       FOREIGN KEY (cliente_id) REFERENCES customers(id),
       FOREIGN KEY (asesor_id) REFERENCES vendedores(id)
@@ -151,7 +151,7 @@ function createNewTables(db) {
       evento TEXT DEFAULT '',
       detalle TEXT DEFAULT '',
       autor TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lote_id) REFERENCES lotes(id)
     );
   `);
@@ -190,8 +190,8 @@ function createNewTables(db) {
       status TEXT DEFAULT 'draft' CHECK (status IN ('draft','generating','ready','error')),
       assets_result TEXT DEFAULT '{}',
       error TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now'))
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime'))
     );
   `);
 
@@ -214,7 +214,7 @@ function createNewTables(db) {
       titulo TEXT NOT NULL,
       descripcion TEXT DEFAULT '',
       payload TEXT DEFAULT '{}',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
 
@@ -224,7 +224,7 @@ function createNewTables(db) {
       vendedor_id INTEGER NOT NULL,
       nombre TEXT DEFAULT '',
       emoji TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (feed_id) REFERENCES feed_events(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
     );
@@ -243,11 +243,11 @@ function createNewTables(db) {
       proyecto_id INTEGER,
       vendedor_id INTEGER,
       horas_limite INTEGER DEFAULT 48,
-      fecha_inicio DATETIME DEFAULT (datetime('now')),
+      fecha_inicio DATETIME DEFAULT (datetime('now','localtime')),
       fecha_vence DATETIME,
       estado TEXT DEFAULT 'activa' CHECK (estado IN ('activa', 'vencida', 'completada', 'cancelada')),
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (lote_id) REFERENCES lotes(id),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
@@ -265,7 +265,7 @@ function createNewTables(db) {
       lead_id INTEGER NOT NULL UNIQUE,
       score INTEGER DEFAULT 0,
       factors TEXT DEFAULT '{}',
-      calculated_at DATETIME DEFAULT (datetime('now')),
+      calculated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
     CREATE INDEX IF NOT EXISTS idx_lead_scores_lead ON lead_scores(lead_id);
@@ -286,7 +286,7 @@ function createNewTables(db) {
       descripcion TEXT DEFAULT '',
       datos TEXT DEFAULT '{}',
       leido INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (actor_id) REFERENCES vendedores(id)
     );
     CREATE INDEX IF NOT EXISTS idx_system_events_tipo ON system_events(tipo);
@@ -309,7 +309,7 @@ function createNewTables(db) {
       vendedor_id INTEGER,
       fecha TEXT DEFAULT (date('now')),
       notas TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
@@ -325,7 +325,7 @@ function createNewTables(db) {
       estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagada', 'cancelada')),
       fecha_calculo TEXT DEFAULT (date('now')),
       fecha_pago TEXT,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
@@ -360,8 +360,8 @@ function createNewTables(db) {
       vendedor_id INTEGER,
       tags TEXT DEFAULT '[]',
       visible INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
@@ -381,9 +381,9 @@ function createNewTables(db) {
       tipo TEXT DEFAULT 'nps' CHECK (tipo IN ('nps', 'csat', 'cierre')),
       puntuacion INTEGER DEFAULT 0,
       comentario TEXT DEFAULT '',
-      enviada_at DATETIME DEFAULT (datetime('now')),
+      enviada_at DATETIME DEFAULT (datetime('now','localtime')),
       respondida_at DATETIME,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
     );
@@ -399,8 +399,8 @@ function createNewTables(db) {
       vendedor_asignado_id INTEGER,
       recompensa TEXT DEFAULT '',
       notas TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (referidor_lead_id) REFERENCES leads(id),
       FOREIGN KEY (lead_creado_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_asignado_id) REFERENCES vendedores(id)
@@ -417,8 +417,8 @@ function createNewTables(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       usuario_id INTEGER NOT NULL,
       widgets TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_dashboards_usuario ON user_dashboards(usuario_id);

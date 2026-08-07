@@ -299,6 +299,8 @@ router.post('/reasignar/:leadId', (req, res) => {
 router.get('/conversaciones', (req, res) => {
   try {
     const { busqueda, vendedorId, etiqueta, soloSinResponder, canal } = req.query;
+    const limit = Math.min(Number(req.query.limit) || 30, 100);
+    const offset = Number(req.query.offset) || 0;
     const items = store.getUnifiedConversations({ busqueda, vendedorId, limite: 300 }) || [];
     const conversaciones = items.filter(it => {
       if (String(it.status || '') === 'cerrado') return false;
@@ -308,7 +310,8 @@ router.get('/conversaciones', (req, res) => {
       if (canal && String(it.channel || 'whatsapp') !== String(canal)) return false;
       return true;
     });
-    res.json({ conversaciones, generadoEn: new Date().toISOString() });
+    const pagina = conversaciones.slice(offset, offset + limit);
+    res.json({ conversaciones: pagina, total: conversaciones.length, limit, offset, generadoEn: new Date().toISOString() });
   } catch (e) {
     console.error('[SUPERVISOR] conversaciones error:', e.message);
     res.status(500).json({ error: 'error_conversaciones', detalle: e.message });

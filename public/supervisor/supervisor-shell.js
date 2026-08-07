@@ -69,7 +69,7 @@
   }
 
   const AV = ['#D4AF37', '#4E7B46', '#5B8DEF', '#B0763C', '#8C6BB0', '#3F8E8E'];
-  const avatarColor = (s) => AV[(String(s || '?').charCodeAt(0) + String(s || '?').length) % AV.length];
+  const avatarColor = (s) => AV[(String(s || '?').length + String(s || '?').charCodeAt(0)) % AV.length];
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
   /* --- Montaje del shell del Supervisor Center --- */

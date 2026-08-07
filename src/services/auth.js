@@ -154,7 +154,7 @@ function requireSupervisor(req, res, next) {
 
 function requireSupervisorOrAdmin(req, res, next) {
   requireAuth(req, res, () => {
-    if (req.session.rol !== 'admin' && req.session.rol !== 'supervisor') {
+    if (req.session.rol !== 'admin' && req.session.rol !== 'supervisor' && req.session.rol !== 'jefe') {
       return res.status(403).json({ error: 'requiere_supervisor_o_admin' });
     }
     next();

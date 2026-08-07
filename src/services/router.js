@@ -382,7 +382,7 @@ class MessageRouter {
     if (leadId) {
       const adapter = require('../db/adapter');
       adapter.run(
-        "UPDATE messages SET status = 'read', read_at = datetime('now') WHERE lead_id = ? AND direction = 'outgoing' AND (status IS NULL OR status != 'read')",
+        "UPDATE messages SET status = 'read', read_at = datetime('now','localtime') WHERE lead_id = ? AND direction = 'outgoing' AND (status IS NULL OR status != 'read')",
         [leadId]
       );
     }

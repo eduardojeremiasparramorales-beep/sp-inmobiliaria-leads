@@ -322,9 +322,9 @@
   };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-  function timeago(ts) { if (!ts) return ''; const d = new Date(String(ts).replace(' ', 'T') + 'Z'); if (isNaN(d)) return ''; const m = Math.floor((Date.now() - d) / 60000); if (m < 1) return 'ahora'; if (m < 60) return m + 'm'; const h = Math.floor(m / 60); if (h < 24) return h + 'h'; return Math.floor(h / 24) + 'd'; }
-  function hhmm(ts) { const d = new Date(String(ts).replace(' ', 'T') + 'Z'); return isNaN(d) ? '' : d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }); }
-  function dayLabel(ts) { if (!ts) return ''; const d = new Date(String(ts).replace(' ', 'T') + 'Z'); if (isNaN(d)) return ''; const hoy = new Date(), ayer = new Date(); ayer.setDate(hoy.getDate() - 1); const sd = (a, b) => a.toDateString() === b.toDateString(); if (sd(d, hoy)) return 'Hoy'; if (sd(d, ayer)) return 'Ayer'; return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  function timeago(ts) { if (!ts) return ''; const d = new Date(String(ts).replace(' ', 'T')); if (isNaN(d)) return ''; const m = Math.floor((Date.now() - d) / 60000); if (m < 1) return 'ahora'; if (m < 60) return m + 'm'; const h = Math.floor(m / 60); if (h < 24) return h + 'h'; return Math.floor(h / 24) + 'd'; }
+  function hhmm(ts) { const d = new Date(String(ts).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }); }
+  function dayLabel(ts) { if (!ts) return ''; const d = new Date(String(ts).replace(' ', 'T')); if (isNaN(d)) return ''; const hoy = new Date(), ayer = new Date(); ayer.setDate(hoy.getDate() - 1); const sd = (a, b) => a.toDateString() === b.toDateString(); if (sd(d, hoy)) return 'Hoy'; if (sd(d, ayer)) return 'Ayer'; return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
 
   /* ── Shell ── */
   const ctx = await SPOS.mount({ active: 'inbox', title: 'Inbox omnicanal', crumb: 'Conversaciones unificadas', padded: false, panel: true });
@@ -449,7 +449,7 @@
         <div class="avatar avatar--sm" style="background:${avatarBg(c)}">${avatarInner(c)}</div>
         <div style="flex:1;min-width:0">
           <div class="ibx-thead__name">${esc(c.customer_name || 'Sin nombre')}</div>
-          <div class="ibx-thead__sub">${ch.e} ${ch.t} · ${esc(fmtPhone(c.customer_phone))}</div>
+          <div class="ibx-thead__sub">${ch.e} ${ch.t} · ${esc(fmtPhone(c.customer_phone))} · ${esc(c.assigned_to_nombre || 'sin asesor')}${c.assigned_to_foto ? ` <img src="${esc(c.assigned_to_foto)}" style="display:inline-block;width:14px;height:14px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-left:2px" alt="">` : ''}</div>
         </div>
         <span class="conn-dot" id="connDot" title="Estado"></span>
         <span id="windowBadge" style="display:none;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600"></span>

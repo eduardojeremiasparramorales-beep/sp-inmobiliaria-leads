@@ -20,11 +20,11 @@ function ensureTable() {
       proyecto_id INTEGER,
       vendedor_id INTEGER,
       horas_limite INTEGER DEFAULT ${HORAS_DEFAULT},
-      fecha_inicio DATETIME DEFAULT (datetime('now')),
+      fecha_inicio DATETIME DEFAULT (datetime('now','localtime')),
       fecha_vence DATETIME,
       estado TEXT DEFAULT 'activa' CHECK (estado IN ('activa', 'vencida', 'completada', 'cancelada')),
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (lote_id) REFERENCES lotes(id),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
@@ -44,13 +44,13 @@ function crearReserva(leadId, opts = {}) {
 
   // Si ya tiene reserva activa, cancelar la anterior
   store.run(
-    `UPDATE reservas SET estado = 'cancelada', updated_at = datetime('now') WHERE lead_id = ? AND estado = 'activa'`,
+    `UPDATE reservas SET estado = 'cancelada', updated_at = datetime('now','localtime') WHERE lead_id = ? AND estado = 'activa'`,
     [leadId]
   );
 
   store.run(
     `INSERT INTO reservas (lead_id, lote_id, proyecto_id, vendedor_id, horas_limite, fecha_inicio, fecha_vence, estado)
-     VALUES (?, ?, ?, ?, ?, datetime('now'), ?, 'activa')`,
+     VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?, 'activa')`,
     [leadId, opts.loteId || null, opts.proyectoId || null, opts.vendedorId || null, horas, vence.toISOString()]
   );
 
@@ -66,7 +66,7 @@ function confirmarVenta(reservaId) {
   if (r.estado !== 'activa') return { ok: false, error: 'La reserva ya no está activa' };
 
   store.run(
-    `UPDATE reservas SET estado = 'completada', updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE reservas SET estado = 'completada', updated_at = datetime('now','localtime') WHERE id = ?`,
     [reservaId]
   );
 
@@ -83,7 +83,7 @@ function extenderReserva(reservaId, horasExtra) {
   const nueva = new Date(actual.getTime() + horasExtra * 60 * 60 * 1000);
 
   store.run(
-    `UPDATE reservas SET fecha_vence = ?, horas_limite = horas_limite + ?, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE reservas SET fecha_vence = ?, horas_limite = horas_limite + ?, updated_at = datetime('now','localtime') WHERE id = ?`,
     [nueva.toISOString(), horasExtra, reservaId]
   );
 
@@ -94,7 +94,7 @@ function extenderReserva(reservaId, horasExtra) {
 function cancelarReserva(reservaId) {
   ensureTable();
   store.run(
-    `UPDATE reservas SET estado = 'cancelada', updated_at = datetime('now') WHERE id = ? AND estado = 'activa'`,
+    `UPDATE reservas SET estado = 'cancelada', updated_at = datetime('now','localtime') WHERE id = ? AND estado = 'activa'`,
     [reservaId]
   );
   return { ok: true };
@@ -152,18 +152,18 @@ function verificarVencidas() {
     `SELECT r.*, v.nombre as vendedor_nombre, v.telefono as vendedor_telefono
      FROM reservas r
      LEFT JOIN vendedores v ON r.vendedor_id = v.id
-     WHERE r.estado = 'activa' AND r.fecha_vence <= datetime('now')`
+     WHERE r.estado = 'activa' AND r.fecha_vence <= datetime('now','localtime')`
   );
 
   for (const r of vencidas) {
     store.run(
-      `UPDATE reservas SET estado = 'vencida', updated_at = datetime('now') WHERE id = ?`,
+      `UPDATE reservas SET estado = 'vencida', updated_at = datetime('now','localtime') WHERE id = ?`,
       [r.id]
     );
 
     // Revertir lead a "interesado" si estaba como "negociacion" o "reservado"
     store.run(
-      `UPDATE leads SET status = 'interesado', updated_at = datetime('now') WHERE id = ? AND status IN ('negociacion', 'reservado')`,
+      `UPDATE leads SET status = 'interesado', updated_at = datetime('now','localtime') WHERE id = ? AND status IN ('negociacion', 'reservado')`,
       [r.lead_id]
     );
 

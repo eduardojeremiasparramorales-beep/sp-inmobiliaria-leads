@@ -106,7 +106,7 @@ async function ejecutarAccion(accion, contexto) {
       const { lead_id, etapa } = parametros;
       const lid = lead_id || contexto.lead_id;
       if (!lid || !etapa) return;
-      store.run(`UPDATE leads SET etiqueta = ?, updated_at = datetime('now') WHERE id = ?`, [etapa, lid]);
+      store.run(`UPDATE leads SET etiqueta = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [etapa, lid]);
       log.info('WORKFLOW', `Lead ${lid} movido a etapa ${etapa}`);
       break;
     }
@@ -115,7 +115,7 @@ async function ejecutarAccion(accion, contexto) {
       const lid = lead_id || contexto.lead_id;
       const vid = vendedor_id || contexto.vendedor_id;
       if (!lid || !vid) return;
-      store.run(`UPDATE leads SET assigned_to_id = ?, updated_at = datetime('now') WHERE id = ?`, [vid, lid]);
+      store.run(`UPDATE leads SET assigned_to_id = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [vid, lid]);
       log.info('WORKFLOW', `Lead ${lid} asignado a vendedor ${vid}`);
       break;
     }

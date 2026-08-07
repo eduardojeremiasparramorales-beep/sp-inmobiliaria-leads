@@ -14,9 +14,9 @@ function ensureTable() {
       tipo TEXT DEFAULT 'nps' CHECK (tipo IN ('nps', 'csat', 'cierre')),
       puntuacion INTEGER DEFAULT 0,
       comentario TEXT DEFAULT '',
-      enviada_at DATETIME DEFAULT (datetime('now')),
+      enviada_at DATETIME DEFAULT (datetime('now','localtime')),
       respondida_at DATETIME,
-      created_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
     );
@@ -32,8 +32,8 @@ function ensureTable() {
       vendedor_asignado_id INTEGER,
       recompensa TEXT DEFAULT '',
       notas TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (referidor_lead_id) REFERENCES leads(id),
       FOREIGN KEY (lead_creado_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_asignado_id) REFERENCES vendedores(id)
@@ -61,7 +61,7 @@ function crearEncuesta(data) {
 function responderEncuesta(id, puntuacion, comentario) {
   ensureTable();
   store.run(
-    `UPDATE encuestas_satisfaccion SET puntuacion = ?, comentario = ?, respondida_at = datetime('now') WHERE id = ?`,
+    `UPDATE encuestas_satisfaccion SET puntuacion = ?, comentario = ?, respondida_at = datetime('now','localtime') WHERE id = ?`,
     [puntuacion, comentario || '', id]
   );
   return { ok: true };
@@ -130,7 +130,7 @@ function actualizarReferido(id, data) {
     }
   }
   if (!campos.length) return { ok: false };
-  campos.push("updated_at = datetime('now')");
+  campos.push("updated_at = datetime('now','localtime')");
   params.push(id);
   store.run(`UPDATE referidos SET ${campos.join(', ')} WHERE id = ?`, params);
   return { ok: true };

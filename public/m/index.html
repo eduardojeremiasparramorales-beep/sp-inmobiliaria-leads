@@ -92,6 +92,12 @@
   .m-row__actions.right{ right:0; }
   .swipe-act{ width:64px; align-self:stretch; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:#fff; font-size:10px; font-weight:600; border:none; }
   .swipe-act svg{ width:19px; height:19px; }
+
+  /* ── Supervisión (tab jefe) ── */
+  .super-card{ transition:background .15s; }
+  .super-card:active{ background:rgba(200,164,90,.06); }
+  .reassign-opt{ display:block; width:100%; padding:12px; margin:4px 0; background:var(--bg-2); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:14px; cursor:pointer; text-align:left; font-family:inherit; }
+  .reassign-opt:hover{ background:rgba(200,164,90,.08); border-color:rgba(200,164,90,.3); }
   .sa-call{ background:#2E7D46; } .sa-wa{ background:#1D9E5A; } .sa-note{ background:#5B7B8C; }
   .sa-tag{ background:var(--gold); color:#0A0A0A; } .sa-stage{ background:#7C6BB0; } .sa-arch{ background:#8C4A4A; }
 
@@ -670,6 +676,7 @@
         <div class="m-title" id="navTitle">Conversaciones<small id="navSub">Leons Group</small></div>
         <button class="m-headbtn" id="btnPrioridad" aria-label="Ordenar por prioridad" title="Ordenar por prioridad">🔥</button>
         <button class="m-headbtn" id="btnNotif" aria-label="Notificaciones" style="position:relative"><span id="notifBadge" style="display:none;position:absolute;top:2px;right:2px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--gold);color:#0A0A0A;font-size:9px;font-weight:700;line-height:15px;text-align:center;z-index:2"></span></button>
+        <div class="m-avatar" id="meAvatar" style="width:30px;height:30px;border-radius:10px;font-size:11px;background:${avatarColor(me?.nombre||'')};cursor:pointer;overflow:hidden" title="${esc(me?.nombre||'')}">${me?.foto?`<img src="${esc(me.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(me?.nombre||'')}</div>
       </div>
       <label class="m-search"><span id="icSearch"></span><input id="q" placeholder="Buscar cliente, chat, etiqueta…" autocomplete="off"></label>
     </header>
@@ -804,6 +811,8 @@ const SVG = {
   edit:'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   info:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01',
   download:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  eye:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  refresh:'M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15',
 };
 
 /* ════════ Estado / helpers ════════ */
@@ -819,7 +828,7 @@ let _audioPlayers = {};
 const ETQ = { sin_clasificar:{t:'Nuevo',cls:'sin_clasificar'}, interesado:{t:'Interesado',cls:'interesado'}, negociacion:{t:'Negociación',cls:'negociacion'}, cita:{t:'Cita',cls:'cita'}, vendido:{t:'Vendido',cls:'vendido'}, no_interesado:{t:'No int.',cls:'no_interesado'} };
 const etqLabel = v => (ETQ[v]||{t:v}).t;
 const estadoColores = { activo:{bg:'rgba(87,193,104,.15)',fg:'#57C168',bd:'rgba(87,193,104,.3)'}, ocupado:{bg:'rgba(200,164,90,.15)',fg:'#D4AF37',bd:'rgba(200,164,90,.3)'}, inactivo:{bg:'rgba(109,109,109,.15)',fg:'#6D6D6D',bd:'rgba(109,109,109,.3)'}, vacaciones:{bg:'rgba(91,139,236,.15)',fg:'#5B8BEC',bd:'rgba(91,139,236,.3)'} };
-const AV = ['#4E7B46','#D4AF37','#5B8DEF','#E0A44A','#7C6BB0','#2E7D8C'];
+const AV = ['#D4AF37','#4E7B46','#5B8DEF','#B0763C','#8C6BB0','#3F8E8E'];
 const avatarColor = n => AV[(String(n||'').length + String(n||'').charCodeAt(0)||0) % AV.length];
 const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 const money = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
@@ -915,11 +924,11 @@ async function limpiarCache(){
   toast('Caché limpiado');
 }
 
-function horaCorta(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return ''; const h=new Date(); const sd=d.toDateString()===h.toDateString(); return sd? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'}); }
-function soloHora(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); return isNaN(d)?'':d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
-function dateLabel(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return ''; const h=new Date(), a=new Date(); a.setDate(h.getDate()-1); const sd=(x,y)=>x.toDateString()===y.toDateString(); if(sd(d,h)) return 'Hoy'; if(sd(d,a)) return 'Ayer'; return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long'}); }
+function horaCorta(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')); if(isNaN(d)) return ''; const h=new Date(); const sd=d.toDateString()===h.toDateString(); return sd? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'}); }
+function soloHora(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')); return isNaN(d)?'':d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
+function dateLabel(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')); if(isNaN(d)) return ''; const h=new Date(), a=new Date(); a.setDate(h.getDate()-1); const sd=(x,y)=>x.toDateString()===y.toDateString(); if(sd(d,h)) return 'Hoy'; if(sd(d,a)) return 'Ayer'; return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long'}); }
 
-function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const dias=ref?(Date.now()-new Date(String(ref).replace(' ','T')+'Z').getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
+function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const dias=ref?(Date.now()-new Date(String(ref).replace(' ','T')).getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
 function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=88; else if(e==='cita')s=80; else if(e==='interesado')s=66; else if(e==='vendido')s=100; s+=Math.min(20,(l.messages_count||0)); return Math.min(99,s); }
 
 /* ════════ API ════════ */
@@ -964,14 +973,14 @@ function apiUpload(url, body, pb){
   });
 }
 /* ════════ Datos demo ════════ */
-function demoLeads(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
+function demoLeads(){ const now=new Date().toLocaleString('sv-SE').replace('T',' '); return [
   {id:1,customer_name:'Juan Díaz',customer_phone:'+573001234567',etiqueta:'negociacion',status:'activo',updated_at:now,created_at:now,unread_count:3,last_message:'¿Cuál es el precio del lote de 250m²?',messages_count:14,assigned_to_nombre:'Asesor Test'},
   {id:2,customer_name:'María Gómez',customer_phone:'+573019876543',etiqueta:'interesado',status:'activo',updated_at:now,created_at:now,unread_count:0,last_message:'Perfecto, quedo atenta 🙏',messages_count:6,assigned_to_nombre:'Asesor Test'},
   {id:3,customer_name:'Pedro Ruiz',customer_phone:'+573025551122',etiqueta:'cita',status:'activo',updated_at:'2026-07-02 10:00:00',created_at:'2026-06-19 09:00:00',unread_count:1,last_message:'Nos vemos el sábado en el proyecto',messages_count:22,assigned_to_nombre:'Asesor Test'},
   {id:4,customer_name:'Laura Ortiz',customer_phone:'+573036667788',etiqueta:'sin_clasificar',status:'nuevo',updated_at:now,created_at:now,unread_count:2,last_message:'Hola, vi el anuncio en Facebook',messages_count:2,assigned_to_nombre:'Asesor Test'},
   {id:5,customer_name:'Andrés Peña',customer_phone:'+573041239876',etiqueta:'vendido',status:'cerrado',updated_at:'2026-06-10 12:00:00',created_at:'2026-05-01 09:00:00',unread_count:0,last_message:'¡Muchas gracias por todo!',messages_count:40,assigned_to_nombre:'Asesor Test'},
 ]; }
-function demoMsgs(){ const now=new Date().toISOString().slice(0,19).replace('T',' '); return [
+function demoMsgs(){ const now=new Date().toLocaleString('sv-SE').replace('T',' '); return [
   {id:101,body:'Hola, vi el anuncio de los lotes en Tocaima.',direction:'incoming',timestamp:now},
   {id:102,body:'¡Hola Juan! Con gusto te ayudo. ¿Buscas para vivienda o inversión?',direction:'outgoing',timestamp:now},
   {id:103,body:'Para inversión. ¿Qué precios manejan?',direction:'incoming',timestamp:now},
@@ -1201,7 +1210,7 @@ function eqHexToRgba(hex,a){
 }
 function eqDayLabel(ts){
   if(!ts) return '';
-  const d=new Date(String(ts).replace(' ','T')+'Z'); if(isNaN(d)) return '';
+  const d=new Date(String(ts).replace(' ','T')); if(isNaN(d)) return '';
   const now=new Date(), y=new Date(now); y.setDate(y.getDate()-1);
   if(d.toDateString()===now.toDateString()) return 'Hoy';
   if(d.toDateString()===y.toDateString()) return 'Ayer';
@@ -1212,7 +1221,7 @@ function eqMsgHTML(m, idx, arr){
   const hora=horaCorta(m.created_at);
   if(m.deleted) return `<div class="eq-msg-row ${mio?'mio':'otro'}"><div class="bub bub--${mio?'out':'in'}" style="max-width:75%;opacity:.5;font-style:italic"><span class="bub-body">Mensaje eliminado</span><div class="bub__t">${hora}</div></div></div>`;
   const prev=arr[idx-1];
-  const grouped=prev && !prev.deleted && prev.from_vendedor_id===m.from_vendedor_id && (new Date(String(m.created_at).replace(' ','T')+'Z')-new Date(String(prev.created_at).replace(' ','T')+'Z'))<120000;
+  const grouped=prev && !prev.deleted && prev.from_vendedor_id===m.from_vendedor_id && (new Date(String(m.created_at).replace(' ','T'))-new Date(String(prev.created_at).replace(' ','T')))<120000;
   const v=eqFindVendedor(m.from_vendedor_id);
   const avatarBg=v.foto?'':`background:${eqColor(m.from_vendedor_id)}`;
   const avatarContent=v.foto?`<img src="${esc(v.foto)}" alt="">`:initials(v.nombre);
@@ -2017,6 +2026,12 @@ async function init(){
   else {
     me = await api('/api/me');
     if(!me){ location.replace('/login.html'); return; }
+    renderNav();
+    const meAv = document.getElementById('meAvatar');
+    if (meAv) {
+      meAv.style.background = me.foto ? '' : avatarColor(me.nombre);
+      meAv.innerHTML = me.foto ? `<img src="${esc(me.foto)}" style="width:100%;height:100%;object-fit:cover">` : initials(me.nombre);
+    }
     metricas = await api('/api/me/metricas');
     renderFilters();
     await cargar();
@@ -2922,7 +2937,7 @@ async function renderSchList(){
   const box=$('#schList'); if(!box) return;
   const s=await api('/api/programados')||[];
   if(!s.length){ box.innerHTML='<div style="font-size:13px;color:var(--text-3);text-align:center;padding:12px">Sin mensajes programados</div>'; return; }
-  box.innerHTML=s.map(m=>`<div class="sch-item"><span class="sch-time">${new Date(m.send_at.replace(' ','T')+'Z').toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${m.customer_name?esc(m.customer_name)+': ':''}${esc(m.body)}</span><button class="sch-del" data-sch="${m.id}">${I(SVG.x,14)}</button></div>`).join('');
+  box.innerHTML=s.map(m=>`<div class="sch-item"><span class="sch-time">${new Date(m.send_at.replace(' ','T')).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${m.customer_name?esc(m.customer_name)+': ':''}${esc(m.body)}</span><button class="sch-del" data-sch="${m.id}">${I(SVG.x,14)}</button></div>`).join('');
   box.querySelectorAll('[data-sch]').forEach(b=>b.onclick=async()=>{ const r=await api('/api/programados/'+b.dataset.sch,{method:'DELETE'}); if(r){ renderSchList(); toast('Cancelado'); } });
 }
 // Migración one-shot: programados viejos de localStorage → servidor
@@ -3119,10 +3134,10 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
     } else toast('Error al editar');
     cancelEdit(); inp.value=''; inp.style.height='auto'; updateSend(); cancelarReply(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return;
   }
-  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return; }
+  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toLocaleString('sv-SE').replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return; }
   // Optimistic — mostrar mensaje inmediatamente
   const tempId = 'temp_'+Date.now();
-  const tempMsg = {id:tempId,body:msg,direction:'outgoing',timestamp:new Date().toISOString().slice(0,19).replace('T',' ')};
+  const tempMsg = {id:tempId,body:msg,direction:'outgoing',timestamp:new Date().toLocaleString('sv-SE').replace('T',' ')};
   currentMsgs.push(tempMsg);
   inp.value=''; inp.style.height='auto'; updateSend();
   $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
@@ -4000,12 +4015,12 @@ function cargarVersionApp(){
 }
 
 /* ════════ Bottom Nav / tabs ════════ */
-const TABS=[['chats','Chats',SVG.chat],['propiedades','Propiedades',SVG.building],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]];
-function renderNav(){ $('#nav').innerHTML = TABS.map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
+function getTABS(){ return [['chats','Chats',SVG.chat],...((me && me.rol==='jefe')?[['supervision','Supervisión',SVG.eye]]:[]),['propiedades','Propiedades',SVG.building],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]]; }
+function renderNav(){ $('#nav').innerHTML = getTABS().map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
   $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
 async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
   if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='Leons Group'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
-  else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = TABS.find(x=>x[0]===t);
+  else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = getTABS().find(x=>x[0]===t);
     if(t==='perfil'){ const m = await api('/api/me/metricas'); if(m) metricas=m; }
     pantallaTab(t,label);
   }
@@ -4335,6 +4350,34 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       <div id="taskList">${skeletonCards(3)}</div>
     </div>`;
     cargarTareas();
+  } else if (t === 'supervision') {
+    box.innerHTML = `<div style="padding:8px 12px;width:100%;max-width:450px;margin:0 auto">
+      <div id="superKPIs" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"></div>
+      <div style="margin-bottom:14px">
+        <h3 style="font-size:13px;font-weight:600;color:#C8A45A;margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">📋 Inbox General</h3>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;background:rgba(10,10,10,0.4);padding:8px;border-radius:10px">
+          <div style="display:flex;gap:6px">
+            <select id="superFiltroVendedor" style="flex:1;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);padding:0 8px;font-size:12px"><option value="">Todos los asesores</option></select>
+            <select id="superFiltroEtiqueta" style="flex:1;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);padding:0 8px;font-size:12px"><option value="">Todas las etapas</option>${Object.entries(ETQ).map(([k,v])=>`<option value="${k}">${v.t}</option>`).join('')}</select>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="superFiltroCanal" style="flex:1;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);padding:0 8px;font-size:12px"><option value="">Todos los canales</option><option value="whatsapp">WhatsApp</option><option value="messenger">Messenger</option><option value="instagram">Instagram</option></select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);white-space:nowrap"><input type="checkbox" id="superSinResp"> Sin responder</label>
+          </div>
+        </div>
+        <div id="superInboxList" style="display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow-y:auto">${skeletonCards(3)}</div>
+        <div id="superInboxMore" style="display:none;text-align:center;margin-top:8px"><button style="padding:8px 24px;border-radius:10px;border:1px solid rgba(200,164,90,.3);background:rgba(200,164,90,.08);color:#C8A45A;cursor:pointer;font-size:12px;font-family:inherit">Cargar más</button></div>
+      </div>
+      <div style="margin-bottom:14px">
+        <h3 style="font-size:13px;font-weight:600;color:#C8A45A;margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">👥 Equipo</h3>
+        <div id="superEquipo" style="display:flex;flex-direction:column;gap:6px">${skeletonCards(2)}</div>
+      </div>
+      <div style="margin-bottom:14px">
+        <h3 style="font-size:13px;font-weight:600;color:#C8A45A;margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">⚠️ Alertas</h3>
+        <div id="superAlertas" style="display:flex;flex-direction:column;gap:6px"><div style="text-align:center;color:var(--text-3);padding:12px;font-size:12px">Cargando...</div></div>
+      </div>
+    </div>`;
+    cargarSupervision();
   } else if (t === 'copiloto') {
     const act = leads.filter(l => l.status !== 'cerrado');
     const sinResp = leads.filter(l => Number(l.unread_count||0) > 0);
@@ -4433,6 +4476,7 @@ function wire(){
   $('#filters').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filtro=b.dataset.f; haptic(8); renderList(); });
   $('#fab').onclick=()=>abrirNuevoLead();
   $('#btnNotif').onclick=()=>abrirNotificaciones();
+  const meAvatarEl = document.getElementById('meAvatar'); if (meAvatarEl) meAvatarEl.onclick = () => { const pn = document.querySelector('[data-tab="perfil"]'); if (pn) pn.click(); };
   $('#btnPrioridad').onclick=()=>{ ordenPrioridad=!ordenPrioridad; $('#btnPrioridad').classList.toggle('active',ordenPrioridad); haptic(8); toast(ordenPrioridad?'Ordenando por prioridad':'Orden por más reciente'); renderList(); };
   $('#sheetX').onclick=closeSheet; $('#sheetBg').onclick=closeSheet;
   // Logout desde tab Perfil (long-press)
@@ -4829,11 +4873,205 @@ async function refrescarLead(leadId){
   leads.sort((a,b)=>new Date(String(b.updated_at||b.created_at).replace(' ','T'))-new Date(String(a.updated_at||a.created_at).replace(' ','T')));
 }
 let _primeraConexion=true;
+
+/* ════════ Supervisión (tab exclusivo rol = jefe) ════════ */
+let _superData = {kpis:null, conversaciones:[], _offset:0, _total:0, equipo:[], alertasCount:0, currentPage:0, perPage:30};
+
+async function cargarSupervision(){
+  const pkp = document.getElementById('superKPIs'); if(!pkp) return;
+  // Cargar en paralelo
+  try{ _superData.kpis = await api('/api/supervisor/dashboard'); }
+  catch(e){ _superData.kpis = {kpis:{leadsActivos:0, leadsSinResponder:0, vendidos:0, conversionGlobal:0}}; }
+  try{ _superData.alertasCount = (await api('/api/supervisor/alertas/sin-leer') || {}).count || 0; }
+  catch(e){ _superData.alertasCount = 0; }
+  _superRenderKPIs();
+  cargarSuperConversaciones(false);
+  cargarSuperEquipo();
+  cargarSuperAlertas();
+  // Cargar lista de asesores para el filtro
+  try{
+    const res = await api('/api/supervisor/equipo');
+    const eq = (res && res.asesores) || res;
+    const sel = document.getElementById('superFiltroVendedor');
+    if(sel && Array.isArray(eq)){ for(const a of eq){ let o = document.createElement('option'); o.value = a.id; o.textContent = a.nombre; sel.appendChild(o); } }
+  }catch(e){}
+  // Cargar canales para el selector
+  const selC = document.getElementById('superFiltroCanal');
+  if(selC&&!selC.querySelector('option[value="whatsapp"]')){ selC.innerHTML='<option value="">Todos los canales</option><option value="whatsapp">WhatsApp</option><option value="messenger">Messenger</option><option value="instagram">Instagram</option>'; }
+  // Setup filtros
+  _superSetupFilters();
+}
+// Refresco ligero SSE: solo KPIs + inbox (sin reconstruir filtros/equipo completo)
+async function cargarSuperVisionRefresh(){
+  if(!document.getElementById('superKPIs')) return;
+  try{ _superData.kpis = await api('/api/supervisor/dashboard'); }catch(e){}
+  try{ _superData.alertasCount = (await api('/api/supervisor/alertas/sin-leer') || {}).count || 0; }catch(e){}
+  _superRenderKPIs();
+  cargarSuperConversaciones(false);
+  try{ cargarSuperAlertas(); }catch(e){}
+}
+function _superRenderKPIs(){
+  const k = (_superData.kpis&&_superData.kpis.kpis)||{};
+  const kp = k.kpis||k;
+  const box = document.getElementById('superKPIs'); if(!box) return;
+  box.innerHTML = `<div style="background:rgba(200,164,90,.06);border:1px solid rgba(200,164,90,.12);border-radius:14px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:700;color:#C8A45A">${kp.leadsActivos||kp.activos||0}</div><div style="font-size:10px;color:#6D6D6D;margin-top:2px;text-transform:uppercase;letter-spacing:.04em">Activos</div></div>`+
+    `<div style="background:rgba(200,164,90,.06);border:1px solid rgba(229,72,77,.25);border-radius:14px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:700;color:#E5484D">${kp.leadsSinResponder||kp.sinRespuesta||_superData.alertasCount||0}</div><div style="font-size:10px;color:#6D6D6D;margin-top:2px;text-transform:uppercase;letter-spacing:.04em">Sin resp.</div></div>`+
+    `<div style="background:rgba(200,164,90,.06);border:1px solid rgba(200,164,90,.12);border-radius:14px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:700;color:#C8A45A">${kp.vendidos||0}</div><div style="font-size:10px;color:#6D6D6D;margin-top:2px;text-transform:uppercase;letter-spacing:.04em">Vendidos</div></div>`+
+    `<div style="background:rgba(200,164,90,.06);border:1px solid rgba(200,164,90,.12);border-radius:14px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:700;color:#C8A45A">${kp.conversionGlobal||kp.conversion||'0'}%</div><div style="font-size:10px;color:#6D6D6D;margin-top:2px;text-transform:uppercase;letter-spacing:.04em">Conver.</div></div>`;
+}
+
+function _superInbConversacion(a){ var n=a.customer_name||'Cliente'; var ini=initials(n);
+  var col=avatarColor(n); var ms = (a.last_message||'').slice(0,60); var as=a.assigned_to_name||'Sin asesor';
+  return `<div class="super-card" data-cid="${a.id}" data-lid="${a.lead_id||''}" style="display:flex;align-items:center;gap:8px;padding:12px;border-bottom:0.5px solid var(--border);cursor:pointer">
+    <div style="width:42px;height:42px;border-radius:13px;display:grid;place-items:center;color:#fff;font-weight:600;font-size:13px;position:relative;overflow:hidden;background:${col};min-width:42px"><span>${ini}</span></div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">${esc(n)}</b><span style="font-size:11px;color:#6D6D6D">${soloHora(a.updated_at||a.created_at)}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px"><span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-2)">${esc(ms)}</span><span style="font-size:10px;color:#C8A45A">${esc(as)}</span></div>
+      ${a.etiqueta?`<span style="display:inline-block;margin-top:3px;font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(200,164,90,.13);color:#C8A45A;text-transform:uppercase;letter-spacing:.04em">${(ETQ[a.etiqueta]||{t:a.etiqueta}).t}</span>`:''}
+    </div>
+  </div>`;
+}
+
+function cargarSuperConversaciones(append){
+  const fVd = document.getElementById('superFiltroVendedor');
+  const fEtq = document.getElementById('superFiltroEtiqueta');
+  const fCh = document.getElementById('superFiltroCanal');
+  const fSr = document.getElementById('superSinResp');
+  let params = new URLSearchParams();
+  if(fVd && fVd.value) params.set('vendedorId', fVd.value);
+  if(fEtq && fEtq.value) params.set('etiqueta', fEtq.value);
+  if(fCh && fCh.value) params.set('canal', fCh.value);
+  if(fSr && fSr.checked) params.set('soloSinResponder','1');
+  params.set('limit','30');
+  if(append) params.set('offset', _superData._offset);
+  api('/api/supervisor/conversaciones?' + params.toString()).then(resp=>{
+    const conv = (resp&&resp.conversaciones)||resp;
+    if(!conv){ return; }
+    _superData._total = (resp && resp.total != null) ? Number(resp.total) : conv.length;
+    if(append){ _superData.conversaciones = _superData.conversaciones.concat(conv); _superData._offset += conv.length; }
+    else { _superData.conversaciones = conv || []; _superData._offset = conv.length; }
+    _superRenderConversaciones();
+  }).catch(()=>{});
+}
+
+function _superRenderConversaciones(){
+  var box = document.getElementById('superInboxList'); if(!box) return;
+  var convs = _superData.conversaciones;
+  if(!convs.length){ box.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:20px 0;font-size:12px;font-style:italic">No hay conversaciones</div>'; return; }
+  box.innerHTML = convs.map(c=>_superInbConversacion(c)).join('');
+  // Click en cada card
+  box.querySelectorAll('[data-cid]').forEach(el=>el.addEventListener('click', ()=>{
+    var conv = _superData.conversaciones.find(c=> String(c.id) === String(el.dataset.cid));
+    if(conv) abSuperChat(conv);
+  }));
+  var moreBtn = document.getElementById('superInboxMore');
+  if(moreBtn){
+    moreBtn.style.display = (_superData._total > 0 && _superData.conversaciones.length < _superData._total) ? 'block' : 'none';
+    moreBtn.querySelector('button').onclick = ()=> cargarSuperConversaciones(true);
+  }
+}
+
+function cargarSuperEquipo(){
+  api('/api/supervisor/equipo').then(res=>{
+    var eq = (res && res.asesores) || res;
+    var box = document.getElementById('superEquipo'); if(!box) return;
+    if(!eq||!eq.length){ box.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:20px 0;font-size:12px;font-style:italic">Sin asesores</div>'; return; }
+    box.innerHTML = eq.map(a=>{
+      var col=avatarColor(a.nombre);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:10px;border-bottom:0.5px solid var(--border);font-size:13px">
+        <div style="width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:600;background:${col};overflow:hidden;min-width:34px">${a.foto?`<img src="${a.foto}" style="width:100%;height:100%;object-fit:cover">`:initials(a.nombre)}</div>
+        <div style="flex:1;min-width:0"><b>${esc(a.nombre)}</b><div style="font-size:11px;color:#6D6D6D">Activos: ${a.activos||a.leadsActivos||0} · Pendientes: ${a.pendientes||a.leadsPendientes||0}</div></div>
+        <span style="font-size:10px;color:#C8A45A">${a.conversion||'0'}%</span>
+      </div>`;
+    }).join('');
+  }).catch(()=>{});
+}
+
+function cargarSuperAlertas(){
+  api('/api/supervisor/alertas?limit=5').then(resp=>{
+    const al = (resp&&resp.alertas)||resp;
+    var box = document.getElementById('superAlertas'); if(!box) return;
+    if(!al||!al.length){ box.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:12px;font-size:12px">Sin alertas críticas</div>'; return; }
+    box.innerHTML = al.map(a=>`<div style="padding:8px 12px;background:rgba(200,164,90,.04);border-radius:8px;font-size:12px">
+      <div style="font-weight:600;color:#C8A45A">${esc(a.titulo||'')}</div>
+      <div style="color:var(--text-2);margin-top:2px">${esc(a.cuerpo||a.descripcion||'')}</div>
+    </div>`).join('');
+  }).catch(()=>{});
+}
+
+function _superSetupFilters(){
+  var ffV = document.getElementById('superFiltroVendedor');
+  var ffE = document.getElementById('superFiltroEtiqueta');
+  var ffC = document.getElementById('superFiltroCanal');
+  var ffS = document.getElementById('superSinResp');
+  [ffV, ffE, ffC].forEach(function(sel){ if(sel) sel.addEventListener('change', function(){ cargarSuperConversaciones(false); }); });
+  if(ffS) ffS.addEventListener('change', function(){ cargarSuperConversaciones(false); });
+}
+
+function abSuperChat(conv){
+  var lid = conv.lead_id || conv.id;
+  if(!lid) return;
+  var loading = document.createElement('div');
+  loading.id = 'superChatOverlay';
+  loading.style.cssText = 'position:fixed;inset:0;background:#0A0A0A;z-index:6000;overflow-y:auto;color:var(--text)';
+  loading.innerHTML = `<div style="padding:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+    <button id="superBackBtn" style="background:none;border:none;color:#C8A45A;font-size:24px;padding:0 4px;cursor:pointer;line-height:1;margin-top:-3px">←</button>
+    <div style="min-width:0"><div style="font-weight:600;font-size:14px">${esc(conv.customer_name||'Cliente')}</div><div style="font-size:10px;color:#6D6D6D">${esc(conv.assigned_to_name||'Sin asesor')}</div></div>
+    <button id="superReassignBtn" style="margin-left:auto;border:1px solid rgba(200,164,90,.4);padding:8px 14px;border-radius:10px;color:#C8A45A;background:rgba(200,164,90,.06);font-size:12px;cursor:pointer;font-family:inherit">Reasignar ↻</button>
+  </div>
+  <div id="superChatTimeline" style="display:flex;flex-direction:column;gap:8px"><div style="text-align:center;color:#6D6D6D;padding:30px"><div style="animation:spin 1s linear infinite;width:24px;height:24px;border:2px solid #C8A45A;border-top-color:transparent;border-radius:50%;margin:0 auto 12px"></div><p>Cargando...</p></div></div></div>`;
+  document.body.appendChild(loading);
+  // Back button
+  document.getElementById('superBackBtn').addEventListener('click', function(){
+    document.body.removeChild(loading);
+  });
+  // Reassign button
+  var reasBtn = document.getElementById('superReassignBtn');
+  if(reasBtn) reasBtn.addEventListener('click', async ()=>{
+    // Load available asesores and show selector
+    try{
+    const vend = await api('/api/vendedores');
+    var opts = (vend||[]).filter(v=>Number(v.id)!==Number(conv.assigned_to_id)).map(v=>`<button class="reasign-opt" data-vid="${v.id}">${esc(v.nombre)}</button>`).join('');
+    var modal = document.createElement('div');
+    modal.id = 'reasignModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10001;background:#0A0A0A;padding:8px';
+    modal.innerHTML = `<div style="margin-top:40px"><h3 style="color:#C8A45A;margin-bottom:12px">Reasignar a</h3>${opts||'<p style="color:#6D6D6D">Sin otros asesores</p>'}</div><button id="reasignCancel" style="margin-top:20px;background:var(--bg-3);border:1px solid var(--border);border-radius:10px;padding:10px 20px;color:var(--text-2);cursor:pointer;font-family:inherit">Cancelar</button>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll('.reasign-opt').forEach(br=>br.onclick = async()=>{
+      var vid = br.dataset.vid;
+      var r = await api('/api/supervisor/reasignar/'+conv.lead_id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendedorId: parseInt(vid)})});
+      if(r&&r.ok){ toast('Lead reasignado'); document.body.removeChild(modal); document.body.removeChild(loading); cargarSuperConversaciones(false); }
+      else toast('No se pudo reasignar','err');
+    });
+    document.getElementById('reasignCancel').onclick = ()=> modal.parentNode && modal.parentNode.removeChild(modal);
+    }catch(e){ toast('No se pudo cargar asesores','err'); }
+  });
+  // Load timeline
+  api('/api/leads/'+lid+'/mensajes').then(function(msgs) {
+    var tc = document.getElementById('superChatTimeline');
+    if(!tc||!msgs||!msgs.length) { if(tc) tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Sin mensajes</div>'; return; }
+    var html = '';
+    for(var i=0; i<msgs.length; i++){
+      var m = msgs[i];
+      var isOut = m.direction === 'outgoing';
+      var h = soloHora(m.timestamp);
+      html += `<div style="display:flex;flex-direction:column;align-items:${isOut?'flex-end':'flex-start'};margin-bottom:8px">
+        <div style="max-width:80%;padding:10px 14px;border-radius:16px;background:${isOut?'rgba(200,164,90,.12)':'var(--bg-2)'};font-size:14px;line-height:1.4;color:var(--text);word-break:break-word">${esc(m.body||'')}</div>
+        <span style="font-size:10px;color:#6D6D6D;margin-top:2px">${h}</span>
+      </div>`;
+    }
+    tc.innerHTML = html;
+    setTimeout(function(){ tc.scrollTop = tc.scrollHeight; }, 100);
+    // Auto-scroll on new timeline content
+  }).catch(()=>{ var tc = document.getElementById('superChatTimeline'); if(tc) tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Error cargando mensajes</div>'; });
+}
+
 function conectarStream(){ try{ const es=new EventSource('/api/stream');
   // Al (re)conectar: refresco completo una vez — pudo perderse algo mientras no había stream
   es.addEventListener('conectado',async()=>{ if(_primeraConexion){ _primeraConexion=false; return; } const d=await api('/api/mis-leads'); if(d){ leads=d; renderList(); } });
   es.addEventListener('nuevo_mensaje',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){}
     await refrescarLead(x.leadId);
+    if(tab==='supervision'){ try{ cargarSuperVisionRefresh(); }catch(e){} }
     const dot=$('#navDot'); const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); if(dot) dot.style.display=totalUnread>0?'':'none'; try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){}
     if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); }
     try{ if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });

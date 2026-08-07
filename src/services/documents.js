@@ -37,8 +37,8 @@ function ensureTable() {
       vendedor_id INTEGER,
       tags TEXT DEFAULT '[]',
       visible INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT (datetime('now')),
-      updated_at DATETIME DEFAULT (datetime('now')),
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      updated_at DATETIME DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
@@ -102,7 +102,7 @@ function actualizarDocumento(id, data) {
     }
   }
   if (!campos.length) return { ok: false };
-  campos.push("updated_at = datetime('now')");
+  campos.push("updated_at = datetime('now','localtime')");
   params.push(id);
   store.run(`UPDATE documentos SET ${campos.join(', ')} WHERE id = ?`, params);
   return { ok: true };

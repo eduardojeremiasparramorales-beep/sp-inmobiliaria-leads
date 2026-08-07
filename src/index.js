@@ -1,4 +1,5 @@
 require('dotenv').config();
+process.env.TZ = process.env.TZ || 'America/Bogota';
 
 const express = require('express');
 const fs = require('fs');
@@ -821,7 +822,7 @@ app.post('/api/vendedores/registro', registroLimiter, (req, res) => {
   // El rol del registro es acotado: solo 'asesor' (default histórico) o 'supervisor'.
   // Cualquier otro valor (incluido 'admin') se rechaza — el admin nunca se auto-crea.
   const rolRegistro = String(rol || 'asesor').toLowerCase();
-  if (!['asesor', 'supervisor'].includes(rolRegistro)) return res.status(400).json({ error: 'rol_invalido' });
+  if (!['asesor', 'supervisor', 'jefe'].includes(rolRegistro)) return res.status(400).json({ error: 'rol_invalido' });
   const tel = String(telefono).replace(/[\s-]/g, '');
   if (store.getVendedorByTelefono(tel)) return res.status(409).json({ error: 'telefono_ya_registrado' });
   if (foto && String(foto).length > 3 * 1024 * 1024) return res.status(400).json({ error: 'foto_demasiado_grande' });
@@ -835,8 +836,11 @@ app.post('/api/vendedores/registro', registroLimiter, (req, res) => {
   if (rolRegistro === 'supervisor') {
     const emailSupervisor = `supervisor+${vendedorId}@spinmobiliaria.com`;
     store.createUsuario(emailSupervisor, null, String(nombre).trim(), 'supervisor', vendedorId);
+  } else if (rolRegistro === 'jefe') {
+    const emailJefe = `jefe+${vendedorId}@spinmobiliaria.com`;
+    store.createUsuario(emailJefe, null, String(nombre).trim(), 'jefe', vendedorId);
   }
-  const label = rolRegistro === 'supervisor' ? 'supervisor' : 'asesor';
+  const label = rolRegistro === 'supervisor' ? 'supervisor' : rolRegistro === 'jefe' ? 'jefe' : 'asesor';
   console.log(`[REGISTRO] Nuevo ${label} pendiente de aprobación: ${nombre} (${tel})`);
   events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), rol: rolRegistro, ts: Date.now() });
   try {
@@ -938,7 +942,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
     // y vendedores sin usuario (caso histórico/legacy) caen naturalmente a 'vendedor'.
     const usuario = store.getUsuarioByVendedorId(vendedor.id);
     let rol = 'vendedor';
-    if (usuario && ['admin', 'supervisor'].includes(usuario.rol)) rol = usuario.rol;
+    if (usuario && ['admin', 'supervisor', 'jefe'].includes(usuario.rol)) rol = usuario.rol;
     const token = auth.createSession({ vendedorId: vendedor.id, userId: usuario ? usuario.id : null, rol, nombre: vendedor.nombre, userAgent: req.headers['user-agent'] });
     res.setHeader('Set-Cookie', `sp_session=${token}; HttpOnly; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`);
     // PIN de fábrica: obligar a cambiarlo antes de usar el panel
@@ -1128,6 +1132,7 @@ app.post('/api/admin/recalcular-insignias', auth.requireAdmin, (req, res) => {
 // Leads asignados al vendedor logueado (admin ve todos)
 app.get('/api/mis-leads', auth.requireAuth, (req, res) => {
   if (req.session.rol === 'admin') return res.json(getLeads());
+  if (req.session.rol === 'jefe') return res.json(store.getLeadsByVendedorId(req.session.vendedorId));
   if (!req.session.vendedorId) return res.json([]);
   const leads = store.getLeadsByVendedorId(req.session.vendedorId);
   const limite = Math.min(Number(req.query.limite) || leads.length, 200);
@@ -1199,7 +1204,7 @@ function assertConvAccess(req, res, conv) {
 
 // ¿La sesión ve/opera conversaciones de cualquier asesor? (admin o supervisor)
 function esAccesoGlobal(req) {
-  return req.session.rol === 'admin' || req.session.rol === 'supervisor';
+  return req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe';
 }
 
 app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) => {
@@ -3262,7 +3267,7 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
   res.write(`event: conectado\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
 
   // Admin y supervisor escuchan el canal 0 (alertas del equipo); el vendedor en su propio id.
-  const canal = (req.session.rol === 'admin' || req.session.rol === 'supervisor') ? 0 : req.session.vendedorId;
+  const canal = (req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe') ? 0 : req.session.vendedorId;
   events.addClient(canal, res);
 
   // Heartbeat para mantener viva la conexión
@@ -3409,7 +3414,7 @@ function checkRecordatorios() {
 
 // ===================== CENTRO DE NOTIFICACIONES =====================
 // Admin usa el canal 0 (misma convención que SSE y push); vendedor su propio id.
-function canalNotif(req) { return (req.session.rol === 'admin' || req.session.rol === 'supervisor') ? 0 : Number(req.session.vendedorId); }
+function canalNotif(req) { return (req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe') ? 0 : Number(req.session.vendedorId); }
 
 app.get('/api/notificaciones', auth.requireAuth, (req, res) => {
   const canal = canalNotif(req);
@@ -4150,7 +4155,7 @@ app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
   if (store.getUsuarioByEmail(emailNorm)) {
     return res.status(409).json({ error: 'email_ya_existe' });
   }
-  const rolFinal = rol === 'admin' ? 'admin' : 'vendedor';
+  const rolFinal = rol === 'admin' ? 'admin' : (rol === 'jefe' ? 'jefe' : 'vendedor');
   let vendedorId = null;
 
   // Para vendedores: teléfono es obligatorio
@@ -4611,6 +4616,37 @@ function ensureSupervisor() {
   }
 }
 
+// Crea el usuario jefe inicial (Sergio Parra) vía .env, mismo patrón que ensureSupervisor.
+function ensureJefe() {
+  const JEFE_PHONE = process.env.JEFE_PHONE;
+  const JEFE_PIN = process.env.JEFE_PIN || '0000';
+  const JEFE_NAME = process.env.JEFE_NAME || 'Sergio Parra';
+  if (!JEFE_PHONE) return;
+  if (!/^\+57\d{10}$/.test(JEFE_PHONE)) {
+    console.warn('⚠ JEFE_PHONE malformado (esperado +57 + 10 dígitos) — se omite el bootstrap de jefe');
+    return;
+  }
+  let vendedorJefe = store.getVendedorByTelefono(JEFE_PHONE);
+  if (!vendedorJefe) {
+    const vId = store.addVendedor(JEFE_NAME, JEFE_PHONE);
+    store.setVendedorPin(vId, auth.hashPassword(JEFE_PIN));
+    vendedorJefe = store.getVendedorByTelefono(JEFE_PHONE);
+    console.log(`Vendedor jefe creado: ${JEFE_PHONE} · PIN: ${JEFE_PIN} (cambiar tras primer login)`);
+  } else if (!vendedorJefe.pin) {
+    store.setVendedorPin(vendedorJefe.id, auth.hashPassword(JEFE_PIN));
+    console.log(`PIN reset para jefe: ${JEFE_PIN}`);
+  }
+  const usuarioJefe = store.getUsuarioByVendedorId(vendedorJefe.id);
+  if (!usuarioJefe) {
+    const emailJefe = `jefe+${vendedorJefe.id}@spinmobiliaria.com`;
+    store.createUsuario(emailJefe, null, JEFE_NAME, 'jefe', vendedorJefe.id);
+    console.log(`Usuario jefe creado y vinculado a vendedor ID ${vendedorJefe.id}`);
+  } else if (usuarioJefe.rol !== 'jefe') {
+    store.updateUsuarioRol(usuarioJefe.id, 'jefe');
+    console.log(`Vendedor ID ${vendedorJefe.id} promovido a jefe`);
+  }
+}
+
 // ===================== FASE 1 — RESERVAS, LEAD SCORING, TIMELINE =====================
 const reservas = require('./services/reservas');
 const leadScoring = require('./services/lead-scoring');
@@ -5000,6 +5036,7 @@ function ensurePlatformAdmin() {
   ensurePlatformAdmin();
   ensureAdminUser();
   ensureSupervisor(); // opcional vía .env (SUPERVISOR_PHONE/NAME/PIN)
+  ensureJefe(); // opcional vía .env (JEFE_PHONE/NAME/PIN)
   // Backfill inbox: re-vincular leads legacy que no tienen conversación en el
   // schema multicanal (p.ej. insertados por scripts). Migra sus mensajes al timeline
   // para que TODOS los chats aparezcan en el inbox del admin.

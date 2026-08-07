@@ -132,7 +132,7 @@
 
   function getTimeAgo(ts) {
     if (!ts) return '';
-    const t = new Date(String(ts).includes('T') ? ts : ts + 'Z');
+    const t = new Date(ts);
     const s = Math.floor((Date.now() - t.getTime()) / 1000);
     if (s < 60) return 'hace ' + Math.max(1, s) + 's';
     if (s < 3600) return 'hace ' + Math.floor(s / 60) + 'min';
