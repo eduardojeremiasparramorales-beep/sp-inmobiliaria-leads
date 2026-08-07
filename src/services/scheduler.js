@@ -119,8 +119,27 @@ async function enviarUno(s) {
     let progChannel = 'whatsapp';
     if (progPhone.startsWith('messenger_')) progChannel = 'messenger';
     else if (progPhone.startsWith('instagram_')) progChannel = 'instagram';
-    let smart;
-    if (progChannel !== 'whatsapp') {
+
+    // Recordatorio de cita (tipo='template'): la plantilla llega AUNQUE la ventana de
+    // 24h esté cerrada — es el caso clásico "agendé para el domingo y para el domingo
+    // ya no hay ventana". En Messenger/Instagram no hay plantillas: se envía el texto
+    // plano resuelto como mensaje normal.
+    let smart = null;
+    if (s.tipo === 'template' && s.template_nombre) {
+      if (progChannel === 'whatsapp') {
+        const { sendTemplate } = require('./whatsapp');
+        let params = [];
+        try { params = JSON.parse(s.template_params || '[]'); } catch (e) {}
+        const tplResult = await sendTemplate(lead.customer_phone, s.template_nombre, params, s.template_idioma || 'es');
+        smart = { data: tplResult, templateSent: true, queued: false };
+      } else {
+        const { getAdapter } = require('../channels');
+        const progAdapter = getAdapter(progChannel);
+        const pcuid = progPhone.replace(/^(messenger_|instagram_)/, '');
+        if (progAdapter && pcuid) { await progAdapter.sendMessage(pcuid, cuerpo); }
+        smart = { queued: false, data: null };
+      }
+    } else if (progChannel !== 'whatsapp') {
       const { getAdapter } = require('../channels');
       const progAdapter = getAdapter(progChannel);
       const pcuid = progPhone.replace(/^(messenger_|instagram_)/, '');
@@ -150,7 +169,7 @@ async function enviarUno(s) {
     } catch (e2) {
       console.error(`[SCHEDULER] Programado #${s.id} enviado pero falló la contabilidad:`, e2.message);
     }
-    console.log(`[SCHEDULER] Programado #${s.id} enviado a lead ${lead.id}${smart.templateSent ? ' (via template, ventana cerrada — saldrá al responder el cliente)' : ''}`);
+    console.log(`[SCHEDULER] Programado #${s.id} enviado a lead ${lead.id}${s.tipo === 'template' ? ' (recordatorio de cita via template)' : smart.templateSent ? ' (via template, ventana cerrada — saldrá al responder el cliente)' : ''}`);
   } catch (e) {
     const intentos = (s.intentos || 0) + 1;
     if (intentos >= MAX_INTENTOS) {

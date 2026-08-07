@@ -189,6 +189,13 @@ function createSchema() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_sched_pend ON scheduled_messages(estado, send_at)`);
+  // Recordatorios de cita: 'texto' (mensaje normal) o 'template' (plantilla Meta, llega
+  // aunque la ventana de 24h esté cerrada). template_* solo se usa en tipo='template'.
+  ensureColumn('scheduled_messages', 'tipo', "TEXT DEFAULT 'texto'");
+  ensureColumn('scheduled_messages', 'cita_id', 'INTEGER');
+  ensureColumn('scheduled_messages', 'template_nombre', 'TEXT');   // nombre de la plantilla en Meta
+  ensureColumn('scheduled_messages', 'template_idioma', "TEXT DEFAULT 'es'");
+  ensureColumn('scheduled_messages', 'template_params', 'TEXT');   // JSON: valores resueltos {{clave}} → valor
 
   // --- Cadencia de seguimiento (F3.3): pasos configurables, día (acumulado desde
   // la inscripción) + mensaje. Se aplican a los leads inscritos vía scheduler. ---
@@ -2430,7 +2437,10 @@ function getCitas({ vendedorId, desde, hasta } = {}) {
   if (hasta) { conditions.push('c.fecha <= ?'); params.push(hasta); }
   const whereStr = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
   return all(`
-    SELECT c.*, l.customer_name, l.customer_phone, v.nombre AS vendedor_nombre
+    SELECT c.*, l.customer_name, l.customer_phone, v.nombre AS vendedor_nombre,
+      (SELECT sm.send_at FROM scheduled_messages sm
+        WHERE sm.cita_id = c.id AND sm.tipo = 'template' AND sm.estado = 'pendiente'
+        ORDER BY sm.id DESC LIMIT 1) AS recordatorio_send_at
     FROM citas c
     LEFT JOIN leads l ON l.id = c.lead_id
     LEFT JOIN vendedores v ON v.id = c.vendedor_id
@@ -2466,6 +2476,32 @@ function updateCita(id, data) {
 
 function deleteCita(id) {
   run('DELETE FROM citas WHERE id = ?', [id]);
+}
+
+// --- Recordatorio de cita (mensaje programado tipo 'template') ---
+// Se guarda en scheduled_messages con tipo='template' y cita_id. El scheduler lo envía
+// con la plantilla de Meta aunque la ventana de 24h esté cerrada (eso es lo que hace
+// robusto el recordatorio). body = texto plano que registra el chat; template_* = plantilla.
+function getRecordatorioCita(citaId) {
+  return one(`SELECT * FROM scheduled_messages WHERE cita_id = ? AND tipo = 'template' AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`, [citaId]);
+}
+
+function createRecordatorioCita({ citaId, leadId, vendedorId, sendAt, body, templateNombre, templateIdioma, templateParams }) {
+  run(`INSERT INTO scheduled_messages (lead_id, vendedor_id, body, send_at, tipo, cita_id, template_nombre, template_idioma, template_params)
+       VALUES (?, ?, ?, ?, 'template', ?, ?, ?, ?)`,
+    [leadId, vendedorId || 0, body || '', sendAt, citaId, templateNombre, templateIdioma || 'es', templateParams || '[]']);
+  const r = one('SELECT id FROM scheduled_messages WHERE cita_id = ? ORDER BY id DESC LIMIT 1', [citaId]);
+  return r ? r.id : null;
+}
+
+function cancelarRecordatorioCita(citaId) {
+  run(`UPDATE scheduled_messages SET estado = 'cancelado', last_error = 'recordatorio_cancelado'
+       WHERE cita_id = ? AND tipo = 'template' AND estado = 'pendiente'`, [citaId]);
+}
+
+function cancelarRecordatorioByCitaCierre(citaId) {
+  // Al marcar la cita como hecha/cancelada o al borrarla, su recordatorio pendiente muere.
+  cancelarRecordatorioCita(citaId);
 }
 
 // --- Puente legacy → multicanal ---
@@ -3179,6 +3215,7 @@ module.exports = {
   syncLeadToConversation,
   getUnlinkedLeads, getOrCreateConversationForLead, getUnifiedConversations,
   getCitas, getCitaById, createCita, updateCita, deleteCita,
+  getRecordatorioCita, createRecordatorioCita, cancelarRecordatorioCita, cancelarRecordatorioByCitaCierre,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
   addReaction, removeReaction, getReactionsForMessage, getReactionsForMessages,

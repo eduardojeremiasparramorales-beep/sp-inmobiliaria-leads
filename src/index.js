@@ -2469,7 +2469,21 @@ app.put('/api/citas/:id', auth.requireAuth, (req, res) => {
   }
   const { titulo, fecha, notas, estado, vendedorId } = req.body || {};
   if (estado && !['pendiente', 'hecha', 'cancelada'].includes(estado)) return res.status(400).json({ error: 'estado_invalido' });
+  // Al cerrar la cita (hecha/cancelada) el recordatorio pendiente pierde sentido.
+  if (estado && estado !== 'pendiente') store.cancelarRecordatorioByCitaCierre(cita.id);
   const actualizada = store.updateCita(cita.id, { titulo, fecha, notas, estado, vendedorId: req.session.rol === 'admin' ? vendedorId : undefined });
+  // Si se movió la fecha y hay recordatorio pendiente, se reprograma con la misma antelación.
+  if (fecha && fecha !== cita.fecha) {
+    const rec = store.getRecordatorioCita(cita.id);
+    if (rec) {
+      const citaNueva = store.getCitaById(cita.id);
+      const antelacionMs = new Date(cita.fecha.replace(' ', 'T')).getTime() - new Date(rec.send_at.replace(' ', 'T')).getTime();
+      if (antelacionMs > 0) {
+        const nuevoSendAt = new Date(new Date(citaNueva.fecha.replace(' ', 'T')).getTime() - antelacionMs);
+        store.updateScheduled(rec.id, { send_at: nuevoSendAt.toISOString().slice(0, 19).replace('T', ' ') });
+      }
+    }
+  }
   res.json({ ok: true, cita: actualizada });
 });
 
@@ -2480,7 +2494,94 @@ app.delete('/api/citas/:id', auth.requireAuth, (req, res) => {
   if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ error: 'sin_permiso' });
   }
+  store.cancelarRecordatorioByCitaCierre(cita.id);
   store.deleteCita(cita.id);
+  res.json({ ok: true });
+});
+
+// ===================== RECORDATORIO DE CITA =====================
+// El recordatorio es un mensaje programado tipo 'template': aunque la ventana de 24h
+// se cierre antes de la cita, la plantilla de Meta llega igual (ese es el punto).
+
+// Estado actual del recordatorio de la cita
+app.get('/api/citas/:id/recordatorio', auth.requireAuth, (req, res) => {
+  const cita = store.getCitaById(req.params.id);
+  if (!cita) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const rec = store.getRecordatorioCita(cita.id);
+  res.json({
+    ok: true,
+    programado: !!rec,
+    recordatorio: rec ? {
+      id: rec.id,
+      send_at: rec.send_at,
+      template_nombre: rec.template_nombre,
+      vendedor_id: rec.vendedor_id,
+    } : null,
+    template_configurado: !!store.getConfig('recordatorio_template'),
+  });
+});
+
+// Crear / re-programar el recordatorio. body: { antelacionHoras: 1|3|6|24|48 }
+// Se envía `antelacionHoras` horas ANTES de la cita con la plantilla configurada.
+app.post('/api/citas/:id/recordatorio', auth.requireAuth, (req, res) => {
+  try {
+    const cita = store.getCitaById(req.params.id);
+    if (!cita) return res.status(404).json({ error: 'no_existe' });
+    if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
+      return res.status(403).json({ error: 'sin_permiso' });
+    }
+    if (!cita.lead_id) return res.status(400).json({ error: 'cita_sin_lead' });
+    const lead = store.getLeadById(cita.lead_id);
+    if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+    const antelacionHoras = Number((req.body || {}).antelacionHoras);
+    if (![1, 3, 6, 24, 48].includes(antelacionHoras)) return res.status(400).json({ error: 'antelacion_invalida', valido: [1, 3, 6, 24, 48] });
+
+    const templateName = store.getConfig('recordatorio_template');
+    if (!templateName) return res.status(400).json({ error: 'sin_template', detalle: 'Configura el template de recordatorio en Configuración.' });
+    const tpl = store.getWATemplateByName(templateName);
+    if (!tpl) return res.status(400).json({ error: 'template_no_sincronizado', detalle: `La plantilla "${templateName}" no está en el catálogo. Sincroniza desde Meta.` });
+
+    const vendedor = cita.vendedor_id ? store.getVendedorById(cita.vendedor_id) : null;
+    const wa = require('./services/wa-templates');
+    const values = wa.buildCitaRecordatorioValues(tpl, lead, vendedor, cita);
+    const components = wa.buildCitaRecordatorioComponents(tpl, values);
+    const textoPlano = wa.recordatorioTextoPlano(tpl, values);
+
+    const citaMs = new Date(cita.fecha.replace(' ', 'T')).getTime();
+    if (isNaN(citaMs)) return res.status(400).json({ error: 'fecha_cita_invalida' });
+    const sendAtMs = citaMs - antelacionHoras * 3600000;
+    const sendAt = new Date(sendAtMs).toISOString().slice(0, 19).replace('T', ' ');
+
+    // Reemplaza el recordatorio anterior si existía
+    store.cancelarRecordatorioCita(cita.id);
+    const id = store.createRecordatorioCita({
+      citaId: cita.id,
+      leadId: lead.id,
+      vendedorId: cita.vendedor_id || req.session.vendedorId || 0,
+      sendAt,
+      body: textoPlano || `Recordatorio: ${cita.titulo}`,
+      templateNombre: tpl.nombre,
+      templateIdioma: tpl.idioma || 'es',
+      templateParams: JSON.stringify(components),
+    });
+    res.json({ ok: true, id, send_at: sendAt, template_nombre: tpl.nombre, texto: textoPlano });
+  } catch (e) {
+    console.error('[CITAS] Error creando recordatorio:', e.message);
+    res.status(500).json({ error: 'error_interno', detalle: e.message });
+  }
+});
+
+// Cancelar el recordatorio de la cita
+app.delete('/api/citas/:id/recordatorio', auth.requireAuth, (req, res) => {
+  const cita = store.getCitaById(req.params.id);
+  if (!cita) return res.status(404).json({ error: 'no_existe' });
+  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  store.cancelarRecordatorioCita(cita.id);
   res.json({ ok: true });
 });
 
@@ -3465,6 +3566,7 @@ const CONFIG_KEYS = [
   'welcome_message',
   'company_name',
   'reengagement_template',
+  'recordatorio_template',
   'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
   'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
   'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
@@ -3554,16 +3656,57 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
   if (!nombre && !templateId) return res.status(400).json({ error: 'nombre o templateId requerido' });
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+  // Proteger validación contra vendedorId nulo o NaN
+  const vendedorId = Number(req.session.vendedorId);
+  if (req.session.rol !== 'admin' && (!vendedorId || Number(lead.assigned_to_id) !== vendedorId)) {
+    console.log(`[enviar-template] Permiso denegado: rol=${req.session.rol} vendedorId=${vendedorId} lead.assigned_to_id=${lead.assigned_to_id}`);
     return res.status(403).json({ error: 'sin_permiso' });
   }
+
+  // Auto-reabrir lead archivado cuando el asesor envía plantilla
+  let reopened = false;
+  if (lead.status === 'cerrado') {
+    store.reopenLead(lead.id);
+    reopened = true;
+    console.log(`[enviar-template] Lead ${lead.id} reabierto automáticamente por vendedor ${req.session.vendedorId}`);
+  }
+
   // Detectar canal del lead (multicanal)
   const leadPhone = (lead && lead.customer_phone) || '';
   let leadChannel = 'whatsapp';
   if (leadPhone.startsWith('messenger_')) leadChannel = 'messenger';
   else if (leadPhone.startsWith('instagram_')) leadChannel = 'instagram';
+
+  // Buscar conversación asociada
+  let conversation = null;
+  try { conversation = store.getConversationByLeadId ? store.getConversationByLeadId(lead.id) : null; } catch (e) { /* opcional */ }
+
+  const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
+  const setFirstResponseAndStatus = () => {
+    store.setFirstResponse(lead.id);
+    if (lead.status === 'nuevo' || lead.status === 'asignado') {
+      store.updateLeadStatus(lead.id, 'contactado');
+    }
+  };
+  const syncAndEmit = (body) => {
+    store.syncLeadToConversation(store.getLeadById(lead.id), { direction: 'outgoing', body, fromNumber, toNumber: lead.customer_phone });
+    events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+    events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
+  };
+  const logActivity = () => {
+    try {
+      require('./services/activity').logRespuesta({
+        leadId: lead.id, conversationId: conversation ? conversation.id : null,
+        vendedorId: req.session.vendedorId, vendedorNombre: req.session.nombre,
+        customerName: lead.customer_name,
+      });
+    } catch (e) { /* feed opcional */ }
+  };
+
   try {
     let tplNombre = nombre;
+    let templateResult = null;
+
     // Para Instagram/Messenger: resolver template como texto plano y enviar como mensaje normal
     if (leadChannel !== 'whatsapp') {
       const { getAdapter: _gaTpl } = require('./channels');
@@ -3575,11 +3718,16 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
           const tpl = store.getWATemplateById(templateId);
           if (tpl) { textoResolver = tplAdapter.resolveTemplateText ? tplAdapter.resolveTemplateText(templateId, params) : tpl.nombre || textoResolver; }
         }
-        await tplAdapter.sendMessage(channelUserId, textoResolver);
-        store.saveMessage(lead.id, 'sistema', leadPhone, '[Template: ' + (tplNombre || templateId) + ']', 'outgoing');
-        return res.json({ ok: true, warning: 'template_sent_as_text' });
+        templateResult = await tplAdapter.sendMessage(channelUserId, textoResolver);
+        const body = '[Template: ' + (tplNombre || templateId) + ']';
+        store.saveMessage(lead.id, fromNumber, leadPhone, body, 'outgoing');
+        setFirstResponseAndStatus();
+        syncAndEmit(body);
+        logActivity();
+        return res.json({ ok: true, reopened, warning: 'template_sent_as_text' });
       }
     }
+
     if (templateId) {
       const tpl = store.getWATemplateById(templateId);
       if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
@@ -3595,16 +3743,32 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
         }
       }
       const { sendResolvedTemplate } = require('./services/wa-templates');
-      await sendResolvedTemplate(lead.customer_phone, tpl, lead, vendedor, overrides || {});
+      templateResult = await sendResolvedTemplate(lead.customer_phone, tpl, lead, vendedor, overrides || {});
       tplNombre = tpl.nombre;
     } else {
       const { sendTemplate } = require('./services/whatsapp');
-      await sendTemplate(lead.customer_phone, nombre, params || null);
+      templateResult = await sendTemplate(lead.customer_phone, nombre, params || null);
     }
-    store.saveMessage(lead.id, 'sistema', lead.customer_phone, `[Template: ${tplNombre}]`, 'outgoing');
-    res.json({ ok: true });
+
+    // Capturar wamid de la respuesta de Meta
+    const wamid = templateResult && templateResult.messages && templateResult.messages[0] ? templateResult.messages[0].id : null;
+    const messageStatus = wamid ? 'sent' : 'pending';
+    const body = `[Template: ${tplNombre}]`;
+
+    store.saveMessage(lead.id, fromNumber, lead.customer_phone, body, 'outgoing', null, null, wamid, messageStatus);
+    setFirstResponseAndStatus();
+    syncAndEmit(body);
+    logActivity();
+
+    console.log(`[enviar-template] OK — lead=${lead.id} template=${tplNombre} channel=${leadChannel} wamid=${wamid || 'no_wamid'}`);
+    res.json({ ok: true, reopened, wamid, messageStatus });
   } catch (e) {
-    res.status(502).json({ error: 'error_whatsapp', detalle: e.message });
+    const errData = e.response && e.response.data && e.response.data.error;
+    const detail = errData
+      ? (errData.error_user_msg || errData.message || JSON.stringify(e.response.data))
+      : e.message;
+    console.error('[enviar-template] ERROR:', e.response ? JSON.stringify(e.response.data) : e.message);
+    res.status(502).json({ error: 'error_whatsapp', detalle: detail });
   }
 });
 

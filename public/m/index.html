@@ -264,8 +264,8 @@
     background-attachment: fixed;
   }
   .c-date{ align-self:center; flex-shrink:0; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:8px 0; }
-  .c-bub{ width:fit-content; max-width:80%; padding:9px 13px; border-radius:20px; font-size:14.5px; line-height:1.42; word-wrap:break-word; position:relative; animation:bubIn .28s var(--spring); }
-  .bub--in{ margin-right:auto; background:var(--bg-3); border-bottom-left-radius:6px; border-left:2px solid var(--gold-line); }
+  .bub{ width:fit-content; max-width:80%; padding:9px 13px; border-radius:20px; font-size:14.5px; line-height:1.42; word-wrap:break-word; position:relative; animation:bubIn .28s var(--spring); }
+  .bub--in{ margin-right:auto; background:rgba(0,0,0,.85); border:1px solid rgba(255,215,106,.22); box-shadow:inset 0 1px 0 rgba(255,255,255,.05); border-bottom-left-radius:6px; }
   .bub--out{ margin-left:auto; background:linear-gradient(150deg,#1E5A46,#0E3A2C); border:1px solid rgba(92,191,106,.35); color:#EDF5F1; border-bottom-right-radius:6px; }
   @keyframes bubIn{ from{ opacity:0; transform:translateY(6px) scale(.98); } }
   .bub__t{ font-size:10.5px; opacity:.5; margin-top:3px; text-align:right; }
@@ -4687,11 +4687,14 @@ function renderCalendario(){
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:500">${esc(c.titulo)}</div>
         <div style="font-size:10px;color:var(--text-3);margin-top:1px">${f?fmtFechaCal(f):'—'}${c.customer_name?' · '+esc(c.customer_name):''}</div>
+        ${c.recordatorio_send_at?`<div style="font-size:9px;color:var(--gold);margin-top:2px">🔔 Recordatorio ${c.lead_id?'programado':'—'}</div>`:''}
       </div>
+      ${c.lead_id?`<button class="cal-rec" data-id="${c.id}" data-rec="${c.recordatorio_send_at?'1':'0'}" style="width:26px;height:26px;border-radius:6px;background:none;border:1.5px solid ${c.recordatorio_send_at?'var(--gold)':'var(--border-strong)'};color:${c.recordatorio_send_at?'var(--gold)':'var(--text-3)'};display:grid;place-items:center" title="Recordatorio WhatsApp">${I(SVG.bell,12)}</button>`:''}
       <button class="cal-hecha" data-id="${c.id}" style="width:26px;height:26px;border-radius:6px;background:none;border:1.5px solid var(--border-strong);color:var(--green);display:grid;place-items:center">${I(SVG.check,12)}</button>
       <button class="cal-cancel" data-id="${c.id}" style="width:26px;height:26px;border-radius:6px;background:none;border:none;color:var(--text-3);display:grid;place-items:center">${I(SVG.x,12)}</button>
     </div>`;
   }).join('');
+  px.querySelectorAll('.cal-rec').forEach(b=>b.onclick=()=>abrirRecordatorio(Number(b.dataset.id),b.dataset.rec==='1',b));
   px.querySelectorAll('.cal-hecha').forEach(b=>b.onclick=async()=>{
     await api('/api/citas/'+b.dataset.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'hecha'})});
     toast('Cita completada'); cargarCalendario();
@@ -4722,6 +4725,42 @@ function abrirModalCita(fechaPref, lead){
     if(r&&r.ok){ toast('Cita agendada'); closeSheet(); cargarCalendario(); }
     else toast('Error al agendar','err');
   };
+}
+
+/* Recordatorio automático de cita — mensaje programado con template de WhatsApp.
+   Se envía ANTES de la cita (antelación configurable) y llega aunque la ventana de
+   24h esté cerrada, porque va como plantilla aprobada de Meta. */
+const ANTELACIONES_REC=[['1','1 hora'],['3','3 horas'],['6','6 horas'],['24','1 día'],['48','2 días']];
+async function abrirRecordatorio(citaId, yaProgramado, btnEl){
+  haptic(8);
+  const rec=await api(`/api/citas/${citaId}/recordatorio`);
+  const estado=rec&&rec.ok?rec:null;
+  const tiene=estado&&estado.programado;
+  const sinTpl=estado&&!estado.template_configurado;
+  const chips=ANTELACIONES_REC.map(([h,label])=>`<button data-ah="${h}" style="flex:1;padding:9px 0;border-radius:10px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:12px;font-family:inherit;cursor:pointer">${label}</button>`).join('');
+  openSheet('🔔 Recordatorio de cita',`<div style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:12px;color:var(--text-3);line-height:1.5">El cliente recibirá un mensaje automático de WhatsApp con la <b style="color:var(--text)">plantilla de recordatorio</b> antes de la cita. Como va como plantilla, llega incluso si la ventana de 24h ya está cerrada (ej. cita del domingo).</div>
+    ${tiene?`<div style="font-size:12px;color:var(--gold);background:rgba(200,164,90,.1);border:1px solid rgba(200,164,90,.3);border-radius:10px;padding:9px 11px">✓ Recordatorio programado ${estado.recordatorio&&estado.recordatorio.send_at?'para '+new Date(String(estado.recordatorio.send_at).replace(' ','T')).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>`:''}
+    ${sinTpl?`<div style="font-size:12px;color:var(--red);border:1px solid var(--red);border-radius:10px;padding:9px 11px">El admin aún no configura el template de recordatorio (Configuración → Template de recordatorio de citas).</div>`:''}
+    <div style="font-size:11px;color:var(--text-3);margin-top:2px">Antelación del recordatorio:</div>
+    <div style="display:flex;gap:6px">${chips}</div>
+    ${tiene?`<button class="cop-use" id="recCancelar" style="background:var(--bg-3);color:var(--red)">Cancelar recordatorio</button>`:''}
+  </div>`);
+  document.querySelectorAll('[data-ah]').forEach(b=>b.onclick=async()=>{
+    const h=b.dataset.ah;
+    const r=await api(`/api/citas/${citaId}/recordatorio`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({antelacionHoras:Number(h)})});
+    if(r&&r.ok){ toast('Recordatorio programado 🔔'); closeSheet(); cargarCalendario(); }
+    else{
+      const msg=r&&r.error==='sin_template'?'Falta configurar el template de recordatorio':'No se pudo programar';
+      toast(msg,'err');
+      if(r&&r.error==='sin_template'&&btnEl) btnEl.style.display='none';
+    }
+  });
+  document.getElementById('recCancelar')?.addEventListener('click',async()=>{
+    const r=await api(`/api/citas/${citaId}/recordatorio`,{method:'DELETE'});
+    if(r&&r.ok){ toast('Recordatorio cancelado'); closeSheet(); cargarCalendario(); }
+    else toast('Error al cancelar','err');
+  });
 }
 
 /* ════════ Propiedades tab — catálogo REAL de proyectos y lotes ════════ */

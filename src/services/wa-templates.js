@@ -100,8 +100,8 @@ function resolveTemplateValues(templateRecord, lead, vendedor, overrides) {
     if (ov[ph] !== undefined && ov[ph] !== null && String(ov[ph]).trim() !== '') {
       values[ph] = String(ov[ph]);
     } else {
-      const catalogKey = mapping[ph];
-      values[ph] = (catalogKey && leadVars[catalogKey]) || '';
+      const catalogKey = mapping[ph] || ph; // fallback: placeholder es igual a una clave del catálogo
+      values[ph] = (catalogKey && leadVars[catalogKey]) || ov[ph] || '';
     }
   }
   if (ov.header !== undefined) values.header = ov.header;
@@ -120,7 +120,42 @@ async function sendResolvedTemplate(to, templateRecord, lead, vendedor, override
   return sendTemplate(to, templateRecord.nombre, components, templateRecord.idioma);
 }
 
+// Recordatorio de cita: arma los values finales para la plantilla con los datos del
+// LEAD (nombre, etc.) más la fecha/hora de la CITA en español legible (Colombia).
+// El texto plano resultante sirve para el registro en el chat y para canales que no
+// soportan plantillas Meta (Messenger/Instagram lo envían como mensaje normal).
+function buildCitaRecordatorioValues(templateRecord, lead, vendedor, cita) {
+  const values = resolveTemplateValues(templateRecord, lead, vendedor, {});
+  const fec = new Date(String(cita && cita.fecha).replace(' ', 'T'));
+  const valido = !isNaN(fec.getTime());
+  const fechaTxt = valido ? fec.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+  const horaTxt = valido ? fec.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '';
+  values.fecha_cita = fechaTxt;
+  values.hora_cita = horaTxt;
+  values.hora_cita_12 = valido ? fec.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
+  // Si la plantilla tiene {{1}}, {{2}}… posicionales, se completa el primero con el
+  // nombre del cliente como patrón mínimo (el remitente debe mapear el resto en Config).
+  return values;
+}
+
+function buildCitaRecordatorioComponents(templateRecord, values) {
+  return buildTemplateComponents(templateRecord, values);
+}
+
+// Texto plano del recordatorio (para registrar en el chat y para canales sin plantillas)
+function recordatorioTextoPlano(templateRecord, values) {
+  try {
+    const meta = JSON.parse(templateRecord.componentes || '[]');
+    const body = (Array.isArray(meta) ? meta : []).find(c => (c.type || '').toUpperCase() === 'BODY');
+    if (body && body.text) {
+      return String(body.text).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => String(values[k] ?? ''));
+    }
+  } catch (e) { /* cae al fallback */ }
+  return '';
+}
+
 module.exports = {
   fetchApprovedTemplatesFromMeta, syncTemplatesFromMeta, extractVariables,
   buildTemplateComponents, resolveTemplateValues, sendResolvedTemplate,
+  buildCitaRecordatorioValues, buildCitaRecordatorioComponents, recordatorioTextoPlano,
 };

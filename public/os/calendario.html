@@ -96,6 +96,12 @@
          <button type="submit" class="m-ok">Agendar</button>
        </div>
      </form>
+   </div>
+   <div class="modal-bg" id="recModal">
+     <div class="modal">
+       <h3 id="recTitulo">🔔 Recordatorio de cita</h3>
+       <div id="recBody" style="font-size:13px;color:var(--text-2);line-height:1.55"></div>
+     </div>
    </div>`;
 
   async function cargar() {
@@ -147,14 +153,19 @@
           <span class="prox-item__fecha">${f ? fmtFecha(f) : '—'}</span>
           <div class="prox-item__info">
             <div class="prox-item__t">${esc(c.titulo)}</div>
-            <div class="prox-item__s">${esc(c.customer_name || 'Sin lead')} ${c.vendedor_nombre ? '· ' + esc(c.vendedor_nombre) : ''}${c.notas ? ' · ' + esc(c.notas) : ''}</div>
+            <div class="prox-item__s">${esc(c.customer_name || 'Sin lead')} ${c.vendedor_nombre ? '· ' + esc(c.vendedor_nombre) : ''}${c.notas ? ' · ' + esc(c.notas) : ''}${c.recordatorio_send_at ? '' : ''}</div>
+            ${c.recordatorio_send_at?`<div class="prox-item__s" style="color:var(--gold)">🔔 Recordatorio programado · ${fechaLocal(c.recordatorio_send_at)?fmtFecha(fechaLocal(c.recordatorio_send_at)):''}</div>`:''}
           </div>
+          ${c.lead_id?`<button class="prox-btn oro" data-id="${c.id}" data-r="rec" title="Recordatorio WhatsApp" style="${c.recordatorio_send_at?'color:var(--gold);border-color:var(--gold-line)':''}">🔔</button>`:''}
           <button class="prox-btn" data-id="${c.id}" data-e="hecha">✓ Hecha</button>
           <button class="prox-btn rojo" data-id="${c.id}" data-e="cancelada">✕</button>
         </div>`;
       }).join('');
       cont.querySelectorAll('.prox-btn').forEach(b =>
-        b.addEventListener('click', () => cambiarEstado(Number(b.dataset.id), b.dataset.e)));
+        b.addEventListener('click', () => {
+          if (b.dataset.r) abrirRecordatorio(Number(b.dataset.id));
+          else cambiarEstado(Number(b.dataset.id), b.dataset.e);
+        }));
     }
   }
 
@@ -162,6 +173,38 @@
     const r = await api('/api/citas/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado }) });
     if (r) { toast(estado === 'hecha' ? 'Cita completada' : 'Cita cancelada', 'ok'); await cargar(); }
     else toast('Error al actualizar', 'err');
+  }
+
+  /* Recordatorio automático de cita (template de WhatsApp → llega aunque ventana 24h cerrada) */
+  const ANTELACIONES = [['1','1 hora'],['3','3 horas'],['6','6 horas'],['24','1 día'],['48','2 días']];
+  async function abrirRecordatorio(citaId) {
+    const rec = await api(`/api/citas/${citaId}/recordatorio`);
+    const tiene = rec && rec.ok && rec.programado;
+    const sinTpl = rec && rec.ok && !rec.template_configurado;
+    document.getElementById('recBody').innerHTML = `
+      <p style="margin-bottom:10px">El cliente recibe un mensaje automático con la plantilla de recordatorio ANTES de la cita. Llega aunque la ventana de 24h esté cerrada.</p>
+      ${tiene ? `<p style="color:var(--gold)">✓ Programado${rec.recordatorio && rec.recordatorio.send_at ? ' · ' + fmtFecha(fechaLocal(rec.recordatorio.send_at)) : ''}</p>` : ''}
+      ${sinTpl ? `<p style="color:var(--red)">El admin aún no configura el template de recordatorio (Configuración).</p>` : ''}
+      <p style="font-size:11px;color:var(--text-3);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.08em">Antelación:</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="recAnt">
+        ${ANTELACIONES.map(([h,label]) => `<button data-h="${h}" class="prox-btn" style="flex:1;min-width:70px;height:34px">${label}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        ${tiene ? `<button class="m-cancel" style="flex:1;height:38px" id="recCancelar">Cancelar</button>` : ''}
+        <button class="m-cancel" style="flex:1;height:38px" id="recCerrar">Cerrar</button>
+      </div>`;
+    document.getElementById('recModal').classList.add('show');
+    document.getElementById('recCerrar').onclick = () => document.getElementById('recModal').classList.remove('show');
+    document.querySelectorAll('#recAnt [data-h]').forEach(b => b.onclick = async () => {
+      const r = await api(`/api/citas/${citaId}/recordatorio`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ antelacionHoras: Number(b.dataset.h) }) });
+      if (r && r.ok) { toast('Recordatorio programado 🔔', 'ok'); document.getElementById('recModal').classList.remove('show'); await cargar(); }
+      else toast(r && r.error === 'sin_template' ? 'Falta configurar el template de recordatorio' : 'Error al programar', 'err');
+    });
+    document.getElementById('recCancelar')?.addEventListener('click', async () => {
+      const r = await api(`/api/citas/${citaId}/recordatorio`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Recordatorio cancelado', 'ok'); document.getElementById('recModal').classList.remove('show'); await cargar(); }
+      else toast('Error al cancelar', 'err');
+    });
   }
 
   /* Modal */

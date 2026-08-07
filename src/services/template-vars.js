@@ -13,6 +13,8 @@ const CATALOG = [
   { key: 'link_ubicacion', label: 'Link de ubicación del lote' },
   { key: 'link_catalogo', label: 'Link al catálogo de propiedades' },
   { key: 'empresa', label: 'Nombre de la empresa' },
+  { key: 'fecha_cita', label: 'Fecha de la cita' },
+  { key: 'hora_cita', label: 'Hora de la cita' },
 ];
 
 // Resuelve los valores reales de cada variable del catálogo a partir de un lead
@@ -34,6 +36,8 @@ function resolveLeadVariables(lead, vendedor) {
     // (sin sesión, OG tags para preview en WhatsApp) vive en /catalogo/.
     link_catalogo: `${process.env.BASE_URL || ''}/catalogo/`,
     empresa: store.getConfig('company_name') || 'Leons Group',
+    fecha_cita: '',
+    hora_cita: '',
   };
 }
 

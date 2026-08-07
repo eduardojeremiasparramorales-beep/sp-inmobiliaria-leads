@@ -470,6 +470,19 @@
         <button type="submit" class="cfg-save">Guardar template</button>
       </form>
 
+      <form class="cfg-sec" id="fRecordatorio">
+        <h3>Template de recordatorio de citas</h3>
+        <p>Cuando un asesor agenda un recordatorio en una cita, el sistema lo envía con esta plantilla de WhatsApp ANTES de la visita. Usa template para que llegue aunque la ventana de 24 horas esté cerrada (ej. cita del domingo).</p>
+        <div class="cfg-field">
+          <label>Template de WhatsApp</label>
+          <select id="recordatorio_template">
+            <option value="">Sin template (el recordatorio no se podrá agendar)</option>
+          </select>
+          <div class="cfg-hint">Crea en Meta una plantilla aprobada con variables como {{1}} (nombre), {{2}} (fecha) y {{3}} (hora), y sincronízala arriba. Luego asigna sus variables al mapeo (fecha_cita / hora_cita).</div>
+        </div>
+        <button type="submit" class="cfg-save">Guardar template</button>
+      </form>
+
       <form class="cfg-sec" id="fIntegraciones">
         <h3>Integraciones opcionales</h3>
         <p>Credenciales para llamadas (Twilio) y alertas (Slack). Solo se usan si están completas.</p>
@@ -537,6 +550,7 @@
     });
 
     const sel = document.getElementById('reengagement_template');
+    const selRec = document.getElementById('recordatorio_template');
     function poblarSelectReactivacion() {
       if (!sel) return;
       sel.innerHTML = '<option value="">Sin template (mensaje fallará si ventana cerrada)</option>';
@@ -546,6 +560,15 @@
         if (cfg.reengagement_template === t.nombre) opt.selected = true;
         sel.appendChild(opt);
       });
+      if (selRec) {
+        selRec.innerHTML = '<option value="">Sin template (el recordatorio no se podrá agendar)</option>';
+        waTemplates.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.nombre; opt.textContent = t.nombre;
+          if (cfg.recordatorio_template === t.nombre) opt.selected = true;
+          selRec.appendChild(opt);
+        });
+      }
     }
     poblarSelectReactivacion();
 
@@ -604,6 +627,14 @@
       const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reengagement_template: sel.value }) });
       btn.disabled = false;
       if (r) toast('Template de reactivación guardado', 'ok'); else toast('Error al guardar', 'err');
+    });
+
+    document.getElementById('fRecordatorio')?.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const btn = ev.target.querySelector('button'); btn.disabled = true;
+      const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recordatorio_template: selRec.value }) });
+      btn.disabled = false;
+      if (r) toast('Template de recordatorio guardado', 'ok'); else toast('Error al guardar', 'err');
     });
 
     document.getElementById('fEscalation')?.addEventListener('submit', async ev => {
