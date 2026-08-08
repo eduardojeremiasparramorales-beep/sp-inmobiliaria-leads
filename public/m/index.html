@@ -2009,6 +2009,13 @@ function initPermisos(){
 
 /* ════════ Init ════════ */
 async function init(){
+  // Skeleton inmediato en la lista de chats: sin esto, entre el primer pintado y que
+  // /api/me + /api/mis-leads respondan (dos round-trips seguidos, ver más abajo) el
+  // asesor veía la pantalla casi vacía con solo un spinner diminuto — en datos móviles
+  // lentos, varios segundos donde la app se ve "vacía" o rota antes de que aparezcan
+  // sus chats reales. skeletonCards() ya existe y se usa en otras pantallas del panel.
+  const listEl = document.getElementById('list');
+  if (listEl) listEl.innerHTML = skeletonCards(5) + '<div class="m-ptr" id="ptr"><span class="spin"></span></div>';
   // Glass-lite: en gama baja los backdrop-filter causan jank (regla en sp-os.css §19)
   try{ if(navigator.deviceMemory && navigator.deviceMemory<4) document.body.classList.add('glass-lite'); }catch(e){}
   // Auto-actualización: si hay versión OBLIGATORIA nueva, bloquea la app hasta actualizar
