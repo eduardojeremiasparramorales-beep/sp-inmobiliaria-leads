@@ -132,8 +132,8 @@
       const hoy = new Date();
       const fecha = new Date(hoy.getTime() + 86400000).toISOString().slice(0,10);
       const texto = 'Seguimiento: ' + name;
-      const r = await fetch('/api/leads/' + leadId + '/tareas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, fecha_vencimiento: fecha }) });
-      if (r.ok) SPOS.toast('Seguimiento agendado para mañana', 'ok');
+      const r = await SPOS.api('/api/leads/' + leadId + '/tareas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, fecha_vencimiento: fecha }) });
+      if (r && !r.error) SPOS.toast('Seguimiento agendado para mañana', 'ok');
       else SPOS.toast('Error al agendar', 'err');
     });
     // Wire AI suggest button

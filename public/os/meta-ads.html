@@ -1220,7 +1220,7 @@
     try {
       const form = new FormData();
       form.append('video', file, file.name);
-      const r = await fetch('/api/meta-ads/media/videos', { method: 'POST', credentials: 'include', body: form }).then(res => res.json());
+      const r = await api('/api/meta-ads/media/videos', { method: 'POST', body: form });
       if (!r || !r.ok) { toast('Error subiendo video: ' + errMsg(r), 'err'); cr.videoUploading = false; renderCreativeMedia(mediaEl); return; }
       cr.videoId = r.videoId;
       cr.videoStatus = 'Procesando…';

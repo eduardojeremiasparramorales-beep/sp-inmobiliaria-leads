@@ -4306,8 +4306,8 @@ app.get('/api/campanas-sp/auto-fill/:proyectoId', auth.requireAdmin, (req, res) 
 // team-performance/pipeline-conversion/channel-distribution/response-times/csat/
 // hourly-distribution se quitaron: 0 referencias en el frontend, nunca se consumían
 // (confirmado por grep sobre public/). lead-sources sí lo usa dashboard.html — se
-// conserva. export.csv se unificó con los otros 2 exports de leads duplicados,
-// ver /api/leads/export.csv.
+// conserva. El export de leads quedó unificado en /api/leads/export.csv (usado por
+// reportes.html); getExportCSV() de este servicio la reutiliza /api/privacidad/exportar.
 
 app.get('/api/reports/lead-sources', auth.requireAdmin, (req, res) => {
   const { from, to } = req.query;
@@ -4627,28 +4627,8 @@ app.delete('/api/vendedores/:id', auth.requireAdmin, (req, res) => {
   }
 });
 
-// ===================== EXPORTAR LEADS (CSV) =====================
-
-app.get('/api/admin/export/leads', auth.requireAdmin, (req, res) => {
-  const leads = getLeads(true);
-  const vendedores = getVendedores();
-  const vMap = {};
-  vendedores.forEach(v => { vMap[v.id] = v.nombre; });
-  const header = 'ID,Nombre,Telefono,Vendedor,Estado,Etiqueta,Mensajes,Fecha\n';
-  const rows = leads.map(l => [
-    l.id,
-    `"${(l.customer_name || '').replace(/"/g, '""')}"`,
-    l.customer_phone || '',
-    `"${(vMap[l.assigned_to_id] || 'Sin asignar').replace(/"/g, '""')}"`,
-    l.status || '',
-    l.etiqueta || '',
-    l.messages_count || 0,
-    (l.created_at || '').slice(0, 10),
-  ].join(',')).join('\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="leads-sp.csv"');
-  res.send('﻿' + header + rows);
-});
+// /api/admin/export/leads se quitó — duplicaba /api/leads/export.csv (el que sí
+// usa reportes.html) sin ningún botón propio en el frontend.
 
 // Escalation check — sistema inteligente
 // Meta Ads: recomendaciones de severidad 3 (gasto sin resultados) — las únicas lo

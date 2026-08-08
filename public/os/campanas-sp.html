@@ -412,24 +412,18 @@
       const prog = document.getElementById('wsUploadProg');
       prog.textContent = 'Analizando ' + sample.length + ' imagen(es) con IA…';
       btn.disabled = true;
-      try {
-        const r = await fetch('/api/campanas-sp/analyze-images', { method: 'POST', body: form, credentials: 'same-origin' });
-        const data = await r.json().catch(() => null);
-        if (r.ok && data && !data.error) {
-          aiResult = data;
-          if (data.nombre_sugerido && !wizardState.name) wizardState.name = data.nombre_sugerido;
-          if (data.ubicacion && !wizardState.location) wizardState.location = data.ubicacion;
-          if (data.features && data.features.length) wizardState.features = data.features;
-          if (data.precio_visible && !wizardState.price) wizardState.price = data.precio_visible;
-          if (data.area_visible && !wizardState.area) wizardState.area = data.area_visible;
-          prog.textContent = 'IA analizó las imágenes ✓';
-        } else {
-          aiResult = null;
-          prog.textContent = 'Sin análisis de IA: ' + ((data && data.error) || 'no se pudo analizar') + ' — puedes seguir manualmente';
-        }
-      } catch (e) {
+      const data = await SPOS.api('/api/campanas-sp/analyze-images', { method: 'POST', body: form });
+      if (data && !data.error) {
+        aiResult = data;
+        if (data.nombre_sugerido && !wizardState.name) wizardState.name = data.nombre_sugerido;
+        if (data.ubicacion && !wizardState.location) wizardState.location = data.ubicacion;
+        if (data.features && data.features.length) wizardState.features = data.features;
+        if (data.precio_visible && !wizardState.price) wizardState.price = data.precio_visible;
+        if (data.area_visible && !wizardState.area) wizardState.area = data.area_visible;
+        prog.textContent = 'IA analizó las imágenes ✓';
+      } else {
         aiResult = null;
-        prog.textContent = 'Sin análisis de IA (error de conexión) — puedes seguir manualmente';
+        prog.textContent = 'Sin análisis de IA: ' + ((data && data.error) || 'no se pudo analizar') + ' — puedes seguir manualmente';
       }
       btn.disabled = !(wizardState.files && wizardState.files.length);
     }
@@ -552,16 +546,11 @@
   async function uploadProjectImages(projectId) {
     const form = new FormData();
     for (const f of wizardState.files) form.append('images', f);
-    try {
-      const r = await fetch('/api/campanas-sp/projects/' + projectId + '/upload-images', { method: 'POST', body: form, credentials: 'same-origin' });
-      const data = await r.json().catch(() => null);
-      if (r.ok && data && data.ok) {
-        toast(data.count + ' imagen(es) subidas al proyecto', 'ok');
-      } else {
-        toast('No se pudieron subir las imágenes: ' + ((data && (data.detalle || data.error)) || 'error desconocido'), 'err');
-      }
-    } catch (e) {
-      toast('Error de conexión subiendo imágenes', 'err');
+    const data = await SPOS.api('/api/campanas-sp/projects/' + projectId + '/upload-images', { method: 'POST', body: form });
+    if (data && data.ok) {
+      toast(data.count + ' imagen(es) subidas al proyecto', 'ok');
+    } else {
+      toast('No se pudieron subir las imágenes: ' + ((data && (data.detalle || data.error)) || 'error desconocido'), 'err');
     }
   }
 

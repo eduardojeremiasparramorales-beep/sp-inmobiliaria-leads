@@ -568,23 +568,16 @@
   /* ── Helper para sugerir respuesta desde inbox/crm ── */
   async function sugerirRespuesta(leadId, customerName) {
     if (!leadId) { toast('No hay lead seleccionado', 'err'); return []; }
-    try {
-      const res = await fetch('/api/nlp/suggest-response', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ leadId, customerName: customerName || '' })
-      });
-      const data = await res.json();
-      if (!data || !data.suggestions || !data.suggestions.length) {
-        toast('No se pudieron generar sugerencias. ¿API Key configurada?', 'err');
-        return [];
-      }
-      return data.suggestions;
-    } catch (e) {
-      toast('Error al conectar con IA', 'err');
+    const data = await api('/api/nlp/suggest-response', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId, customerName: customerName || '' })
+    });
+    if (!data || !data.suggestions || !data.suggestions.length) {
+      toast('No se pudieron generar sugerencias. ¿API Key configurada?', 'err');
       return [];
     }
+    return data.suggestions;
   }
 
   function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

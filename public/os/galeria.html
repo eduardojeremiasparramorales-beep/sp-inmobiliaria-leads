@@ -200,8 +200,7 @@
       }
       const fd = new FormData();
       fd.append('file', file);
-      const r = await fetch('/api/galeria/upload', { method: 'POST', body: fd, credentials: 'include' });
-      const j = await r.json();
+      const j = await SPOS.api('/api/galeria/upload', { method: 'POST', body: fd });
       if (j && j.ok) {
         uploadedFilename = j.filename;
         dropName.textContent = j.filename;
