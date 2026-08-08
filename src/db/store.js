@@ -1,5 +1,6 @@
 const adapter = require('./adapter');
 const { createNewTables } = require('./schema');
+const { parseLocalDbTime } = require('../utils/tiempo');
 
 // Obtener funciones del adapter
 let all = (sql, params) => adapter.all(sql, params);
@@ -611,8 +612,11 @@ function saveLead(customerPhone, customerName, messageBody) {
   }
 
   // No existe ningún lead con este teléfono → insertar nuevo
+  // created_at explícito por la misma razón que en saveMessage()/saveTeamMessage(): no
+  // confiar en el DEFAULT de la columna si la tabla en producción es más vieja que el
+  // esquema actual (CREATE TABLE IF NOT EXISTS nunca lo actualiza retroactivamente).
   try {
-    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct) VALUES (?, ?, ?, ?, 1, datetime(\'now\',\'localtime\'), \'sin_clasificar\', 5)', [phone, customerName || 'Cliente', messageBody, messageBody]);
+    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct, created_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\',\'localtime\'), \'sin_clasificar\', 5, datetime(\'now\',\'localtime\'))', [phone, customerName || 'Cliente', messageBody, messageBody]);
   } catch (e) {
     // Condición de carrera: otro webhook concurrente insertó/reabrió este teléfono entre
     // el SELECT y el INSERT (o el UNIQUE INDEX lo bloqueó). Se trata como actualización
@@ -1047,7 +1051,8 @@ function getPresenceMap() {
   const map = {};
   const now = Date.now();
   for (const r of rows) {
-    const hb = r.last_heartbeat ? new Date(String(r.last_heartbeat).replace(' ', 'T') + 'Z').getTime() : 0;
+    const hbDate = r.last_heartbeat ? parseLocalDbTime(r.last_heartbeat) : null;
+    const hb = hbDate ? hbDate.getTime() : 0;
     map[r.vendedor_id] = { last_heartbeat: r.last_heartbeat, online: (now - hb) < 60000 };
   }
   return map;
@@ -1117,7 +1122,8 @@ function updateCustomerMessageTimestamp(leadId) {
 function isWindowOpen(leadId) {
   const lead = one('SELECT last_customer_message_at FROM leads WHERE id = ?', [leadId]);
   if (!lead || !lead.last_customer_message_at) return false;
-  const lastMsg = new Date(lead.last_customer_message_at + 'Z');
+  const lastMsg = parseLocalDbTime(lead.last_customer_message_at);
+  if (!lastMsg) return false;
   const now = new Date();
   const hoursDiff = (now - lastMsg) / (1000 * 60 * 60);
   return hoursDiff < 24;
@@ -1126,7 +1132,8 @@ function isWindowOpen(leadId) {
 function getWindowExpiresAt(leadId) {
   const lead = one('SELECT last_customer_message_at FROM leads WHERE id = ?', [leadId]);
   if (!lead || !lead.last_customer_message_at) return null;
-  const lastMsg = new Date(lead.last_customer_message_at + 'Z');
+  const lastMsg = parseLocalDbTime(lead.last_customer_message_at);
+  if (!lastMsg) return null;
   return new Date(lastMsg.getTime() + 24 * 60 * 60 * 1000);
 }
 

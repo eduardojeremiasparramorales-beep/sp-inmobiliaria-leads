@@ -4,6 +4,11 @@
 const store = require('../db/store');
 const { sendMessageSmart } = require('./whatsapp');
 const events = require('./events');
+// OJO: a diferencia de la mayoría de columnas DATETIME (guardadas con
+// datetime('now','localtime')), cadencia_inicio/cadencia_next_at se guardan con
+// .toISOString() en enrollCadencia() (store.js) — esas SÍ están en UTC real, así que
+// el `+ 'Z'' de la línea de abajo es correcto aquí y no debe "corregirse" al patrón
+// parseLocalDbTime() usado en el resto del código. Ver src/utils/tiempo.js.
 const { notify } = require('./notify');
 const insignias = require('./insignias');
 

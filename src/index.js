@@ -7,6 +7,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const store = require('./db/store');
+const { parseLocalDbTime } = require('./utils/tiempo');
 const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, getVendedoresActivos, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
@@ -4635,7 +4636,8 @@ async function checkEscalation() {
     for (const lead of leadsSinRespuesta) {
       // Determinar tipo de lead
       const esNuevo = !lead.first_response_at;
-      const creadoEn = new Date(lead.created_at.replace(' ', 'T') + 'Z').getTime();
+      const creadoEnDate = parseLocalDbTime(lead.created_at);
+      const creadoEn = creadoEnDate ? creadoEnDate.getTime() : ahora;
       const minutosDesdeCreacion = (ahora - creadoEn) / 60000;
       const horasDesdeCreacion = minutosDesdeCreacion / 60;
       const esAsentado = horasDesdeCreacion >= ESC_ASENTADO_HORAS;

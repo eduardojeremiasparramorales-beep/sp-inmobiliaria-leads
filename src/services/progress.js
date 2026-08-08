@@ -1,3 +1,5 @@
+const { parseLocalDbTime } = require('../utils/tiempo');
+
 const PROGRESS_MAP = { sin_clasificar: 5, interesado: 30, negociacion: 60, cita: 85, vendido: 100, no_interesado: 5 };
 
 const KEYWORD_RULES = [
@@ -95,8 +97,9 @@ function computeLeadScore(lead) {
   // Volumen de conversación: más ida y vuelta = más interés real
   score += Math.min((lead.messages_count || 0) * 2, 20);
   // Recencia: un lead que escribió hace una hora vale mucho más que uno frío de semanas
-  if (lead.last_customer_message_at) {
-    const horas = (Date.now() - new Date(String(lead.last_customer_message_at).replace(' ', 'T') + 'Z').getTime()) / 3600000;
+  const ultimoMsg = lead.last_customer_message_at ? parseLocalDbTime(lead.last_customer_message_at) : null;
+  if (ultimoMsg) {
+    const horas = (Date.now() - ultimoMsg.getTime()) / 3600000;
     if (horas < 1) score += 15;
     else if (horas < 24) score += 10;
     else if (horas < 72) score += 5;
