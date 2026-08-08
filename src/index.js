@@ -907,7 +907,8 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 
 // ===================== AUTENTICACIÓN =====================
 
-app.post('/api/login', loginLimiter, (req, res) => {
+app.post('/api/login', (req, res, next) => { console.log('[LOGIN-DEBUG] >>> Ruta alcanzada, body:', JSON.stringify(req.body).substring(0, 200)); next(); }, loginLimiter, (req, res) => {
+  console.log('[LOGIN-DEBUG] >>> Handler alcanzado');
   try {
   const { email, password, telefono, pin } = req.body || {};
   const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
