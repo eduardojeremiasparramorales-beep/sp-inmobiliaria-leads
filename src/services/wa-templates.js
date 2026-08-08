@@ -52,10 +52,27 @@ async function syncTemplatesFromMeta() {
   return { synced, total: remote.length };
 }
 
+// Una plantilla usa parámetros CON NOMBRE ({{nombre_variable}}) o POSICIONALES ({{1}},
+// {{2}}...) — nunca mezcla los dos estilos en el mismo componente. Meta lo señala en el
+// propio componente guardado: trae `example.body_text_named_params` (o
+// `header_text_named_params`) solo cuando es con nombre. La Cloud API exige un shape de
+// parámetro distinto según el caso — mandar el que no toca lo rechaza en silencio desde
+// el punto de vista del CRM (responde 400, pero si no se lee `detalle` se ve como que
+// "no pasó nada"), que es justo lo que le pasaba a "reengagement" con su {{name}}.
+function isNamedParams(component) {
+  const ex = component && component.example;
+  return !!(ex && (ex.body_text_named_params || ex.header_text_named_params));
+}
+
+function buildTextParam(name, value, named) {
+  const text = String(value ?? '');
+  return named ? { type: 'text', parameter_name: name, text } : { type: 'text', text };
+}
+
 // Arma los `components` reales de la Graph API a partir de la plantilla guardada y los
 // valores ya resueltos por placeholder (ver resolveTemplateValues). Soporta header de
-// texto o media, body con variables, y un botón URL con sufijo dinámico (el patrón más
-// común en recordatorios de cita / catálogo).
+// texto o media, body con variables (posicionales o con nombre), y un botón URL con
+// sufijo dinámico (el patrón más común en recordatorios de cita / catálogo).
 function buildTemplateComponents(templateRecord, resolvedValues) {
   const meta = JSON.parse(templateRecord.componentes || '[]');
   const values = resolvedValues || {};
@@ -64,7 +81,10 @@ function buildTemplateComponents(templateRecord, resolvedValues) {
   for (const c of meta) {
     if (c.type === 'HEADER') {
       if (c.format === 'TEXT' && /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(c.text || '')) {
-        out.push({ type: 'header', parameters: [{ type: 'text', text: String(values.header || '') }] });
+        const names = extractVariables([{ type: 'BODY', text: c.text }]);
+        const named = isNamedParams(c);
+        const name = named ? names[0] : undefined;
+        out.push({ type: 'header', parameters: [buildTextParam(name, values.header, named)] });
       } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(c.format) && values.headerMediaUrl) {
         const key = c.format.toLowerCase();
         out.push({ type: 'header', parameters: [{ type: key, [key]: { link: values.headerMediaUrl } }] });
@@ -72,7 +92,8 @@ function buildTemplateComponents(templateRecord, resolvedValues) {
     } else if (c.type === 'BODY') {
       const names = extractVariables([c]);
       if (names.length) {
-        out.push({ type: 'body', parameters: names.map(name => ({ type: 'text', text: String(values[name] ?? '') })) });
+        const named = isNamedParams(c);
+        out.push({ type: 'body', parameters: names.map(name => buildTextParam(name, values[name], named)) });
       }
     } else if (c.type === 'BUTTONS' && values.buttonUrlSuffix) {
       const idx = (c.buttons || []).findIndex(b => b.type === 'URL' && /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(b.url || ''));

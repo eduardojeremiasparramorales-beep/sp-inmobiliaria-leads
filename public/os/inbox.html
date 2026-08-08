@@ -836,8 +836,12 @@
     if (!conv.lead_id) { toast('Esta conversación aún no tiene lead vinculado', 'err'); return; }
     if (!confirm(`¿Enviar plantilla "${nombre}"?`)) return;
     const r = await api('/api/leads/' + conv.lead_id + '/enviar-template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId }) });
-    if (r !== null) { toast('Plantilla enviada', 'ok'); await recargarMensajes(id); }
-    else toast('Error al enviar plantilla', 'err');
+    // api() devuelve el body también en error HTTP (no null) — antes esto se leía como
+    // éxito con cualquier respuesta que no fuera una caída de red, así que un 400/502
+    // real de Meta mostraba igual "Plantilla enviada" y el asesor nunca se enteraba de
+    // que no había llegado nada.
+    if (r && r.ok) { toast('Plantilla enviada', 'ok'); await recargarMensajes(id); }
+    else toast('Error al enviar plantilla' + (r && (r.detalle || r.error) ? ': ' + (r.detalle || r.error) : ''), 'err');
     const p = document.getElementById('reactivarPanel'); if (p) p.style.display = 'none';
   };
 
