@@ -104,6 +104,10 @@ function assignLead(customerPhone, customerName, messageBody) {
   const vendedor = activos[0];
   assignLeadToVendedor(result.leadId, vendedor);
   saveMessage(result.leadId, customerPhone, vendedor.telefono, messageBody, 'incoming');
+  // conversation:assigned solo se emitía desde el router multicanal — WhatsApp,
+  // el canal dominante, nunca lo disparaba (mismo hueco que ya se cerró para
+  // message:incoming/outgoing más arriba, ver triggerWorkflow).
+  triggerWorkflow('conversation:assigned', result.leadId, messageBody);
 
   return { leadId: result.leadId, vendedor, isNew: result.isNew };
 }
@@ -184,6 +188,7 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
     const vendedorAsignado = a[0];
     try {
       assignLeadToVendedor(r.leadId, vendedorAsignado);
+      triggerWorkflow('conversation:assigned', r.leadId, messageBody);
     } catch (e) {
       console.error('Error asignando lead:', e.message);
     }
@@ -305,4 +310,4 @@ function getLeads() {
   return require('../db/store').getLeads();
 }
 
-module.exports = { assignLead, routeReply, routeIncomingMedia, routeIncomingLocation, getLeadCount, getLeads, pickVendedorInteligente };
+module.exports = { assignLead, routeReply, routeIncomingMedia, routeIncomingLocation, getLeadCount, getLeads, pickVendedorInteligente, triggerWorkflow };

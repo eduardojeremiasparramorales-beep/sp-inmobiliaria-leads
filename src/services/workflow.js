@@ -1,13 +1,62 @@
-// Motor de automatización IF/THEN
+// Motor de automatización — ejecuta el grafo {nodes,edges} que arma el editor visual.
+// Compatible con los workflows migrados desde el formato lineal viejo (ver
+// store.migrateWorkflowsToGraph): el grafo migrado produce exactamente el mismo
+// comportamiento (trigger → condiciones AND → acciones en cadena) que el motor v1.
 const axios = require('axios');
+const dns = require('dns').promises;
 const store = require('../db/store');
+const adapter = require('../db/adapter');
 const { getAdapter } = require('../channels');
+
+const MAX_NODES_PER_RUN = 20; // corta cualquier ejecución que se salga de control
+const LOOP_GUARD_TTL_MS = 60 * 1000; // mismo workflow + misma conversación no re-dispara antes de esto
+
+// ─── Seguridad del nodo webhook (antes: axios.post sin allowlist, sin timeout, sin
+// bloqueo de IPs privadas — un admin, o cualquiera con acceso a crear workflows,
+// podía mandar datos de conversaciones a cualquier IP, incluida la metadata interna
+// de la VM) ──────────────────────────────────────────────────────────────────────
+function esIpPrivada(ip) {
+  if (!ip) return true;
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  if (ip === '::1' || ip.toLowerCase().startsWith('fe80') || ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return true;
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some(isNaN)) return ip.includes(':') ? false : true;
+  return p[0] === 127 || p[0] === 10 || p[0] === 0
+    || (p[0] === 172 && p[1] >= 16 && p[1] <= 31)
+    || (p[0] === 192 && p[1] === 168)
+    || (p[0] === 169 && p[1] === 254)
+    || (p[0] === 100 && p[1] >= 64 && p[1] <= 127);
+}
+
+async function isWebhookUrlAllowed(urlStr) {
+  let u;
+  try { u = new URL(urlStr); } catch (e) { return { ok: false, reason: 'url_invalida' }; }
+  if (u.protocol !== 'https:') return { ok: false, reason: 'solo_https' };
+  const allowlistRaw = store.getConfig('workflow_webhook_allowlist') || '';
+  const allowlist = allowlistRaw.split(',').map(s => s.trim()).filter(Boolean);
+  if (allowlist.length && !allowlist.some(domain => u.hostname === domain || u.hostname.endsWith('.' + domain))) {
+    return { ok: false, reason: 'dominio_no_permitido' };
+  }
+  try {
+    const addrs = await dns.resolve4(u.hostname).catch(() => dns.resolve6(u.hostname));
+    for (const ip of (addrs || [])) {
+      if (esIpPrivada(ip)) return { ok: false, reason: 'ip_privada' };
+    }
+  } catch (e) { /* si no resuelve, axios fallará solo después — no bloquear por esto */ }
+  return { ok: true };
+}
 
 class WorkflowEngine {
   constructor() {
-    this.rules = [];
+    // Vid.a: caché de reglas POR EMPRESA — antes era un array único reusado sin
+    // importar qué tenant disparó el evento; con más de un negocio, las reglas del
+    // último que tocara el CRUD se evaluaban para los mensajes de todos los demás.
+    this.rulesByTenant = new Map();
     this.router = null;
     this.customActions = {};
+    this._loopGuard = new Map(); // "ruleId:convId" -> timestamp del último disparo
+    this._firedToday = new Set(); // "schedule:ruleId:YYYY-MM-DD" — dedupe de triggers diarios
+    this._today = null;
   }
 
   init(routerInstance) {
@@ -15,19 +64,45 @@ class WorkflowEngine {
     this.loadRules();
   }
 
+  currentEmpresaId() {
+    const ctx = adapter.tenantContext.getStore();
+    return (ctx && ctx.empresaId != null) ? Number(ctx.empresaId) : adapter.DEFAULT_EMPRESA_ID;
+  }
+
   loadRules() {
+    const empresaId = this.currentEmpresaId();
     try {
-      this.rules = store.getAllWorkflows({ activo: true });
+      this.rulesByTenant.set(empresaId, store.getAllWorkflows({ activo: true }));
     } catch (e) {
       console.error('WorkflowEngine.loadRules error:', e.message);
-      this.rules = [];
+      this.rulesByTenant.set(empresaId, []);
     }
+  }
+
+  getRules() {
+    const empresaId = this.currentEmpresaId();
+    if (!this.rulesByTenant.has(empresaId)) this.loadRules();
+    return this.rulesByTenant.get(empresaId) || [];
   }
 
   registerAction(type, handler) {
     this.customActions[type] = handler;
   }
 
+  // ─── Anti-loop ────────────────────────────────────────────
+  recentlyRan(key, ttlMs) {
+    const last = this._loopGuard.get(key);
+    return !!(last && (Date.now() - last) < (ttlMs || LOOP_GUARD_TTL_MS));
+  }
+  markRan(key) {
+    this._loopGuard.set(key, Date.now());
+    if (this._loopGuard.size > 1000) {
+      const oldest = this._loopGuard.keys().next().value;
+      this._loopGuard.delete(oldest);
+    }
+  }
+
+  // ─── Condiciones ──────────────────────────────────────────
   getFieldValue(field, context) {
     const { conversation, customer } = context;
     switch (field) {
@@ -45,27 +120,22 @@ class WorkflowEngine {
     const { field, operator, value } = condition;
     const actual = this.getFieldValue(field, context);
     const actualStr = actual == null ? '' : String(actual);
-
     switch (operator) {
-      case 'contains':
-        return actualStr.toLowerCase().includes(String(value).toLowerCase());
-      case 'equals':
-        return actualStr === String(value);
-      case 'not_equals':
-        return actualStr !== String(value);
-      case 'in':
-        return Array.isArray(value) && value.map(String).includes(actualStr);
-      case 'regex':
-        try { return new RegExp(value, 'i').test(actualStr); } catch (e) { return false; }
-      default:
-        return false;
+      case 'contains': return actualStr.toLowerCase().includes(String(value).toLowerCase());
+      case 'equals': return actualStr === String(value);
+      case 'not_equals': return actualStr !== String(value);
+      case 'in': return Array.isArray(value) && value.map(String).includes(actualStr);
+      case 'regex': try { return new RegExp(value, 'i').test(actualStr); } catch (e) { return false; }
+      default: return false;
     }
   }
 
-  async executeAction(action, context) {
+  // ─── Acciones ─────────────────────────────────────────────
+  async executeAction(action, context, opts = {}) {
     const { conversation } = context;
     const type = action.type;
     const params = action.params || {};
+    if (opts.dry) return { ok: true, type, dry: true };
 
     try {
       switch (type) {
@@ -76,13 +146,12 @@ class WorkflowEngine {
           if (this.router) await this.router.assignVendedor(conversation.id);
           break;
         case 'send_template': {
-          const adapter = getAdapter(conversation.channel);
-          if (adapter && adapter.sendTemplate) {
+          const chAdapter = getAdapter(conversation.channel);
+          if (chAdapter && chAdapter.sendTemplate) {
             const customer = store.getCustomerById(conversation.customer_id);
-            const channels = store.getCustomerChannels(conversation.customer_id)
-              .filter(c => c.channel === conversation.channel);
+            const channels = store.getCustomerChannels(conversation.customer_id).filter(c => c.channel === conversation.channel);
             const to = channels.length > 0 ? channels[0].channel_user_id : (customer ? customer.phone : null);
-            await adapter.sendTemplate(to, params.name, params.params || null);
+            await chAdapter.sendTemplate(to, params.name, params.params || null);
           }
           break;
         }
@@ -99,17 +168,23 @@ class WorkflowEngine {
           } catch (e) { /* notify opcional */ }
           break;
         }
-        case 'webhook':
-          if (params.url) await axios.post(params.url, { conversation, ...params.payload });
+        case 'webhook': {
+          if (!params.url) break;
+          const allowed = await isWebhookUrlAllowed(params.url);
+          if (!allowed.ok) throw new Error(`Webhook bloqueado (${allowed.reason}): ${params.url}`);
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          try {
+            await axios.post(params.url, { conversation, ...params.payload }, { signal: controller.signal, maxRedirects: 0, timeout: 10000 });
+          } finally { clearTimeout(timer); }
           break;
+        }
         default:
           if (this.customActions[type]) await this.customActions[type](action, context);
           break;
       }
       return { ok: true, type };
     } catch (e) {
-      // Fallo de envío (p.ej. ventana de 24h cerrada en Messenger/IG): avisar en vez
-      // de fallar en silencio — el vendedor asignado y los admins ven qué pasó.
       if (type === 'send_template' || type === 'send_message') {
         try {
           const { notify } = require('./notify');
@@ -125,28 +200,206 @@ class WorkflowEngine {
     }
   }
 
-  async evaluate(triggerEvent, context) {
-    const matching = this.rules.filter(r => r.trigger_event === triggerEvent);
-    if (matching.length === 0) return;
+  // ─── Duración de un nodo delay: {unit:'minutes'|'hours'|'days', amount:N} ──
+  delayToMs(params) {
+    const amount = Number(params && params.amount) || 0;
+    const unit = (params && params.unit) || 'minutes';
+    const mult = { minutes: 60000, hours: 3600000, days: 86400000 }[unit] || 60000;
+    return Math.max(amount, 1) * mult;
+  }
 
-    for (const rule of matching) {
-      let conditions = [];
-      let actions = [];
-      try { conditions = JSON.parse(rule.conditions || '[]'); } catch (e) { conditions = []; }
-      try { actions = JSON.parse(rule.actions || '[]'); } catch (e) { actions = []; }
+  // ─── Ejecutor de grafo: desde startNodeId, sigue edges hasta agotar el camino,
+  // cortar en un delay, o llegar al tope de nodos. Con opts.dry=true no ejecuta
+  // efectos reales (usado por el dry-run del botón "Probar"). ──────────────────
+  async runGraph(rule, graph, context, startNodeId, opts = {}) {
+    const nodesById = {}; (graph.nodes || []).forEach(n => { nodesById[n.id] = n; });
+    const edgesFrom = {};
+    (graph.edges || []).forEach(e => { (edgesFrom[e.from] = edgesFrom[e.from] || []).push(e); });
 
-      const cumpleTodas = conditions.every(c => this.evaluateCondition(c, context));
-      if (!cumpleTodas) continue;
+    const trace = [];
+    let currentId = startNodeId;
+    let steps = 0;
 
-      const results = [];
-      for (const action of actions) {
-        const r = await this.executeAction(action, context);
-        results.push(r);
+    while (currentId && steps < MAX_NODES_PER_RUN) {
+      steps++;
+      const node = nodesById[currentId];
+      if (!node) break;
+
+      if (node.type === 'trigger') {
+        trace.push({ nodeId: currentId, type: 'trigger', subtype: node.subtype, ok: true });
+        const next = (edgesFrom[currentId] || [])[0];
+        currentId = next ? next.to : null;
+        continue;
       }
 
+      if (node.type === 'condition') {
+        const logic = node.params && node.params.logic === 'or' ? 'or' : 'and';
+        const conds = (node.params && node.params.conditions) || [];
+        const result = conds.length === 0 ? true : (logic === 'or'
+          ? conds.some(c => this.evaluateCondition(c, context))
+          : conds.every(c => this.evaluateCondition(c, context)));
+        trace.push({ nodeId: currentId, type: 'condition', ok: true, result, branch: result ? 'true' : 'false' });
+        const branch = result ? 'true' : 'false';
+        const next = (edgesFrom[currentId] || []).find(e => e.branch === branch);
+        currentId = next ? next.to : null;
+        continue;
+      }
+
+      if (node.type === 'delay') {
+        const next = (edgesFrom[currentId] || [])[0];
+        if (next && !opts.dry) {
+          const ms = this.delayToMs(node.params);
+          const runAt = new Date(Date.now() + ms).toISOString().replace('T', ' ').slice(0, 19);
+          store.createWorkflowJob(rule.id, next.to, {
+            conversationId: context.conversation ? context.conversation.id : null,
+          }, runAt);
+          trace.push({ nodeId: currentId, type: 'delay', ok: true, scheduledFor: runAt, nextNode: next.to });
+        } else {
+          trace.push({ nodeId: currentId, type: 'delay', ok: true, dry: !!opts.dry, wouldSchedule: !!next });
+        }
+        currentId = null; // corta acá — se reanuda por el tick de jobs, o simulado en dry-run
+        break;
+      }
+
+      if (node.type === 'action') {
+        const result = await this.executeAction({ type: node.subtype, params: node.params }, context, opts);
+        trace.push({ nodeId: currentId, type: 'action', subtype: node.subtype, ok: result.ok, error: result.error, dry: !!opts.dry });
+        const next = (edgesFrom[currentId] || [])[0];
+        currentId = next ? next.to : null;
+        continue;
+      }
+
+      trace.push({ nodeId: currentId, type: node.type, ok: false, error: 'tipo_de_nodo_desconocido' });
+      break;
+    }
+
+    if (steps >= MAX_NODES_PER_RUN) trace.push({ ok: false, error: `Se alcanzó el máximo de ${MAX_NODES_PER_RUN} nodos por ejecución` });
+    return trace;
+  }
+
+  parseGraph(rule) {
+    if (!rule || !rule.graph) return null;
+    try { const g = JSON.parse(rule.graph); return (g && g.nodes && g.nodes.length) ? g : null; }
+    catch (e) { return null; }
+  }
+
+  // ─── Evento en vivo (message:incoming, conversation:assigned, etc.) ────────
+  async evaluate(triggerEvent, context) {
+    const rules = this.getRules().filter(r => r.trigger_event === triggerEvent);
+    if (!rules.length) return;
+
+    for (const rule of rules) {
+      const graph = this.parseGraph(rule);
+      if (!graph) continue; // sin grafo válido — nada que correr
+
+      const convId = context.conversation ? context.conversation.id : null;
+      const loopKey = `${rule.id}:${convId || 'global'}`;
+      if (this.recentlyRan(loopKey)) continue;
+      this.markRan(loopKey);
+
+      const triggerNode = graph.nodes.find(n => n.type === 'trigger');
+      if (!triggerNode) continue;
+
+      const trace = await this.runGraph(rule, graph, context, triggerNode.id);
+      try { store.addWorkflowLog(rule.id, convId, triggerEvent, { trace }); } catch (e) { /* noop */ }
+    }
+  }
+
+  // ─── Dry-run: mismo motor, sin efectos reales — para el botón "Probar" del editor.
+  async dryRun(rule, context) {
+    const graph = this.parseGraph(rule);
+    if (!graph) return { ok: false, error: 'El flujo no tiene un grafo válido' };
+    const triggerNode = graph.nodes.find(n => n.type === 'trigger');
+    if (!triggerNode) return { ok: false, error: 'El flujo no tiene nodo de disparador' };
+    const trace = await this.runGraph(rule, graph, context, triggerNode.id, { dry: true });
+    return { ok: true, trace };
+  }
+
+  // ─── Tick periódico (cada 30s, llamado desde el scheduler central) ─────────
+  // 1) reanuda los workflow_jobs (delays) que ya vencieron
+  // 2) dispara triggers 'schedule' (una vez al día, a la hora configurada)
+  // 3) dispara triggers 'lead:inactive' (conversación sin mensajes del cliente hace X horas)
+  async tick() {
+    await this.processDueJobs();
+    this.checkScheduledTriggers();
+    await this.checkInactiveTriggers();
+  }
+
+  async processDueJobs() {
+    let jobs = [];
+    try { jobs = store.getDueWorkflowJobs(); } catch (e) { return; }
+    for (const job of jobs) {
+      store.markWorkflowJobDone(job.id); // primero marcar — si algo falla abajo, no se reprocesa en bucle
       try {
-        store.addWorkflowLog(rule.id, context.conversation ? context.conversation.id : null, triggerEvent, { results });
-      } catch (e) { /* noop */ }
+        const rule = store.getWorkflowById(job.workflow_id);
+        if (!rule || !rule.activo) continue;
+        const graph = this.parseGraph(rule);
+        if (!graph) continue;
+        let saved = {};
+        try { saved = JSON.parse(job.context || '{}'); } catch (e) {}
+        const context = {};
+        if (saved.conversationId) {
+          context.conversation = store.getConversationById(saved.conversationId);
+          if (context.conversation && context.conversation.customer_id) {
+            context.customer = store.getCustomerById(context.conversation.customer_id);
+          }
+        }
+        const trace = await this.runGraph(rule, graph, context, job.node_id);
+        try { store.addWorkflowLog(rule.id, context.conversation ? context.conversation.id : null, 'delay:resume', { trace }); } catch (e) {}
+      } catch (e) {
+        console.error('[WORKFLOW] processDueJobs error:', e.message);
+      }
+    }
+  }
+
+  checkScheduledTriggers() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this._today !== today) { this._today = today; this._firedToday.clear(); }
+    const hhmm = new Date().toTimeString().slice(0, 5);
+
+    const rules = this.getRules().filter(r => r.trigger_event === 'schedule');
+    for (const rule of rules) {
+      const graph = this.parseGraph(rule);
+      if (!graph) continue;
+      const trigger = graph.nodes.find(n => n.type === 'trigger');
+      const at = trigger && trigger.params && trigger.params.at;
+      if (!at || at !== hhmm) continue;
+      const fireKey = `schedule:${rule.id}:${today}`;
+      if (this._firedToday.has(fireKey)) continue;
+      this._firedToday.add(fireKey);
+      this.runGraph(rule, graph, {}, trigger.id).then(trace => {
+        try { store.addWorkflowLog(rule.id, null, 'schedule', { trace }); } catch (e) {}
+      });
+    }
+  }
+
+  async checkInactiveTriggers() {
+    const rules = this.getRules().filter(r => r.trigger_event === 'lead:inactive');
+    if (!rules.length) return;
+    for (const rule of rules) {
+      const graph = this.parseGraph(rule);
+      if (!graph) continue;
+      const trigger = graph.nodes.find(n => n.type === 'trigger');
+      const hours = (trigger && trigger.params && Number(trigger.params.hours)) || 24;
+      let convs = [];
+      try {
+        convs = adapter.all(
+          `SELECT id, lead_id, customer_id FROM conversations
+           WHERE status != 'cerrado' AND last_customer_message_at IS NOT NULL
+           AND last_customer_message_at <= datetime('now','localtime',?)`,
+          [`-${hours} hours`]
+        );
+      } catch (e) { continue; }
+      for (const c of convs) {
+        const key = `inactive:${rule.id}:${c.id}`;
+        if (this.recentlyRan(key, hours * 3600 * 1000)) continue;
+        this.markRan(key);
+        const conversation = store.getConversationById(c.id);
+        const customer = c.customer_id ? store.getCustomerById(c.customer_id) : null;
+        this.runGraph(rule, graph, { conversation, customer }, trigger.id).then(trace => {
+          try { store.addWorkflowLog(rule.id, c.id, 'lead:inactive', { trace }); } catch (e) {}
+        });
+      }
     }
   }
 }

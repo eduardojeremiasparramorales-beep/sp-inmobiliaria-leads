@@ -447,6 +447,26 @@ function createSchema() {
   ensureColumn('campanas_sp_projects', 'proyecto_id', 'INTEGER'); // vínculo con proyectos reales del CRM (F2)
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
 
+  // Automatizaciones — editor visual (nodos + aristas). trigger_event/conditions/
+  // actions (el formato lineal viejo) se conservan intactos; `graph` es la fuente de
+  // verdad para el motor v2 una vez migrado — ver migrateWorkflowsToGraph().
+  ensureColumn('workflows', 'graph', 'TEXT');
+  ensureColumn('workflows', 'updated_at', 'DATETIME');
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS workflow_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_id INTEGER NOT NULL,
+      node_id TEXT NOT NULL,
+      context TEXT NOT NULL DEFAULT '{}',
+      run_at DATETIME NOT NULL,
+      estado TEXT NOT NULL DEFAULT 'pending',
+      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id)
+    )
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_workflow_jobs_due ON workflow_jobs(estado, run_at)`);
+  migrateWorkflowsToGraph();
+
   // Puente legacy → multicanal: cada conversación puede apuntar a su lead
   ensureColumn('conversations', 'lead_id', 'INTEGER');
   execSQL(`CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id)`);
@@ -2753,7 +2773,45 @@ unified.push({
   return unified;
 }
 
-// --- Workflows (automatización IF/THEN) ---
+// Convierte el formato lineal viejo ({trigger_event, conditions[], actions[]}) al
+// grafo {nodes,edges} que usa el editor visual y el motor v2 — trigger → (if, si hay
+// condiciones) → acciones en cadena. Solo toca filas sin graph todavía, así que
+// llamarla en cada arranque es seguro y barato (nada que migrar de la segunda vez
+// en adelante). Sin esto, los flujos creados antes del editor visual quedarían
+// invisibles/rotos en el canvas nuevo.
+function migrateWorkflowsToGraph() {
+  let rows;
+  try { rows = all("SELECT * FROM workflows WHERE graph IS NULL OR graph = ''"); }
+  catch (e) { return; } // defensivo: provisioning nuevo antes de que exista la tabla
+  for (const row of rows) {
+    let conditions = [], actions = [];
+    try { conditions = JSON.parse(row.conditions || '[]'); } catch (e) {}
+    try { actions = JSON.parse(row.actions || '[]'); } catch (e) {}
+
+    const nodes = [{ id: 'n1', type: 'trigger', subtype: row.trigger_event, params: {}, x: 80, y: 60 }];
+    const edges = [];
+    let prevId = 'n1', prevBranch = null, seq = 2;
+
+    if (conditions.length) {
+      const condId = 'n' + (seq++);
+      nodes.push({ id: condId, type: 'condition', subtype: 'if', params: { logic: 'and', conditions }, x: 80, y: 190 });
+      edges.push({ from: prevId, to: condId, branch: null });
+      prevId = condId; prevBranch = 'true';
+    }
+
+    actions.forEach((action, i) => {
+      const actId = 'n' + (seq++);
+      nodes.push({ id: actId, type: 'action', subtype: action.type, params: action.params || {}, x: 80, y: 190 + 130 * (i + (conditions.length ? 1 : 0)) });
+      edges.push({ from: prevId, to: actId, branch: prevBranch });
+      prevId = actId; prevBranch = null;
+    });
+
+    run('UPDATE workflows SET graph = ? WHERE id = ?', [JSON.stringify({ nodes, edges }), row.id]);
+  }
+  if (rows.length) console.log(`[WORKFLOWS] ${rows.length} flujo(s) migrado(s) al formato de grafo`);
+}
+
+// --- Workflows (automatización IF/THEN — editor visual de nodos) ---
 function getAllWorkflows({ activo } = {}) {
   if (activo === true) return all('SELECT * FROM workflows WHERE activo = 1 ORDER BY id');
   if (activo === false) return all('SELECT * FROM workflows WHERE activo = 0 ORDER BY id');
@@ -2764,10 +2822,14 @@ function getWorkflowById(id) {
   return one('SELECT * FROM workflows WHERE id = ?', [id]);
 }
 
+// data.graph, si viene, ya es un objeto {nodes,edges} — se guarda serializado. Si no
+// viene (creación vieja vía trigger_event/conditions/actions), migrateWorkflowsToGraph()
+// lo completa en el próximo arranque; no hace falta duplicar esa lógica aquí.
 function createWorkflow(data) {
-  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions) VALUES (?, ?, ?, ?, ?)', [
-    data.nombre, data.activo === false ? 0 : 1, data.trigger_event,
+  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions, graph, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime(\'now\',\'localtime\'))', [
+    data.nombre, data.activo === false ? 0 : 1, data.trigger_event || (data.graph && inferTriggerFromGraph(data.graph)) || '',
     JSON.stringify(data.conditions || []), JSON.stringify(data.actions || []),
+    data.graph ? JSON.stringify(data.graph) : null,
   ]);
   return one('SELECT * FROM workflows WHERE id = (SELECT last_insert_rowid())');
 }
@@ -2775,19 +2837,32 @@ function createWorkflow(data) {
 function updateWorkflow(id, data) {
   const actual = getWorkflowById(id);
   if (!actual) return null;
-  run('UPDATE workflows SET nombre = ?, activo = ?, trigger_event = ?, conditions = ?, actions = ? WHERE id = ?', [
+  const graph = data.graph !== undefined ? data.graph : null;
+  run('UPDATE workflows SET nombre = ?, activo = ?, trigger_event = ?, conditions = ?, actions = ?, graph = COALESCE(?, graph), updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [
     data.nombre !== undefined ? data.nombre : actual.nombre,
     data.activo !== undefined ? (data.activo ? 1 : 0) : actual.activo,
-    data.trigger_event !== undefined ? data.trigger_event : actual.trigger_event,
+    data.trigger_event !== undefined ? data.trigger_event : (graph ? inferTriggerFromGraph(graph) : actual.trigger_event),
     data.conditions !== undefined ? JSON.stringify(data.conditions) : actual.conditions,
     data.actions !== undefined ? JSON.stringify(data.actions) : actual.actions,
+    graph ? JSON.stringify(graph) : null,
     id,
   ]);
   return getWorkflowById(id);
 }
 
 function deleteWorkflow(id) {
+  run('DELETE FROM workflow_jobs WHERE workflow_id = ?', [id]);
+  run('DELETE FROM workflow_logs WHERE workflow_id = ?', [id]);
   run('DELETE FROM workflows WHERE id = ?', [id]);
+}
+
+// El nodo 'trigger' del grafo manda sobre trigger_event — es lo que el motor usa para
+// indexar qué flujos evaluar en cada evento (evita escanear el grafo completo de
+// CADA workflow en CADA mensaje).
+function inferTriggerFromGraph(graph) {
+  const g = typeof graph === 'string' ? JSON.parse(graph) : graph;
+  const t = (g.nodes || []).find(n => n.type === 'trigger');
+  return t ? t.subtype : '';
 }
 
 function addWorkflowLog(workflowId, conversationId, triggerEvent, result) {
@@ -2798,6 +2873,24 @@ function addWorkflowLog(workflowId, conversationId, triggerEvent, result) {
 
 function getWorkflowLogs(workflowId) {
   return all('SELECT * FROM workflow_logs WHERE workflow_id = ? ORDER BY created_at DESC, id DESC', [workflowId]);
+}
+
+// --- Workflow jobs: delays persistentes (nodo 'delay' del grafo) ---
+// Un delay corta la ejecución y agenda su reanudación aquí — sobrevive un reinicio
+// del servidor a mitad de un flujo con espera (antes de esto, un delay solo podía
+// vivir en memoria y se perdía sin avisar si el proceso se reiniciaba).
+function createWorkflowJob(workflowId, nodeId, context, runAt) {
+  run('INSERT INTO workflow_jobs (workflow_id, node_id, context, run_at) VALUES (?, ?, ?, ?)', [
+    workflowId, nodeId, JSON.stringify(context || {}), runAt,
+  ]);
+}
+
+function getDueWorkflowJobs() {
+  return all("SELECT * FROM workflow_jobs WHERE estado = 'pending' AND run_at <= datetime('now','localtime') ORDER BY run_at ASC LIMIT 100");
+}
+
+function markWorkflowJobDone(id) {
+  run("UPDATE workflow_jobs SET estado = 'done' WHERE id = ?", [id]);
 }
 
 // --- Tareas por lead ---
@@ -3303,6 +3396,7 @@ module.exports = {
   getRecordatorioCita, createRecordatorioCita, cancelarRecordatorioCita, cancelarRecordatorioByCitaCierre,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
+  createWorkflowJob, getDueWorkflowJobs, markWorkflowJobDone,
   addReaction, removeReaction, getReactionsForMessage, getReactionsForMessages,
   editMessage, softDeleteMessage, pinLead, muteLead, clearLeadMessages,
   markMessageAsRead, markLeadMessagesAsRead,

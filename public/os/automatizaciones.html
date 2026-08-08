@@ -10,18 +10,125 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
 <script src="/os/theme.js"></script>
 <link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  /* ── Lista de flujos ── */
+  .wf-card { border: 1px solid var(--border-soft); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; background: var(--bg-1); cursor: pointer; transition: border-color .15s; }
+  .wf-card:hover { border-color: var(--gold-line, var(--gold)); }
+  .wf-card__top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .wf-card__name { font-size: 14px; font-weight: 600; }
+  .wf-card__meta { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+  .wf-card__actions { display: flex; gap: 6px; margin-top: 10px; }
+
+  /* ── Editor: shell de 3 columnas ── */
+  .wf-editor { position: fixed; inset: 0; z-index: 400; background: var(--bg-0, #0a0a0a); display: flex; flex-direction: column; }
+  .wf-toolbar { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--border-soft); background: var(--bg-1); }
+  .wf-toolbar input#wfEditorName { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 12px; font-size: 13.5px; font-family: var(--f-ui); outline: none; width: 220px; }
+  .wf-toolbar .u-grow { flex: 1; }
+  .wf-body { flex: 1; display: flex; min-height: 0; }
+
+  .wf-palette { width: 210px; flex-shrink: 0; border-right: 1px solid var(--border-soft); background: var(--bg-1); overflow-y: auto; padding: 12px; }
+  .wf-palette h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); margin: 14px 0 6px; }
+  .wf-palette h4:first-child { margin-top: 0; }
+  .wf-pal-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--border-soft); margin-bottom: 6px; font-size: 12px; cursor: grab; user-select: none; }
+  .wf-pal-item:hover { border-color: var(--gold-line, var(--gold)); }
+  .wf-pal-item:active { cursor: grabbing; }
+
+  .wf-canvas-viewport { flex: 1; position: relative; overflow: hidden; background: var(--bg-0, #0a0a0a); background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px); background-size: 22px 22px; cursor: grab; }
+  .wf-canvas-viewport.panning { cursor: grabbing; }
+  .wf-canvas-world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+  .wf-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+  .wf-edges path { pointer-events: stroke; cursor: pointer; }
+
+  .wf-node { position: absolute; width: 190px; border-radius: 12px; background: var(--bg-1); border: 2px solid var(--border-soft); box-shadow: var(--sh-2, 0 8px 24px rgba(0,0,0,.3)); user-select: none; }
+  .wf-node.selected { border-color: var(--gold); }
+  .wf-node__head { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--border-soft); cursor: grab; font-size: 12px; font-weight: 600; border-radius: 10px 10px 0 0; }
+  .wf-node__head:active { cursor: grabbing; }
+  .wf-node--trigger .wf-node__head { background: rgba(91,141,239,.15); color: #5b8def; }
+  .wf-node--condition .wf-node__head { background: rgba(200,164,90,.15); color: var(--gold); }
+  .wf-node--action .wf-node__head { background: rgba(78,123,70,.15); color: var(--green); }
+  .wf-node--delay .wf-node__head { background: rgba(150,110,200,.15); color: #9b6bd8; }
+  .wf-node__body { padding: 8px 10px; font-size: 11px; color: var(--text-3); line-height: 1.4; min-height: 14px; }
+  .wf-port { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--bg-3); border: 2px solid var(--text-3); cursor: crosshair; z-index: 5; }
+  .wf-port:hover { border-color: var(--gold); background: var(--gold); }
+  .wf-port--in { top: -7px; left: 50%; margin-left: -6px; }
+  .wf-port--out { bottom: -7px; left: 50%; margin-left: -6px; }
+  .wf-port--out-true { bottom: -7px; left: 30%; margin-left: -6px; border-color: var(--green); }
+  .wf-port--out-false { bottom: -7px; left: 70%; margin-left: -6px; border-color: #e74c3c; }
+  .wf-node--trigger .wf-port--in { display: none; }
+  .wf-branch-label { position: absolute; bottom: -22px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .wf-branch-label--true { left: 22%; color: var(--green); }
+  .wf-branch-label--false { left: 62%; color: #e74c3c; }
+
+  .wf-node.trace-ok { border-color: var(--green); box-shadow: 0 0 0 3px rgba(78,123,70,.25); }
+  .wf-node.trace-fail { border-color: #e74c3c; box-shadow: 0 0 0 3px rgba(231,76,60,.25); }
+  .wf-node.trace-branch-false { opacity: .45; }
+
+  .wf-inspector { width: 300px; flex-shrink: 0; border-left: 1px solid var(--border-soft); background: var(--bg-1); overflow-y: auto; padding: 16px; }
+  .wf-inspector h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--gold); margin-bottom: 12px; }
+  .wf-field { margin-bottom: 12px; }
+  .wf-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+  .wf-field input, .wf-field select, .wf-field textarea { width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px 10px; font-size: 12.5px; font-family: var(--f-ui); outline: none; }
+  .wf-cond-row { display: flex; gap: 4px; margin-bottom: 6px; }
+  .wf-cond-row select, .wf-cond-row input { flex: 1; min-width: 0; font-size: 11px; padding: 6px 6px; }
+
+  .wf-empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-3); font-size: 13px; pointer-events: none; }
+
+  .wf-drawer-ov { position: fixed; inset: 0; z-index: 600; background: rgba(0,0,0,.5); display: flex; justify-content: flex-end; }
+  .wf-drawer { width: 380px; max-width: 90vw; height: 100%; background: var(--bg-1); border-left: 1px solid var(--border-soft); overflow-y: auto; padding: 18px; }
+  .wf-log-row { border-bottom: 1px solid var(--border-soft); padding: 10px 0; font-size: 11.5px; }
+  .wf-log-row b { color: var(--text-2); }
+
+  @media (max-width: 900px) {
+    .wf-palette, .wf-inspector { position: absolute; top: 56px; bottom: 0; z-index: 10; box-shadow: 0 0 30px rgba(0,0,0,.5); }
+    .wf-palette { left: 0; transform: translateX(-100%); transition: transform .2s; }
+    .wf-palette.open { transform: none; }
+    .wf-inspector { right: 0; transform: translateX(100%); transition: transform .2s; }
+    .wf-inspector.open { transform: none; }
+  }
+</style>
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
   const { ICONS, api, toast } = SPOS;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const ctx = await SPOS.mount({ active:'automations', title:'Automatizaciones', crumb:'Flujos y disparadores', padded:true, adminOnly:true,
     action:`<button class="btn btn--gold btn--sm" id="new">${ICONS.plus}Nuevo flujo</button>` });
+  if (!ctx) return;
 
+  // ═══════════════════ Definiciones de nodos ═══════════════════
+  const TRIGGERS = [
+    ['message:incoming', '💬 Llega un mensaje del cliente'],
+    ['message:outgoing', '📤 Un asesor envía un mensaje'],
+    ['conversation:assigned', '🎯 Se asigna una conversación'],
+    ['conversation:closed', '✅ Se cierra una conversación'],
+    ['lead:tag_changed', '🏷️ Cambia la etiqueta de un lead'],
+    ['schedule', '⏰ Hora programada'],
+    ['lead:inactive', '😴 Lead inactivo (sin responder X horas)'],
+  ];
+  const ACTIONS = [
+    ['notify_admin', '🔔 Notificar al admin'],
+    ['send_message', '💬 Responder al cliente'],
+    ['tag', '🏷️ Poner etiqueta'],
+    ['send_template', '📋 Enviar plantilla'],
+    ['assign', '👤 Asignar asesor (round-robin)'],
+    ['webhook', '🔗 Llamar webhook externo'],
+  ];
+  const CAMPOS = [['body','Texto del mensaje'],['channel','Canal'],['customer_name','Nombre del cliente'],['etiqueta','Etiqueta'],['status','Estado'],['priority','Prioridad']];
+  const OPERADORES = [['contains','contiene'],['equals','es igual a'],['not_equals','es distinto de'],['in','está en (lista)'],['regex','coincide (regex)']];
+  function labelFor(list, v) { const f = list.find(x => x[0] === v); return f ? f[1] : v; }
+
+  // ═══════════════════ Estado ═══════════════════
   let flujos = [];
-  let cadencia = [];
-  let cadenciaAuto = false;
+  let cadencia = [], cadenciaAuto = false;
+  let route = 'list';
+  let editing = null; // { id, nombre, activo, graph:{nodes,edges} }
+  let selectedNodeId = null;
+  let cam = { x: 60, y: 40, zoom: 1 };
+  let lastTrace = null;
+  let nodeSeq = 1;
+
   async function cargar() {
     const r = await api('/api/workflows');
     flujos = Array.isArray(r) ? r : [];
@@ -33,7 +140,13 @@
   }
 
   function render() {
-    const activos = flujos.filter(f=>f.activo).length;
+    if (route === 'editor') return renderEditor();
+    renderList();
+  }
+
+  // ═══════════════════ Vista: lista de flujos ═══════════════════
+  function renderList() {
+    const activos = flujos.filter(f => f.activo).length;
     ctx.content.innerHTML = `<div class="os-content__max">
       <div class="grid grid--3 rise rise-1" style="margin-bottom:var(--s3)">
         ${metric('automations','Flujos', flujos.length)}
@@ -43,15 +156,24 @@
 
       <div class="card rise rise-2" style="overflow:hidden">
         <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Todos los flujos</div></div>
-        ${flujos.length ? `<table class="table">
-          <thead><tr><th>Flujo</th><th>Disparador</th><th>Estado</th><th></th></tr></thead>
-          <tbody>${flujos.map(f=>`<tr>
-            <td style="font-weight:500">${String(f.nombre).replace(/</g,'&lt;')}</td>
-            <td><span class="badge badge--mute">${(f.trigger_event||'—').replace(/_/g,' ')}</span></td>
-            <td><span class="badge badge--${f.activo?'green':'mute'}">${f.activo?'Activo':'Pausado'}</span></td>
-            <td style="text-align:right"><button class="btn btn--quiet btn--sm" data-id="${f.id}" data-a="${f.activo?0:1}">${f.activo?'Pausar':'Activar'}</button></td>
-          </tr>`).join('')}</tbody>
-        </table>` : `<div class="card--pad t-dim3" style="font-size:13px;padding-top:0">Aún no hay flujos. Crea el primero con "Nuevo flujo" — por ejemplo: si un lead lleva 30 minutos sin respuesta, avisar al admin.</div>`}
+        <div class="card--pad" style="padding-top:0">
+          ${flujos.length ? flujos.map(f => `
+            <div class="wf-card" data-open="${f.id}">
+              <div class="wf-card__top">
+                <div>
+                  <div class="wf-card__name">${esc(f.nombre)}</div>
+                  <div class="wf-card__meta">${esc(labelFor(TRIGGERS, f.trigger_event) || f.trigger_event || '—')}</div>
+                </div>
+                <span class="badge badge--${f.activo ? 'green' : 'mute'}">${f.activo ? 'Activo' : 'Pausado'}</span>
+              </div>
+              <div class="wf-card__actions">
+                <button class="btn btn--quiet btn--sm" data-edit="${f.id}">Editar</button>
+                <button class="btn btn--quiet btn--sm" data-toggle="${f.id}" data-a="${f.activo?0:1}">${f.activo?'Pausar':'Activar'}</button>
+                <button class="btn btn--quiet btn--sm" data-logs="${f.id}">Ejecuciones</button>
+                <button class="btn btn--quiet btn--sm" data-del="${f.id}" style="color:var(--red)">Borrar</button>
+              </div>
+            </div>`).join('') : `<div class="t-dim3" style="font-size:13px">Aún no hay flujos. Crea el primero con "Nuevo flujo" — por ejemplo: si un lead lleva 30 minutos sin respuesta, avisar al admin.</div>`}
+        </div>
       </div>
 
       <!-- Cadencia de seguimiento -->
@@ -71,101 +193,494 @@
       </div>
     </div>`;
 
-    document.getElementById('new').addEventListener('click', crearFlujo);
-    wireCadencia();
-    ctx.content.querySelectorAll('[data-id]').forEach(b=>b.addEventListener('click', async ()=>{
-      const r = await api('/api/workflows/'+b.dataset.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ activo: b.dataset.a === '1' }) });
-      if (r) { toast('Estado del flujo actualizado','ok'); await cargar(); }
-      else toast('Error al actualizar','err');
+    document.getElementById('new').onclick = () => openEditor(null);
+    ctx.content.querySelectorAll('[data-open], [data-edit]').forEach(el => el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = el.dataset.open || el.dataset.edit;
+      openEditor(flujos.find(f => f.id === Number(id)));
     }));
+    ctx.content.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const r = await api('/api/workflows/' + b.dataset.toggle, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activo: b.dataset.a === '1' }) });
+      if (r) { toast('Estado del flujo actualizado', 'ok'); await cargar(); } else toast('Error al actualizar', 'err');
+    }));
+    ctx.content.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('¿Borrar este flujo? No se puede deshacer.')) return;
+      const r = await api('/api/workflows/' + b.dataset.del, { method: 'DELETE' });
+      if (r && r.ok) { toast('Flujo borrado', 'ok'); await cargar(); } else toast('Error al borrar', 'err');
+    }));
+    ctx.content.querySelectorAll('[data-logs]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); abrirEjecuciones(b.dataset.logs); }));
+
+    wireCadencia();
   }
 
-  // Editor de flujo: formulario modal completo (trigger + condiciones + acciones).
-  const TRIGGERS = [
-    ['message:incoming','Llega un mensaje del cliente'],
-    ['message:outgoing','Un asesor envía un mensaje'],
-    ['conversation:assigned','Se asigna una conversación'],
-    ['conversation:closed','Se cierra una conversación'],
-    ['lead:tag_changed','Cambia la etiqueta de un lead'],
-  ];
-  const CAMPOS = [['body','Texto del mensaje'],['channel','Canal'],['customer_name','Nombre del cliente'],['etiqueta','Etiqueta'],['status','Estado'],['priority','Prioridad']];
-  const OPERADORES = [['contains','contiene'],['equals','es igual a'],['not_equals','es distinto de'],['regex','coincide (regex)']];
-  const ACCIONES = [
-    ['notify_admin','Notificar al admin','message','Mensaje de la notificación'],
-    ['send_message','Responder al cliente','text','Texto a enviar'],
-    ['tag','Poner etiqueta','value','Etiqueta (ej: interesado)'],
-    ['send_template','Enviar plantilla','name','Nombre de la plantilla'],
-    ['assign','Asignar a un asesor (round-robin)',null,null],
-    ['webhook','Llamar webhook externo','url','URL del webhook'],
-  ];
+  function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
 
-  function filaCondicion(){ return `<div class="wf-cond" style="display:flex;gap:6px;margin-bottom:6px">
-    <select class="input wf-c-campo" style="flex:1">${CAMPOS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-    <select class="input wf-c-op" style="flex:1">${OPERADORES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-    <input class="input wf-c-val" placeholder="Valor" style="flex:1">
-    <button class="btn btn--quiet btn--sm wf-c-del" title="Quitar">✕</button>
-  </div>`; }
-  function filaAccion(){ return `<div class="wf-act" style="display:flex;gap:6px;margin-bottom:6px">
-    <select class="input wf-a-tipo" style="flex:1">${ACCIONES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-    <input class="input wf-a-param" placeholder="${ACCIONES[0][3]}" style="flex:1.4">
-    <button class="btn btn--quiet btn--sm wf-a-del" title="Quitar">✕</button>
-  </div>`; }
+  async function abrirEjecuciones(id) {
+    const ov = document.createElement('div');
+    ov.className = 'wf-drawer-ov';
+    ov.innerHTML = `<div class="wf-drawer"><div class="u-between" style="margin-bottom:14px"><div class="t-h3">Ejecuciones</div><button class="btn btn--quiet btn--sm" id="wfDrawerClose">✕</button></div><div id="wfLogList">Cargando…</div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+    ov.querySelector('#wfDrawerClose').addEventListener('click', () => ov.remove());
+    const logs = await api('/api/workflows/' + id + '/logs');
+    const box = document.getElementById('wfLogList');
+    if (!logs || !logs.length) { box.innerHTML = '<div class="t-dim3" style="font-size:12.5px">Sin ejecuciones todavía.</div>'; return; }
+    box.innerHTML = logs.map(l => {
+      let result = {}; try { result = JSON.parse(l.result || '{}'); } catch (e) {}
+      const trace = result.trace || [];
+      const ok = trace.every(t => t.ok !== false);
+      return `<div class="wf-log-row">
+        <div><b>${esc(l.trigger_event)}</b> — <span style="color:${ok?'var(--green)':'#e74c3c'}">${ok?'OK':'con errores'}</span></div>
+        <div class="t-dim3" style="font-size:10.5px;margin-top:2px">${esc(l.created_at)}</div>
+        <div style="font-size:10.5px;margin-top:4px;color:var(--text-3)">${trace.map(t => `${t.type}${t.subtype?':'+t.subtype:''}${t.ok===false?' ❌':' ✓'}`).join(' → ') || '—'}</div>
+      </div>`;
+    }).join('');
+  }
 
-  function crearFlujo() {
-    const overlay=document.createElement('div');
-    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9998;display:grid;place-items:center;padding:20px';
-    overlay.innerHTML=`<div style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--r,14px);width:100%;max-width:560px;max-height:85vh;overflow-y:auto;padding:22px" id="wfModal">
-      <div class="t-h3" style="margin-bottom:14px">Nuevo flujo automatizado</div>
-      <label class="t-label" style="display:block;margin-bottom:4px">Nombre</label>
-      <input class="input" id="wfNombre" placeholder='Ej: "Avisar cuando pregunten precio"' style="width:100%;margin-bottom:12px">
-      <label class="t-label" style="display:block;margin-bottom:4px">Cuando… (disparador)</label>
-      <select class="input" id="wfTrigger" style="width:100%;margin-bottom:12px">${TRIGGERS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-      <label class="t-label" style="display:block;margin-bottom:4px">Si… (condiciones, opcional — todas deben cumplirse)</label>
-      <div id="wfConds"></div>
-      <button class="btn btn--ghost btn--sm" id="wfAddCond" style="margin-bottom:12px">+ Condición</button>
-      <label class="t-label" style="display:block;margin-bottom:4px">Entonces… (acciones)</label>
-      <div id="wfActs">${filaAccion()}</div>
-      <button class="btn btn--ghost btn--sm" id="wfAddAct" style="margin-bottom:16px">+ Acción</button>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn--ghost" id="wfCancel">Cancelar</button>
-        <button class="btn btn--gold" id="wfSave">Crear flujo</button>
+  // ═══════════════════ Editor visual ═══════════════════
+  function freshGraph() {
+    return { nodes: [{ id: 'n1', type: 'trigger', subtype: 'message:incoming', params: {}, x: 60, y: 60 }], edges: [] };
+  }
+
+  function openEditor(workflow) {
+    if (workflow) {
+      let graph = null;
+      try { graph = workflow.graph ? JSON.parse(workflow.graph) : null; } catch (e) {}
+      editing = { id: workflow.id, nombre: workflow.nombre, activo: !!workflow.activo, graph: graph || freshGraph() };
+    } else {
+      editing = { id: null, nombre: '', activo: true, graph: freshGraph() };
+    }
+    nodeSeq = Math.max(1, ...editing.graph.nodes.map(n => Number(String(n.id).replace(/\D/g, '')) || 0)) + 1;
+    selectedNodeId = null;
+    lastTrace = null;
+    cam = { x: 60, y: 40, zoom: 1 };
+    route = 'editor';
+    render();
+  }
+
+  function closeEditor() { route = 'list'; editing = null; render(); cargar(); }
+
+  function renderEditor() {
+    ctx.content.innerHTML = ''; // el editor es full-screen, fuera del layout normal
+    const wrap = document.createElement('div');
+    wrap.className = 'wf-editor';
+    wrap.innerHTML = `
+      <div class="wf-toolbar">
+        <button class="btn btn--quiet btn--sm" id="wfBack">← Volver</button>
+        <input id="wfEditorName" placeholder="Nombre del flujo" value="${esc(editing.nombre)}">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer">
+          <input type="checkbox" id="wfEditorActivo" ${editing.activo ? 'checked' : ''} style="accent-color:var(--gold)"> Activo
+        </label>
+        <div class="u-grow"></div>
+        <button class="btn btn--quiet btn--sm" id="wfBtnLogs" ${editing.id ? '' : 'disabled'}>Ejecuciones</button>
+        <button class="btn btn--quiet btn--sm" id="wfBtnTest" ${editing.id ? '' : 'disabled title="Guarda el flujo primero"'}>▶ Probar</button>
+        <button class="btn btn--gold btn--sm" id="wfBtnSave">Guardar</button>
       </div>
-    </div>`;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click',e=>{ if(e.target===overlay) overlay.remove(); });
-    const modal=overlay.querySelector('#wfModal');
-    const wireDel=()=>{ modal.querySelectorAll('.wf-c-del').forEach(b=>b.onclick=()=>b.closest('.wf-cond').remove());
-      modal.querySelectorAll('.wf-a-del').forEach(b=>b.onclick=()=>{ if(modal.querySelectorAll('.wf-act').length>1) b.closest('.wf-act').remove(); });
-      modal.querySelectorAll('.wf-a-tipo').forEach(s=>s.onchange=function(){ const def=ACCIONES.find(a=>a[0]===this.value); const inp=this.closest('.wf-act').querySelector('.wf-a-param'); if(def&&def[3]){ inp.placeholder=def[3]; inp.style.display=''; } else { inp.style.display='none'; inp.value=''; } }); };
-    wireDel();
-    modal.querySelector('#wfAddCond').onclick=()=>{ modal.querySelector('#wfConds').insertAdjacentHTML('beforeend',filaCondicion()); wireDel(); };
-    modal.querySelector('#wfAddAct').onclick=()=>{ modal.querySelector('#wfActs').insertAdjacentHTML('beforeend',filaAccion()); wireDel(); };
-    modal.querySelector('#wfCancel').onclick=()=>overlay.remove();
-    modal.querySelector('#wfSave').onclick=async()=>{
-      const nombre=modal.querySelector('#wfNombre').value.trim();
-      if(!nombre){ toast('Ponle un nombre al flujo','err'); return; }
-      const conditions=[...modal.querySelectorAll('.wf-cond')].map(row=>({
-        field:row.querySelector('.wf-c-campo').value, operator:row.querySelector('.wf-c-op').value, value:row.querySelector('.wf-c-val').value,
-      })).filter(c=>c.value!=='');
-      const actions=[...modal.querySelectorAll('.wf-act')].map(row=>{
-        const tipo=row.querySelector('.wf-a-tipo').value;
-        const def=ACCIONES.find(a=>a[0]===tipo);
-        const params={};
-        if(def&&def[2]) params[def[2]]=row.querySelector('.wf-a-param').value;
-        return { type: tipo, params };
+      <div class="wf-body">
+        <div class="wf-palette" id="wfPalette">
+          <h4>Disparadores</h4>
+          ${TRIGGERS.map(([v,l]) => `<div class="wf-pal-item" draggable="true" data-node-type="trigger" data-node-subtype="${v}">${l}</div>`).join('')}
+          <h4>Condición</h4>
+          <div class="wf-pal-item" draggable="true" data-node-type="condition" data-node-subtype="if">🔀 Si… (condición)</div>
+          <h4>Acciones</h4>
+          ${ACTIONS.map(([v,l]) => `<div class="wf-pal-item" draggable="true" data-node-type="action" data-node-subtype="${v}">${l}</div>`).join('')}
+          <h4>Tiempo</h4>
+          <div class="wf-pal-item" draggable="true" data-node-type="delay" data-node-subtype="wait">⏳ Esperar</div>
+        </div>
+        <div class="wf-canvas-viewport" id="wfViewport">
+          <div class="wf-canvas-world" id="wfWorld">
+            <svg class="wf-edges" id="wfEdgesSvg"></svg>
+          </div>
+        </div>
+        <div class="wf-inspector" id="wfInspector"></div>
+      </div>
+    `;
+    ctx.content.appendChild(wrap);
+
+    document.getElementById('wfBack').onclick = closeEditor;
+    document.getElementById('wfEditorName').addEventListener('input', (e) => { editing.nombre = e.target.value; });
+    document.getElementById('wfEditorActivo').addEventListener('change', (e) => { editing.activo = e.target.checked; });
+    document.getElementById('wfBtnSave').onclick = guardarFlujo;
+    document.getElementById('wfBtnTest').onclick = probarFlujo;
+    document.getElementById('wfBtnLogs').onclick = () => { if (editing.id) abrirEjecuciones(editing.id); };
+
+    wireCanvas();
+    renderCanvas();
+    renderInspector();
+  }
+
+  // ── Pan / zoom / drag / conectar — todo con Pointer Events, sin dependencias ──
+  function wireCanvas() {
+    const viewport = document.getElementById('wfViewport');
+    const world = document.getElementById('wfWorld');
+    let panning = false, panStart = null;
+    let draggingNode = null, dragOffset = null;
+    let connecting = null; // { fromId, branch, ghostPath }
+
+    function applyTransform() {
+      world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`;
+    }
+    applyTransform();
+
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.08 : 0.08;
+      cam.zoom = Math.min(2, Math.max(0.4, cam.zoom + delta));
+      applyTransform();
+    }, { passive: false });
+
+    viewport.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.wf-node') || e.target.closest('.wf-port')) return;
+      panning = true; viewport.classList.add('panning');
+      panStart = { x: e.clientX - cam.x, y: e.clientY - cam.y };
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (panning) {
+        cam.x = e.clientX - panStart.x; cam.y = e.clientY - panStart.y;
+        applyTransform();
+      }
+      if (draggingNode) {
+        const node = editing.graph.nodes.find(n => n.id === draggingNode);
+        const dx = (e.clientX - dragOffset.clientX) / cam.zoom;
+        const dy = (e.clientY - dragOffset.clientY) / cam.zoom;
+        node.x = dragOffset.x0 + dx; node.y = dragOffset.y0 + dy;
+        positionNodeEl(node);
+        drawEdges();
+      }
+      if (connecting) {
+        const worldRect = world.getBoundingClientRect();
+        const x2 = (e.clientX - worldRect.left) / cam.zoom;
+        const y2 = (e.clientY - worldRect.top) / cam.zoom;
+        connecting.ghostEl.setAttribute('d', bezier(connecting.x1, connecting.y1, x2, y2));
+      }
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (panning) { panning = false; viewport.classList.remove('panning'); }
+      if (draggingNode) { draggingNode = null; }
+      if (connecting) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const inPort = target && target.closest('.wf-port--in');
+        if (inPort) {
+          const toId = inPort.closest('.wf-node').dataset.id;
+          if (toId !== connecting.fromId) {
+            editing.graph.edges = editing.graph.edges.filter(ed => !(ed.from === connecting.fromId && ed.branch === connecting.branch));
+            editing.graph.edges.push({ from: connecting.fromId, to: toId, branch: connecting.branch });
+          }
+        }
+        connecting.ghostEl.remove();
+        connecting = null;
+        drawEdges();
+      }
+    });
+
+    // Drag & drop nativo desde la paleta
+    document.querySelectorAll('.wf-pal-item').forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', JSON.stringify({ type: item.dataset.nodeType, subtype: item.dataset.nodeSubtype }));
       });
-      if(!actions.length){ toast('Agrega al menos una acción','err'); return; }
-      const r=await api('/api/workflows',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre,trigger_event:modal.querySelector('#wfTrigger').value,conditions,actions})});
-      if(r){ toast('Flujo creado y activo','ok'); overlay.remove(); await cargar(); }
-      else toast('Error al crear el flujo','err');
+    });
+    viewport.addEventListener('dragover', (e) => e.preventDefault());
+    viewport.addEventListener('drop', (e) => {
+      e.preventDefault();
+      let data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
+      const worldRect = world.getBoundingClientRect();
+      const x = (e.clientX - worldRect.left) / cam.zoom - 90;
+      const y = (e.clientY - worldRect.top) / cam.zoom - 20;
+      addNode(data.type, data.subtype, x, y);
+    });
+
+    // Exponer para node-render (drag de nodo + conectar desde puerto)
+    window.__wfHandlers = {
+      startNodeDrag(nodeId, e) {
+        draggingNode = nodeId;
+        const node = editing.graph.nodes.find(n => n.id === nodeId);
+        dragOffset = { clientX: e.clientX, clientY: e.clientY, x0: node.x, y0: node.y };
+        selectNode(nodeId);
+      },
+      startConnect(fromId, branch, e) {
+        const fromEl = document.querySelector(`.wf-node[data-id="${fromId}"]`);
+        const rect = fromEl.getBoundingClientRect();
+        const worldRect = world.getBoundingClientRect();
+        const x1 = (rect.left + rect.width / 2 - worldRect.left) / cam.zoom;
+        const y1 = (rect.bottom - worldRect.top) / cam.zoom;
+        const svg = document.getElementById('wfEdgesSvg');
+        const ghost = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        ghost.setAttribute('stroke', '#C8A45A'); ghost.setAttribute('stroke-width', '2'); ghost.setAttribute('fill', 'none'); ghost.setAttribute('stroke-dasharray', '4,3');
+        svg.appendChild(ghost);
+        connecting = { fromId, branch, x1, y1, ghostEl: ghost };
+      },
     };
   }
 
-  await cargar();
+  function bezier(x1, y1, x2, y2) {
+    const dy = Math.max(40, Math.abs(y2 - y1) / 2);
+    return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+  }
 
-  // ── Editor de cadencia de seguimiento ──
+  function addNode(type, subtype, x, y) {
+    if (type === 'trigger' && editing.graph.nodes.some(n => n.type === 'trigger')) {
+      toast('Ya hay un disparador — un flujo solo puede tener uno', 'err');
+      return;
+    }
+    const id = 'n' + (nodeSeq++);
+    const defaults = {
+      condition: { logic: 'and', conditions: [] },
+      delay: { amount: 30, unit: 'minutes' },
+    };
+    editing.graph.nodes.push({ id, type, subtype, params: defaults[type] || {}, x, y });
+    renderCanvas();
+    selectNode(id);
+  }
+
+  function positionNodeEl(node) {
+    const el = document.querySelector(`.wf-node[data-id="${node.id}"]`);
+    if (el) { el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
+  }
+
+  function nodeLabel(node) {
+    if (node.type === 'trigger') return labelFor(TRIGGERS, node.subtype) || node.subtype;
+    if (node.type === 'condition') return '🔀 Si… (condición)';
+    if (node.type === 'delay') return '⏳ Esperar';
+    return labelFor(ACTIONS, node.subtype) || node.subtype;
+  }
+  function nodeSummary(node) {
+    if (node.type === 'condition') {
+      const n = (node.params.conditions || []).length;
+      return n ? `${n} condición(es), lógica ${node.params.logic === 'or' ? 'O' : 'Y'}` : 'Sin condiciones (siempre pasa)';
+    }
+    if (node.type === 'delay') return `${node.params.amount || 0} ${{minutes:'minuto(s)',hours:'hora(s)',days:'día(s)'}[node.params.unit] || node.params.unit}`;
+    if (node.type === 'trigger' && node.subtype === 'schedule') return node.params.at ? `Todos los días a las ${node.params.at}` : 'Sin hora configurada';
+    if (node.type === 'trigger' && node.subtype === 'lead:inactive') return `${node.params.hours || 24} horas sin responder`;
+    if (node.subtype === 'notify_admin') return esc(node.params.message || '');
+    if (node.subtype === 'send_message') return esc(node.params.text || '');
+    if (node.subtype === 'tag') return esc(node.params.value || '');
+    if (node.subtype === 'send_template') return esc(node.params.name || '');
+    if (node.subtype === 'webhook') return esc(node.params.url || '');
+    return '';
+  }
+
+  function renderCanvas() {
+    const world = document.getElementById('wfWorld');
+    world.querySelectorAll('.wf-node').forEach(n => n.remove());
+    editing.graph.nodes.forEach(node => {
+      const el = document.createElement('div');
+      el.className = `wf-node wf-node--${node.type}`;
+      el.dataset.id = node.id;
+      el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
+      const ports = node.type === 'condition'
+        ? `<div class="wf-port wf-port--out-true" data-branch="true" title="Sí"></div><div class="wf-branch-label wf-branch-label--true">Sí</div>
+           <div class="wf-port wf-port--out-false" data-branch="false" title="No"></div><div class="wf-branch-label wf-branch-label--false">No</div>`
+        : node.type === 'delay' ? `<div class="wf-port wf-port--out" data-branch=""></div>`
+        : node.type === 'trigger' ? `<div class="wf-port wf-port--out" data-branch=""></div>`
+        : `<div class="wf-port wf-port--out" data-branch=""></div>`;
+      el.innerHTML = `
+        <div class="wf-port wf-port--in"></div>
+        <div class="wf-node__head">${nodeLabel(node)}</div>
+        <div class="wf-node__body">${nodeSummary(node)}</div>
+        ${ports}
+      `;
+      world.appendChild(el);
+
+      el.querySelector('.wf-node__head').addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        window.__wfHandlers.startNodeDrag(node.id, e);
+      });
+      el.addEventListener('click', (e) => { if (!e.target.closest('.wf-port')) selectNode(node.id); });
+      el.querySelectorAll('.wf-port--out, .wf-port--out-true, .wf-port--out-false').forEach(p => {
+        p.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          window.__wfHandlers.startConnect(node.id, p.dataset.branch || null, e);
+        });
+      });
+    });
+    drawEdges();
+    highlightSelected();
+  }
+
+  function drawEdges() {
+    const svg = document.getElementById('wfEdgesSvg');
+    svg.innerHTML = '';
+    const byId = {}; editing.graph.nodes.forEach(n => byId[n.id] = n);
+    editing.graph.edges.forEach(edge => {
+      const from = byId[edge.from], to = byId[edge.to];
+      if (!from || !to) return;
+      const x1 = from.x + 95, y1 = from.y + (from.type === 'condition' ? 66 : 56);
+      const outOffset = from.type === 'condition' ? (edge.branch === 'true' ? -38 : 38) : 0;
+      const x2 = to.x + 95, y2 = to.y;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', bezier(x1 + outOffset, y1, x2, y2));
+      path.setAttribute('stroke', edge.branch === 'false' ? '#e74c3c' : (edge.branch === 'true' ? 'var(--green,#4E7B46)' : '#8a8a8a'));
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('fill', 'none');
+      path.style.pointerEvents = 'stroke';
+      path.style.cursor = 'pointer';
+      path.addEventListener('click', () => {
+        if (!confirm('¿Quitar esta conexión?')) return;
+        editing.graph.edges = editing.graph.edges.filter(e => e !== edge);
+        drawEdges();
+      });
+      svg.appendChild(path);
+    });
+  }
+
+  function selectNode(id) { selectedNodeId = id; highlightSelected(); renderInspector(); }
+  function highlightSelected() {
+    document.querySelectorAll('.wf-node').forEach(el => el.classList.toggle('selected', el.dataset.id === selectedNodeId));
+  }
+
+  // ── Inspector: formulario según el nodo seleccionado ──
+  function renderInspector() {
+    const box = document.getElementById('wfInspector');
+    if (!box) return;
+    const node = editing.graph.nodes.find(n => n.id === selectedNodeId);
+    if (!node) { box.innerHTML = '<div class="t-dim3" style="font-size:12px">Selecciona un nodo para editarlo, o arrastra uno nuevo desde la paleta.</div>'; return; }
+
+    let fields = '';
+    if (node.type === 'trigger') {
+      fields += `<div class="wf-field"><label>Disparador</label><select id="wfNodeSubtype">${TRIGGERS.map(([v,l]) => `<option value="${v}" ${node.subtype===v?'selected':''}>${l}</option>`).join('')}</select></div>`;
+      if (node.subtype === 'schedule') fields += `<div class="wf-field"><label>Hora (HH:MM)</label><input type="time" id="wfP_at" value="${esc(node.params.at || '09:00')}"></div>`;
+      if (node.subtype === 'lead:inactive') fields += `<div class="wf-field"><label>Horas sin responder</label><input type="number" min="1" id="wfP_hours" value="${node.params.hours || 24}"></div>`;
+    } else if (node.type === 'condition') {
+      fields += `<div class="wf-field"><label>Lógica entre condiciones</label><select id="wfP_logic"><option value="and" ${node.params.logic!=='or'?'selected':''}>Todas (Y)</option><option value="or" ${node.params.logic==='or'?'selected':''}>Cualquiera (O)</option></select></div>`;
+      fields += `<div class="wf-field"><label>Condiciones</label><div id="wfCondRows">${(node.params.conditions||[]).map((c,i) => condRowHtml(c,i)).join('')}</div>
+        <button class="btn btn--ghost btn--sm" id="wfAddCond" style="margin-top:6px;width:100%">+ Condición</button></div>`;
+    } else if (node.type === 'delay') {
+      fields += `<div class="wf-field"><label>Cantidad</label><input type="number" min="1" id="wfP_amount" value="${node.params.amount || 30}"></div>`;
+      fields += `<div class="wf-field"><label>Unidad</label><select id="wfP_unit"><option value="minutes" ${node.params.unit==='minutes'?'selected':''}>Minutos</option><option value="hours" ${node.params.unit==='hours'?'selected':''}>Horas</option><option value="days" ${node.params.unit==='days'?'selected':''}>Días</option></select></div>`;
+    } else if (node.type === 'action') {
+      fields += `<div class="wf-field"><label>Acción</label><select id="wfNodeSubtype">${ACTIONS.map(([v,l]) => `<option value="${v}" ${node.subtype===v?'selected':''}>${l}</option>`).join('')}</select></div>`;
+      const paramField = { notify_admin: ['message','Mensaje de la notificación'], send_message: ['text','Texto a enviar'], tag: ['value','Etiqueta (ej: interesado)'], send_template: ['name','Nombre de la plantilla'], webhook: ['url','URL del webhook'] }[node.subtype];
+      if (paramField) fields += `<div class="wf-field"><label>${paramField[1]}</label><textarea id="wfP_param" rows="3">${esc(node.params[paramField[0]] || '')}</textarea></div>`;
+      else if (node.subtype === 'assign') fields += `<div class="t-dim3" style="font-size:11.5px">Asigna al siguiente asesor disponible por round-robin. Sin parámetros.</div>`;
+    }
+
+    box.innerHTML = `<h4>${node.type === 'trigger' ? 'Disparador' : node.type === 'condition' ? 'Condición' : node.type === 'delay' ? 'Espera' : 'Acción'}</h4>
+      ${fields}
+      <button class="btn btn--ghost btn--sm" id="wfDelNode" style="width:100%;margin-top:10px;color:var(--red)" ${node.type==='trigger'?'disabled title="El disparador no se puede borrar, solo cambiar"':''}>Borrar nodo</button>`;
+
+    const subtypeSel = document.getElementById('wfNodeSubtype');
+    if (subtypeSel) subtypeSel.addEventListener('change', () => { node.subtype = subtypeSel.value; node.params = {}; renderCanvas(); renderInspector(); });
+    const at = document.getElementById('wfP_at'); if (at) at.addEventListener('input', () => { node.params.at = at.value; renderCanvas(); });
+    const hours = document.getElementById('wfP_hours'); if (hours) hours.addEventListener('input', () => { node.params.hours = Number(hours.value); renderCanvas(); });
+    const amount = document.getElementById('wfP_amount'); if (amount) amount.addEventListener('input', () => { node.params.amount = Number(amount.value); renderCanvas(); });
+    const unit = document.getElementById('wfP_unit'); if (unit) unit.addEventListener('change', () => { node.params.unit = unit.value; renderCanvas(); });
+    const logic = document.getElementById('wfP_logic'); if (logic) logic.addEventListener('change', () => { node.params.logic = logic.value; renderCanvas(); });
+    const param = document.getElementById('wfP_param');
+    if (param) param.addEventListener('input', () => {
+      const key = { notify_admin:'message', send_message:'text', tag:'value', send_template:'name', webhook:'url' }[node.subtype];
+      if (key) { node.params[key] = param.value; renderCanvas(); }
+    });
+    const addCond = document.getElementById('wfAddCond');
+    if (addCond) addCond.addEventListener('click', () => { node.params.conditions = node.params.conditions || []; node.params.conditions.push({ field:'body', operator:'contains', value:'' }); renderInspector(); renderCanvas(); });
+    wireCondRows(node);
+    const del = document.getElementById('wfDelNode');
+    if (del && node.type !== 'trigger') del.addEventListener('click', () => {
+      editing.graph.nodes = editing.graph.nodes.filter(n => n.id !== node.id);
+      editing.graph.edges = editing.graph.edges.filter(e => e.from !== node.id && e.to !== node.id);
+      selectedNodeId = null;
+      renderCanvas(); renderInspector();
+    });
+  }
+
+  function condRowHtml(c, i) {
+    return `<div class="wf-cond-row" data-idx="${i}">
+      <select class="wfc-campo">${CAMPOS.map(([v,l]) => `<option value="${v}" ${c.field===v?'selected':''}>${l}</option>`).join('')}</select>
+      <select class="wfc-op">${OPERADORES.map(([v,l]) => `<option value="${v}" ${c.operator===v?'selected':''}>${l}</option>`).join('')}</select>
+      <input class="wfc-val" placeholder="Valor" value="${esc(c.value)}">
+      <button class="btn btn--quiet btn--sm wfc-del" style="padding:0 6px">✕</button>
+    </div>`;
+  }
+  function wireCondRows(node) {
+    document.querySelectorAll('.wf-cond-row').forEach(row => {
+      const i = Number(row.dataset.idx);
+      row.querySelector('.wfc-campo').addEventListener('change', (e) => { node.params.conditions[i].field = e.target.value; renderCanvas(); });
+      row.querySelector('.wfc-op').addEventListener('change', (e) => { node.params.conditions[i].operator = e.target.value; renderCanvas(); });
+      row.querySelector('.wfc-val').addEventListener('input', (e) => { node.params.conditions[i].value = e.target.value; renderCanvas(); });
+      row.querySelector('.wfc-del').addEventListener('click', () => { node.params.conditions.splice(i, 1); renderInspector(); renderCanvas(); });
+    });
+  }
+
+  // ── Validación antes de guardar: 1 trigger, sin ciclos, sin nodos huérfanos ──
+  function validarGrafo(graph) {
+    const triggers = graph.nodes.filter(n => n.type === 'trigger');
+    if (triggers.length !== 1) return 'El flujo debe tener exactamente 1 disparador.';
+    const trigger = triggers[0];
+
+    // Alcanzables desde el trigger (DFS)
+    const adj = {}; graph.edges.forEach(e => { (adj[e.from] = adj[e.from] || []).push(e.to); });
+    const seen = new Set(); const stack = [trigger.id];
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      (adj[id] || []).forEach(to => stack.push(to));
+    }
+    const huerfanos = graph.nodes.filter(n => !seen.has(n.id));
+    if (huerfanos.length) return `${huerfanos.length} nodo(s) no están conectados al disparador: ${huerfanos.map(n => nodeLabel(n)).join(', ')}.`;
+
+    // Ciclos (DFS con pila de recursión)
+    const visiting = new Set(), visited = new Set();
+    function hasCycle(id) {
+      if (visiting.has(id)) return true;
+      if (visited.has(id)) return false;
+      visiting.add(id);
+      for (const to of (adj[id] || [])) if (hasCycle(to)) return true;
+      visiting.delete(id); visited.add(id);
+      return false;
+    }
+    if (hasCycle(trigger.id)) return 'El flujo tiene un ciclo — una rama vuelve a un nodo anterior. Los ciclos no están permitidos.';
+
+    return null;
+  }
+
+  async function guardarFlujo() {
+    if (!editing.nombre.trim()) { toast('Ponle un nombre al flujo', 'err'); return; }
+    const err = validarGrafo(editing.graph);
+    if (err) { toast(err, 'err'); return; }
+    const btn = document.getElementById('wfBtnSave');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    const body = { nombre: editing.nombre.trim(), activo: editing.activo, graph: editing.graph };
+    const r = editing.id
+      ? await api('/api/workflows/' + editing.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      : await api('/api/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    btn.disabled = false; btn.textContent = 'Guardar';
+    if (r && r.id) {
+      toast('Flujo guardado', 'ok');
+      editing.id = r.id;
+      renderEditor(); // refresca toolbar (habilita Probar/Ejecuciones)
+    } else {
+      toast('Error: ' + ((r && (r.message || r.error)) || 'no se pudo guardar'), 'err');
+    }
+  }
+
+  async function probarFlujo() {
+    if (!editing.id) { toast('Guarda el flujo primero para probarlo', 'err'); return; }
+    const btn = document.getElementById('wfBtnTest');
+    btn.disabled = true; btn.textContent = 'Probando…';
+    const r = await api('/api/workflows/' + editing.id + '/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    btn.disabled = false; btn.textContent = '▶ Probar';
+    if (!r || !r.ok) { toast('Error: ' + ((r && r.error) || 'no se pudo probar'), 'err'); return; }
+    lastTrace = r.trace || [];
+    aplicarTrazaAlCanvas(lastTrace);
+    toast('Prueba ejecutada — nodos coloreados según el resultado', 'ok');
+  }
+
+  function aplicarTrazaAlCanvas(trace) {
+    document.querySelectorAll('.wf-node').forEach(el => el.classList.remove('trace-ok', 'trace-fail', 'trace-branch-false'));
+    trace.forEach(t => {
+      if (!t.nodeId) return;
+      const el = document.querySelector(`.wf-node[data-id="${t.nodeId}"]`);
+      if (!el) return;
+      if (t.ok === false) el.classList.add('trace-fail');
+      else el.classList.add('trace-ok');
+      if (t.type === 'condition' && t.result === false) el.classList.add('trace-branch-false');
+    });
+  }
+
+  // ── Cadencia de seguimiento (sin cambios respecto a la versión anterior) ──
   function cadRow(dia, msg){
-    const esc = s => String(s==null?'':s).replace(/</g,'&lt;').replace(/"/g,'&quot;');
     return `<div class="cad-row" style="display:flex;gap:10px;align-items:flex-start;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:12px;padding:10px">
       <div style="flex-shrink:0"><label style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Día</label>
         <input class="cad-dia" type="number" min="0" value="${Number(dia)||1}" style="width:64px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:14px;text-align:center"></div>
@@ -204,7 +719,7 @@
     };
   }
 
-  function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
+  await cargar();
 })();
 </script>
 </body>

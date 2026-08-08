@@ -3011,6 +3011,9 @@ app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   }
   const adapter = require('./db/adapter');
   adapter.run("UPDATE leads SET status = ?, updated_at = created_at WHERE id = ?", ['cerrado', lead.id]);
+  // conversation:closed solo se emitía desde el router multicanal — el cierre de un
+  // lead de WhatsApp (el canal dominante) nunca lo disparaba.
+  try { require('./services/assigner').triggerWorkflow('conversation:closed', lead.id, ''); } catch (e) { /* workflow opcional */ }
   res.json({ ok: true });
 });
 
@@ -4400,10 +4403,23 @@ app.get('/api/calls/:conversationId/logs', auth.requireAuth, async (req, res) =>
 
 app.get('/api/workflows', auth.requireAdmin, (req, res) => res.json(store.getAllWorkflows()));
 
+app.get('/api/workflows/:id', auth.requireAdmin, (req, res) => {
+  const workflow = store.getWorkflowById(req.params.id);
+  if (!workflow) return res.status(404).json({ error: 'workflow_no_existe' });
+  res.json(workflow);
+});
+
+// Acepta el grafo del editor visual ({nodes,edges}) o, para compatibilidad con
+// integraciones viejas, el formato lineal (trigger_event/conditions/actions) —
+// createWorkflow() infiere trigger_event desde el nodo trigger del grafo si no
+// viene explícito.
 app.post('/api/workflows', auth.requireAdmin, (req, res) => {
-  const { nombre, activo, trigger_event, conditions, actions } = req.body || {};
-  if (!nombre || !trigger_event) return res.status(400).json({ error: 'nombre y trigger_event requeridos' });
-  const workflow = store.createWorkflow({ nombre, activo, trigger_event, conditions, actions });
+  const { nombre, activo, trigger_event, conditions, actions, graph } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'nombre_requerido' });
+  if (!trigger_event && !(graph && Array.isArray(graph.nodes) && graph.nodes.some(n => n.type === 'trigger'))) {
+    return res.status(400).json({ error: 'falta_disparador', message: 'El flujo necesita un trigger_event o un nodo de disparador en el grafo' });
+  }
+  const workflow = store.createWorkflow({ nombre, activo, trigger_event, conditions, actions, graph });
   require('./services/workflow').loadRules();
   res.json(workflow);
 });
@@ -4424,6 +4440,22 @@ app.delete('/api/workflows/:id', auth.requireAdmin, (req, res) => {
 app.get('/api/workflows/:id/logs', auth.requireAdmin, (req, res) => {
   res.json(store.getWorkflowLogs(req.params.id));
 });
+
+// Dry-run: corre el grafo con un contexto de ejemplo (o el que mande el editor) SIN
+// ejecutar efectos reales — el botón "Probar" del canvas colorea los nodos con esta
+// traza antes de que el admin active el flujo de verdad.
+app.post('/api/workflows/:id/test', auth.requireAdmin, asyncH(async (req, res) => {
+  const workflow = store.getWorkflowById(req.params.id);
+  if (!workflow) return res.status(404).json({ error: 'workflow_no_existe' });
+  const contextIn = req.body && req.body.context;
+  const context = contextIn && contextIn.conversation ? contextIn : {
+    conversation: { id: 0, channel: 'whatsapp', etiqueta: 'interesado', status: 'asignado', priority: 'normal', assigned_to_id: null, lead_id: null, customer_id: null },
+    customer: { name: 'Cliente de prueba' },
+    message: { body: (contextIn && contextIn.body) || 'Mensaje de prueba' },
+  };
+  const result = await require('./services/workflow').dryRun(workflow, context);
+  res.json(result);
+}));
 
 // ===================== TEMPLATES (respuestas rápidas) =====================
 
@@ -5102,7 +5134,6 @@ app.post('/api/events/read-all', auth.requireAuth, (req, res) => {
 
 // ===================== FASE 2 — SP INTELLIGENCE, WORKFLOWS, FINANZAS =====================
 const intelligence = require('./services/intelligence');
-const workflowEngine = require('./services/workflow-engine');
 const finance = require('./services/finance');
 
 // --- SP Intelligence ---
@@ -5122,14 +5153,8 @@ app.get('/api/intelligence/datos', auth.requireAdmin, (req, res) => {
   });
 });
 
-// --- Workflows (extender CRUD existente) ---
-app.get('/api/workflows/:id/executions', auth.requireAdmin, (req, res) => {
-  const logs = store.all(
-    `SELECT * FROM workflow_logs WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 50`,
-    [Number(req.params.id)]
-  );
-  res.json({ executions: logs });
-});
+// /api/workflows/:id/executions se quitó — duplicaba exactamente /api/workflows/:id/logs
+// (misma tabla, misma query). El editor visual usa /logs.
 
 // --- Centro Financiero ---
 app.get('/api/finanzas/resumen', auth.requireAdmin, (req, res) => {
@@ -5504,6 +5529,10 @@ function ensurePlatformAdmin() {
   // Meta Ads: recomendaciones de severidad alta (gasto sin resultados) avisan solas
   // al admin — antes había que entrar al panel a mirar campaña por campaña.
   setInterval(() => { runForAllTenants(() => checkMetaAdsAlertas()).catch(e => console.error('[SCHED] meta-ads alertas:', e.message)); }, 6 * 60 * 60 * 1000);
+  // Automatizaciones: reanuda delays vencidos + evalúa triggers 'schedule' y
+  // 'lead:inactive'. Antes un delay solo podía vivir en memoria; con el proceso
+  // reiniciándose en cada deploy, cualquier flujo con espera nunca llegaba a la acción.
+  setInterval(() => { runForAllTenants(() => require('./services/workflow').tick()).catch(e => console.error('[SCHED] workflow tick:', e.message)); }, 30 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
   require('./services/scheduler').start(buildMensajeConFirma, runForAllTenants);
 })();
