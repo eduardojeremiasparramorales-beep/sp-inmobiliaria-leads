@@ -104,14 +104,19 @@ router.get('/locations', requireConfig, async (req, res) => {
 // sin transformación intermedia, para que lo que ve el admin en el asistente sea
 // exactamente lo que se manda a Meta.
 router.post('/campaigns/whatsapp', requireConfig, async (req, res) => {
-  const { campaignName, adsetName, dailyBudgetMinorUnits, targeting, adMessage, imageBase64, pageId } = req.body || {};
+  // budgetCOP: pesos colombianos directos, SIN multiplicar por 100 — confirmado contra
+  // la cuenta real (min_daily_budget:3233, adsets reales con lifetime_budget:"125000").
+  // durationDays: si viene, el adset usa lifetime_budget + end_time (el patrón real que
+  // usa esta cuenta hoy — ver AS01/AS02 con sufijo "7D"/"8D" en el nombre); si no viene
+  // o es 0, usa daily_budget indefinido.
+  const { campaignName, adsetName, budgetCOP, durationDays, targeting, adMessage, imageBase64, pageId } = req.body || {};
   if (!campaignName || !String(campaignName).trim()) return res.status(400).json({ error: 'falta_nombre_campana' });
-  if (!dailyBudgetMinorUnits || Number(dailyBudgetMinorUnits) <= 0) return res.status(400).json({ error: 'presupuesto_invalido' });
+  if (!budgetCOP || Number(budgetCOP) <= 0) return res.status(400).json({ error: 'presupuesto_invalido' });
   if (!targeting || !Array.isArray(targeting.cities) || !targeting.cities.length) return res.status(400).json({ error: 'falta_segmentacion' });
   if (!adMessage || !String(adMessage).trim()) return res.status(400).json({ error: 'falta_texto_anuncio' });
   try {
     const result = await metaAds.createWhatsAppCampaign({
-      campaignName, adsetName, dailyBudgetMinorUnits: Number(dailyBudgetMinorUnits),
+      campaignName, adsetName, budgetCOP: Number(budgetCOP), durationDays: durationDays ? Number(durationDays) : null,
       targeting, adMessage, imageBase64, pageId,
     });
     console.log(`[META-ADS] Campaña creada PAUSED: ${result.campaign.id} — revisar en Ads Manager antes de activar`);

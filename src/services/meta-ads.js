@@ -293,28 +293,50 @@ async function buscarUbicaciones(q) {
  * `destination_type: 'WHATSAPP'` son lo que le dice a Meta "manda a la gente a escribir
  * por WhatsApp", el mismo patrón que ya usan los adsets reales de esta cuenta
  * (AS01/AS02 con targeting por ciudad — ver getAdSets() de una campaña real).
- * dailyBudgetMinorUnits va SIN transformar — el llamador (ruta/UI) es responsable de
- * mandar ya el valor en la unidad mínima que espera Meta para COP (ver comentario en
- * getAccountInfo() sobre cómo verificarlo antes del primer uso real).
+ *
+ * Presupuesto: confirmado contra la cuenta real (GET /act_.../?fields=currency,
+ * min_daily_budget → currency: COP, min_daily_budget: 3233) que Meta NO multiplica el
+ * peso colombiano por 100 como hace con USD/EUR — el valor que se manda es la cifra en
+ * pesos tal cual, sin transformar. Confirmado también con los adsets reales de esta
+ * cuenta, que tienen `lifetime_budget: "125000"` — 125.000 COP totales, coherente con el
+ * gasto real observado ($41.578 acumulado), no 12,5 millones (lo que daría si estuviera
+ * ×100). Por eso `budgetCOP` abajo se manda directo, sin escalar.
+ *
+ * Los adsets reales de esta cuenta (AS01...8D, AS02...7D) usan LIFETIME budget con fecha
+ * de fin — un presupuesto total para un número de días fijo, no un gasto diario
+ * indefinido — así que ese es el modo por defecto aquí. `daily_budget` sigue disponible
+ * para quien prefiera una campaña sin fecha de fin (`durationDays` en null/0).
  */
-async function createAdSet({ campaignId, name, dailyBudgetMinorUnits, targeting, pageId }) {
+async function createAdSet({ campaignId, name, budgetCOP, durationDays, targeting, pageId }) {
   const { accountId } = getConfig();
   const fbPageId = pageId || process.env.FACEBOOK_PAGE_ID;
   if (!campaignId) throw new Error('Falta campaignId');
   if (!name || !name.trim()) throw new Error('Falta el nombre del conjunto de anuncios');
-  if (!dailyBudgetMinorUnits || dailyBudgetMinorUnits <= 0) throw new Error('Presupuesto diario inválido');
+  if (!budgetCOP || budgetCOP <= 0) throw new Error('Presupuesto inválido');
   if (!fbPageId) throw new Error('Falta FACEBOOK_PAGE_ID en .env — el destino WhatsApp lo necesita');
-  return graphPost(`/${accountId}/adsets`, {
+
+  const body = {
     name: name.trim(),
     campaign_id: campaignId,
-    daily_budget: dailyBudgetMinorUnits,
     billing_event: 'IMPRESSIONS',
     optimization_goal: 'CONVERSATIONS',
     destination_type: 'WHATSAPP',
     promoted_object: { page_id: fbPageId },
     targeting,
     status: 'PAUSED',
-  });
+  };
+  if (durationDays && Number(durationDays) > 0) {
+    // lifetime_budget EXIGE start_time/end_time — sin fecha de fin Meta lo rechaza
+    // (un presupuesto "total" no significa nada sin saber en cuántos días se reparte).
+    const start = new Date();
+    const end = new Date(start.getTime() + Number(durationDays) * 24 * 60 * 60 * 1000);
+    body.lifetime_budget = budgetCOP;
+    body.start_time = start.toISOString();
+    body.end_time = end.toISOString();
+  } else {
+    body.daily_budget = budgetCOP;
+  }
+  return graphPost(`/${accountId}/adsets`, body);
 }
 
 /**
@@ -386,7 +408,8 @@ async function createWhatsAppCampaign(input) {
   result.adset = await createAdSet({
     campaignId: result.campaign.id,
     name: input.adsetName || input.campaignName + ' · AdSet',
-    dailyBudgetMinorUnits: input.dailyBudgetMinorUnits,
+    budgetCOP: input.budgetCOP,
+    durationDays: input.durationDays,
     targeting,
     pageId: input.pageId,
   });
