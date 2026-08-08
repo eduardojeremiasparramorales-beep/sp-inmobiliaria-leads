@@ -110,8 +110,19 @@ ENVEOF
 fi
 
 # === 4. CONFIGURAR CADDY ===
+# Solo se escribe si NO existe. Sobrescribirlo a ciegas se llevó por delante el
+# enrutamiento manual del dominio (Vid.a comparte host y tiene sus propios `handle`),
+# y una ruta mal apuntada aquí no rompe el sitio de forma visible: lo desvía en
+# silencio a otra app, con otra base de datos. Para cambios, editar a mano y
+# `caddy validate` antes de recargar.
 log "🌐 Configurando Caddy..."
 mkdir -p "$(dirname "$CADDYFILE")"
+if [ -f "$CADDYFILE" ]; then
+  warn "$CADDYFILE ya existe — se respeta el enrutamiento actual (no se sobrescribe)"
+  if grep -qE 'localhost:(300[1-9]|30[1-9][0-9])' "$CADDYFILE" 2>/dev/null; then
+    warn "OJO: hay rutas apuntando a otro puerto además del 3000 — revisa que /api/login vaya al CRM"
+  fi
+else
 cat > "$CADDYFILE" <<CADDYEOF
 $DOMAIN {
     reverse_proxy localhost:3000
@@ -127,7 +138,10 @@ $DOMAIN {
     }
 }
 CADDYEOF
-caddy fmt --overwrite "$CADDYFILE" 2>/dev/null || true
+  caddy fmt --overwrite "$CADDYFILE" 2>/dev/null || true
+  ok "Caddyfile creado para $DOMAIN"
+fi
+caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1 || fail "Caddyfile inválido — no se recarga Caddy para no tumbar el sitio"
 systemctl reload caddy 2>/dev/null || systemctl start caddy 2>/dev/null || warn "Caddy no inició automáticamente"
 ok "Caddy configurado para $DOMAIN"
 
