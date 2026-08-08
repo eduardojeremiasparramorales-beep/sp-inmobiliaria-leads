@@ -1377,6 +1377,24 @@ function countLeadsByAdIds(adIds, days) {
   return r ? r.c : 0;
 }
 
+// Igual que countLeadsByAdIds pero agrupado por ad_id — una sola query para TODOS los
+// anuncios de la cuenta en vez de una consulta por campaña (ver meta-ads.js getCampaigns:
+// antes hacía 1 llamada a Graph + 1 query de conteo POR campaña; con esto el caller junta
+// los ad_id que le pertenecen a cada campaña y suma desde este único mapa).
+function getLeadCountsByAdIds(adIds, days) {
+  const ids = (adIds || []).filter(Boolean).map(String);
+  if (!ids.length) return {};
+  const placeholders = ids.map(() => '?').join(',');
+  let sql = `SELECT ad_id, COUNT(*) as c FROM leads WHERE ad_id IN (${placeholders})`;
+  const params = [...ids];
+  if (days) { sql += ` AND created_at >= datetime('now','localtime',?)`; params.push(`-${Number(days)} days`); }
+  sql += ' GROUP BY ad_id';
+  const rows = all(sql, params);
+  const map = {};
+  rows.forEach(r => { map[r.ad_id] = r.c; });
+  return map;
+}
+
 function getLeadCount() {
   const r = one("SELECT COUNT(*) as c FROM leads WHERE status != 'cerrado'");
   return r ? r.c : 0;
@@ -3258,7 +3276,7 @@ module.exports = {
   getSessionsByOwner, touchSessionLastSeen, deleteOtherSessions,
   createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,
   getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout,
-  countMessagesByLead, getLeadAggregates,
+  countMessagesByLead, getLeadAggregates, getLeadCountsByAdIds,
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName, upsertWATemplateFull, setWATemplateMapping,
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,

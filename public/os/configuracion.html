@@ -84,6 +84,7 @@
     { id: 'uso', label: 'Uso', icon: '📊' },
     { id: 'capacidades', label: 'Capacidades', icon: '🧩' },
     { id: 'operacion', label: 'Operación', icon: '🛠️' },
+    { id: 'meta-ads', label: 'Meta Ads', icon: '📣' },
   ];
   let currentSection = 'general';
 
@@ -113,7 +114,7 @@
 
   async function renderSection(id) {
     const panel = document.getElementById('cfgPanel');
-    const renderers = { general: renderGeneral, cuenta: renderCuenta, privacidad: renderPrivacidad, facturacion: renderFacturacion, uso: renderUso, capacidades: renderCapacidades, operacion: renderOperacion };
+    const renderers = { general: renderGeneral, cuenta: renderCuenta, privacidad: renderPrivacidad, facturacion: renderFacturacion, uso: renderUso, capacidades: renderCapacidades, operacion: renderOperacion, 'meta-ads': renderMetaAds };
     try { await renderers[id](panel); }
     catch (e) { panel.innerHTML = `<div class="cfg-sec"><p style="color:var(--red)">Error cargando la sección: ${esc(e.message)}</p></div>`; }
   }
@@ -741,6 +742,72 @@
     });
 
     await loadIaConfig();
+  }
+
+  // ═══════════════════ META ADS ═══════════════════
+  // Antes la única forma de configurar (o rotar) el token de Meta Ads era editar
+  // .env a mano y redesplegar — esto lo guarda cifrado (AES-256-GCM vía crypto-vault)
+  // en la base de datos, con fallback a .env si no se configura nada aquí.
+  async function renderMetaAds(panel) {
+    const cfg = await api('/api/meta-ads/config') || {};
+    panel.innerHTML = `
+      <form class="cfg-sec" id="fMetaAds">
+        <h3>Meta Ads · Marketing API</h3>
+        <p>Credenciales de la cuenta publicitaria que alimenta el panel de Meta Ads, la creación de campañas y el Conversions API. Si se deja un campo vacío, se conserva el valor guardado (o el de .env si nunca se configuró aquí).</p>
+        <div class="cfg-field">
+          <label>Token de acceso (System User)</label>
+          <input id="ma_token" type="password" autocomplete="off" placeholder="${cfg.tokenSet ? esc(cfg.tokenMasked) + ' (deja vacío para conservar)' : 'EAAxxxxxxxxxxxxx...'}">
+          <div class="cfg-hint">Token permanente con permisos ads_management + ads_read. Se guarda cifrado, nunca se muestra completo.</div>
+        </div>
+        <div class="cfg-field"><label>ID de cuenta publicitaria</label><input id="ma_account" placeholder="act_XXXXXXXXXXXX" value="${esc(cfg.accountId || '')}"></div>
+        <div class="cfg-field"><label>ID del Pixel</label><input id="ma_pixel" placeholder="Opcional — habilita Conversions API" value="${esc(cfg.pixelId || '')}"></div>
+        <div class="cfg-field"><label>Page ID (destino WhatsApp)</label><input id="ma_page" placeholder="ID de la página de Facebook" value="${esc(cfg.pageId || '')}"></div>
+        <div class="cfg-hint" style="margin-bottom:14px">Origen actual: <strong>${cfg.source === 'ui' ? 'guardado desde este panel' : 'variables de entorno (.env)'}</strong></div>
+        <div style="display:flex;gap:10px">
+          <button type="submit" class="cfg-save">Guardar</button>
+          <button type="button" class="cfg-save cfg-save--ghost" id="btnTestMetaAds">Probar conexión</button>
+        </div>
+        <div id="metaAdsTestResult" style="margin-top:10px;font-size:12px;display:none"></div>
+      </form>`;
+
+    document.getElementById('fMetaAds').addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true;
+      const body = {
+        accountId: document.getElementById('ma_account').value.trim(),
+        pixelId: document.getElementById('ma_pixel').value.trim(),
+        pageId: document.getElementById('ma_page').value.trim(),
+      };
+      const token = document.getElementById('ma_token').value.trim();
+      if (token) body.token = token;
+      const r = await api('/api/meta-ads/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      btn.disabled = false;
+      if (r && r.ok) { toast('Configuración de Meta Ads guardada', 'ok'); renderMetaAds(panel); }
+      else toast('Error al guardar', 'err');
+    });
+
+    document.getElementById('btnTestMetaAds').addEventListener('click', async () => {
+      const btn = document.getElementById('btnTestMetaAds');
+      const res = document.getElementById('metaAdsTestResult');
+      res.style.display = 'block';
+      res.innerHTML = 'Probando conexión con Meta…';
+      res.style.color = 'var(--text-3)';
+      btn.disabled = true;
+      try {
+        const r = await api('/api/meta-ads/config/test', { method: 'POST' });
+        if (r && r.ok) {
+          res.innerHTML = '✅ Conexión exitosa — cuenta: <strong>' + esc(r.accountName || '?') + '</strong> (' + esc(r.accountStatus === 1 ? 'activa' : String(r.accountStatus)) + ', ' + esc(r.currency || '') + ')';
+          res.style.color = '#4E7B46';
+        } else {
+          res.innerHTML = '❌ ' + esc((r && (r.userMessage || r.detalle || r.error)) || 'No se pudo conectar. Revisa el token y el ID de cuenta.');
+          res.style.color = '#e74c3c';
+        }
+      } catch (e) {
+        res.innerHTML = '❌ Error de conexión: ' + esc(e.message);
+        res.style.color = '#e74c3c';
+      }
+      btn.disabled = false;
+    });
   }
 
   renderLayout();
