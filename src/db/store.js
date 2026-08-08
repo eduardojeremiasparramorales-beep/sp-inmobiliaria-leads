@@ -1340,6 +1340,24 @@ function setLeadAdAttribution(leadId, { adId, adName, sourceUrl, ctwaClid } = {}
   run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
+// Cuenta leads REALES del CRM atribuidos a un conjunto de ad_id (los anuncios de una
+// campaña de Meta), opcionalmente acotado a los últimos N días. Es la fuente de verdad
+// para "cuántos leads trajo esta campaña" — más confiable que las `actions` que reporta
+// la Graph API, cuyo action_type varía según el objetivo de la campaña (un Lead Ads
+// reporta 'lead', pero una campaña de mensajes a WhatsApp usa otro tipo de acción que
+// meta-ads.js no siempre reconoce). Cuenta TODOS los leads con ese ad_id, no solo los
+// activos, para no subestimar el CPL con leads que ya se cerraron.
+function countLeadsByAdIds(adIds, days) {
+  const ids = (adIds || []).filter(Boolean).map(String);
+  if (!ids.length) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  let sql = `SELECT COUNT(*) as c FROM leads WHERE ad_id IN (${placeholders})`;
+  const params = [...ids];
+  if (days) { sql += ` AND created_at >= datetime('now','localtime',?)`; params.push(`-${Number(days)} days`); }
+  const r = one(sql, params);
+  return r ? r.c : 0;
+}
+
 function getLeadCount() {
   const r = one("SELECT COUNT(*) as c FROM leads WHERE status != 'cerrado'");
   return r ? r.c : 0;
@@ -3186,7 +3204,7 @@ module.exports = {
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse, resetLead, reopenLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
-  marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution,
+  marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution, countLeadsByAdIds,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin, setVendedor2FA,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,

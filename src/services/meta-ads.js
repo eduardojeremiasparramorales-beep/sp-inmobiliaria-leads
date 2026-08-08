@@ -79,8 +79,18 @@ async function getCampaigns() {
         limit: 1,
       });
       const metrics = (insights.data && insights.data[0]) || {};
-      const leads = extractLeads(metrics.actions);
+      const leadsMeta = extractLeads(metrics.actions);
       const spend = parseFloat(metrics.spend || 0);
+      // leads/cpl "oficiales" = conteo REAL del CRM (ad_id atribuido vía referral del
+      // webhook), no lo que Meta reporta en `actions` — es la cifra que debe guiar
+      // presupuesto. leadsMeta/cplMeta quedan como referencia/comparación.
+      let leads = leadsMeta;
+      try {
+        const real = await getCampaignRealLeads(c.id, 30);
+        leads = real.leadsCRM;
+      } catch (e) {
+        console.error(`[META-ADS] No se pudo cruzar leads reales del CRM para ${c.id}:`, e.message);
+      }
       return {
         id: c.id,
         name: c.name,
@@ -95,10 +105,12 @@ async function getCampaigns() {
           clicks: parseInt(metrics.clicks || 0),
           spend,
           leads,
+          leadsMeta,
           ctr: parseFloat(metrics.ctr || 0),
           cpc: parseFloat(metrics.cpc || 0),
           cpm: parseFloat(metrics.cpm || 0),
           cpl: leads > 0 ? spend / leads : 0,
+          cplMeta: leadsMeta > 0 ? spend / leadsMeta : 0,
         },
       };
     } catch (e) {
@@ -136,8 +148,15 @@ async function getCampaignById(campaignId) {
       limit: 1,
     });
     const m = (insights.data && insights.data[0]) || {};
-    const leads = extractLeads(m.actions);
+    const leadsMeta = extractLeads(m.actions);
     const spend = parseFloat(m.spend || 0);
+    let leads = leadsMeta;
+    try {
+      const real = await getCampaignRealLeads(campaignId, 30);
+      leads = real.leadsCRM;
+    } catch (e) {
+      console.error(`[META-ADS] No se pudo cruzar leads reales del CRM para ${campaignId}:`, e.message);
+    }
     metrics = {
       impressions: parseInt(m.impressions || 0),
       clicks: parseInt(m.clicks || 0),
@@ -145,10 +164,12 @@ async function getCampaignById(campaignId) {
       frequency: parseFloat(m.frequency || 0),
       spend,
       leads,
+      leadsMeta,
       ctr: parseFloat(m.ctr || 0),
       cpc: parseFloat(m.cpc || 0),
       cpm: parseFloat(m.cpm || 0),
       cpl: leads > 0 ? spend / leads : 0,
+      cplMeta: leadsMeta > 0 ? spend / leadsMeta : 0,
     };
   } catch (e) {
     console.error(`[META-ADS] Error métricas campaña ${campaignId}:`, e.message);
@@ -356,10 +377,46 @@ async function getPixelInfo() {
 
 // ─── Utilidades ──────────────────────────────────────────────
 
+// Suma todas las `actions` que la Graph API reconoce como "el cliente se convirtió en
+// lead", sea cual sea el objetivo de la campaña. Un Lead Ads clásico reporta 'lead' u
+// 'offsite_conversion.fb_pixel_lead', pero una campaña de Click-to-WhatsApp (como la que
+// corre hoy) reporta el inicio de conversación bajo un action_type de mensajería —
+// omitirlos es lo que hacía que toda campaña de WhatsApp mostrara "0 leads" sin importar
+// cuánta gente escribiera de verdad. Esto es el número que Meta CREE que generó — el
+// número que el CRM sabe que generó de verdad se calcula aparte, ver getCampaignAdIds()
+// + store.countLeadsByAdIds(), y es el que hay que mirar para decidir presupuesto.
+const LEAD_ACTION_TYPES = new Set([
+  'lead',
+  'offsite_conversion.fb_pixel_lead',
+  'onsite_conversion.lead_grouped',
+  'onsite_conversion.messaging_conversation_started_7d',
+  'onsite_conversion.messaging_first_reply',
+  'onsite_conversion.total_messaging_connection',
+]);
 function extractLeads(actions) {
   if (!actions || !Array.isArray(actions)) return 0;
-  const leadAction = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead' || a.action_type === 'lead');
-  return leadAction ? parseInt(leadAction.value || 0) : 0;
+  return actions
+    .filter(a => LEAD_ACTION_TYPES.has(a.action_type))
+    .reduce((sum, a) => sum + (parseInt(a.value || 0) || 0), 0);
+}
+
+// Resuelve los ad_id de todos los anuncios que pertenecen a una campaña (recorre sus
+// adsets). Es lo que permite cruzar el gasto/alcance que reporta Meta contra los leads
+// REALES que el CRM ya tiene atribuidos por ad_id (capturados del `referral` del webhook
+// de WhatsApp — ver setLeadAdAttribution en db/store.js, eso ya funciona bien).
+async function getCampaignAdIds(campaignId) {
+  const adsets = await getAdSets(campaignId);
+  const adsPorAdset = await Promise.all(adsets.map(as => getAds(as.id).catch(() => [])));
+  return adsPorAdset.flat().map(ad => ad.id).filter(Boolean);
+}
+
+// Leads y CPL calculados con datos REALES del CRM (no lo que Meta reporta) — cruza los
+// ad_id de la campaña contra `leads.ad_id`. Esta es la métrica que debe guiar decisiones
+// de presupuesto; `extractLeads()` de arriba queda solo como referencia/comparación.
+async function getCampaignRealLeads(campaignId, days) {
+  const store = require('../db/store');
+  const adIds = await getCampaignAdIds(campaignId);
+  return { adIds, leadsCRM: store.countLeadsByAdIds(adIds, days) };
 }
 
 function normalizePhone(phone) {
@@ -461,4 +518,6 @@ module.exports = {
   // Utilidades
   normalizePhone,
   extractLeads,
+  getCampaignAdIds,
+  getCampaignRealLeads,
 };
