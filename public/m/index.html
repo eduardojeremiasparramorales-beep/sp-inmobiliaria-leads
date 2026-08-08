@@ -730,16 +730,16 @@
       <button onclick="eqCancelReply()" style="background:none;border:none;color:var(--text-3);font-size:18px;cursor:pointer;padding:4px">✕</button>
     </div>
     <div class="m-scroll" id="eqMsgs" style="padding:12px 14px;position:relative"></div>
-    <button class="eq-scroll-bottom" id="eqScrollBtn">${I(SVG.arrowUp,18)}</button>
+    <button class="eq-scroll-bottom" id="eqScrollBtn"></button>
     <div id="eqRecBar" class="eq-rec-bar">
       <div class="eq-rec-dot"></div>
       <span class="eq-rec-time" id="eqRecTime">0:00</span>
       <button class="eq-rec-cancel" id="eqRecCancel">Cancelar</button>
-      <button class="eq-rec-send" id="eqRecSend">${I(SVG.send,16)}</button>
+      <button class="eq-rec-send" id="eqRecSend"></button>
     </div>
     <div style="display:flex;gap:8px;padding:8px 12px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);border-top:1px solid var(--glass-border);position:relative">
-      <button id="eqClipBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0">${I(SVG.clip,18)}</button>
-      <button id="eqMicBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0">${I(SVG.mic,18)}</button>
+      <button id="eqClipBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
+      <button id="eqMicBtn" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg-3);color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
       <textarea id="eqInput" placeholder="Mensaje al equipo…" rows="1" style="flex:1;min-height:40px;max-height:100px;padding:10px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;resize:none"></textarea>
       <button id="eqSend" style="width:42px;height:42px;border-radius:50%;border:none;background:var(--grad-gold);color:#0A0A0A;display:grid;place-items:center;cursor:pointer;flex-shrink:0"></button>
     </div>
@@ -1396,6 +1396,7 @@ window.eqUnpin=async function(){
 // ── Scroll to bottom button ──
 function eqInitScrollBtn(){
   const btn=$('#eqScrollBtn'); const box=$('#eqMsgs'); if(!btn||!box) return;
+  btn.innerHTML=I(SVG.arrowUp,18); // el HTML estático nunca interpolaba esto — quedaba el texto literal del template
   box.addEventListener('scroll',()=>{
     const nearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<100;
     btn.classList.toggle('show',!nearBottom);
@@ -1429,7 +1430,7 @@ function eqInitAudio(){
   const cancelBtn=$('#eqRecCancel');
   if(cancelBtn) cancelBtn.onclick=()=>{ if(_eqRec&&_eqRec.state==='recording') _eqRec.stop(); _eqRecChunks=[]; eqCleanRec(); };
   const sendBtn=$('#eqRecSend');
-  if(sendBtn) sendBtn.onclick=()=>{ if(_eqRec&&_eqRec.state==='recording') eqStopRec(); };
+  if(sendBtn){ sendBtn.innerHTML=I(SVG.send,16); sendBtn.onclick=()=>{ if(_eqRec&&_eqRec.state==='recording') eqStopRec(); }; }
 }
 function eqStopRec(){ if(_eqRec&&_eqRec.state==='recording') _eqRec.stop(); clearInterval(_eqRecTimer); }
 function eqCleanRec(){ clearInterval(_eqRecTimer); _eqRec=null; _eqRecChunks=[]; const bar=$('#eqRecBar'); if(bar) bar.classList.remove('show'); const inp=$('#eqInput'); if(inp) inp.style.display=''; }
@@ -2031,6 +2032,7 @@ async function init(){
     if (meAv) {
       meAv.style.background = me.foto ? '' : avatarColor(me.nombre);
       meAv.innerHTML = me.foto ? `<img src="${esc(me.foto)}" style="width:100%;height:100%;object-fit:cover">` : initials(me.nombre);
+      meAv.title = me.nombre || ''; // el HTML estático nunca lo corregía — quedaba con el texto literal del template sin interpolar
     }
     metricas = await api('/api/me/metricas');
     renderFilters();
