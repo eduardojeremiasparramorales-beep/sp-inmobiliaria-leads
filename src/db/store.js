@@ -666,7 +666,12 @@ function assignLeadToVendedor(leadId, vendedor) {
 function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid, status) {
   const m = media || {};
   const st = status || (direction === 'outgoing' ? 'sent' : null);
-  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id, wamid, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+  // `timestamp` se fija EXPLÍCITAMENTE aquí, sin depender del DEFAULT de la columna.
+  // `messages` es la única tabla que existe en producción desde antes de que el esquema
+  // en código tuviera 'localtime' — CREATE TABLE IF NOT EXISTS nunca reescribe una tabla
+  // que ya existe, así que su DEFAULT en la BD real quedó congelado en UTC (`datetime('now')`
+  // a secas) aunque el CREATE de aquí ya diga 'localtime'. Cada mensaje se veía ~5h adelantado.
+  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id, wamid, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\',\'localtime\'))', [
     leadId, from, to, body, direction,
     m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
     replyToId ? Number(replyToId) : null, wamid || null, st,
@@ -809,7 +814,9 @@ function saveTeamMessage(fromVendedorId, fromNombre, body, opts = {}) {
   const replyTo = opts.replyToId != null ? Number(opts.replyToId) : null;
   const mediaType = opts.mediaType || null;
   const mediaUrl = opts.mediaUrl || null;
-  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  // created_at explícito por la misma razón que en saveMessage() — no confiar en el
+  // DEFAULT de la columna si la tabla en producción es más vieja que el esquema actual.
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\',\'localtime\'))',
     [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo, mediaType, mediaUrl]);
   return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id ORDER BY tm.id DESC LIMIT 1');
 }
