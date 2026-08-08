@@ -89,6 +89,40 @@
   .ma-loading { display: flex; align-items: center; justify-content: center; padding: 30px; color: var(--text-3); font-size: 12px; gap: 8px; }
   .ma-spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: ma-spin .6s linear infinite; }
   @keyframes ma-spin { to { transform: rotate(360deg); } }
+
+  /* Asistente de creación */
+  .ma-form-row { margin-bottom: 16px; }
+  .ma-form-row label { display: block; font-size: 11.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; font-weight: 600; }
+  .ma-form-row input[type="text"], .ma-form-row input[type="number"], .ma-form-row textarea {
+    width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 10px 12px; color: var(--text); font-size: 13.5px; font-family: var(--f-ui); outline: none; transition: border-color .15s;
+  }
+  .ma-form-row input:focus, .ma-form-row textarea:focus { border-color: var(--gold); }
+  .ma-form-row textarea { resize: vertical; min-height: 70px; }
+  .ma-form-hint { font-size: 11px; color: var(--text-3); margin-top: 5px; }
+  .ma-form-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .ma-form-grid2--budget { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+  .ma-safety { background: rgba(78,123,70,.1); border: 1px solid rgba(78,123,70,.28); border-radius: 10px; padding: 12px 14px; font-size: 12px; color: var(--text-2); margin-bottom: 18px; display: flex; gap: 10px; align-items: flex-start; }
+  .ma-safety b { color: var(--green); }
+
+  .ma-city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 0; }
+  .ma-city-chip { display: flex; align-items: center; gap: 6px; background: var(--gold-soft, rgba(200,164,90,.16)); border: 1px solid var(--gold-line, rgba(200,164,90,.4)); color: var(--gold); border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 12px; font-weight: 600; }
+  .ma-city-chip button { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; opacity: .7; }
+  .ma-city-chip button:hover { opacity: 1; }
+  .ma-city-results { position: relative; }
+  .ma-city-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-3); border: 1px solid var(--border-strong); border-radius: var(--r-sm); max-height: 220px; overflow-y: auto; z-index: 20; box-shadow: var(--sh-2); }
+  .ma-city-opt { padding: 9px 12px; font-size: 12.5px; cursor: pointer; display: flex; justify-content: space-between; }
+  .ma-city-opt:hover { background: var(--bg-4); color: var(--gold); }
+  .ma-city-opt small { color: var(--text-3); }
+
+  .ma-image-drop { border: 1.5px dashed var(--border-strong); border-radius: var(--r-sm); padding: 18px; text-align: center; cursor: pointer; transition: border-color .15s; background: var(--bg-2); }
+  .ma-image-drop:hover { border-color: var(--gold); }
+  .ma-image-preview { max-width: 100%; max-height: 220px; border-radius: 10px; display: block; margin: 0 auto 10px; }
+
+  .ma-review { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 14px 16px; }
+  .ma-review dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 12.5px; margin: 0; }
+  .ma-review dt { color: var(--text-3); }
+  .ma-review dd { margin: 0; color: var(--text); font-weight: 500; }
 </style>
 </head>
 <body>
@@ -113,6 +147,17 @@
   let audiences = [];
   let insights = [];
   let loading = false;
+  let account = null; // { currency, min_daily_budget, ... } — GET /api/meta-ads/account
+
+  // Estado del asistente de creación. `durationDays` no-nulo => lifetime_budget con
+  // fecha de fin (el patrón real que usa esta cuenta hoy, ver AS01/AS02 "...7D"/"8D");
+  // null => daily_budget indefinido.
+  const createForm = {
+    campaignName: '', budgetCOP: '', durationDays: '8',
+    cities: [], // [{key, name, region}]
+    adMessage: '', imageBase64: null, imagePreviewUrl: null,
+    citySearch: '', cityResults: [], submitting: false,
+  };
 
   // ─── Render ─────────────────────────────
   function render() {
@@ -123,11 +168,15 @@
           ${renderKPIs()}
           <div class="ma-tabs">
             <button class="ma-tab ${currentTab === 'campaigns' ? 'active' : ''}" data-tab="campaigns">Campañas</button>
+            <button class="ma-tab ${currentTab === 'create' ? 'active' : ''}" data-tab="create">+ Crear campaña</button>
             <button class="ma-tab ${currentTab === 'audiences' ? 'active' : ''}" data-tab="audiences">Audiencias</button>
             <button class="ma-tab ${currentTab === 'insights' ? 'active' : ''}" data-tab="insights">Insights</button>
           </div>
           <div class="ma-tab-pane ${currentTab === 'campaigns' ? 'active' : ''}" data-pane="campaigns">
             ${loading ? '<div class="ma-loading"><div class="ma-spinner"></div> Cargando campañas...</div>' : renderCampaigns()}
+          </div>
+          <div class="ma-tab-pane ${currentTab === 'create' ? 'active' : ''}" data-pane="create">
+            ${renderCreate()}
           </div>
           <div class="ma-tab-pane ${currentTab === 'audiences' ? 'active' : ''}" data-pane="audiences">
             ${renderAudiences()}
@@ -251,6 +300,98 @@ META_PIXEL_ID=tu_pixel_id (opcional)</code>
         </div>
       `;
     }).join('');
+  }
+
+  function renderCreate() {
+    const f = createForm;
+    const currency = (account && account.currency) || 'COP';
+    const minBudget = account && account.min_daily_budget ? Number(account.min_daily_budget) : null;
+    const modo = f.durationDays ? 'lifetime' : 'diario';
+    const totalDias = f.durationDays ? Number(f.durationDays) : null;
+    const promedioDiario = (modo === 'lifetime' && totalDias && f.budgetCOP) ? Math.round(Number(f.budgetCOP) / totalDias) : null;
+
+    return `
+      <div class="ma-safety">
+        <span>🔒</span>
+        <div><b>Se crea PAUSADA.</b> No se activa gasto real. Revísala en <a href="https://business.facebook.com/adsmanager" target="_blank" style="color:var(--gold)">Meta Ads Manager</a> y actívala tú mismo cuando estés listo.</div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>1 · Datos de la campaña</h3>
+        <div class="ma-form-row">
+          <label>Nombre de la campaña</label>
+          <input type="text" id="cfName" placeholder="Ej: Lotes Girardot · Agosto" value="${esc(f.campaignName)}">
+          <div class="ma-form-hint">Se usará también para nombrar el conjunto de anuncios y el creativo.</div>
+        </div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>2 · Presupuesto y duración</h3>
+        <div class="ma-form-grid2--budget">
+          <div class="ma-form-row" style="margin-bottom:0">
+            <label>Presupuesto ${modo === 'lifetime' ? 'total' : 'diario'} (${currency})</label>
+            <input type="number" id="cfBudget" min="1" step="1000" placeholder="Ej: 125000" value="${esc(f.budgetCOP)}">
+            <div class="ma-form-hint" id="cfBudgetHint">${minBudget ? `Mínimo de la cuenta: ${fmtMoney(minBudget)} / día` : 'En pesos colombianos directos — Meta no lo multiplica.'}${promedioDiario ? ` · ≈ ${fmtMoney(promedioDiario)}/día` : ''}</div>
+          </div>
+          <div class="ma-form-row" style="margin-bottom:0">
+            <label id="cfDurationLabel">Duración (días)</label>
+            <input type="number" id="cfDuration" min="0" step="1" placeholder="0 = sin fecha de fin" value="${esc(f.durationDays)}">
+            <div class="ma-form-hint" id="cfDurationHint">${modo === 'lifetime' ? `Presupuesto total repartido en ${totalDias} día(s)` : 'Sin duración = gasto diario indefinido hasta que la pausen a mano'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>3 · Segmentación</h3>
+        <div class="ma-form-row ma-city-results" style="margin-bottom:8px">
+          <label>Buscar ciudad</label>
+          <input type="text" id="cfCitySearch" placeholder="Ej: Girardot" value="${esc(f.citySearch)}" autocomplete="off">
+          ${f.cityResults.length ? `
+            <div class="ma-city-dropdown" id="cfCityDropdown">
+              ${f.cityResults.map(c => `<div class="ma-city-opt" data-city-key="${esc(c.key)}" data-city-name="${esc(c.name)}" data-city-region="${esc(c.region || '')}"><span>${esc(c.name)}</span><small>${esc(c.region || '')}</small></div>`).join('')}
+            </div>` : ''}
+        </div>
+        <div class="ma-city-chips">
+          ${f.cities.length ? f.cities.map(c => `<span class="ma-city-chip">${esc(c.name)}<button type="button" data-remove-city="${esc(c.key)}">✕</button></span>`).join('')
+            : '<span style="font-size:12px;color:var(--text-3)">Sin ciudades seleccionadas todavía</span>'}
+        </div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>4 · Creativo</h3>
+        <div class="ma-form-row">
+          <label>Imagen del anuncio</label>
+          <div class="ma-image-drop" id="cfImageDrop">
+            ${f.imagePreviewUrl
+              ? `<img src="${f.imagePreviewUrl}" class="ma-image-preview"><div style="font-size:11.5px;color:var(--text-3)">Click para cambiar</div>`
+              : `<div style="font-size:13px;color:var(--text-2)">📷 Click para subir una imagen</div><div class="ma-form-hint">Opcional — sin imagen, el creativo se crea solo con el texto</div>`}
+          </div>
+          <input type="file" id="cfImageInput" accept="image/*" style="display:none">
+        </div>
+        <div class="ma-form-row" style="margin-bottom:0">
+          <label>Texto del anuncio</label>
+          <textarea id="cfMessage" placeholder="Ej: Lotes desde $40M en Girardot, financiación directa. Escríbenos por WhatsApp.">${esc(f.adMessage)}</textarea>
+        </div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>5 · Revisión</h3>
+        <div class="ma-review">
+          <dl>
+            <dt>Nombre</dt><dd id="cfRevName">${esc(f.campaignName) || '—'}</dd>
+            <dt>Presupuesto</dt><dd id="cfRevBudget">${f.budgetCOP ? fmtMoney(Number(f.budgetCOP)) + (modo === 'lifetime' ? ' total' : ' / día') : '—'}</dd>
+            <dt>Duración</dt><dd id="cfRevDuration">${modo === 'lifetime' ? `${totalDias} día(s), con fecha de fin` : 'Indefinida (gasto diario)'}</dd>
+            <dt>Ciudades</dt><dd id="cfRevCities">${f.cities.length ? f.cities.map(c => esc(c.name)).join(', ') : '—'}</dd>
+            <dt>Imagen</dt><dd id="cfRevImage">${f.imagePreviewUrl ? 'Sí, adjunta' : 'Sin imagen'}</dd>
+            <dt>Texto</dt><dd id="cfRevMessage">${esc(f.adMessage) || '—'}</dd>
+          </dl>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+          <button class="ma-btn ma-btn--gold" id="cfSubmit" ${f.submitting ? 'disabled' : ''}>${f.submitting ? 'Creando…' : 'Crear campaña (PAUSADA)'}</button>
+          <span id="cfSubmitMsg" style="font-size:12px;color:var(--text-3)"></span>
+        </div>
+      </div>
+    `;
   }
 
   function renderAudiences() {
@@ -508,6 +649,157 @@ META_PIXEL_ID=tu_pixel_id (opcional)</code>
       if (r && r.id) { toast('Audiencia creada', 'success'); await loadAudiences(); }
       else toast('Error creando audiencia', 'error');
     });
+
+    bindCreateFormEvents();
+  }
+
+  // ─── Asistente de creación de campaña ──────────────────
+  // Los inputs de texto/numero NUNCA disparan un render() completo mientras se escribe
+  // — eso reemplaza el DOM entero y el navegador pierde el foco/cursor a mitad de
+  // palabra. Se parchan solo los nodos puntuales que dependen de ese campo (hints,
+  // revisión). El render() completo solo pasa en acciones discretas (click, blur) donde
+  // no hay foco de texto que proteger.
+  function patchCreateReview() {
+    const f = createForm;
+    const modo = f.durationDays ? 'lifetime' : 'diario';
+    const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    set('cfRevName', esc(f.campaignName) || '—');
+    set('cfRevBudget', f.budgetCOP ? fmtMoney(Number(f.budgetCOP)) + (modo === 'lifetime' ? ' total' : ' / día') : '—');
+    set('cfRevDuration', modo === 'lifetime' ? `${Number(f.durationDays)} día(s), con fecha de fin` : 'Indefinida (gasto diario)');
+    set('cfRevCities', f.cities.length ? f.cities.map(c => esc(c.name)).join(', ') : '—');
+    set('cfRevImage', f.imagePreviewUrl ? 'Sí, adjunta' : 'Sin imagen');
+    set('cfRevMessage', esc(f.adMessage) || '—');
+  }
+
+  function patchBudgetHints() {
+    const f = createForm;
+    const minBudget = account && account.min_daily_budget ? Number(account.min_daily_budget) : null;
+    const modo = f.durationDays ? 'lifetime' : 'diario';
+    const totalDias = f.durationDays ? Number(f.durationDays) : null;
+    const promedioDiario = (modo === 'lifetime' && totalDias && f.budgetCOP) ? Math.round(Number(f.budgetCOP) / totalDias) : null;
+    const bh = document.getElementById('cfBudgetHint');
+    if (bh) bh.textContent = (minBudget ? `Mínimo de la cuenta: ${fmtMoney(minBudget)} / día` : 'En pesos colombianos directos — Meta no lo multiplica.') + (promedioDiario ? ` · ≈ ${fmtMoney(promedioDiario)}/día` : '');
+    const dh = document.getElementById('cfDurationHint');
+    if (dh) dh.textContent = modo === 'lifetime' ? `Presupuesto total repartido en ${totalDias} día(s)` : 'Sin duración = gasto diario indefinido hasta que la pausen a mano';
+  }
+
+  let _citySearchTimer = null;
+  function refreshCityDropdown() {
+    const container = document.querySelector('.ma-city-results');
+    if (!container) return;
+    const old = document.getElementById('cfCityDropdown');
+    if (old) old.remove();
+    if (!createForm.cityResults.length) return;
+    const dd = document.createElement('div');
+    dd.className = 'ma-city-dropdown'; dd.id = 'cfCityDropdown';
+    dd.innerHTML = createForm.cityResults.map(c =>
+      `<div class="ma-city-opt" data-city-key="${esc(c.key)}" data-city-name="${esc(c.name)}"><span>${esc(c.name)}</span><small>${esc(c.region || '')}</small></div>`
+    ).join('');
+    container.appendChild(dd);
+    dd.querySelectorAll('.ma-city-opt').forEach(opt => {
+      opt.addEventListener('click', () => {
+        const key = opt.dataset.cityKey, name = opt.dataset.cityName;
+        if (!createForm.cities.some(c => c.key === key)) createForm.cities.push({ key, name });
+        createForm.citySearch = ''; createForm.cityResults = [];
+        render(); // click, no hay texto en edición que proteger
+      });
+    });
+  }
+
+  function bindCreateFormEvents() {
+    const name = document.getElementById('cfName');
+    if (name) name.addEventListener('input', () => { createForm.campaignName = name.value; patchCreateReview(); });
+
+    const budget = document.getElementById('cfBudget');
+    if (budget) {
+      budget.addEventListener('input', () => { createForm.budgetCOP = budget.value; patchBudgetHints(); patchCreateReview(); });
+      budget.addEventListener('blur', render); // fija bien la etiqueta "total"/"diario" al salir del campo
+    }
+
+    const duration = document.getElementById('cfDuration');
+    if (duration) {
+      duration.addEventListener('input', () => { createForm.durationDays = duration.value; patchBudgetHints(); patchCreateReview(); });
+      duration.addEventListener('blur', render);
+    }
+
+    const message = document.getElementById('cfMessage');
+    if (message) message.addEventListener('input', () => { createForm.adMessage = message.value; patchCreateReview(); });
+
+    const citySearch = document.getElementById('cfCitySearch');
+    if (citySearch) {
+      citySearch.addEventListener('input', () => {
+        createForm.citySearch = citySearch.value;
+        clearTimeout(_citySearchTimer);
+        if (citySearch.value.trim().length < 2) { createForm.cityResults = []; refreshCityDropdown(); return; }
+        _citySearchTimer = setTimeout(async () => {
+          const results = await api('/api/meta-ads/locations?q=' + encodeURIComponent(citySearch.value.trim()));
+          createForm.cityResults = Array.isArray(results) ? results : [];
+          refreshCityDropdown();
+        }, 350);
+      });
+    }
+
+    document.querySelectorAll('[data-remove-city]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        createForm.cities = createForm.cities.filter(c => c.key !== btn.dataset.removeCity);
+        render();
+      });
+    });
+
+    const imageDrop = document.getElementById('cfImageDrop');
+    const imageInput = document.getElementById('cfImageInput');
+    if (imageDrop && imageInput) {
+      imageDrop.addEventListener('click', () => imageInput.click());
+      imageInput.addEventListener('change', () => {
+        const file = imageInput.files && imageInput.files[0];
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) { toast('La imagen no debe superar 8MB', 'error'); return; }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = String(reader.result);
+          createForm.imagePreviewUrl = dataUrl;
+          createForm.imageBase64 = dataUrl.split(',')[1] || null; // Meta espera solo el base64, sin el prefijo data:...
+          render();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const submitBtn = document.getElementById('cfSubmit');
+    if (submitBtn) submitBtn.addEventListener('click', async () => {
+      const f = createForm;
+      const msgEl = document.getElementById('cfSubmitMsg');
+      const setMsg = (text, kind) => { if (msgEl) { msgEl.textContent = text; msgEl.style.color = kind === 'error' ? '#ff6b6b' : kind === 'ok' ? 'var(--green)' : 'var(--text-3)'; } };
+
+      if (!f.campaignName.trim()) return setMsg('Falta el nombre de la campaña', 'error');
+      if (!f.budgetCOP || Number(f.budgetCOP) <= 0) return setMsg('El presupuesto debe ser mayor a 0', 'error');
+      if (!f.cities.length) return setMsg('Selecciona al menos una ciudad', 'error');
+      if (!f.adMessage.trim()) return setMsg('Falta el texto del anuncio', 'error');
+
+      f.submitting = true; render();
+      const body = {
+        campaignName: f.campaignName.trim(),
+        budgetCOP: Number(f.budgetCOP),
+        durationDays: f.durationDays ? Number(f.durationDays) : null,
+        targeting: { cities: f.cities, ageMin: 18, ageMax: 65 },
+        adMessage: f.adMessage.trim(),
+        imageBase64: f.imageBase64,
+      };
+      const r = await api('/api/meta-ads/campaigns/whatsapp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      f.submitting = false;
+      if (r && r.ok) {
+        toast('Campaña creada — PAUSADA, revísala en Ads Manager', 'success');
+        // Limpiar el formulario y volver a la lista para que la vea aparecer
+        Object.assign(f, { campaignName: '', budgetCOP: '', durationDays: '8', cities: [], adMessage: '', imageBase64: null, imagePreviewUrl: null, citySearch: '', cityResults: [] });
+        currentTab = 'campaigns';
+        await loadAll();
+      } else {
+        setMsg((r && (r.detalle || r.error)) || 'Error desconocido creando la campaña', 'error');
+        render();
+      }
+    });
   }
 
   // ─── Data loading ───────────────────────
@@ -522,6 +814,7 @@ META_PIXEL_ID=tu_pixel_id (opcional)</code>
     if (status && status.configured) {
       campaigns = await api('/api/meta-ads/campaigns') || [];
       await loadAudiences();
+      account = await api('/api/meta-ads/account'); // moneda + presupuesto mínimo, para el asistente de creación
     }
     loading = false; render();
   }
