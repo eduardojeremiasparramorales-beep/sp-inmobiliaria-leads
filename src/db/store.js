@@ -147,6 +147,12 @@ function createSchema() {
   ensureColumn('leads', 'muted_at', 'DATETIME');
   ensureColumn('leads', 'followup_task_at', 'DATETIME'); // guard del seguimiento automático 24h
   ensureColumn('leads', 'progress_pct', 'INTEGER DEFAULT 0');
+  // Conversions API (B3): marca de "ya se envió este evento a Meta" por lead. Sin esto,
+  // un vendedor moviendo el lead entre etapas (cita → interesado → cita otra vez)
+  // dispararía el mismo evento repetido, inflando el conteo de conversiones que Meta usa
+  // para optimizar la campaña — cada evento se manda como máximo una vez por lead.
+  ensureColumn('leads', 'capi_cita_sent_at', 'DATETIME');
+  ensureColumn('leads', 'capi_vendido_sent_at', 'DATETIME');
   ensureColumn('leads', 'temperatura', 'TEXT');            // calificación IA: caliente|tibio|frio
   ensureColumn('leads', 'temperatura_at', 'DATETIME');     // cuándo se calificó por última vez
   ensureColumn('leads', 'snoozed_until', 'DATETIME');      // posponer chat (C2): baja al fondo hasta esta hora
@@ -2071,6 +2077,15 @@ function setLeadEtiqueta(leadId, etiqueta) {
   run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [etiqueta, pct, leadId]);
 }
 
+// Marca atómicamente "evento CAPI enviado" para un lead — devuelve true solo la primera
+// vez (WHERE ...IS NULL en el UPDATE), así dos requests casi simultáneos para el mismo
+// lead no pueden mandar el evento dos veces a Meta.
+function markCapiEventSent(leadId, eventKey) {
+  const col = eventKey === 'vendido' ? 'capi_vendido_sent_at' : 'capi_cita_sent_at';
+  const r = run(`UPDATE leads SET ${col} = datetime('now','localtime') WHERE id = ? AND ${col} IS NULL`, [leadId]);
+  return r && r.changes > 0;
+}
+
 function updateLeadProgress(leadId, pct) {
   const clamped = Math.max(0, Math.min(100, pct));
   run('UPDATE leads SET progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [clamped, leadId]);
@@ -3224,7 +3239,7 @@ module.exports = {
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
   isOptedOut, addOptout, getOptouts, deleteOptout, countSegment, segmentLeads, getSegmentOptions,
   bumpUsage, getUsage, getUsageRange,
-  setLeadEtiqueta, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, getAllNotas, addNota, deleteNota, reassignLead,
+  setLeadEtiqueta, markCapiEventSent, updateLeadProgress, setLeadTemperatura, setLeadSnooze, setAwaitingCsat, getNotasByLead, getAllNotas, addNota, deleteNota, reassignLead,
   getCadenciaPasos, setCadenciaPasos, enrollCadencia, stopCadencia, getCadenciaDue, updateCadenciaLead, getLeadsParaAutoCadencia,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,

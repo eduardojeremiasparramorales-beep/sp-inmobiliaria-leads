@@ -375,6 +375,58 @@ async function getPixelInfo() {
   }
 }
 
+// ─── Conversions API (B3) ─────────────────────────────────────
+// Manda a Meta, del lado del servidor, que un lead avanzó a una etapa que de verdad
+// importa (agendó cita, compró) — para que optimice la campaña hacia gente que se
+// convierte en cliente real, no solo hacia quien hace clic. El Pixel del navegador no
+// puede ver esto: la conversación pasa entera por WhatsApp, nunca vuelve al sitio web.
+const crypto = require('crypto');
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+
+// Meta exige el teléfono en E.164 sin '+', normalizado, antes de hashear — un mismatch
+// de formato hace que el hash nunca calce con la identidad real del usuario en Meta.
+function normalizePhoneForCapi(phone) {
+  let p = String(phone || '').replace(/[^\d]/g, '');
+  if (p.length === 10) p = '57' + p; // 10 dígitos sin indicativo -> asumir Colombia
+  return p;
+}
+
+const CAPI_EVENTOS = { cita: 'Schedule', vendido: 'Purchase' };
+
+// eventKey: 'cita' | 'vendido' — mapea a los eventos estándar de Meta (Schedule/Purchase)
+// para que el algoritmo de Meta los reconozca sin configuración extra en Events Manager.
+async function sendConversionEvent(eventKey, lead) {
+  const { token, pixelId } = getConfig();
+  const eventName = CAPI_EVENTOS[eventKey];
+  if (!token || !pixelId || !eventName) return { skipped: true };
+
+  const phoneHash = sha256(normalizePhoneForCapi(lead.customer_phone));
+  const userData = { ph: [phoneHash] };
+  if (lead.ctwa_clid) userData.ctwa_clid = lead.ctwa_clid; // liga el evento al clic del anuncio real
+
+  const body = {
+    data: [{
+      event_name: eventName,
+      // event_time en segundos (epoch) — Meta lo rechaza si viene en milisegundos.
+      event_time: Math.floor(Date.now() / 1000),
+      // event_id estable: si este envío se reintenta por un error de red, Meta deduplica
+      // en vez de contar la conversión dos veces.
+      event_id: `lead_${lead.id}_${eventKey}`,
+      action_source: 'business_messaging',
+      messaging_channel: 'whatsapp',
+      user_data: userData,
+    }],
+  };
+  try {
+    const data = await graphPost(`/${pixelId}/events`, body);
+    console.log(`[META-CAPI] ${eventName} enviado para lead ${lead.id} — respuesta:`, JSON.stringify(data));
+    return { ok: true, data };
+  } catch (e) {
+    console.error(`[META-CAPI] Error enviando ${eventName} para lead ${lead.id}:`, e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── Utilidades ──────────────────────────────────────────────
 
 // Suma todas las `actions` que la Graph API reconoce como "el cliente se convirtió en
@@ -520,4 +572,6 @@ module.exports = {
   extractLeads,
   getCampaignAdIds,
   getCampaignRealLeads,
+  // Conversions API
+  sendConversionEvent,
 };

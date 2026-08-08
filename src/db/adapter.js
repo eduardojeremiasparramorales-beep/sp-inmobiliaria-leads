@@ -138,12 +138,14 @@ function one(sql, params = []) {
 
 function run(sql, params = []) {
   const conn = currentConnection();
-  if (!conn.db) return;
+  if (!conn.db) return { changes: 0 };
   if (conn.usingBetterSqlite3) {
-    conn.db.prepare(sql).run(...params);
+    const info = conn.db.prepare(sql).run(...params);
+    return { changes: info.changes };
   } else {
     conn.db.run(sql, params);
     scheduleSave(conn);
+    return { changes: conn.db.getRowsModified() };
   }
 }
 

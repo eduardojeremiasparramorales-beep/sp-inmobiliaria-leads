@@ -3123,6 +3123,15 @@ app.post('/api/leads/:id/etiqueta', auth.requireAuth, (req, res) => {
         .catch(e => console.error('WorkflowEngine.evaluate error:', e.message));
     }
   } catch (e) { /* workflow engine opcional */ }
+  // Conversions API (B3): avisa a Meta del lado del servidor cuando el lead llega a una
+  // etapa que de verdad importa para optimizar la campaña (agendó cita, compró). No
+  // bloquea la respuesta — es tracking, no algo de lo que el vendedor deba esperar.
+  // markCapiEventSent es atómico (WHERE ... IS NULL): garantiza que el evento se manda
+  // como máximo una vez por lead aunque lo muevan de etapa varias veces.
+  if ((etiqueta === 'cita' || etiqueta === 'vendido') && store.markCapiEventSent(lead.id, etiqueta)) {
+    require('./services/meta-ads').sendConversionEvent(etiqueta, lead)
+      .catch(e => console.error('[META-CAPI] fallo inesperado:', e.message));
+  }
   res.json({ ok: true });
 });
 
