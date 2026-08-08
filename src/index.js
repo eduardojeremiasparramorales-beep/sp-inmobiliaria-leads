@@ -2176,11 +2176,16 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     } catch (e) { console.error('[EQUIPO-PUSH] DM setup fallo:', e.message); }
   } else {
     events.emitToTodos('equipo_mensaje', msg);
-    // Push a TODOS los vendedores activos del canal general (excepto remitente y mencionados
-    // — los mencionados reciben una push dedicada más abajo con título "te mencionó")
+    // Push a TODO el equipo del canal general (excepto remitente y mencionados — los
+    // mencionados reciben una push dedicada más abajo con título "te mencionó").
+    // OJO: getVendedoresActivos() es la lista del round-robin de leads — excluye
+    // 'suspendido' y a admin/supervisor/jefe. Usarla aquí dejaba a la mitad del equipo
+    // (5 de 12 vendedores 'suspendido') sin notificaciones del chat interno aunque
+    // tuvieran el push perfectamente configurado: el canal general es para que TODOS
+    // estén al día, no solo quienes reciben leads nuevos. getVendedores() trae a todos.
     try {
       const push = require('./services/push');
-      const activos = store.getVendedoresActivos();
+      const activos = store.getVendedores();
       const mencionSet = new Set(menciones.map(Number));
       for (const v of activos) {
         if (Number(v.id) !== fromId && !mencionSet.has(Number(v.id))) {

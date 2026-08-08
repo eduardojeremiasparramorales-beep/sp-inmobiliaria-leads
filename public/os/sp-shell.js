@@ -282,8 +282,44 @@
     initThemeToggle();
     initNotificaciones();
     initStream();
+    suscribirPushWeb(); // ver comentario junto a la función: el admin nunca recibía push porque esto no existía
 
     return { me, content: document.getElementById('osContent'), panel: document.getElementById('osPanel') };
+  }
+
+  /* ── Push notifications (Web Push) para el panel admin de escritorio ──
+     Hasta ahora esta suscripción SOLO existía en /m/index.html (panel móvil del
+     asesor) — ninguna de las 35 páginas /os/* registraba el service worker ni pedía
+     permiso de notificaciones. El admin podía tener el navegador abierto todo el día
+     y jamás iba a recibir un push, sin importar qué tan bien funcionara el envío del
+     lado del servidor: no había NADA suscrito para él. sp-shell.js corre en cada
+     página /os/*, así que es el único lugar que hay que tocar (en vez de 35 archivos).
+     Reutiliza el mismo sw.js y los mismos endpoints /api/push/* que ya usa el móvil. */
+  function urlBase64ToUint8Array(b) {
+    const s = b.replace(/-/g, '+').replace(/_/g, '/');
+    const r = atob(s); const u = new Uint8Array(r.length);
+    for (let i = 0; i < r.length; i++) u[i] = r.charCodeAt(i);
+    return u;
+  }
+  async function suscribirPushWeb() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+    if (Notification.permission === 'denied') return; // el usuario ya dijo que no — no insistir
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+      if (Notification.permission === 'default') {
+        // Pedir permiso solo la primera vez que carga el shell — no en cada página.
+        const p = await Notification.requestPermission();
+        if (p !== 'granted') return;
+      }
+      const ready = await navigator.serviceWorker.ready.catch(() => reg);
+      const kr = await api('/api/push/clave');
+      if (!kr || !kr.publicKey || !kr.enabled) return;
+      const key = urlBase64ToUint8Array(kr.publicKey);
+      // pushManager.subscribe reutiliza la suscripción existente si ya hay una con la
+      // misma applicationServerKey — llamar esto en cada carga es seguro y barato.
+      const sub = await ready.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      await api('/api/push/suscribir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub }) });
+    } catch (e) { console.warn('[push] no se pudo suscribir:', e.message); }
   }
 
   /* ── Tiempo real compartido: UNA conexión SSE a nivel de shell ──
