@@ -72,9 +72,21 @@
   const avatarColor = (s) => AV[(String(s || '?').length + String(s || '?').charCodeAt(0)) % AV.length];
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
+  /* Mismo fix que sp-shell.js: viewport-fit=cover habilita env(safe-area-inset-*)
+     en CSS para notch/barra de estado de Android en PWA a pantalla completa. */
+  function ensureViewportFitCover() {
+    let vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) { vp = document.createElement('meta'); vp.name = 'viewport'; document.head.appendChild(vp); }
+    const content = vp.content || 'width=device-width, initial-scale=1.0';
+    if (!/viewport-fit=cover/.test(content)) {
+      vp.content = content.replace(/,?\s*viewport-fit=[^,]*/, '') + ', viewport-fit=cover';
+    }
+  }
+
   /* --- Montaje del shell del Supervisor Center --- */
   async function mount(opts) {
     opts = opts || {};
+    ensureViewportFitCover();
     const active = opts.active || 'inicio';
 
     // Sesión del supervisor (api() ya redirige si no es supervisor).
@@ -137,11 +149,19 @@
       location.href = '/login.html';
     });
 
-    // Sidebar responsive (mismo patrón de sp-shell.js).
+    // Sidebar responsive (mismo patrón de sp-shell.js — antes el listener del botón
+    // solo se adjuntaba si la carga inicial ya era <=720px; rotar/redimensionar lo
+    // dejaba visible pero muerto). Scrim para cerrar el drawer al tocar fuera.
     const nav = document.getElementById('osNav');
     const mb = document.getElementById('osMenuBtn');
-    function updateMenuBtn(){ if(mb){ if(window.innerWidth<=720){ mb.classList.remove('u-hide'); }else{ mb.classList.add('u-hide'); nav.classList.remove('open'); } } }
-    if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
+    const scrim = document.createElement('div');
+    scrim.className = 'os-scrim';
+    document.body.appendChild(scrim);
+    function setDrawerOpen(open) { nav.classList.toggle('open', open); scrim.classList.toggle('show', open); }
+    function updateMenuBtn(){ if(mb){ if(window.innerWidth<=720){ mb.classList.remove('u-hide'); }else{ mb.classList.add('u-hide'); setDrawerOpen(false); } } }
+    updateMenuBtn();
+    if (mb) mb.addEventListener('click', () => setDrawerOpen(!nav.classList.contains('open')));
+    scrim.addEventListener('click', () => setDrawerOpen(false));
     let _resizeTimer; window.addEventListener('resize',()=>{ clearTimeout(_resizeTimer); _resizeTimer=setTimeout(updateMenuBtn,150); });
 
     // Selector de tema (igual que sp-shell.js — reusa /os/theme.js).

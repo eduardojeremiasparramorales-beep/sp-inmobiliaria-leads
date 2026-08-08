@@ -23,6 +23,15 @@
 .typing span:nth-child(2) { animation-delay: .2s; }
 .typing span:nth-child(3) { animation-delay: .4s; }
 @keyframes typeDot { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+.aiagents-layout { display: grid; grid-template-columns: 280px 1fr; height: 100%; overflow: hidden; }
+.aiagents-sidebar { border-right: 1px solid var(--border-soft); overflow-y: auto; padding: var(--s3); }
+.aiagents-chat { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* En móvil, 280px fijos se comían la pantalla y dejaban el chat inutilizable —
+   se apila: lista de agentes arriba (altura acotada, scroll propio) y chat abajo. */
+@media (max-width: 900px) {
+  .aiagents-layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, 160px) 1fr; }
+  .aiagents-sidebar { border-right: none; border-bottom: 1px solid var(--border-soft); padding: var(--s2); }
+}
 </style>
 </head>
 <body>
@@ -42,12 +51,12 @@
   let enviando = false;
 
   ctx.content.innerHTML = `
-    <div style="display:grid;grid-template-columns:280px 1fr;height:100%;overflow:hidden">
-      <div style="border-right:1px solid var(--border-soft);overflow-y:auto;padding:var(--s3)">
+    <div class="aiagents-layout">
+      <div class="aiagents-sidebar">
         <div class="t-h3" style="margin-bottom:var(--s2)">Agentes</div>
         <div id="agentList"></div>
       </div>
-      <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+      <div class="aiagents-chat">
         <div id="chatHeader" style="padding:var(--s2) var(--s3);border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:12px">
           <div class="agent-icon" id="chatIcon">🤖</div>
           <div><div style="font-weight:600" id="chatName">Selecciona un agente</div><div class="t-dim3" style="font-size:12px" id="chatDesc">Elige un agente para comenzar</div></div>

@@ -322,10 +322,15 @@ svg { display: block; flex-shrink: 0; }
   display: flex; flex-direction: column;
   min-height: 0;
   padding: var(--s2) 0;
+  /* Android/PWA edge-to-edge: en el drawer móvil (position:fixed, ver @media 720px)
+     esto evita que el notch o la barra de estado tapen el logo o "Cerrar sesión". */
+  padding-top: calc(var(--s2) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--s2) + env(safe-area-inset-bottom, 0px));
 }
 .os-brand {
   display: flex; align-items: center; gap: 10px;
   padding: 6px var(--s2) var(--s3);
+  cursor: pointer;
 }
 .os-brand__mark {
   width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
@@ -418,19 +423,35 @@ svg { display: block; flex-shrink: 0; }
 }
 .os-nav__tip.show { opacity: 1; }
 
+/* Scrim del drawer móvil: tocar fuera de la barra la cierra (antes solo se cerraba
+   volviendo a tocar el botón hamburguesa). z-index 79, un punto debajo del drawer
+   (.os-nav = 80) para quedar justo detrás. Invisible en desktop porque el drawer
+   nunca se abre ahí (ver updateMenuBtn en sp-shell.js). */
+.os-scrim {
+  position: fixed; inset: 0; z-index: 79;
+  background: rgba(0,0,0,.5);
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s var(--ease-out);
+}
+.os-scrim.show { opacity: 1; pointer-events: auto; }
+
 /* --- Main --- */
 .os-main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .os-topbar {
-  height: var(--topbar-h); flex-shrink: 0;
+  min-height: var(--topbar-h); flex-shrink: 0;
   display: flex; align-items: center; gap: var(--s2);
   padding: 0 var(--s3);
+  /* Barra de estado / notch de Android en PWA a pantalla completa: min-height (en vez
+     de height fijo) deja que la barra crezca sin comprimir el título. env() vale 0 en
+     cualquier navegador/dispositivo sin notch, así que en desktop no cambia nada. */
+  padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid var(--glass-border);
   background: var(--glass-sheen), var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .os-topbar__title { font-size: 15px; font-weight: 600; }
 .os-topbar__crumb { font-size: 12px; color: var(--text-3); }
-.os-content { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); }
-.os-content--pad { padding: var(--s4) var(--s5) 80px var(--s5); }
+.os-content { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom, 0px)); }
+.os-content--pad { padding: var(--s4) var(--s5) calc(80px + env(safe-area-inset-bottom, 0px)) var(--s5); }
 .os-content__max { max-width: 1180px; margin: 0 auto; }
 
 /* --- Right contextual panel --- */
@@ -730,7 +751,6 @@ select.input { cursor: pointer; appearance: none; background-image: url("data:im
   .os-app.nav-collapsed { grid-template-columns: 1fr; }
   .os-nav { position: fixed; left: 0; top: 0; bottom: 0; width: var(--nav-w); z-index: 80; transform: translateX(-100%); transition: transform .28s var(--ease-out); box-shadow: var(--sh-3); }
   .os-nav.open { transform: none; }
-  #osCollapseBtn { display: none !important; }
   .os-content--pad { padding: var(--s3) var(--s2); }
   .grid--4, .grid--3, .grid--2 { grid-template-columns: 1fr; }
   .os-search { min-width: 0; }

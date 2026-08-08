@@ -61,6 +61,12 @@
   .csp-check label { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 16px; cursor: pointer; font-size: 13px; }
   .csp-check label input { width: auto; }
   .csp-check label.checked { border-color: var(--gold); background: rgba(200,164,90,.08); }
+
+  @media (max-width: 720px) {
+    .csp-card__top { flex-wrap: wrap; gap: 6px; }
+    .csp-steps { flex-wrap: wrap; }
+    .csp-step { min-width: 90px; font-size: 10px; }
+  }
 </style>
 </head>
 <body>

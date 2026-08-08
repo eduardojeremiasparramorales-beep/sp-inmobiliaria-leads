@@ -160,10 +160,12 @@
         <div class="u-between card--pad" style="padding-bottom:var(--s2)">
           <div class="t-h3">Rendimiento por asesor</div>
         </div>
+        <div style="overflow-x:auto">
         <table class="rp-table">
           <thead><tr><th>Asesor</th><th data-sort-type="num">Leads</th><th data-sort-type="num">Activos</th><th data-sort-type="num">Vendidos</th><th data-sort-type="num">Respondidos</th><th data-sort-type="num">Conversión</th><th data-sort-type="num">T. Respuesta</th></tr></thead>
           <tbody>${vendRows || '<tr><td colspan="7" class="t-dim3" style="text-align:center;padding:var(--s4)">Sin datos</td></tr>'}</tbody>
         </table>
+        </div>
       </div>
     </div>`;
   SPOS.sortTable(ctx.content.querySelector('.rp-table'));

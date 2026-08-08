@@ -242,33 +242,44 @@
       location.href = '/login.html';
     });
     const nav = document.getElementById('osNav');
+
+    /* --- Drawer móvil: botón hamburguesa + scrim que cierra al tocar fuera ---
+       Antes el listener del botón solo se adjuntaba si la carga inicial ya era
+       <=720px — rotar el teléfono o redimensionar dejaba el botón visible pero
+       muerto. Ahora se adjunta siempre; updateMenuBtn solo controla visibilidad. */
     const mb = document.getElementById('osMenuBtn');
-    function updateMenuBtn(){ if(mb){ if(window.innerWidth<=720){ mb.classList.remove('u-hide'); }else{ mb.classList.add('u-hide'); nav.classList.remove('open'); } } }
-    if (window.innerWidth <= 720 && mb) { mb.classList.remove('u-hide'); mb.addEventListener('click', () => nav.classList.toggle('open')); }
+    const scrim = document.createElement('div');
+    scrim.className = 'os-scrim';
+    scrim.id = 'osScrim';
+    document.body.appendChild(scrim);
+    function setDrawerOpen(open) {
+      nav.classList.toggle('open', open);
+      scrim.classList.toggle('show', open);
+    }
+    function updateMenuBtn(){ if(mb){ if(window.innerWidth<=720){ mb.classList.remove('u-hide'); }else{ mb.classList.add('u-hide'); setDrawerOpen(false); } } }
+    updateMenuBtn();
+    if (mb) mb.addEventListener('click', () => setDrawerOpen(!nav.classList.contains('open')));
+    scrim.addEventListener('click', () => setDrawerOpen(false));
     let _resizeTimer; window.addEventListener('resize',()=>{ clearTimeout(_resizeTimer); _resizeTimer=setTimeout(updateMenuBtn,150); });
     window.addEventListener('keydown', (e) => { if (e.key === 'j' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); abrirCopiloto(); } });
 
-    /* --- Sidebar colapsable: toggle + tooltip lateral custom --- */
+    /* --- Sidebar colapsable (desktop): clic en el logo alterna, clic fuera de la
+       barra colapsa (nunca expande — expandir es solo tocando el logo, a propósito),
+       y el estado se recuerda entre páginas porque cada una es una carga completa. --- */
     const osApp = document.querySelector('.os-app');
-    const collapseBtn = document.getElementById('osCollapseBtn');
-    function setCollapseBtnIcon(collapsed) {
-      if (!collapseBtn) return;
-      const span = collapseBtn.querySelector('span');
-      const svg = collapseBtn.querySelector('svg');
-      const newIcon = collapsed ? ICONS.expand : ICONS.collapse;
-      const wrapper = document.createElement('span');
-      wrapper.innerHTML = newIcon;
-      if (svg) svg.replaceWith(wrapper.firstChild); else collapseBtn.insertBefore(wrapper.firstChild, span);
-      if (span) span.textContent = collapsed ? 'Expandir' : 'Minimizar';
-      collapseBtn.title = collapsed ? 'Expandir barra' : 'Minimizar barra';
+    const brand = document.getElementById('osBrand');
+    function setNavCollapsed(collapsed) {
+      osApp.classList.toggle('nav-collapsed', collapsed);
+      try { localStorage.setItem('spos:navCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+      const tip = document.getElementById('osNavTip'); if (tip) tip.remove();
     }
-    if (collapseBtn && osApp) {
-      collapseBtn.addEventListener('click', () => {
-        osApp.classList.toggle('nav-collapsed');
-        setCollapseBtnIcon(osApp.classList.contains('nav-collapsed'));
-        const tip = document.getElementById('osNavTip'); if (tip) tip.remove();
-      });
+    if (brand) {
+      brand.addEventListener('click', () => setNavCollapsed(!osApp.classList.contains('nav-collapsed')));
     }
+    document.addEventListener('pointerdown', (e) => {
+      if (window.innerWidth <= 720) return; // en móvil el nav es un drawer, esto no aplica
+      if (!osApp.classList.contains('nav-collapsed') && !nav.contains(e.target)) setNavCollapsed(true);
+    });
     function showNavTip(label, rect) {
       let tip = document.getElementById('osNavTip');
       if (tip) tip.remove();

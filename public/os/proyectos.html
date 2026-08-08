@@ -104,6 +104,12 @@
 .pm-btn { border:none; border-radius:11px; padding:11px 20px; font-size:13px; cursor:pointer; font-family:var(--f-ui); font-weight:500; }
 .pm-btn.save { background:var(--grad-gold); color:#000; font-weight:600; }
 .pm-btn.ghost { background:var(--bg-3); color:var(--text-2); border:1px solid var(--border); }
+
+/* El piso de 340px de .pj-grid se comía el margen en teléfonos de 360px o menos,
+   provocando scroll horizontal de toda la página. */
+@media (max-width: 720px) {
+  .pj-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>

@@ -123,6 +123,12 @@
   .ma-review dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 12.5px; margin: 0; }
   .ma-review dt { color: var(--text-3); }
   .ma-review dd { margin: 0; color: var(--text); font-weight: 500; }
+
+  @media (max-width: 720px) {
+    .ma-form-grid2, .ma-form-grid2--budget { grid-template-columns: 1fr; }
+    .ma-camp__top { flex-wrap: wrap; gap: 6px; }
+    .ma-camp__actions { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
