@@ -1132,15 +1132,16 @@ function getWindowExpiresAt(leadId) {
 
 function getVendedoresActivos() {
   // El admin y el supervisor NO reciben clientes del round-robin: el supervisor es
-  // un rol operativo (observa y reasigna), no un asesor de captación. El jefe
-  // (rol propietario) tampoco — supervisa desde el móvil, no capta leads. Se excluye a
-  // cualquier vendedor vinculado a un usuario con rol 'admin', 'supervisor' o 'jefe'.
+  // un rol operativo (observa y reasigna), no un asesor de captación. El jefe SÍ recibe
+  // leads (decisión explícita del dueño del negocio, 2026-08-08) — a diferencia del
+  // supervisor, el jefe también trabaja leads como cualquier asesor además de supervisar.
+  // Se excluye solo a quien esté vinculado a un usuario con rol 'admin' o 'supervisor'.
   return all(`
     SELECT v.*, COUNT(l.id) as leads_activos
     FROM vendedores v
     LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != ?
     WHERE v.estado = ?
-      AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE vendedor_id IS NOT NULL AND rol IN ('admin','supervisor','jefe'))
+      AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE vendedor_id IS NOT NULL AND rol IN ('admin','supervisor'))
     GROUP BY v.id
     ORDER BY leads_activos ASC
   `, ['cerrado', 'activo']);
