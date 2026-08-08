@@ -463,11 +463,19 @@ async function getAds(adSetId) {
  */
 async function getCustomAudiences() {
   const { accountId } = getConfig();
+  // Meta renombró approximate_count (causaba "Tried accessing nonexisting field" y
+  // tumbaba TODA la página de Meta Ads, no solo el tab de audiencias — ver
+  // renderAudiences() en meta-ads.html, que asumía array y explotaba con el error
+  // crudo). Ahora viene como rango — se normaliza al punto medio para no tocar el
+  // resto del código que ya espera un solo número `approximate_count`.
   const data = await graphGet(`/${accountId}/customaudiences`, {
-    fields: 'id,name,description,approximate_count,tag,status,delivery_info',
+    fields: 'id,name,description,approximate_count_lower_bound,approximate_count_upper_bound,tag,status,delivery_info',
     limit: 100,
   });
-  return data.data || [];
+  return (data.data || []).map(a => ({
+    ...a,
+    approximate_count: Math.round(((Number(a.approximate_count_lower_bound) || 0) + (Number(a.approximate_count_upper_bound) || 0)) / 2),
+  }));
 }
 
 /**

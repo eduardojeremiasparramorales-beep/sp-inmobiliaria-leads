@@ -812,15 +812,33 @@ META_PIXEL_ID=tu_pixel_id (opcional)</code>
     status = await api('/api/meta-ads/status');
     console.log('[META-ADS] status response:', JSON.stringify(status));
     if (status && status.configured) {
-      campaigns = await api('/api/meta-ads/campaigns') || [];
+      // `api()` devuelve el BODY del error en cualquier fallo HTTP (no null — solo
+      // null en caída de red), así que `|| []` nunca protegía nada: un objeto de
+      // error como {error:'...'} es truthy y pasaba de largo. Cuando Meta rechazó un
+      // campo en /audiences (ver fix en meta-ads.js), esto dejó `audiences` como el
+      // objeto de error, .map() reventó en renderAudiences(), y esa excepción sin
+      // capturar abortó TODO el render — la página quedó pegada mostrando el banner
+      // de "no configurado" del primer render (el de "cargando"), aunque el status
+      // real decía configured:true. Un solo endpoint roto tumbaba la página entera.
+      campaigns = arraySeguro(await api('/api/meta-ads/campaigns'));
       await loadAudiences();
       account = await api('/api/meta-ads/account'); // moneda + presupuesto mínimo, para el asistente de creación
     }
-    loading = false; render();
+    loading = false;
+    try {
+      render();
+    } catch (e) {
+      // Red de seguridad: si algo más revienta durante el render, que se vea un error
+      // legible en vez de quedar pegado en silencio mostrando una pantalla que miente.
+      console.error('[META-ADS] Error renderizando la página:', e);
+      ctx.content.innerHTML = `<div class="ma-banner"><h4>Error mostrando Meta Ads</h4><p>${esc(e.message)}</p><p style="font-size:11px">Revisa la consola del navegador (F12) para más detalle, o recarga la página.</p></div>`;
+    }
   }
 
+  function arraySeguro(r) { return Array.isArray(r) ? r : []; }
+
   async function loadAudiences() {
-    audiences = await api('/api/meta-ads/audiences') || [];
+    audiences = arraySeguro(await api('/api/meta-ads/audiences'));
   }
 
   // ─── Boot ───────────────────────────────
