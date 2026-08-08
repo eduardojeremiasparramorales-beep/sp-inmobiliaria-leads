@@ -418,7 +418,14 @@
           $('msg2').textContent = 'Tu cuenta está en revisión. El admin te avisará cuando esté activa.'; $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 900);
         } else if(data.error === 'demasiados_intentos' || data.error === 'demasiadas_peticiones'){
-          $('msg2').textContent = 'Demasiados intentos. Espera unos minutos e intenta de nuevo.'; $('msg2').className = 'msg err';
+          // Retry-After viene en segundos: decir cuánto falta evita que se siga reintentando
+          // en bucle creyendo que el PIN está mal.
+          const seg = parseInt(res.headers.get('Retry-After') || '', 10);
+          const min = Number.isFinite(seg) ? Math.max(1, Math.ceil(seg/60)) : 0;
+          $('msg2').textContent = min
+            ? `Demasiados intentos fallidos. Intenta de nuevo en ${min} ${min===1?'minuto':'minutos'}.`
+            : 'Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo.';
+          $('msg2').className = 'msg err';
           setTimeout(()=>{ pin=''; updatePinDots(); attempting=false; }, 700);
         } else if(data.error === 'error_interno' || data.error === 'error_empresa'){
           $('msg2').textContent = 'Error del servidor. Intenta de nuevo en un momento.'; $('msg2').className = 'msg err';

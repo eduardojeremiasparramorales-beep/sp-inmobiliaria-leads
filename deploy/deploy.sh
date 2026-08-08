@@ -7,6 +7,7 @@
 set -euo pipefail
 
 DOMAIN="spcrm.duckdns.org"
+BRANCH="master"   # rama de trabajo y de producción (main está desactualizada)
 APP_DIR="/home/ubuntu/sp-crm/app"
 BACKUP_DIR="/home/ubuntu/backups"
 ENV_FILE="$APP_DIR/.env"
@@ -39,16 +40,18 @@ ok "Requisitos OK"
 log "📂 Actualizando código..."
 if [ -d "$APP_DIR" ]; then
   cd "$APP_DIR"
-  git fetch origin HEAD 2>/dev/null
+  # SIEMPRE desde master: origin/HEAD apunta a main, que quedó congelada y desplegaba
+  # código viejo sin que se notara (los arreglos "no funcionaban" porque nunca llegaban).
+  git fetch origin "$BRANCH" 2>/dev/null
   if [ $? -eq 0 ]; then
-    git reset --hard origin/HEAD && git clean -fd
-    ok "Código actualizado + archivos huérfanos eliminados"
+    git reset --hard "origin/$BRANCH" && git clean -fd
+    ok "Código actualizado desde origin/$BRANCH ($(git rev-parse --short HEAD))"
   else
     warn "git fetch falló — revisa conexión con GitHub"
   fi
 else
   mkdir -p "$(dirname "$APP_DIR")"
-  git clone https://github.com/eduardojeremiasparramorales-beep/sp-inmobiliaria-leads.git "$APP_DIR"
+  git clone -b "$BRANCH" https://github.com/eduardojeremiasparramorales-beep/sp-inmobiliaria-leads.git "$APP_DIR"
   cd "$APP_DIR"
 fi
 

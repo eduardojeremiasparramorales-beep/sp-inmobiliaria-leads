@@ -39,6 +39,9 @@ const push = require('./services/push');
 const { notify } = require('./services/notify');
 
 const rateLimit = require('express-rate-limit');
+// ipKeyGenerator normaliza la IP (colapsa el prefijo /56 en IPv6). express-rate-limit v8
+// exige usarlo dentro de cualquier keyGenerator propio que incluya la IP.
+const { ipKeyGenerator } = require('express-rate-limit');
 const crypto = require('crypto');
 const CFG = require('./config');
 
@@ -157,7 +160,25 @@ function verifyWebhookSignature(req, res, next) {
 }
 
 // Rate limiting: protección básica anti-DoS
-const loginLimiter = rateLimit({ windowMs: CFG.LOGIN_WINDOW_MS, max: CFG.LOGIN_MAX_ATTEMPTS, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_intentos' } });
+// Login: la clave es teléfono+IP y solo cuentan los intentos FALLIDOS. Contar por IP a secas
+// bloqueaba a todo el equipo: varios vendedores salen por el mismo WiFi (o por el CGNAT del
+// operador móvil), así que los 10 intentos se agotaban entre todos y nadie podía volver a entrar
+// tras cerrar sesión. Con la clave por número, equivocarse de PIN solo te afecta a ti.
+const loginLimiter = rateLimit({
+  windowMs: CFG.LOGIN_WINDOW_MS,
+  max: CFG.LOGIN_MAX_ATTEMPTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // entrar bien no consume cupo — cerrar sesión y volver nunca bloquea
+  keyGenerator: (req) => {
+    const ip = ipKeyGenerator(req);
+    const tel = req.body && req.body.telefono ? String(req.body.telefono).trim() : '';
+    const email = req.body && req.body.email ? String(req.body.email).toLowerCase().trim() : '';
+    const id = tel || email;
+    return id ? `login:${id}` : `login-ip:${ip}`;
+  },
+  message: { error: 'demasiados_intentos' },
+});
 const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MEDIA_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
 const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.WEBHOOK_MAX_PER_MIN, standardHeaders: false, legacyHeaders: false });
 const messageLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.MESSAGE_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiados_mensajes_espera' } });
@@ -907,7 +928,7 @@ app.post('/api/vendedores/:id/estado', auth.requireAuth, (req, res) => {
 
 // ===================== AUTENTICACIÓN =====================
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   try {
   const { email, password, telefono, pin } = req.body || {};
   const secure = (process.env.SECURE_COOKIES === 'true' || req.headers['x-forwarded-proto'] === 'https' || req.secure) ? '; Secure' : '';
