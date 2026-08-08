@@ -3707,6 +3707,16 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
     console.log(`[enviar-template] Permiso denegado: rol=${req.session.rol} vendedorId=${vendedorId} lead.assigned_to_id=${lead.assigned_to_id}`);
     return res.status(403).json({ error: 'sin_permiso' });
   }
+  // Detectar un teléfono corrupto ANTES de gastar una llamada a Meta — se dio un caso
+  // real de un lead con customer_phone = "AQUI_NUMERO_CORRECTO" (dato corrupto, no un
+  // bug de código: no existe ningún endpoint que edite este campo tras crear el lead).
+  // Sin esta validación, eso llega crudo hasta Meta y sale como un error de la Graph
+  // API ("(#131009) Parameter value is not valid") que no dice nada sobre la causa real.
+  const esWhatsApp = !/^(messenger_|instagram_)/.test(lead.customer_phone || '');
+  if (esWhatsApp && !/^\+?\d{10,15}$/.test(String(lead.customer_phone || '').replace(/[\s-]/g, ''))) {
+    console.error(`[enviar-template] Teléfono corrupto en lead ${lead.id}: ${JSON.stringify(lead.customer_phone)}`);
+    return res.status(400).json({ error: 'telefono_invalido', detalle: `El número de este lead ("${lead.customer_phone}") no tiene un formato válido — corrígelo antes de enviar.` });
+  }
 
   // Auto-reabrir lead archivado cuando el asesor envía plantilla
   let reopened = false;
