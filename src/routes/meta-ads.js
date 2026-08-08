@@ -9,6 +9,7 @@ const multer = require('multer');
 const router = express.Router();
 const metaAds = require('../services/meta-ads');
 const metaAdsCache = require('../services/meta-ads-cache');
+const metaAdsAdvisor = require('../services/meta-ads-advisor');
 const store = require('../db/store');
 
 // ─── Middleware: verificar configuración ──────────────────────
@@ -350,6 +351,19 @@ router.post('/audiences/:id/lookalike', requireConfig, wrap(async (req, res) => 
 
 router.get('/pixel', requireConfig, wrap(async (req, res) => {
   res.json(await metaAds.getPixelInfo());
+}));
+
+// ─── Servicio inteligente ──────────────────────────────────────
+
+router.get('/recommendations', requireConfig, wrap(async (req, res) => {
+  res.json(await metaAdsAdvisor.getRecommendations());
+}));
+
+router.get('/compare', requireConfig, wrap(async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!ids.length) return res.status(400).json({ error: 'faltan_ids' });
+  if (ids.length > 6) return res.status(400).json({ error: 'maximo_6_campanas' });
+  res.json(await metaAdsAdvisor.compare(ids));
 }));
 
 module.exports = router;

@@ -3627,6 +3627,7 @@ const CONFIG_KEYS = [
   'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
   'escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas',
   'campaign_mps', 'campaign_daily_limit',
+  'meta_ads_cpl_objetivo',
   // Parte 3B — General
   'timezone', 'currency_format', 'default_theme', 'company_logo',
   // Parte 3B — Privacidad
@@ -4698,6 +4699,31 @@ app.get('/api/admin/export/leads', auth.requireAdmin, (req, res) => {
 });
 
 // Escalation check — sistema inteligente
+// Meta Ads: recomendaciones de severidad 3 (gasto sin resultados) — las únicas lo
+// bastante urgentes como para interrumpir al admin sin que las pida. El resto
+// (ganadora, CPL alto, fatiga, infrautilizada) solo se ven al entrar al panel.
+async function checkMetaAdsAlertas() {
+  const metaAds = require('./services/meta-ads');
+  if (!metaAds.isConfigured()) return;
+  const recs = await require('./services/meta-ads-advisor').getRecommendations();
+  const criticas = recs.filter(r => r.severidad === 3);
+  for (const r of criticas) {
+    await notify({
+      vendedorId: 0, tipo: 'meta_ads_alerta', push: true,
+      titulo: `Meta Ads: ${r.campaignName}`,
+      cuerpo: r.mensaje,
+    });
+    try {
+      require('./services/activity').log({
+        tipo: 'meta_ads_alerta', categoria: 'marketing',
+        titulo: `Alerta en "${r.campaignName}"`, descripcion: r.mensaje,
+        entidadTipo: 'meta_ads_campaign', entidadId: r.campaignId,
+        payload: { tipo: r.tipo, accion: r.accion },
+      });
+    } catch (e) { /* feed opcional */ }
+  }
+}
+
 async function checkEscalation() {
   try {
     const ESC_ALERTA_MIN = Number(process.env.ESC_ALERTA_MIN || store.getConfig('escalation_alerta_min') || 15);
@@ -5475,6 +5501,9 @@ function ensurePlatformAdmin() {
   // Campañas masivas pausadas por tope diario o fuera de ventana horaria: reintentar
   // cada 10 min sin que un admin tenga que reabrir el panel y pulsar "Iniciar".
   setInterval(() => { runForAllTenants(() => require('./services/campaign-runner').reanudarCampanasAutomaticas()).catch(e => console.error('[SCHED] campañas auto-resume:', e.message)); }, 10 * 60 * 1000);
+  // Meta Ads: recomendaciones de severidad alta (gasto sin resultados) avisan solas
+  // al admin — antes había que entrar al panel a mirar campaña por campaña.
+  setInterval(() => { runForAllTenants(() => checkMetaAdsAlertas()).catch(e => console.error('[SCHED] meta-ads alertas:', e.message)); }, 6 * 60 * 60 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
   require('./services/scheduler').start(buildMensajeConFirma, runForAllTenants);
 })();

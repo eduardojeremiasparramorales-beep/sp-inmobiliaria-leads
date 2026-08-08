@@ -216,6 +216,7 @@
       { hash: '#/campaigns', label: 'Campañas', match: r => r.name === 'campaigns' || r.name === 'campaign' || r.name === 'adset' },
       { hash: '#/wizard', label: '+ Crear campaña', match: r => r.name === 'wizard' },
       { hash: '#/audiencias', label: 'Audiencias', match: r => r.name === 'audiencias' },
+      { hash: '#/recomendaciones', label: '💡 Recomendaciones', match: r => r.name === 'recomendaciones' },
     ];
     return `<div class="ma-nav">${items.map(it => `<a href="${it.hash}" class="${it.match(route) ? 'active' : ''}">${it.label}</a>`).join('')}</div>`;
   }
@@ -280,6 +281,7 @@
     if (route.name === 'adset' && route.id) return renderSection(body, (el) => renderAdsetDetail(el, route.id));
     if (route.name === 'wizard') return renderSection(body, (el) => renderWizard(el));
     if (route.name === 'audiencias') return renderSection(body, (el) => renderAudiencesView(el));
+    if (route.name === 'recomendaciones') return renderSection(body, (el) => renderRecommendations(el));
     return renderSection(body, (el) => renderCampaignsList(el));
   }
 
@@ -731,6 +733,88 @@
       const r = await api(`/api/meta-ads/audiences/${btn.dataset.delAud}`, { method: 'DELETE' });
       if (r && r.ok) { toast('Audiencia borrada', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
     }));
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // VISTA: Recomendaciones (servicio inteligente) + comparación
+  // ════════════════════════════════════════════════════════════
+  const TIPO_LABEL = {
+    ganadora: '🏆 Campaña ganadora', cpl_alto: '⚠️ CPL alto', sin_resultados: '🚨 Gasto sin resultados',
+    ctr_caida: '📉 CTR cayendo', fatiga: '😴 Fatiga creativa', infrautilizada: '💤 Infrautilizada',
+  };
+  const SEV_CLASS = { 1: 'active', 2: 'paused', 3: 'error' };
+
+  async function renderRecommendations(el) {
+    const recs = await apiOrThrow('/api/meta-ads/recommendations');
+    el.innerHTML = `
+      <div class="ma-sec">
+        <h3>Recomendaciones</h3>
+        <p>Análisis automático de las campañas activas — CPL real, tendencia de CTR, fatiga creativa y uso del presupuesto. Se recalcula cada vez que entras a esta vista. Las de severidad 3 también avisan por notificación.</p>
+        ${!recs.length ? '<div class="ma-empty">Sin recomendaciones por ahora — o las campañas activas todavía no tienen suficientes datos (mínimo 1.000 impresiones y 3 días, "aprendiendo").</div>' : recs.map(r => `
+          <div class="ma-camp">
+            <div class="ma-camp__top">
+              <div class="ma-camp__name">${esc(TIPO_LABEL[r.tipo] || r.tipo)} — ${esc(r.campaignName)}</div>
+              <span class="ma-badge ma-badge--${SEV_CLASS[r.severidad] || 'paused'}">Severidad ${r.severidad}</span>
+            </div>
+            <p style="margin:8px 0 0;font-size:12.5px;color:var(--text-2)">${esc(r.mensaje)}</p>
+            <div class="ma-camp__actions">
+              <a class="ma-btn ma-btn--xs" href="#/campaign/${encodeURIComponent(r.campaignId)}">Ver campaña</a>
+              ${r.accion.type === 'duplicate' ? `<button class="ma-btn ma-btn--xs ma-btn--gold" data-apply-dup="${esc(r.campaignId)}">Duplicar</button>` : ''}
+              ${r.accion.type === 'pause' ? `<button class="ma-btn ma-btn--xs ma-btn--danger" data-apply-pause="${esc(r.campaignId)}">Pausar</button>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="ma-sec">
+        <h3>Comparar campañas activas</h3>
+        <p>Gasto y leads diarios (30 días) lado a lado.</p>
+        <button class="ma-btn" id="maCompareBtn" type="button">Comparar</button>
+        <div id="maCompareBox" style="margin-top:12px"></div>
+      </div>
+    `;
+
+    el.querySelectorAll('[data-apply-dup]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Duplicar esta campaña? La copia se crea PAUSADA.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.applyDup)}/duplicate`, { method: 'POST' });
+      if (r && r.ok) { toast('Campaña duplicada', 'ok'); renderSection(el, renderRecommendations); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    el.querySelectorAll('[data-apply-pause]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Pausar esta campaña ahora mismo?')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.applyPause)}/pause`, { method: 'PUT' });
+      if (r && r.ok) { toast('Campaña pausada', 'ok'); renderSection(el, renderRecommendations); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+
+    document.getElementById('maCompareBtn').addEventListener('click', async () => {
+      const box = document.getElementById('maCompareBox');
+      box.innerHTML = '<div class="ma-loading"><div class="ma-spinner"></div> Comparando…</div>';
+      const campaigns = await api('/api/meta-ads/campaigns');
+      const active = (Array.isArray(campaigns) ? campaigns : []).filter(c => c.status === 'ACTIVE').slice(0, 6);
+      if (active.length < 2) { box.innerHTML = '<div class="ma-empty">Se necesitan al menos 2 campañas activas para comparar.</div>'; return; }
+      const data = await api('/api/meta-ads/compare?ids=' + active.map(c => encodeURIComponent(c.id)).join(','));
+      if (!data) { box.innerHTML = '<div class="ma-error"><p>Error cargando la comparación</p></div>'; return; }
+      const totals = active.map(c => {
+        const series = data[c.id] || [];
+        const spend = series.reduce((s, d) => s + d.spend, 0);
+        const leads = series.reduce((s, d) => s + d.leads, 0);
+        const impressions = series.reduce((s, d) => s + d.impressions, 0);
+        return { name: c.name, spend, leads, impressions, cpl: leads > 0 ? spend / leads : 0 };
+      });
+      box.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr style="color:var(--text-3);text-transform:uppercase;font-size:9.5px;letter-spacing:.05em">
+          <th style="text-align:left;padding:6px 8px">Campaña</th><th style="text-align:right;padding:6px 8px">Impresiones</th>
+          <th style="text-align:right;padding:6px 8px">Gasto</th><th style="text-align:right;padding:6px 8px">Leads</th><th style="text-align:right;padding:6px 8px">CPL</th></tr></thead>
+        <tbody>${totals.map(t => `<tr style="border-top:1px solid var(--border)">
+          <td style="padding:6px 8px">${esc(t.name)}</td>
+          <td style="text-align:right;padding:6px 8px">${fmt(t.impressions)}</td>
+          <td style="text-align:right;padding:6px 8px">${fmtMoney(t.spend)}</td>
+          <td style="text-align:right;padding:6px 8px">${fmt(t.leads)}</td>
+          <td style="text-align:right;padding:6px 8px">${t.cpl ? fmtMoney(Math.round(t.cpl)) : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    });
   }
 
   // ════════════════════════════════════════════════════════════

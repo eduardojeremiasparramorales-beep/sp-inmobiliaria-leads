@@ -749,7 +749,10 @@
   // .env a mano y redesplegar — esto lo guarda cifrado (AES-256-GCM vía crypto-vault)
   // en la base de datos, con fallback a .env si no se configura nada aquí.
   async function renderMetaAds(panel) {
-    const cfg = await api('/api/meta-ads/config') || {};
+    const [cfg, generalCfg] = await Promise.all([
+      api('/api/meta-ads/config') || {},
+      api('/api/config') || {},
+    ]);
     panel.innerHTML = `
       <form class="cfg-sec" id="fMetaAds">
         <h3>Meta Ads · Marketing API</h3>
@@ -768,6 +771,13 @@
           <button type="button" class="cfg-save cfg-save--ghost" id="btnTestMetaAds">Probar conexión</button>
         </div>
         <div id="metaAdsTestResult" style="margin-top:10px;font-size:12px;display:none"></div>
+      </form>
+
+      <form class="cfg-sec" id="fMetaAdsAdvisor">
+        <h3>Servicio inteligente</h3>
+        <p>El CPL objetivo alimenta las recomendaciones automáticas (CPL alto, gasto sin resultados) en la vista "Recomendaciones" del panel de Meta Ads.</p>
+        <div class="cfg-field"><label>CPL objetivo (COP)</label><input id="ma_cpl_objetivo" type="number" min="0" step="1000" placeholder="Ej: 15000" value="${esc(generalCfg.meta_ads_cpl_objetivo || '')}"></div>
+        <button type="submit" class="cfg-save">Guardar</button>
       </form>`;
 
     document.getElementById('fMetaAds').addEventListener('submit', async ev => {
@@ -784,6 +794,14 @@
       btn.disabled = false;
       if (r && r.ok) { toast('Configuración de Meta Ads guardada', 'ok'); renderMetaAds(panel); }
       else toast('Error al guardar', 'err');
+    });
+
+    document.getElementById('fMetaAdsAdvisor').addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const btn = ev.target.querySelector('button'); btn.disabled = true;
+      const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ meta_ads_cpl_objetivo: document.getElementById('ma_cpl_objetivo').value.trim() }) });
+      btn.disabled = false;
+      toast(r ? 'CPL objetivo guardado' : 'Error al guardar', r ? 'ok' : 'err');
     });
 
     document.getElementById('btnTestMetaAds').addEventListener('click', async () => {
