@@ -227,6 +227,186 @@ async function resumeCampaign(campaignId) {
   return graphPost(`/${campaignId}`, { status: 'ACTIVE' });
 }
 
+// ─── Creación de campañas Click-to-WhatsApp ───────────────────
+// Todo lo que sigue crea objetos SIEMPRE en status:'PAUSED' — nunca se manda 'ACTIVE'
+// desde ningún punto de este bloque, ni se acepta como parámetro. Activar gasto real
+// es una decisión que toma el admin a mano en Meta Ads Manager (o con resumeCampaign,
+// ya arriba) después de revisar que quedó bien armado — no algo que este código decida.
+
+function getAccountInfo() {
+  const { accountId } = getConfig();
+  return graphGet(`/${accountId}`, { fields: 'currency,spend_cap,amount_spent' });
+}
+
+/**
+ * Crea la campaña (nivel superior). Objetivo fijo OUTCOME_LEADS + destino WhatsApp,
+ * que es el único tipo de campaña que usa hoy esta cuenta — no un creador genérico de
+ * cualquier objetivo de Meta Ads.
+ * special_ad_categories: [] es correcto para Colombia — esa restricción (HOUSING/CREDIT/
+ * EMPLOYMENT) es una exigencia legal de EE.UU., no aplica a targeting solo-Colombia. Si
+ * algún día se targetea EE.UU. con estos lotes, esto hay que revisarlo.
+ */
+async function createCampaign({ name }) {
+  const { accountId } = getConfig();
+  if (!name || !name.trim()) throw new Error('Falta el nombre de la campaña');
+  return graphPost(`/${accountId}/campaigns`, {
+    name: name.trim(),
+    objective: 'OUTCOME_LEADS',
+    status: 'PAUSED',
+    special_ad_categories: [],
+  });
+}
+
+/**
+ * Construye el bloque `targeting` a partir de ciudades ya resueltas por buscarUbicaciones()
+ * (necesitan `key` + `radius`, no solo el nombre — Meta exige el ID geográfico exacto).
+ */
+function buildTargeting({ cities, ageMin, ageMax }) {
+  if (!Array.isArray(cities) || !cities.length) throw new Error('Selecciona al menos una ciudad');
+  return {
+    age_min: ageMin || 18,
+    age_max: ageMax || 65,
+    geo_locations: {
+      cities: cities.map(c => ({ key: c.key, radius: c.radius || 17, distance_unit: 'kilometer' })),
+      location_types: ['frequently_in', 'home', 'recent'],
+    },
+    targeting_automation: { advantage_audience: 1 },
+  };
+}
+
+/**
+ * Busca ciudades/ubicaciones por nombre para el paso de segmentación del asistente —
+ * el admin escribe "Girardot" y esto devuelve las coincidencias con su `key` real, que
+ * es lo que exige `buildTargeting()`. Sin esto no hay forma de armar el targeting bien:
+ * un nombre de ciudad escrito a mano no sirve, Meta necesita el ID geográfico.
+ */
+async function buscarUbicaciones(q) {
+  if (!q || q.trim().length < 2) return [];
+  const data = await graphGet('/search', {
+    type: 'adgeolocation', location_types: JSON.stringify(['city']), q: q.trim(), limit: 12,
+  });
+  return (data.data || []).map(d => ({ key: d.key, name: d.name, region: d.region, country: d.country_code }));
+}
+
+/**
+ * Conjunto de anuncios con destino WhatsApp — `promoted_object.page_id` y
+ * `destination_type: 'WHATSAPP'` son lo que le dice a Meta "manda a la gente a escribir
+ * por WhatsApp", el mismo patrón que ya usan los adsets reales de esta cuenta
+ * (AS01/AS02 con targeting por ciudad — ver getAdSets() de una campaña real).
+ * dailyBudgetMinorUnits va SIN transformar — el llamador (ruta/UI) es responsable de
+ * mandar ya el valor en la unidad mínima que espera Meta para COP (ver comentario en
+ * getAccountInfo() sobre cómo verificarlo antes del primer uso real).
+ */
+async function createAdSet({ campaignId, name, dailyBudgetMinorUnits, targeting, pageId }) {
+  const { accountId } = getConfig();
+  const fbPageId = pageId || process.env.FACEBOOK_PAGE_ID;
+  if (!campaignId) throw new Error('Falta campaignId');
+  if (!name || !name.trim()) throw new Error('Falta el nombre del conjunto de anuncios');
+  if (!dailyBudgetMinorUnits || dailyBudgetMinorUnits <= 0) throw new Error('Presupuesto diario inválido');
+  if (!fbPageId) throw new Error('Falta FACEBOOK_PAGE_ID en .env — el destino WhatsApp lo necesita');
+  return graphPost(`/${accountId}/adsets`, {
+    name: name.trim(),
+    campaign_id: campaignId,
+    daily_budget: dailyBudgetMinorUnits,
+    billing_event: 'IMPRESSIONS',
+    optimization_goal: 'CONVERSATIONS',
+    destination_type: 'WHATSAPP',
+    promoted_object: { page_id: fbPageId },
+    targeting,
+    status: 'PAUSED',
+  });
+}
+
+/**
+ * Sube una imagen (base64, sin el prefijo data:...) al catálogo de imágenes de la cuenta
+ * — devuelve el `hash` que necesita createAdCreative(). Paso obligatorio previo: Meta no
+ * acepta una imagen "suelta" en el creativo, solo un hash ya subido o una URL pública.
+ */
+async function uploadAdImage(base64Data, filename) {
+  const { accountId } = getConfig();
+  if (!base64Data) throw new Error('Falta la imagen');
+  const data = await graphPost(`/${accountId}/adimages`, {
+    bytes: base64Data,
+  });
+  // La respuesta trae { images: { "<filename>": { hash, url, ... } } } — la key es el
+  // nombre que Meta le asignó internamente, no necesariamente el que mandamos.
+  const images = data.images || {};
+  const first = Object.values(images)[0];
+  if (!first) throw new Error('Meta no devolvió la imagen subida — respuesta: ' + JSON.stringify(data));
+  return { hash: first.hash, url: first.url };
+}
+
+/**
+ * Creativo con el botón "Enviar mensaje" hacia WhatsApp — mismo patrón documentado por
+ * Meta para Click-to-WhatsApp Ads (call_to_action WHATSAPP_MESSAGE + app_destination).
+ */
+async function createAdCreative({ name, message, imageHash, pageId }) {
+  const { accountId } = getConfig();
+  const fbPageId = pageId || process.env.FACEBOOK_PAGE_ID;
+  if (!fbPageId) throw new Error('Falta FACEBOOK_PAGE_ID en .env');
+  if (!message || !message.trim()) throw new Error('Falta el texto del anuncio');
+  return graphPost(`/${accountId}/adcreatives`, {
+    name: name || 'Creativo SP Leons',
+    object_story_spec: {
+      page_id: fbPageId,
+      link_data: {
+        message: message.trim(),
+        link: 'https://www.facebook.com/' + fbPageId,
+        image_hash: imageHash || undefined,
+        call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } },
+      },
+    },
+  });
+}
+
+/** El anuncio final que junta adset + creativo. Siempre PAUSED — ver nota arriba del bloque. */
+async function createAd({ name, adsetId, creativeId }) {
+  const { accountId } = getConfig();
+  if (!adsetId) throw new Error('Falta adsetId');
+  if (!creativeId) throw new Error('Falta creativeId');
+  return graphPost(`/${accountId}/ads`, {
+    name: name || 'Anuncio SP Leons',
+    adset_id: adsetId,
+    creative: { creative_id: creativeId },
+    status: 'PAUSED',
+  });
+}
+
+/**
+ * Orquesta el flujo completo del asistente: campaña → adset → imagen → creativo → anuncio.
+ * Si un paso falla a mitad de camino, NO se hace rollback de lo ya creado — queda en Meta
+ * como un objeto PAUSED huérfano, visible y borrable a mano en Ads Manager (nunca gasta
+ * nada estando pausado). Se devuelve qué se alcanzó a crear para que quede claro qué
+ * limpiar si algo salió mal, en vez de perder el rastro del error.
+ */
+async function createWhatsAppCampaign(input) {
+  const result = { campaign: null, adset: null, image: null, creative: null, ad: null };
+  result.campaign = await createCampaign({ name: input.campaignName });
+  const targeting = buildTargeting(input.targeting);
+  result.adset = await createAdSet({
+    campaignId: result.campaign.id,
+    name: input.adsetName || input.campaignName + ' · AdSet',
+    dailyBudgetMinorUnits: input.dailyBudgetMinorUnits,
+    targeting,
+    pageId: input.pageId,
+  });
+  if (input.imageBase64) {
+    result.image = await uploadAdImage(input.imageBase64);
+  }
+  result.creative = await createAdCreative({
+    name: input.campaignName + ' · Creativo',
+    message: input.adMessage,
+    imageHash: result.image ? result.image.hash : null,
+    pageId: input.pageId,
+  });
+  result.ad = await createAd({
+    name: input.campaignName + ' · Anuncio',
+    adsetId: result.adset.id,
+    creativeId: result.creative.id,
+  });
+  return result;
+}
+
 // ─── Ad Sets ─────────────────────────────────────────────────
 
 /**
@@ -574,4 +754,14 @@ module.exports = {
   getCampaignRealLeads,
   // Conversions API
   sendConversionEvent,
+  // Creación de campañas
+  getAccountInfo,
+  createCampaign,
+  buildTargeting,
+  buscarUbicaciones,
+  createAdSet,
+  uploadAdImage,
+  createAdCreative,
+  createAd,
+  createWhatsAppCampaign,
 };

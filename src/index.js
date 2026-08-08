@@ -109,7 +109,7 @@ app.use((req, res, next) => {
 // Guardar el body crudo para verificar la firma del webhook de Meta.
 // Límite de payload por tipo de ruta: las de media (base64) aceptan hasta 25mb;
 // el resto 1mb — evita que un JSON gigante presione la RAM del contenedor (700MB).
-const esRutaMedia = (req) => /\/(responder-media|media)$/.test(req.path);
+const esRutaMedia = (req) => /\/(responder-media|media|campaigns\/whatsapp)$/.test(req.path);
 const jsonMedia = express.json({ limit: '25mb' });
 const jsonNormal = express.json({
   limit: '1mb',

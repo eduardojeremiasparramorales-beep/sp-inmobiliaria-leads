@@ -79,6 +79,52 @@ router.put('/campaigns/:id/resume', requireConfig, async (req, res) => {
   }
 });
 
+// ─── Creación de campañas Click-to-WhatsApp ───────────────────
+
+router.get('/account', requireConfig, async (req, res) => {
+  try {
+    const info = await metaAds.getAccountInfo();
+    res.json(info);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/locations', requireConfig, async (req, res) => {
+  try {
+    const results = await metaAds.buscarUbicaciones(req.query.q);
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Crea campaña + adset + (imagen) + creativo + anuncio en un solo paso, todo en PAUSED.
+// El body es intencionalmente el mismo shape que espera createWhatsAppCampaign() —
+// sin transformación intermedia, para que lo que ve el admin en el asistente sea
+// exactamente lo que se manda a Meta.
+router.post('/campaigns/whatsapp', requireConfig, async (req, res) => {
+  const { campaignName, adsetName, dailyBudgetMinorUnits, targeting, adMessage, imageBase64, pageId } = req.body || {};
+  if (!campaignName || !String(campaignName).trim()) return res.status(400).json({ error: 'falta_nombre_campana' });
+  if (!dailyBudgetMinorUnits || Number(dailyBudgetMinorUnits) <= 0) return res.status(400).json({ error: 'presupuesto_invalido' });
+  if (!targeting || !Array.isArray(targeting.cities) || !targeting.cities.length) return res.status(400).json({ error: 'falta_segmentacion' });
+  if (!adMessage || !String(adMessage).trim()) return res.status(400).json({ error: 'falta_texto_anuncio' });
+  try {
+    const result = await metaAds.createWhatsAppCampaign({
+      campaignName, adsetName, dailyBudgetMinorUnits: Number(dailyBudgetMinorUnits),
+      targeting, adMessage, imageBase64, pageId,
+    });
+    console.log(`[META-ADS] Campaña creada PAUSED: ${result.campaign.id} — revisar en Ads Manager antes de activar`);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    // Puede haber quedado algo creado a medias en Meta (ver comentario en
+    // createWhatsAppCampaign) — se avisa explícitamente para que no quede huérfano sin que
+    // el admin se entere.
+    console.error('[META-ADS] Error creando campaña (puede haber quedado algo parcial en Meta):', e.message);
+    res.status(500).json({ error: 'error_creando_campana', detalle: e.message });
+  }
+});
+
 // ─── Ad Sets ─────────────────────────────────────────────────
 
 router.get('/campaigns/:id/adsets', requireConfig, async (req, res) => {
