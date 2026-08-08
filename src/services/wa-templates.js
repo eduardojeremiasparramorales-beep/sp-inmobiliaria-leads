@@ -33,12 +33,29 @@ function extractVariables(components) {
   return [...new Set(matches.map(m => m.replace(/[{}]/g, '').trim()))];
 }
 
+// Meta le da "hello_world" a TODA cuenta de WhatsApp Business como plantilla de
+// ejemplo — sincroniza como APPROVED igual que las reales, pero Meta la rechaza
+// siempre que se intenta mandar desde un número real de negocio: "(#131058) Hello
+// World templates can only be sent from the Public Test Numbers". No es un error de
+// configuración, es una restricción permanente de Meta. Como el CRM la mostraba
+// igual que 'reengagement' en el panel de reactivar, sin ninguna advertencia, un
+// asesor la eligió por error creyendo que serviría — nunca puede funcionar, así que
+// se excluye de la sincronización para que ni siquiera aparezca como opción.
+const PLANTILLAS_META_NO_ENVIABLES = new Set(['hello_world']);
+
 async function syncTemplatesFromMeta() {
   const store = require('../db/store');
   const remote = await fetchApprovedTemplatesFromMeta();
   let synced = 0;
+  // Purga la que ya haya quedado guardada de una sincronización anterior — excluirla
+  // de aquí en adelante no la saca de la BD por sí solo, solo evita que vuelva a entrar.
+  for (const nombre of PLANTILLAS_META_NO_ENVIABLES) {
+    const existente = store.getWATemplateByName(nombre);
+    if (existente) store.deleteWATemplate(existente.id);
+  }
   for (const t of remote) {
     if (t.status !== 'APPROVED') continue; // solo se pueden usar plantillas aprobadas
+    if (PLANTILLAS_META_NO_ENVIABLES.has(t.name)) continue;
     store.upsertWATemplateFull({
       nombre: t.name,
       idioma: t.language,
