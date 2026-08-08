@@ -169,7 +169,7 @@ const registroLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHe
 const catalogoLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'demasiadas_peticiones' } });
 // Paraguas general para el resto de /api/* (login/media/webhook/responder ya tienen el suyo propio,
 // más estricto). No aplica a /api/stream: es una sola conexión SSE de larga duración, no ráfagas.
-const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.API_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/stream', message: { error: 'demasiadas_peticiones' } });
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: CFG.API_MAX_PER_MIN, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/stream' || req.path === '/login', message: { error: 'demasiadas_peticiones' } });
 
 // SW con versión dinámica (se invalida el caché en cada reinicio del servidor)
 const SW_VERSION = `sp-panel-${Date.now()}`;
@@ -4734,6 +4734,33 @@ async function checkEscalation() {
 }
 
 // Crea el usuario administrador inicial + vendedor admin
+function isValidPinHash(pin) {
+  if (!pin || typeof pin !== 'string') return false;
+  const idx = pin.indexOf(':');
+  if (idx < 1) return false;
+  const salt = pin.slice(0, idx);
+  const hash = pin.slice(idx + 1);
+  return salt.length === 32 && hash.length === 128 && /^[0-9a-f]+$/i.test(salt) && /^[0-9a-f]+$/i.test(hash);
+}
+
+function sanitizeAllPins() {
+  const DEFAULT_PIN = '0000';
+  const vendedores = store.getVendedores ? store.getVendedores() : [];
+  let fixed = 0;
+  for (const v of vendedores) {
+    if (!v.pin) {
+      store.setVendedorPin(v.id, auth.hashPassword(DEFAULT_PIN));
+      console.log(`[PIN-SANITIZE] ${v.nombre} (${v.telefono}) — sin PIN, reset a ${DEFAULT_PIN}`);
+      fixed++;
+    } else if (!isValidPinHash(v.pin)) {
+      store.setVendedorPin(v.id, auth.hashPassword(DEFAULT_PIN));
+      console.log(`[PIN-SANITIZE] ${v.nombre} (${v.telefono}) — PIN corrupto, reset a ${DEFAULT_PIN}`);
+      fixed++;
+    }
+  }
+  if (fixed > 0) console.log(`[PIN-SANITIZE] ${fixed} PIN(s) corregidos al arrancar`);
+}
+
 function ensureAdminUser() {
   const ADMIN_PHONE = process.env.ADMIN_PHONE || '+573214625618';
   const ADMIN_PIN = process.env.ADMIN_PIN || '0000';
@@ -4761,9 +4788,9 @@ function ensureAdminUser() {
     store.setVendedorPin(vId, auth.hashPassword(ADMIN_PIN));
     vendedorAdmin = store.getVendedorByTelefono(ADMIN_PHONE);
     console.log(`Vendedor admin creado: ${ADMIN_PHONE} · PIN: ${ADMIN_PIN}`);
-  } else if (!vendedorAdmin.pin) {
+  } else if (!isValidPinHash(vendedorAdmin.pin)) {
     store.setVendedorPin(vendedorAdmin.id, auth.hashPassword(ADMIN_PIN));
-    console.log(`PIN reset para admin: ${ADMIN_PIN}`);
+    console.log(`PIN reset para admin (formato inválido): ${ADMIN_PIN}`);
   }
 
   // Vincular con el usuario admin si no lo está
@@ -5234,6 +5261,7 @@ function ensurePlatformAdmin() {
   await platformDb.initPlatformDB(); // Vid.a V2 — control plane, BD separada
   ensurePlatformAdmin();
   ensureAdminUser();
+  sanitizeAllPins();
   ensureSupervisor(); // opcional vía .env (SUPERVISOR_PHONE/NAME/PIN)
   ensureJefe(); // opcional vía .env (JEFE_PHONE/NAME/PIN)
   // Backfill inbox: re-vincular leads legacy que no tienen conversación en el

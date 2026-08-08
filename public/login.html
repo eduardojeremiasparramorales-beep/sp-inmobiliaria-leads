@@ -479,6 +479,7 @@
     try {
       const res = await fetch('/api/mi-pin', {
         method:'POST', headers:{'Content-Type':'application/json'},
+        credentials: 'include',
         body: JSON.stringify({ pin }),
       });
       if(!res.ok) throw new Error('error');
