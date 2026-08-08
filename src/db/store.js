@@ -337,6 +337,11 @@ function createSchema() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_campaigns_estado ON campaigns(estado)`);
+  // Por qué quedó pausada: manual (el admin le dio pausa) | daily_limit (tope diario
+  // de Meta) | window (fuera de la ventana horaria configurada) | error (excepción
+  // inesperada en el runner). El cron de resumePendingCampaigns() solo reintenta las
+  // dos automáticas — nunca reactiva una pausa manual ni una en error sin revisar.
+  ensureColumn('campaigns', 'pause_reason', 'TEXT');
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS campaign_recipients (
@@ -1892,10 +1897,23 @@ function getCampaignById(id) {
   return one('SELECT * FROM campaigns WHERE id = ?', [id]);
 }
 
-function updateCampaignEstado(id, estado) {
+function updateCampaignEstado(id, estado, pauseReason) {
   const timestampCol = estado === 'running' ? ', started_at = datetime(\'now\',\'localtime\')'
     : (estado === 'done' || estado === 'failed') ? ', finished_at = datetime(\'now\',\'localtime\')' : '';
-  run(`UPDATE campaigns SET estado = ?, updated_at = datetime('now','localtime')${timestampCol} WHERE id = ?`, [estado, id]);
+  // pause_reason solo tiene sentido mientras está paused — se limpia en cualquier otra
+  // transición (running/done/failed/draft) para no dejar rastro viejo confundiendo al cron.
+  const reason = estado === 'paused' ? (pauseReason || 'manual') : null;
+  run(`UPDATE campaigns SET estado = ?, pause_reason = ?, updated_at = datetime('now','localtime')${timestampCol} WHERE id = ?`, [estado, reason, id]);
+}
+
+// Campañas colgadas en 'running' por un reinicio del servidor, o pausadas por el
+// runner mismo (tope diario / fuera de ventana) — candidatas a reanudar sin que un
+// admin tenga que tocar nada.
+function getCampaignsByEstado(estado) {
+  return all('SELECT * FROM campaigns WHERE estado = ?', [estado]);
+}
+function getCampaignsPausadasAutomaticas() {
+  return all("SELECT * FROM campaigns WHERE estado = 'paused' AND pause_reason IN ('daily_limit','window')");
 }
 
 function deleteCampaign(id) {
@@ -3223,7 +3241,7 @@ function seedGaleria() {
 
 module.exports = {
   initDB, createSchema, getDB, saveLead, assignLeadToVendedor, saveMessage,
-  all,
+  all, one, run, execSQL,
   getVendedoresActivos, getLeadById, getLeadByCustomerPhone,
   updateLeadStatus, setFirstResponse, resetLead, reopenLead,
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
@@ -3244,6 +3262,7 @@ module.exports = {
   getConfig, setConfig,
   getWATemplates, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName, upsertWATemplateFull, setWATemplateMapping,
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
+  getCampaignsByEstado, getCampaignsPausadasAutomaticas,
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
   isOptedOut, addOptout, getOptouts, deleteOptout, countSegment, segmentLeads, getSegmentOptions,
   bumpUsage, getUsage, getUsageRange,

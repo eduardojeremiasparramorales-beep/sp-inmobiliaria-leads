@@ -49,6 +49,13 @@ const CFG = require('./config');
 const app = express();
 app.set('trust proxy', 1);
 
+// Envuelve un handler async: si la promesa rechaza, Express 4 la deja perdida (el
+// request se cuelga hasta el timeout del cliente, sin llegar nunca al middleware de
+// error). asyncH la reenvía a next(err) para que sí llegue.
+function asyncH(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
 // Vid.a V1 — cada request corre dentro del contexto del tenant activo (hoy siempre
 // empresa #1 hardcodeada; V2 es quien resolverá el tenant real por dominio/canal).
 // Va primero, antes que cualquier otro middleware, para que TODO lo que siga
@@ -626,8 +633,8 @@ app.get('/api/pixel-config', (req, res) => {
   res.json({ pixelId: process.env.META_PIXEL_ID || '' });
 });
 
-// ===================== META ADS DEBUG (público) =====================
-app.get('/api/meta-ads-debug', (req, res) => {
+// ===================== META ADS DEBUG (solo admin) =====================
+app.get('/api/meta-ads-debug', auth.requireAdmin, (req, res) => {
   const token = process.env.META_MARKETING_API_TOKEN || '';
   const accountId = process.env.META_AD_ACCOUNT_ID || '';
   const pixelId = process.env.META_PIXEL_ID || '';
@@ -697,18 +704,17 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
     const vendidosTotal = porEtiqueta['vendido'] || 0;
     let sinResponder = 0;
     try {
-      const r = getDB().exec("SELECT COUNT(*) FROM leads WHERE first_response_at IS NULL AND COALESCE(status,'') != 'cerrado'");
-      sinResponder = (r && r.length && r[0].values.length) ? Number(r[0].values[0][0]) : 0;
+      const r = store.one("SELECT COUNT(*) as c FROM leads WHERE first_response_at IS NULL AND COALESCE(status,'') != 'cerrado'");
+      sinResponder = r ? Number(r.c) : 0;
     } catch (e) { /* noop */ }
 
     // Conteo total de mensajes (entrantes + salientes) del número principal
     let totalMensajes = 0, mensajesEntrantes = 0;
     try {
-      const dbx = getDB();
-      const rm = dbx.exec('SELECT COUNT(*) FROM messages');
-      totalMensajes = (rm.length && rm[0].values.length) ? rm[0].values[0][0] : 0;
-      const ri = dbx.exec("SELECT COUNT(*) FROM messages WHERE direction = 'incoming'");
-      mensajesEntrantes = (ri.length && ri[0].values.length) ? ri[0].values[0][0] : 0;
+      const rm = store.one('SELECT COUNT(*) as c FROM messages');
+      totalMensajes = rm ? Number(rm.c) : 0;
+      const ri = store.one("SELECT COUNT(*) as c FROM messages WHERE direction = 'incoming'");
+      mensajesEntrantes = ri ? Number(ri.c) : 0;
     } catch (e) { /* noop */ }
 
     res.json({
@@ -733,36 +739,32 @@ app.get('/api/metricas', auth.requireAdmin, (req, res) => {
 // Reportes detallados (admin)
 app.get('/api/reportes', auth.requireAdmin, (req, res) => {
   try {
-    const dbx = getDB();
     const all = getLeads(true, 2000);
     const vendedores = getVendedores();
 
     // Leads por día (últimos 30)
-    const leadsPorDia = dbx.exec(`
+    const leadsDiarios = store.all(`
       SELECT date(created_at) as dia, COUNT(*) as total
       FROM leads WHERE created_at >= datetime('now', '-30 days')
       GROUP BY dia ORDER BY dia
-    `);
-    const leadsDiarios = (leadsPorDia[0] && leadsPorDia[0].values) ? leadsPorDia[0].values.map(r => ({ dia: r[0], total: r[1] })) : [];
+    `).map(r => ({ dia: r.dia, total: r.total }));
 
     // Mensajes por día (últimos 30)
-    const msgsPorDia = dbx.exec(`
+    const msgsDiarios = store.all(`
       SELECT date(timestamp) as dia, COUNT(*) as total
       FROM messages WHERE timestamp >= datetime('now', '-30 days')
       GROUP BY dia ORDER BY dia
-    `);
-    const msgsDiarios = (msgsPorDia[0] && msgsPorDia[0].values) ? msgsPorDia[0].values.map(r => ({ dia: r[0], total: r[1] })) : [];
+    `).map(r => ({ dia: r.dia, total: r.total }));
 
     // Origen
     const origen = {};
     all.forEach(l => { const o = l.origen || 'desconocido'; origen[o] = (origen[o] || 0) + 1; });
 
     // Leads por hora
-    const porHora = dbx.exec(`
+    const horaDist = store.all(`
       SELECT CAST(strftime('%H', created_at) AS INTEGER) as h, COUNT(*) as total
       FROM leads GROUP BY h ORDER BY h
-    `);
-    const horaDist = (porHora[0] && porHora[0].values) ? porHora[0].values.map(r => ({ h: r[0], total: r[1] })) : [];
+    `).map(r => ({ h: r.h, total: r.total }));
 
     // Rendimiento detallado por vendedor
     const vendData = vendedores.map(v => {
@@ -1330,13 +1332,13 @@ app.post('/api/inbox/conversations/:id/send', auth.requireAuth, async (req, res)
   }
 });
 
-app.post('/api/inbox/conversations/:id/leido', auth.requireAuth, async (req, res) => {
+app.post('/api/inbox/conversations/:id/leido', auth.requireAuth, asyncH(async (req, res) => {
   const conv = store.getConversationById(req.params.id);
   if (!conv) return res.status(404).json({ error: 'no_existe' });
   if (!assertConvAccess(req, res, conv)) return;
   const adapter = require('./db/adapter'); adapter.run('UPDATE conversations SET unread_count = 0 WHERE id = ?', [conv.id]);
   res.json({ ok: true });
-});
+}));
 
 app.get('/api/inbox/unified-conversations', auth.requireAuth, (req, res) => {
   if (!esAccesoGlobal(req)) return res.json([]);
@@ -1497,7 +1499,7 @@ app.post('/api/inbox/conversations/:id/media', auth.requireAuth, mediaLimiter, a
 });
 
 // Servir media de un evento del timeline multicanal (valida permiso por conversación)
-app.get('/api/inbox/media/:timelineId', auth.requireAuth, async (req, res) => {
+app.get('/api/inbox/media/:timelineId', auth.requireAuth, asyncH(async (req, res) => {
   const adapter = require('./db/adapter');
   const ev = adapter.one('SELECT * FROM timeline WHERE id = ? LIMIT 1', [req.params.timelineId]);
   if (!ev || !ev.media_filename) return res.status(404).json({ error: 'media_no_existe' });
@@ -1508,12 +1510,12 @@ app.get('/api/inbox/media/:timelineId', auth.requireAuth, async (req, res) => {
   const filePath = mediaStore.getMediaPath(ev.media_filename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
   await sendMediaFile(res, filePath, ev.media_mime, ev.media_type);
-});
+}));
 
 // Ruta pública para servir media a canales externos (Messenger, Instagram).
 // Meta debe poder descargarla sin sesión, así que la protección es un token firmado
 // (HMAC + expiración) atado al filename exacto, generado solo al construir la URL de envío.
-app.get('/api/public/media/:filename', async (req, res) => {
+app.get('/api/public/media/:filename', asyncH(async (req, res) => {
   const filename = req.params.filename;
   if (!filename || filename.includes('..') || filename.includes('/')) {
     return res.status(400).json({ error: 'filename_invalido' });
@@ -1529,7 +1531,7 @@ app.get('/api/public/media/:filename', async (req, res) => {
   res.setHeader('Content-Type', mime);
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.sendFile(filePath);
-});
+}));
 
 // ===================== RESPONDER (OLD) =====================
 
@@ -1573,7 +1575,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
     if (lead.customer_phone.startsWith('messenger_')) channel = 'messenger';
     else if (lead.customer_phone.startsWith('instagram_')) channel = 'instagram';
   }
-  console.log(`[RESponder] lead=${lead.id} channel=${channel} convId=${conversation ? conversation.id : 'N/A'} lead_phone=${lead.customer_phone}`);
+  console.log(`[RESponder] lead=${lead.id} channel=${channel} convId=${conversation ? conversation.id : 'N/A'}`);
 
   try {
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
@@ -1594,13 +1596,13 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
       if (!adapter) throw new Error(`Canal ${channel} no configurado`);
 
       const channelUserId = store.getChannelUserIdForLead ? store.getChannelUserIdForLead(lead.id, channel) : null;
-      console.log(`[RESPONDER] lead=${lead.id} channel=${channel} channelUserId=${channelUserId}`);
+      console.log(`[RESPONDER] lead=${lead.id} channel=${channel}`);
       if (!channelUserId) throw new Error(`No se encontró ID de usuario para ${channel}`);
 
       try {
         const result = await adapter.sendMessage(channelUserId, textoParaEnviar);
         const outgoingMid = result && result.message_id ? result.message_id : null;
-        console.log(`[RESPONDER] Enviado OK por ${channel} a ${channelUserId} mid=${outgoingMid}`);
+        console.log(`[RESPONDER] Enviado OK por ${channel} mid=${outgoingMid}`);
         store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, outgoingMid, 'sent');
       } catch (e) {
         const errDetail = e.response ? JSON.stringify(e.response.data) : e.message;
@@ -1632,7 +1634,7 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
 });
 
 // Servir un archivo multimedia de un mensaje (validando propiedad del lead)
-app.get('/api/media/:messageId', auth.requireAuth, async (req, res) => {
+app.get('/api/media/:messageId', auth.requireAuth, asyncH(async (req, res) => {
   const msg = store.getMessageById(req.params.messageId);
   if (!msg || !msg.media_filename) return res.status(404).json({ error: 'media_no_existe' });
   const lead = store.getLeadById(msg.lead_id);
@@ -1643,7 +1645,7 @@ app.get('/api/media/:messageId', auth.requireAuth, async (req, res) => {
   const filePath = mediaStore.getMediaPath(msg.media_filename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'archivo_no_encontrado' });
   await sendMediaFile(res, filePath, msg.media_mime, msg.media_type);
-});
+}));
 
 // Link preview: fetch OG tags from a URL
 const dns = require('dns');
@@ -3431,6 +3433,15 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
 // ===================== TIEMPO REAL (SSE) =====================
 
 app.get('/api/stream', auth.requireAuth, (req, res) => {
+  // Admin y supervisor escuchan el canal 0 (alertas del equipo); el vendedor en su propio id.
+  const esGlobal = req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe';
+  const canal = esGlobal ? 0 : req.session.vendedorId;
+  // Sin canal 0 = admins. Un rol no-global sin vendedorId caería ahí por Number(null||undefined)
+  // y vería los eventos de todos los leads — cerrar la conexión en vez de exponer ese canal.
+  if (!esGlobal && (canal === null || canal === undefined)) {
+    return res.status(403).json({ error: 'sin_vendedor_asociado' });
+  }
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -3438,8 +3449,6 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
   });
   res.write(`event: conectado\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
 
-  // Admin y supervisor escuchan el canal 0 (alertas del equipo); el vendedor en su propio id.
-  const canal = (req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe') ? 0 : req.session.vendedorId;
   events.addClient(canal, res);
 
   // Heartbeat para mantener viva la conexión
@@ -4085,7 +4094,7 @@ const uploadImagesStorage = multer.diskStorage({
 });
 const uploadImages = multer({ storage: uploadImagesStorage, limits: { fileSize: CAMPANAS_UPLOAD_MAX_SIZE, files: CAMPANAS_UPLOAD_MAX_FILES } });
 
-app.post('/api/campanas-sp/projects/:id/upload-images', auth.requireAdmin, requireCampanasSpProject, handleMulterErrors(uploadImages.array('images', CAMPANAS_UPLOAD_MAX_FILES)), async (req, res) => {
+app.post('/api/campanas-sp/projects/:id/upload-images', auth.requireAdmin, requireCampanasSpProject, handleMulterErrors(uploadImages.array('images', CAMPANAS_UPLOAD_MAX_FILES)), asyncH(async (req, res) => {
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
   const p = req.campanasSpProject;
   const imgDir = path.join(campanasSp.getProjectDir(p.slug), 'images');
@@ -4095,7 +4104,7 @@ app.post('/api/campanas-sp/projects/:id/upload-images', auth.requireAdmin, requi
     store.updateCampanasSpProject(p.id, { images_dir: imgDir });
   }
   res.json({ ok: true, saved, count: saved.length, dir: imgDir });
-});
+}));
 
 app.get('/api/campanas-sp/projects/:id/assets', auth.requireAdmin, (req, res) => {
   const p = store.getCampanasSpProject(Number(req.params.id));
@@ -4545,16 +4554,7 @@ app.post('/api/test-reply', auth.requireAdmin, (req, res) => {
 
 // Logs
 app.get('/api/logs', auth.requireAdmin, (req, res) => {
-  const d = getDB();
-  if (!d) return res.json([]);
-  const r = d.exec('SELECT * FROM messages ORDER BY timestamp DESC LIMIT 50');
-  if (r.length === 0) return res.json([]);
-  const cols = r[0].columns;
-  res.json(r[0].values.map(row => {
-    const o = {};
-    cols.forEach((c, i) => { o[c] = row[i]; });
-    return o;
-  }));
+  res.json(store.all('SELECT * FROM messages ORDER BY timestamp DESC LIMIT 50'));
 });
 
 // ===================== ADMIN INBOX GLOBAL =====================
@@ -4942,7 +4942,7 @@ app.post('/api/reservas', auth.requireAuth, (req, res) => {
   const r = reservas.crearReserva(leadId, {
     horas: horas || 48,
     loteId, proyectoId,
-    vendedorId: req.session && req.session.vendedor_id,
+    vendedorId: req.session && req.session.vendedorId,
   });
   res.json(r);
 });
@@ -5112,12 +5112,12 @@ app.get('/api/ai-agents', auth.requireAuth, (req, res) => {
   res.json(aiAgents.listarAgentes());
 });
 
-app.post('/api/ai-agents/:id/chat', auth.requireAuth, async (req, res) => {
+app.post('/api/ai-agents/:id/chat', auth.requireAuth, asyncH(async (req, res) => {
   const { mensaje, leadId, vendedorId } = req.body || {};
   if (!mensaje) return res.status(400).json({ error: 'mensaje requerido' });
   const r = await aiAgents.chatConAgente(req.params.id, mensaje, { leadId, vendedorId });
   res.json(r);
-});
+}));
 
 // --- Centro de Reputación ---
 app.get('/api/reputacion/nps', auth.requireAdmin, (req, res) => {
@@ -5299,7 +5299,7 @@ function ensurePlatformAdmin() {
   console.log('===========================================');
   console.log('Platform admin (Vid.a) inicial creado:');
   console.log(`  Email:    ${email}`);
-  console.log(`  Password: ${password}`);
+  console.log('  Password: (ver VIDA_PLATFORM_PASSWORD en .env)');
   console.log('===========================================');
 }
 
@@ -5331,10 +5331,21 @@ function ensurePlatformAdmin() {
   } catch (e) {
     console.error('No se pudo iniciar WorkflowEngine:', e.message);
   }
+  // Campañas masivas que quedaron en 'running' de un reinicio anterior (crash, deploy,
+  // docker restart) no se reanudan solas — sin esto se quedan colgadas para siempre.
+  try {
+    const resumidas = await require('./services/campaign-runner').resumePendingCampaigns();
+    if (resumidas) console.log(`[CAMPAIGNS] ${resumidas} campaña(s) reanudada(s) tras el reinicio.`);
+  } catch (e) {
+    console.error('[CAMPAIGNS] error reanudando campañas colgadas:', e.message);
+  }
   // Middleware de error de Express (después de todas las rutas): registra y responde 500
   app.use((err, req, res, next) => {
-    logger.logError('express', err, { ruta: req.method + ' ' + req.originalUrl });
     if (res.headersSent) return next(err);
+    if (err && err.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'json_invalido' });
+    }
+    logger.logError('express', err, { ruta: req.method + ' ' + req.originalUrl });
     res.status(500).json({ error: 'error_interno' });
   });
   // Errores no capturados: registrar sin tumbar el proceso (Docker lo reinicia si muere)
@@ -5346,6 +5357,23 @@ function ensurePlatformAdmin() {
   httpServer.listen(PORT, () => {
     console.log(`Leons Group CRM corriendo en puerto ${PORT}`);
   });
+
+  // docker stop / restart mandan SIGTERM: el fallback sql.js guarda en disco con
+  // debounce (hasta 500ms-5s de retraso, ver adapter.scheduleSave) — sin este flush,
+  // lo que quedó pendiente de guardar en ese instante se pierde. better-sqlite3 no lo
+  // necesita (persiste solo en cada escritura) pero flushAll() es un no-op ahí.
+  let shuttingDown = false;
+  function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[shutdown] ${signal} recibido — cerrando conexiones y guardando BD…`);
+    try { dbAdapter.flushAll(); } catch (e) { console.error('[shutdown] error en flushAll:', e.message); }
+    httpServer.close(() => process.exit(0));
+    // Si algo deja conexiones HTTP colgadas (SSE en particular), no esperar para siempre.
+    setTimeout(() => process.exit(0), 3000).unref();
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
   // Vid.a V3 — estos jobs corren por setInterval, fuera de cualquier request — sin
   // contexto de tenant perderían acceso a la BD (adapter.js resuelve la conexión por
   // contexto). runForAllTenants() itera TODAS las empresas activas del control plane
@@ -5370,6 +5398,9 @@ function ensurePlatformAdmin() {
   setInterval(() => { runForAllTenants(() => reservas.verificarVencidas()).catch(e => console.error('[SCHED] reservas:', e.message)); }, 5 * 60 * 1000);
   // Lead scoring: recalcular scores cada 10 min
   setInterval(() => { runForAllTenants(() => leadScoring.recalcularTodos()).catch(e => console.error('[SCHED] leadScoring:', e.message)); }, 10 * 60 * 1000);
+  // Campañas masivas pausadas por tope diario o fuera de ventana horaria: reintentar
+  // cada 10 min sin que un admin tenga que reabrir el panel y pulsar "Iniciar".
+  setInterval(() => { runForAllTenants(() => require('./services/campaign-runner').reanudarCampanasAutomaticas()).catch(e => console.error('[SCHED] campañas auto-resume:', e.message)); }, 10 * 60 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
   require('./services/scheduler').start(buildMensajeConFirma, runForAllTenants);
 })();

@@ -22,7 +22,7 @@ function bootstrapChannels() {
 
 async function webhookReceiver(req, res) {
   const channel = req.params.channel || 'whatsapp';
-  console.log(`[WEBHOOK ${channel}] Recibido POST — Body:`, JSON.stringify(req.body).slice(0, 300));
+  console.log(`[WEBHOOK ${channel}] Recibido POST`);
   const adapter = getAdapter(channel);
 
   if (!adapter) {

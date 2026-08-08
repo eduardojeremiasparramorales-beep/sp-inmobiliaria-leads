@@ -144,24 +144,42 @@
     items: [{ id: 'inbox', label: 'Mi Panel', icon: 'inbox', href: '/m/', badge: 'live' }],
   }];
 
+  /* Android/PWA: para que env(safe-area-inset-*) funcione en CSS, el viewport
+     necesita viewport-fit=cover. Se reescribe acá (una vez, en el shell) en vez de
+     tocar la meta tag de las 35 páginas /os/* una por una. */
+  function ensureViewportFitCover() {
+    let vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) { vp = document.createElement('meta'); vp.name = 'viewport'; document.head.appendChild(vp); }
+    const content = vp.content || 'width=device-width, initial-scale=1.0';
+    if (!/viewport-fit=cover/.test(content)) {
+      vp.content = content.replace(/,?\s*viewport-fit=[^,]*/, '') + ', viewport-fit=cover';
+    }
+  }
+
   /* --- Montaje del shell --- */
   async function mount(opts) {
     opts = opts || {};
+    ensureViewportFitCover();
     const active = opts.active || 'dashboard';
     const me = await api('/api/me');
 
-    // Sin sesión activa → login (siempre, sin modo demo)
-    if (!me) { location.replace('/login.html'); return null; }
+    // Sin sesión activa → login (siempre, sin modo demo). location.replace() no corta
+    // la ejecución síncrona del caller de inmediato — devolver null dejaba que 18
+    // páginas siguieran corriendo tras el redirect y lanzaran TypeError contra un
+    // contexto inexistente. Una promesa que nunca resuelve congela ese código sin
+    // tocar cada página una por una.
+    if (!me) { location.replace('/login.html'); return new Promise(() => {}); }
 
     // Tres roles con tres paneles diferentes: admin (SP OS aquí en /os/*),
     // supervisor (Supervisor Center en /supervisor/*), vendedor (panel móvil en /m/*).
-    // /os/* es EXCLUSIVO del admin. Cualquiera que no sea admin aquí fue redirigido
-    // a su propio panel — para no romper la UX de un vendedor ni la de un supervisor.
+    // /os/* es EXCLUSIVO del admin — esto ya cubre lo que opts.adminOnly pretendía
+    // señalar página por página (13 páginas lo pasan pero nunca hizo nada: el shell
+    // entero ya expulsa a cualquiera que no sea admin, sin excepciones).
     const isAdmin = me.rol === 'admin';
     if (!isAdmin) {
       const destino = me.rol === 'supervisor' ? '/supervisor/' : '/m/';
       location.replace(destino);
-      return null;
+      return new Promise(() => {});
     }
 
     const navGroups = isAdmin ? NAV : NAV_VENDEDOR;
@@ -174,11 +192,14 @@
       return `<div class="os-nav__group"><div class="os-nav__title">${group.title}</div>${items}</div>`;
     }).join('');
 
+    let navCollapsed = false;
+    try { navCollapsed = localStorage.getItem('spos:navCollapsed') === '1'; } catch (e) {}
+
     const shell = document.createElement('div');
-    shell.className = 'os-app' + (opts.panel ? ' has-panel' : '');
+    shell.className = 'os-app' + (opts.panel ? ' has-panel' : '') + (navCollapsed ? ' nav-collapsed' : '');
     shell.innerHTML = `
       <aside class="os-nav" id="osNav">
-        <div class="os-brand">
+        <div class="os-brand" id="osBrand" title="Expandir / minimizar barra">
           <div class="os-brand__mark"><img src="/icons/logo.png" alt="SP Leons Group" style="width:100%;height:100%;object-fit:cover;border-radius:8px"></div>
           <div><div class="os-brand__name">Leons&nbsp;Group</div><div class="os-brand__sub">CRM Inmobiliario</div></div>
         </div>
@@ -189,7 +210,6 @@
         <div class="os-nav__scroll">${navHTML}</div>
         <div class="os-nav__foot">
           <div class="os-nav__item" id="osLogout">${ICONS.logout}<span>Cerrar sesión</span></div>
-          <div class="os-nav__item" id="osCollapseBtn" title="Minimizar barra">${ICONS.collapse}<span>Minimizar</span></div>
         </div>
       </aside>
       <main class="os-main">

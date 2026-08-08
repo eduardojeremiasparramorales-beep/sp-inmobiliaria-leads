@@ -5,6 +5,12 @@ const store = require('../../db/store');
 
 router.use(auth.requireAuth);
 
+// Ídem al helper de index.js: sin esto, un rechazo dentro de un handler async
+// deja el request colgado en vez de llegar al middleware de error.
+function asyncH(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
 // Un vendedor solo puede tocar conversaciones asignadas a él; el admin, todas.
 function puedeVer(req, conversation) {
   return req.session.rol === 'admin' || req.session.rol === 'jefe' || Number(conversation.assigned_to_id) === Number(req.session.vendedorId);
@@ -55,7 +61,7 @@ router.put('/:id', (req, res) => {
 });
 
 // POST /:id/assign { vendedorId } — solo admin
-router.post('/:id/assign', auth.requireAdmin, async (req, res) => {
+router.post('/:id/assign', auth.requireAdmin, asyncH(async (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
 
@@ -71,10 +77,10 @@ router.post('/:id/assign', auth.requireAdmin, async (req, res) => {
   );
 
   res.json({ data: store.getConversationById(conversation.id), error: null });
-});
+}));
 
 // POST /:id/close
-router.post('/:id/close', async (req, res) => {
+router.post('/:id/close', asyncH(async (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
   if (!puedeVer(req, conversation)) return res.status(403).json({ data: null, error: 'sin_permiso' });
@@ -83,10 +89,10 @@ router.post('/:id/close', async (req, res) => {
   const updated = await MessageRouter.closeConversation(conversation.id);
 
   res.json({ data: updated, error: null });
-});
+}));
 
 // DELETE /:id → cerrar (no borrar físicamente)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', asyncH(async (req, res) => {
   const conversation = store.getConversationById(req.params.id);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
   if (!puedeVer(req, conversation)) return res.status(403).json({ data: null, error: 'sin_permiso' });
@@ -95,6 +101,6 @@ router.delete('/:id', async (req, res) => {
   const updated = await MessageRouter.closeConversation(conversation.id);
 
   res.json({ data: updated, error: null });
-});
+}));
 
 module.exports = router;

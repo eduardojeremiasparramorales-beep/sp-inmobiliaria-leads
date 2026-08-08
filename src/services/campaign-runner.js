@@ -27,13 +27,58 @@ function getDailyLimit() {
   return cfg > 0 ? cfg : 250;
 }
 
+// Ventana horaria de envío (hora local del server — America/Bogota, ver Dockerfile) —
+// por defecto 08:00-20:00. Fuera de ese rango el runner se pausa en vez de disparar
+// mensajes de madrugada.
+function getWindow() {
+  const start = Number(store.getConfig('campaign_window_start'));
+  const end = Number(store.getConfig('campaign_window_end'));
+  return {
+    start: (Number.isInteger(start) && start >= 0 && start <= 23) ? start : 8,
+    end: (Number.isInteger(end) && end >= 1 && end <= 24) ? end : 20,
+  };
+}
+function dentroDeVentana() {
+  const { start, end } = getWindow();
+  const h = new Date().getHours();
+  return h >= start && h < end;
+}
+
 // Cuenta destinatarios únicos alcanzados HOY por cualquier campaña — el tier diario
-// de Meta es compartido por todo el número, no por campaña individual.
+// de Meta es compartido por todo el número, no por campaña individual. Es un
+// COUNT(DISTINCT ...) sobre toda la tabla — costoso para llamarlo antes de CADA
+// mensaje; el loop de runCampaign lo cachea en memoria y solo re-sincroniza cada
+// cierto número de envíos (ver sentTodayTracker más abajo).
 function sentToday() {
   const adapter = require('../db/adapter');
   const r = adapter.one(`SELECT COUNT(DISTINCT phone) as c FROM campaign_recipients
     WHERE estado IN ('sent','delivered','read','failed') AND date(sent_at) = date('now')`);
   return (r && r.c) || 0;
+}
+
+// Contador en memoria del envío diario: se inicializa una vez desde la BD y se
+// incrementa localmente por cada resultado (éxito o fallo cuentan igual para el tier
+// de Meta), re-sincronizando con la BD cada RESYNC_EVERY envíos para no acumular
+// drift si hay otra campaña corriendo en paralelo.
+const RESYNC_EVERY = 50;
+function makeSentTodayTracker() {
+  let count = sentToday();
+  let sinceSync = 0;
+  return {
+    get: () => count,
+    bump: () => {
+      count++;
+      sinceSync++;
+      if (sinceSync >= RESYNC_EVERY) { count = sentToday(); sinceSync = 0; }
+    },
+  };
+}
+
+// Formato de teléfono aceptable para la Cloud API: solo dígitos, 10-15 caracteres
+// (E.164 sin el '+'). Falla rápido sin gastar la llamada a Meta.
+function telefonoValido(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return /^\d{10,15}$/.test(digits);
 }
 
 async function sendOneWithRetry(to, tpl, lead, vendedor, overrides) {
@@ -72,6 +117,7 @@ async function runCampaign(campaignId) {
     store.updateCampaignEstado(campaignId, 'running');
     const mps = getMps();
     const dailyLimit = getDailyLimit();
+    const sentTracker = makeSentTodayTracker();
 
     const pendientes = store.getCampaignRecipients(campaignId, 'queued');
     for (const rec of pendientes) {
@@ -80,13 +126,24 @@ async function runCampaign(campaignId) {
       const fresh = store.getCampaignById(campaignId);
       if (!fresh || fresh.estado !== 'running') break;
 
+      if (!dentroDeVentana()) {
+        const { start, end } = getWindow();
+        console.log(`[Campaign ${campaignId}] Fuera de la ventana horaria (${start}h-${end}h) — pausando, el cron la reanuda dentro del horario.`);
+        store.updateCampaignEstado(campaignId, 'paused', 'window');
+        break;
+      }
+
       if (store.isOptedOut(rec.phone)) {
         store.updateCampaignRecipient(rec.id, { estado: 'failed', errorDetail: 'opt_out' });
         continue;
       }
-      if (sentToday() >= dailyLimit) {
-        console.log(`[Campaign ${campaignId}] Límite diario de mensajería alcanzado (${dailyLimit}) — pausando campaña, continúa mañana.`);
-        store.updateCampaignEstado(campaignId, 'paused');
+      if (!telefonoValido(rec.phone)) {
+        store.updateCampaignRecipient(rec.id, { estado: 'failed', errorDetail: 'telefono_invalido' });
+        continue;
+      }
+      if (sentTracker.get() >= dailyLimit) {
+        console.log(`[Campaign ${campaignId}] Límite diario de mensajería alcanzado (${dailyLimit}) — pausando campaña, el cron la reanuda cuando haya cupo.`);
+        store.updateCampaignEstado(campaignId, 'paused', 'daily_limit');
         break;
       }
 
@@ -107,6 +164,7 @@ async function runCampaign(campaignId) {
       } catch (err) {
         store.updateCampaignRecipient(rec.id, { estado: 'failed', errorDetail: err.message });
       }
+      sentTracker.bump();
       store.recalcCampaignStats(campaignId);
       await sleep(1000 / mps);
     }
@@ -119,12 +177,47 @@ async function runCampaign(campaignId) {
     store.recalcCampaignStats(campaignId);
   } catch (e) {
     console.error(`[Campaign ${campaignId}] Error inesperado:`, e.message);
-    store.updateCampaignEstado(campaignId, 'paused');
+    store.updateCampaignEstado(campaignId, 'paused', 'error');
   } finally {
     runningCampaigns.delete(campaignId);
   }
 }
 
+// Al arrancar el server: campañas que quedaron en 'running' son las que el proceso
+// anterior dejó a mitad de envío (crash, docker restart, deploy) — sin esto se
+// quedan colgadas para siempre, ni continúan ni se pueden borrar (el DELETE rechaza
+// estado 'running'). Se relanzan; runCampaign retoma desde los destinatarios 'queued'.
+async function resumePendingCampaigns() {
+  const colgadas = store.getCampaignsByEstado('running');
+  for (const c of colgadas) {
+    console.log(`[Campaign ${c.id}] Reanudando tras reinicio del servidor (quedó en 'running').`);
+    runCampaign(c.id).catch(e => console.error(`[Campaign ${c.id}] error al reanudar:`, e.message));
+  }
+  return colgadas.length;
+}
+
+// Cron periódico: campañas que el propio runner pausó por tope diario o por estar
+// fuera de la ventana horaria se reintentan solas en cuanto vuelven a ser elegibles —
+// antes había que entrar al panel y pulsar "Iniciar" manualmente cada día.
+async function reanudarCampanasAutomaticas() {
+  const candidatas = store.getCampaignsPausadasAutomaticas();
+  if (!candidatas.length) return 0;
+  if (!dentroDeVentana()) return 0; // ninguna automática puede arrancar fuera de horario
+  const dailyLimit = getDailyLimit();
+  if (sentToday() >= dailyLimit) return 0; // el tope diario es compartido por el número
+  let reanudadas = 0;
+  for (const c of candidatas) {
+    if (isCampaignRunning(c.id)) continue;
+    console.log(`[Campaign ${c.id}] Reanudando automáticamente (pausada por '${c.pause_reason}').`);
+    runCampaign(c.id).catch(e => console.error(`[Campaign ${c.id}] error al reanudar:`, e.message));
+    reanudadas++;
+  }
+  return reanudadas;
+}
+
 function isCampaignRunning(campaignId) { return runningCampaigns.has(campaignId); }
 
-module.exports = { runCampaign, isCampaignRunning, sentToday, getDailyLimit, getMps };
+module.exports = {
+  runCampaign, isCampaignRunning, sentToday, getDailyLimit, getMps,
+  resumePendingCampaigns, reanudarCampanasAutomaticas, getWindow,
+};

@@ -156,6 +156,7 @@ function exec(sql) {
     conn.db.exec(sql);
   } else {
     conn.db.run(sql);
+    scheduleSave(conn);
   }
 }
 
@@ -171,12 +172,38 @@ function saveConnectionIfNeeded(conn) {
 function saveDBIfNeeded() { saveConnectionIfNeeded(currentConnection()); }
 
 // Auto-save cada 500ms para sql.js — un timer POR conexión (cada negocio en dev guarda
-// su propio archivo de forma independiente).
+// su propio archivo de forma independiente). Bajo escritura continua (p. ej. una
+// campaña masiva insertando destinatarios sin pausa) el timer de 500ms se reinicia en
+// cada run() y el debounce nunca dispara — el .db podría no tocar disco por minutos.
+// firstDirtyAt fija un techo: si ya pasaron MAX_SAVE_WAIT_MS desde la primera escritura
+// pendiente, se guarda YA aunque siga entrando escritura, y se resetea el contador.
+const MAX_SAVE_WAIT_MS = 5000;
 function scheduleSave(conn) {
   conn = conn || currentConnection();
   if (conn.usingBetterSqlite3) return;
+  const now = Date.now();
+  if (!conn.firstDirtyAt) conn.firstDirtyAt = now;
+  if (now - conn.firstDirtyAt >= MAX_SAVE_WAIT_MS) {
+    if (conn.saveTimer) { clearTimeout(conn.saveTimer); conn.saveTimer = null; }
+    conn.firstDirtyAt = null;
+    saveConnectionIfNeeded(conn);
+    return;
+  }
   if (conn.saveTimer) clearTimeout(conn.saveTimer);
-  conn.saveTimer = setTimeout(() => saveConnectionIfNeeded(conn), 500);
+  conn.saveTimer = setTimeout(() => {
+    conn.firstDirtyAt = null;
+    saveConnectionIfNeeded(conn);
+  }, 500);
+}
+
+// Flush síncrono de TODAS las conexiones abiertas — usado al recibir SIGTERM/SIGINT
+// (docker stop / restart) para no perder lo que el debounce todavía no bajó a disco.
+function flushAll() {
+  for (const conn of _connections.values()) {
+    if (conn.saveTimer) { clearTimeout(conn.saveTimer); conn.saveTimer = null; }
+    conn.firstDirtyAt = null;
+    saveConnectionIfNeeded(conn);
+  }
 }
 
 module.exports = {
@@ -188,6 +215,7 @@ module.exports = {
   getDB: () => currentConnection().db,
   saveDBIfNeeded,
   scheduleSave,
+  flushAll,
   isBetterSqlite3: () => currentConnection().usingBetterSqlite3,
   // Vid.a — usado por el middleware (index.js) y por los jobs de fondo (scheduler.js,
   // setInterval sueltos) para envolver su ejecución en el tenant correcto.

@@ -6,6 +6,18 @@
 const axios = require('axios');
 const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
 
+// Una columna JSON corrupta (edición manual en BD, migración a medias) no debe tumbar
+// TODO el envío de plantillas/campañas — cae al fallback y sigue.
+function safeParse(json, fallback) {
+  try {
+    const v = JSON.parse(json);
+    return v === null || v === undefined ? fallback : v;
+  } catch (e) {
+    console.error('[wa-templates] JSON inválido en plantilla, usando fallback:', e.message);
+    return fallback;
+  }
+}
+
 async function fetchApprovedTemplatesFromMeta() {
   // Vid.a V3: tenant-aware — el token del canal del negocio activo (env para #1).
   const { token } = require('./whatsapp').getAuth();
@@ -91,7 +103,7 @@ function buildTextParam(name, value, named) {
 // texto o media, body con variables (posicionales o con nombre), y un botón URL con
 // sufijo dinámico (el patrón más común en recordatorios de cita / catálogo).
 function buildTemplateComponents(templateRecord, resolvedValues) {
-  const meta = JSON.parse(templateRecord.componentes || '[]');
+  const meta = safeParse(templateRecord.componentes, []);
   const values = resolvedValues || {};
   const out = [];
 
@@ -128,8 +140,8 @@ function buildTemplateComponents(templateRecord, resolvedValues) {
 // y si nada aplica, cadena vacía.
 function resolveTemplateValues(templateRecord, lead, vendedor, overrides) {
   const { resolveLeadVariables } = require('./template-vars');
-  const mapping = JSON.parse(templateRecord.var_mapping || '{}');
-  const placeholders = JSON.parse(templateRecord.variables || '[]');
+  const mapping = safeParse(templateRecord.var_mapping, {});
+  const placeholders = safeParse(templateRecord.variables, []);
   const leadVars = resolveLeadVariables(lead, vendedor);
   const ov = overrides || {};
 
