@@ -78,7 +78,7 @@
   const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   const ctx = await SPOS.mount({
-    active: 'campanas-sp', title: 'Campañas SP', crumb: 'Generación de Assets', padded: true, adminOnly: true,
+    active: 'campanas-sp', title: 'Estudio creativo', crumb: 'Generación de assets · Campañas SP', padded: true, adminOnly: true,
     action: `<button class="btn btn--gold btn--sm" id="btnNewWizard">Nuevo proyecto</button>`
   });
   if (!ctx) return;

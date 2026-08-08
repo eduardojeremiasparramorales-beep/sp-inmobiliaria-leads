@@ -1398,6 +1398,7 @@ module.exports = {
   uploadAdVideo,
   getVideoStatus,
   generatePreview,
+  buildCreativeSpec,
   // Creación avanzada (Fase 2/3)
   createAdvancedCampaign,
 };

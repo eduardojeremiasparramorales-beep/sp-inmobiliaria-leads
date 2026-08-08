@@ -14,7 +14,7 @@
 <script src="/os/theme.js"></script>
 <link rel="stylesheet" href="/os/sp-os.css">
 <style>
-  .ma-page { max-width: 1040px; margin: 0 auto; }
+  .ma-page { max-width: 1120px; margin: 0 auto; }
 
   /* KPI strip */
   .ma-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
@@ -27,17 +27,33 @@
   .ma-sec h3 { font-family: var(--f-title); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
   .ma-sec p { font-size: 12.5px; color: var(--text-3); margin-bottom: var(--s2); }
 
-  /* Campaign cards */
-  .ma-camp { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; background: var(--bg-2); transition: border-color .15s; }
+  /* Top nav (reemplaza los tabs planos por rutas navegables con historial) */
+  .ma-nav { display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; align-items: center; }
+  .ma-nav a { padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--bg-3); color: var(--text-3); border: none; font-family: var(--f-ui); transition: all .15s; text-decoration: none; }
+  .ma-nav a.active { background: rgba(200,164,90,.15); color: var(--gold); }
+  .ma-nav a:hover:not(.active) { color: var(--text); }
+  .ma-crumb { font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
+  .ma-crumb a { color: var(--gold); cursor: pointer; text-decoration: none; }
+  .ma-crumb a:hover { text-decoration: underline; }
+
+  /* Campaign / adset / ad cards */
+  .ma-camp { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; background: var(--bg-2); transition: border-color .15s; cursor: pointer; }
   .ma-camp:hover { border-color: var(--gold); }
-  .ma-camp__top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .ma-camp__top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
   .ma-camp__name { font-size: 14px; font-weight: 600; }
   .ma-camp__meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
   .ma-camp__metrics { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; }
   .ma-camp__metric { text-align: center; min-width: 60px; }
   .ma-camp__metric-val { font-size: 15px; font-weight: 600; color: var(--text); }
   .ma-camp__metric-lbl { font-size: 9.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .05em; }
-  .ma-camp__actions { display: flex; gap: 6px; margin-top: 10px; }
+  .ma-camp__actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .ma-camp__actions button, .ma-camp__actions a { position: relative; z-index: 2; }
+
+  .ma-ad-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .ma-ad-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--bg-2); }
+  .ma-ad-card__img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; background: var(--bg-3); margin-bottom: 8px; }
+  .ma-ad-card__name { font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+  .ma-ad-card__actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
   /* Buttons */
   .ma-btn { height: 34px; padding: 0 16px; background: var(--bg-3); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); font-weight: 600; font-size: 12px; cursor: pointer; font-family: var(--f-ui); transition: all .15s; }
@@ -48,56 +64,49 @@
   .ma-btn--danger:hover { background: rgba(192,57,43,.25); }
   .ma-btn--green { background: rgba(78,123,70,.15); color: var(--green); border-color: rgba(78,123,70,.3); }
   .ma-btn--green:hover { background: rgba(78,123,70,.25); }
+  .ma-btn--xs { height: 26px; padding: 0 10px; font-size: 10.5px; }
   .ma-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
 
   /* Badge */
-  .ma-badge { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .ma-badge { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
   .ma-badge--active { background: rgba(78,123,70,.18); color: var(--green); }
   .ma-badge--paused { background: rgba(200,164,90,.18); color: var(--gold); }
   .ma-badge--error { background: rgba(255,80,80,.15); color: #ff5050; }
-  .ma-badge--archived { background: rgba(150,150,150,.15); color: var(--text-3); }
+  .ma-badge--archived, .ma-badge--deleted { background: rgba(150,150,150,.15); color: var(--text-3); }
 
-  /* Not configured banner */
+  /* Not configured / error banners */
   .ma-banner { background: linear-gradient(135deg, rgba(200,164,90,.08), rgba(200,164,90,.02)); border: 1px solid rgba(200,164,90,.2); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 20px; }
   .ma-banner h4 { font-family: var(--f-title); color: var(--gold); font-size: 14px; margin-bottom: 8px; }
   .ma-banner p { font-size: 12.5px; color: var(--text-3); max-width: 500px; margin: 0 auto 14px; }
   .ma-banner code { display: block; background: var(--bg-3); border-radius: 6px; padding: 10px; font-size: 11px; color: var(--text-2); text-align: left; margin-top: 10px; overflow-x: auto; white-space: pre; }
+  .ma-error { background: rgba(255,80,80,.08); border: 1px solid rgba(255,80,80,.25); border-radius: 12px; padding: 20px; text-align: center; }
+  .ma-error p { font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; }
 
   /* Chart area */
   .ma-chart { position: relative; height: 180px; background: var(--bg-2); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; margin: 12px 0; }
   .ma-chart canvas { width: 100% !important; height: 100% !important; }
 
   /* Audiences list */
-  .ma-aud { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 8px; background: var(--bg-2); display: flex; justify-content: space-between; align-items: center; }
-  .ma-aud__info { flex: 1; }
+  .ma-aud { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 8px; background: var(--bg-2); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ma-aud__info { flex: 1; min-width: 160px; }
   .ma-aud__name { font-size: 13px; font-weight: 600; }
   .ma-aud__meta { font-size: 11px; color: var(--text-3); }
-  .ma-aud__actions { display: flex; gap: 6px; }
+  .ma-aud__actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-  /* Empty state */
+  /* Empty / loading state */
   .ma-empty { text-align: center; padding: 30px; color: var(--text-3); font-size: 13px; }
-
-  /* Tabs */
-  .ma-tabs { display: flex; gap: 4px; margin-bottom: 18px; }
-  .ma-tab { padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--bg-3); color: var(--text-3); border: none; font-family: var(--f-ui); transition: all .15s; }
-  .ma-tab.active { background: rgba(200,164,90,.15); color: var(--gold); }
-  .ma-tab:hover:not(.active) { color: var(--text); }
-  .ma-tab-pane { display: none; }
-  .ma-tab-pane.active { display: block; }
-
-  /* Loading */
   .ma-loading { display: flex; align-items: center; justify-content: center; padding: 30px; color: var(--text-3); font-size: 12px; gap: 8px; }
   .ma-spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: ma-spin .6s linear infinite; }
   @keyframes ma-spin { to { transform: rotate(360deg); } }
 
-  /* Asistente de creación */
+  /* Formularios */
   .ma-form-row { margin-bottom: 16px; }
   .ma-form-row label { display: block; font-size: 11.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; font-weight: 600; }
-  .ma-form-row input[type="text"], .ma-form-row input[type="number"], .ma-form-row textarea {
+  .ma-form-row input[type="text"], .ma-form-row input[type="number"], .ma-form-row input[type="url"], .ma-form-row textarea, .ma-form-row select {
     width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-sm);
     padding: 10px 12px; color: var(--text); font-size: 13.5px; font-family: var(--f-ui); outline: none; transition: border-color .15s;
   }
-  .ma-form-row input:focus, .ma-form-row textarea:focus { border-color: var(--gold); }
+  .ma-form-row input:focus, .ma-form-row textarea:focus, .ma-form-row select:focus { border-color: var(--gold); }
   .ma-form-row textarea { resize: vertical; min-height: 70px; }
   .ma-form-hint { font-size: 11px; color: var(--text-3); margin-top: 5px; }
   .ma-form-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -105,29 +114,70 @@
   .ma-safety { background: rgba(78,123,70,.1); border: 1px solid rgba(78,123,70,.28); border-radius: 10px; padding: 12px 14px; font-size: 12px; color: var(--text-2); margin-bottom: 18px; display: flex; gap: 10px; align-items: flex-start; }
   .ma-safety b { color: var(--green); }
 
-  .ma-city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 0; }
-  .ma-city-chip { display: flex; align-items: center; gap: 6px; background: var(--gold-soft, rgba(200,164,90,.16)); border: 1px solid var(--gold-line, rgba(200,164,90,.4)); color: var(--gold); border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 12px; font-weight: 600; }
-  .ma-city-chip button { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; opacity: .7; }
-  .ma-city-chip button:hover { opacity: 1; }
-  .ma-city-results { position: relative; }
-  .ma-city-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-3); border: 1px solid var(--border-strong); border-radius: var(--r-sm); max-height: 220px; overflow-y: auto; z-index: 20; box-shadow: var(--sh-2); }
-  .ma-city-opt { padding: 9px 12px; font-size: 12.5px; cursor: pointer; display: flex; justify-content: space-between; }
-  .ma-city-opt:hover { background: var(--bg-4); color: var(--gold); }
-  .ma-city-opt small { color: var(--text-3); }
+  .ma-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 0; }
+  .ma-chip { display: flex; align-items: center; gap: 6px; background: var(--gold-soft, rgba(200,164,90,.16)); border: 1px solid var(--gold-line, rgba(200,164,90,.4)); color: var(--gold); border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 12px; font-weight: 600; }
+  .ma-chip button { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; opacity: .7; }
+  .ma-chip button:hover { opacity: 1; }
+  .ma-search-results { position: relative; }
+  .ma-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-3); border: 1px solid var(--border-strong); border-radius: var(--r-sm); max-height: 220px; overflow-y: auto; z-index: 20; box-shadow: var(--sh-2); }
+  .ma-dd-opt { padding: 9px 12px; font-size: 12.5px; cursor: pointer; display: flex; justify-content: space-between; }
+  .ma-dd-opt:hover { background: var(--bg-4); color: var(--gold); }
+  .ma-dd-opt small { color: var(--text-3); }
+
+  .ma-seg { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .ma-seg button { flex: 1; min-width: 90px; height: 36px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2); font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--f-ui); }
+  .ma-seg button.active { background: rgba(200,164,90,.15); border-color: var(--gold-line); color: var(--gold); }
+
+  .ma-check-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: var(--r-sm); padding: 8px; }
+  .ma-check-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: 12.5px; cursor: pointer; }
+  .ma-check-row input { width: auto; }
 
   .ma-image-drop { border: 1.5px dashed var(--border-strong); border-radius: var(--r-sm); padding: 18px; text-align: center; cursor: pointer; transition: border-color .15s; background: var(--bg-2); }
-  .ma-image-drop:hover { border-color: var(--gold); }
+  .ma-image-drop:hover, .ma-image-drop.dragover { border-color: var(--gold); }
   .ma-image-preview { max-width: 100%; max-height: 220px; border-radius: 10px; display: block; margin: 0 auto 10px; }
+  .ma-thumb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin-top: 10px; }
+  .ma-thumb { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .ma-thumb img, .ma-thumb video { width: 100%; height: 70px; object-fit: cover; display: block; }
+  .ma-thumb button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; border: none; cursor: pointer; font-size: 11px; line-height: 1; }
+
+  .ma-card-editor { border: 1px solid var(--border-soft); border-radius: var(--r-sm); padding: 12px; margin-bottom: 10px; background: var(--bg-2); display: flex; gap: 10px; }
+  .ma-card-editor img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+  .ma-card-editor__fields { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .ma-card-editor__fields input { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 12px; outline: none; }
 
   .ma-review { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 14px 16px; }
   .ma-review dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 12.5px; margin: 0; }
   .ma-review dt { color: var(--text-3); }
   .ma-review dd { margin: 0; color: var(--text); font-weight: 500; }
 
+  .ma-preview-frame { border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; background: #f0f2f5; min-height: 300px; }
+  .ma-preview-frame iframe { border: none; width: 100%; min-height: 500px; }
+
+  /* Modal genérico (picker de Campañas SP, preview de anuncio) */
+  .ma-modal-ov { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .ma-modal { background: var(--bg-1); border: 1px solid var(--border); border-radius: 18px; width: 100%; max-width: 640px; max-height: 86vh; overflow-y: auto; padding: 22px; }
+  .ma-modal h3 { font-family: var(--f-title); font-size: 15px; margin-bottom: 4px; }
+  .ma-modal__close { float: right; background: none; border: none; color: var(--text-3); font-size: 18px; cursor: pointer; }
+  .ma-csp-project { border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; font-size: 12.5px; }
+  .ma-csp-project:hover { border-color: var(--gold-line); }
+  .ma-csp-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin-top: 10px; }
+  .ma-csp-asset { position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent; cursor: pointer; }
+  .ma-csp-asset img, .ma-csp-asset video { width: 100%; height: 80px; object-fit: cover; display: block; }
+  .ma-csp-asset.selected { border-color: var(--gold); }
+  .ma-csp-asset.selected::after { content: '✓'; position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 50%; background: var(--gold); color: #000; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+  .ma-steps { display: flex; gap: 4px; margin-bottom: 20px; }
+  .ma-step { flex: 1; padding: 8px 10px; border-radius: 8px; font-size: 10.5px; font-weight: 600; text-align: center; background: var(--bg-3); color: var(--text-3); }
+  .ma-step.active { background: rgba(200,164,90,.15); color: var(--gold); }
+  .ma-step.done { background: rgba(78,123,70,.15); color: var(--green); }
+
   @media (max-width: 720px) {
     .ma-form-grid2, .ma-form-grid2--budget { grid-template-columns: 1fr; }
     .ma-camp__top { flex-wrap: wrap; gap: 6px; }
     .ma-camp__actions { flex-wrap: wrap; }
+    .ma-steps { flex-wrap: wrap; }
+    .ma-step { min-width: 30%; }
+    .ma-card-editor { flex-direction: column; }
   }
 </style>
 </head>
@@ -138,86 +188,116 @@
   'use strict';
   const { api, toast } = SPOS;
   const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const fmt = n => n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n);
-  const fmtMoney = n => '$' + n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
+  const fmt = n => (n == null ? '—' : n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n));
+  const fmtMoney = n => { const v = Number(n); return '$' + (isNaN(v) ? 0 : v).toLocaleString('es-CO', { maximumFractionDigits: 0 }); };
+  const fmtPct = n => (n == null ? '—' : Number(n).toFixed(2) + '%');
 
   const ctx = await SPOS.mount({
     active: 'meta-ads', title: 'Meta Ads', crumb: 'Marketing · Publicidad', padded: true, adminOnly: true,
   });
   if (!ctx) return;
 
-  // ─── State ──────────────────────────────
-  let currentTab = 'campaigns';
+  // ─── Estado global ──────────────────────
   let status = null;
-  let campaigns = [];
-  let audiences = [];
-  let insights = [];
-  let loading = false;
-  let account = null; // { currency, min_daily_budget, ... } — GET /api/meta-ads/account
+  let account = null;
+  let audiencesCache = null;
 
-  // Estado del asistente de creación. `durationDays` no-nulo => lifetime_budget con
-  // fecha de fin (el patrón real que usa esta cuenta hoy, ver AS01/AS02 "...7D"/"8D");
-  // null => daily_budget indefinido.
-  const createForm = {
-    campaignName: '', budgetCOP: '', durationDays: '8',
-    cities: [], // [{key, name, region}]
-    adMessage: '', imageBase64: null, imagePreviewUrl: null,
-    citySearch: '', cityResults: [], submitting: false,
-  };
+  // ─── Router por hash: #/campaigns, #/campaign/ID, #/adset/ID, #/wizard, #/audiencias
+  function currentRoute() {
+    const h = (location.hash || '#/campaigns').replace(/^#\/?/, '');
+    const [name, id] = h.split('/');
+    return { name: name || 'campaigns', id: id ? decodeURIComponent(id) : null };
+  }
+  function navigate(hash) { location.hash = hash; }
+  window.addEventListener('hashchange', render);
 
-  // ─── Render ─────────────────────────────
-  function render() {
-    const configured = status && status.configured;
+  function renderNav(route) {
+    const items = [
+      { hash: '#/campaigns', label: 'Campañas', match: r => r.name === 'campaigns' || r.name === 'campaign' || r.name === 'adset' },
+      { hash: '#/wizard', label: '+ Crear campaña', match: r => r.name === 'wizard' },
+      { hash: '#/audiencias', label: 'Audiencias', match: r => r.name === 'audiencias' },
+    ];
+    return `<div class="ma-nav">${items.map(it => `<a href="${it.hash}" class="${it.match(route) ? 'active' : ''}">${it.label}</a>`).join('')}</div>`;
+  }
+
+  function errorPanel(e, retryFn) {
+    const box = document.createElement('div');
+    box.className = 'ma-error';
+    const userMsg = e && e.userMessage;
+    box.innerHTML = `
+      <p><b>No se pudo cargar esta sección.</b></p>
+      <p>${esc(userMsg || (e && e.detalle) || (e && e.message) || 'Error desconocido')}</p>
+      <button class="ma-btn ma-btn--gold" id="maRetry">Reintentar</button>
+    `;
+    box.querySelector('#maRetry').addEventListener('click', retryFn);
+    return box;
+  }
+
+  // Wrapper: cada sección carga sus propios datos y se protege sola — si truena,
+  // solo esa sección muestra el error con botón reintentar, el resto de la página
+  // (nav, KPIs ya cargados) sigue intacto. Antes una excepción sin capturar durante
+  // el render abortaba TODO y dejaba la página pegada mostrando un estado viejo.
+  async function renderSection(container, fn) {
+    container.innerHTML = '<div class="ma-loading"><div class="ma-spinner"></div> Cargando…</div>';
+    try {
+      await fn(container);
+    } catch (e) {
+      console.error('[META-ADS]', e);
+      container.innerHTML = '';
+      container.appendChild(errorPanel(e, () => renderSection(container, fn)));
+    }
+  }
+
+  async function apiOrThrow(path, opts) {
+    const r = await api(path, opts);
+    if (r && r.error) { const e = new Error(r.detalle || r.error); e.detalle = r.detalle; e.userMessage = r.userMessage; e.error = r.error; throw e; }
+    if (r === null) throw new Error('Sin conexión con el servidor');
+    return r;
+  }
+
+  // ─── Render raíz ────────────────────────
+  async function render() {
+    const route = currentRoute();
+    if (!status) {
+      ctx.content.innerHTML = '<div class="ma-page"><div class="ma-loading"><div class="ma-spinner"></div> Cargando Meta Ads…</div></div>';
+      status = await api('/api/meta-ads/status');
+    }
+    if (!status || !status.configured) {
+      ctx.content.innerHTML = `<div class="ma-page">${renderNotConfigured()}</div>`;
+      return;
+    }
+    if (!account) account = await api('/api/meta-ads/account') || {};
+
     ctx.content.innerHTML = `
       <div class="ma-page">
-        ${!configured ? renderNotConfigured() : `
-          ${renderKPIs()}
-          <div class="ma-tabs">
-            <button class="ma-tab ${currentTab === 'campaigns' ? 'active' : ''}" data-tab="campaigns">Campañas</button>
-            <button class="ma-tab ${currentTab === 'create' ? 'active' : ''}" data-tab="create">+ Crear campaña</button>
-            <button class="ma-tab ${currentTab === 'audiences' ? 'active' : ''}" data-tab="audiences">Audiencias</button>
-            <button class="ma-tab ${currentTab === 'insights' ? 'active' : ''}" data-tab="insights">Insights</button>
-          </div>
-          <div class="ma-tab-pane ${currentTab === 'campaigns' ? 'active' : ''}" data-pane="campaigns">
-            ${loading ? '<div class="ma-loading"><div class="ma-spinner"></div> Cargando campañas...</div>' : renderCampaigns()}
-          </div>
-          <div class="ma-tab-pane ${currentTab === 'create' ? 'active' : ''}" data-pane="create">
-            ${renderCreate()}
-          </div>
-          <div class="ma-tab-pane ${currentTab === 'audiences' ? 'active' : ''}" data-pane="audiences">
-            ${renderAudiences()}
-          </div>
-          <div class="ma-tab-pane ${currentTab === 'insights' ? 'active' : ''}" data-pane="insights">
-            ${renderInsights()}
-          </div>
-        `}
-      </div>
-    `;
-    bindEvents();
-    if (currentTab === 'insights' && insights.length > 0) drawChart();
+        ${renderKPIs()}
+        ${renderNav(route)}
+        <div id="maBody"></div>
+      </div>`;
+    const body = document.getElementById('maBody');
+
+    if (route.name === 'campaign' && route.id) return renderSection(body, (el) => renderCampaignDetail(el, route.id));
+    if (route.name === 'adset' && route.id) return renderSection(body, (el) => renderAdsetDetail(el, route.id));
+    if (route.name === 'wizard') return renderSection(body, (el) => renderWizard(el));
+    if (route.name === 'audiencias') return renderSection(body, (el) => renderAudiencesView(el));
+    return renderSection(body, (el) => renderCampaignsList(el));
   }
 
   function renderNotConfigured() {
-    const d = window.__metaDebug || {};
     return `
       <div class="ma-banner">
         <h4>Meta Ads no está configurado</h4>
-        <p>${d.tokenSet === false ? '❌ Falta META_MARKETING_API_TOKEN' : (d.tokenSet ? '✅ Token detectado (' + d.tokenLength + ' chars)' : '')}${d.accountIdSet === false ? ' · ❌ Falta META_AD_ACCOUNT_ID' : (d.accountIdSet ? ' · ✅ Cuenta: ' + d.accountId : '')}${d.pixelIdSet === false ? ' · ❌ Falta META_PIXEL_ID' : (d.pixelIdSet ? ' · ✅ Pixel: ' + d.pixelId : '')}</p>
-        <p style="font-size:11.5px; color:var(--text-3); margin-bottom:6px;">Agrega estas variables en tu archivo <code>.env</code>:</p>
-        <code>META_MARKETING_API_TOKEN=tu_token_permanente
-META_AD_ACCOUNT_ID=act_XXXXXXXXX
-META_PIXEL_ID=tu_pixel_id (opcional)</code>
+        <p>Configura el token y la cuenta de Meta Ads para empezar a ver y crear campañas.</p>
       </div>
       <div class="ma-sec">
         <h3>Pasos para configurar</h3>
         <div style="font-size:12.5px; color:var(--text-2); line-height:1.8;">
-          <strong>1.</strong> Ir a <a href="https://developers.facebook.com" target="_blank" style="color:var(--gold)">developers.facebook.com</a><br>
-          <strong>2.</strong> Crear app → Tipo "Business" → Agregar producto "Marketing API"<br>
-          <strong>3.</strong> Solicitar permisos: <code>ads_management</code>, <code>ads_read</code>, <code>business_management</code><br>
-          <strong>4.</strong> Crear System User con token permanente<br>
-          <strong>5.</strong> Copiar Ad Account ID desde Business Suite → Configuración → Cuentas de anuncios<br>
-          <strong>6.</strong> Agregar las 3 variables al <code>.env</code> y reiniciar el servidor
+          <strong>1.</strong> Ir a <a href="https://developers.facebook.com" target="_blank" style="color:var(--gold)">developers.facebook.com</a> → crear app tipo "Business" → producto "Marketing API"<br>
+          <strong>2.</strong> Solicitar permisos <code>ads_management</code>, <code>ads_read</code>, <code>business_management</code> y crear un System User con token permanente<br>
+          <strong>3.</strong> Copiar el Ad Account ID desde Business Suite → Configuración → Cuentas de anuncios<br>
+          <strong>4.</strong> Ir a <a href="/os/configuracion.html" style="color:var(--gold)">Configuración → Meta Ads</a> y pegar el token, la cuenta, el Pixel (opcional) y el Page ID
         </div>
+        <a class="ma-btn ma-btn--gold" href="/os/configuracion.html" style="display:inline-block;margin-top:10px;text-decoration:none">Ir a Configuración</a>
       </div>
     `;
   }
@@ -226,629 +306,1013 @@ META_PIXEL_ID=tu_pixel_id (opcional)</code>
     const s = status || {};
     return `
       <div class="ma-kpis">
-        <div class="ma-kpi">
-          <div class="ma-kpi__val">${s.activeCampaigns || 0}</div>
-          <div class="ma-kpi__label">Activas</div>
+        <div class="ma-kpi"><div class="ma-kpi__val">${s.activeCampaigns || 0}</div><div class="ma-kpi__label">Activas</div></div>
+        <div class="ma-kpi"><div class="ma-kpi__val">${s.campaigns || 0}</div><div class="ma-kpi__label">Total campañas</div></div>
+        <div class="ma-kpi"><div class="ma-kpi__val">${fmtMoney(s.totalSpend || 0)}</div><div class="ma-kpi__label">Gasto (30d)</div></div>
+        <div class="ma-kpi"><div class="ma-kpi__val">${fmt(s.totalLeads || 0)}</div><div class="ma-kpi__label">Leads Meta (30d)</div></div>
+        <div class="ma-kpi"><div class="ma-kpi__val">${s.totalLeads > 0 ? fmtMoney(Math.round(s.totalSpend / s.totalLeads)) : '—'}</div><div class="ma-kpi__label">CPL promedio</div></div>
+        <div class="ma-kpi"><div class="ma-kpi__val" style="color:${s.pixelInstalled ? 'var(--green)' : '#ff5050'}">${s.pixelInstalled ? 'SÍ' : 'NO'}</div><div class="ma-kpi__label">Pixel</div></div>
+      </div>
+    `;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // VISTA: Lista de campañas
+  // ════════════════════════════════════════════════════════════
+  async function renderCampaignsList(el) {
+    const campaigns = await apiOrThrow('/api/meta-ads/campaigns');
+    if (!Array.isArray(campaigns) || !campaigns.length) {
+      el.innerHTML = '<div class="ma-empty">No hay campañas en esta cuenta todavía. Crea la primera con "+ Crear campaña".</div>';
+      return;
+    }
+    el.innerHTML = campaigns.map(c => campaignCardHtml(c)).join('');
+    el.querySelectorAll('.ma-camp').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return; // los botones de acción no navegan
+        navigate('#/campaign/' + encodeURIComponent(card.dataset.id));
+      });
+    });
+    bindCampaignActions(el, () => renderSection(el, renderCampaignsList));
+  }
+
+  function campaignCardHtml(c) {
+    const m = c.metrics || {};
+    const statusClass = c.status === 'ACTIVE' ? 'active' : c.status === 'PAUSED' ? 'paused' : c.status === 'ARCHIVED' ? 'archived' : c.status === 'DELETED' ? 'deleted' : 'error';
+    const statusLabel = { ACTIVE: 'Activa', PAUSED: 'Pausada', ARCHIVED: 'Archivada', DELETED: 'Borrada' }[c.status] || c.status;
+    const budget = c.daily_budget ? fmtMoney(c.daily_budget) + '/día' : (c.lifetime_budget ? fmtMoney(c.lifetime_budget) + ' total' : 'presupuesto en el conjunto');
+    return `
+      <div class="ma-camp" data-id="${esc(c.id)}">
+        <div class="ma-camp__top">
+          <div>
+            <div class="ma-camp__name">${esc(c.name)}</div>
+            <div class="ma-camp__meta">${esc(c.objective || '')} · ${budget}</div>
+          </div>
+          <span class="ma-badge ma-badge--${statusClass}">${statusLabel}</span>
         </div>
-        <div class="ma-kpi">
-          <div class="ma-kpi__val">${s.campaigns || 0}</div>
-          <div class="ma-kpi__label">Total campañas</div>
-        </div>
-        <div class="ma-kpi">
-          <div class="ma-kpi__val">${fmtMoney(s.totalSpend || 0)}</div>
-          <div class="ma-kpi__label">Gasto (30d)</div>
-        </div>
-        <div class="ma-kpi">
-          <div class="ma-kpi__val">${fmt(s.totalLeads || 0)}</div>
-          <div class="ma-kpi__label">Leads (30d)</div>
-        </div>
-        <div class="ma-kpi">
-          <div class="ma-kpi__val">${s.totalLeads > 0 ? fmtMoney(Math.round(s.totalSpend / s.totalLeads)) : '—'}</div>
-          <div class="ma-kpi__label">CPL promedio</div>
-        </div>
-        <div class="ma-kpi">
-          <div class="ma-kpi__val" style="color:${s.pixelInstalled ? 'var(--green)' : '#ff5050'}">${s.pixelInstalled ? 'SÍ' : 'NO'}</div>
-          <div class="ma-kpi__label">Pixel</div>
+        ${m.impressions !== undefined ? `
+        <div class="ma-camp__metrics">
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(m.impressions)}</div><div class="ma-camp__metric-lbl">Impresiones</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmtPct(m.ctr)}</div><div class="ma-camp__metric-lbl">CTR</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmtMoney(m.spend)}</div><div class="ma-camp__metric-lbl">Gasto</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(m.leads)}</div><div class="ma-camp__metric-lbl">Leads CRM</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${m.cpl ? fmtMoney(Math.round(m.cpl)) : '—'}</div><div class="ma-camp__metric-lbl">CPL</div></div>
+        </div>` : '<div style="font-size:11.5px;color:var(--text-3);margin:6px 0">Sin métricas disponibles</div>'}
+        <div class="ma-camp__actions">
+          ${c.status === 'ACTIVE'
+            ? `<button class="ma-btn ma-btn--danger ma-btn--xs" data-pause="${esc(c.id)}">Pausar</button>`
+            : (c.status === 'PAUSED' ? `<button class="ma-btn ma-btn--green ma-btn--xs" data-resume="${esc(c.id)}">Reanudar</button>` : '')}
+          <button class="ma-btn ma-btn--xs" data-dup="${esc(c.id)}">Duplicar</button>
+          ${c.status !== 'ARCHIVED' && c.status !== 'DELETED' ? `<button class="ma-btn ma-btn--xs" data-archive="${esc(c.id)}">Archivar</button>` : ''}
         </div>
       </div>
     `;
   }
 
-  function renderCampaigns() {
-    if (campaigns.length === 0) return '<div class="ma-empty">No hay campañas encontradas en tu cuenta de anuncios.</div>';
-    return campaigns.map(c => {
-      const m = c.metrics || {};
-      const statusClass = c.status === 'ACTIVE' ? 'active' : c.status === 'PAUSED' ? 'paused' : c.status === 'ARCHIVED' ? 'archived' : 'error';
-      const statusLabel = c.status === 'ACTIVE' ? 'Activa' : c.status === 'PAUSED' ? 'Pausada' : c.status === 'ARCHIVED' ? 'Archivada' : c.status;
-      return `
-        <div class="ma-camp" data-id="${c.id}">
-          <div class="ma-camp__top">
-            <div>
-              <div class="ma-camp__name">${esc(c.name)}</div>
-              <div class="ma-camp__meta">${esc(c.objective || '')} · ${c.daily_budget ? fmtMoney(c.daily_budget) + '/día' : (c.lifetime_budget ? fmtMoney(c.lifetime_budget) + ' total' : '')}</div>
-            </div>
-            <span class="ma-badge ma-badge--${statusClass}">${statusLabel}</span>
-          </div>
-          ${m.impressions !== undefined ? `
-          <div class="ma-camp__metrics">
-            <div class="ma-camp__metric">
-              <div class="ma-camp__metric-val">${fmt(m.impressions)}</div>
-              <div class="ma-camp__metric-lbl">Impresiones</div>
-            </div>
-            <div class="ma-camp__metric">
-              <div class="ma-camp__metric-val">${m.ctr ? m.ctr.toFixed(2) + '%' : '—'}</div>
-              <div class="ma-camp__metric-lbl">CTR</div>
-            </div>
-            <div class="ma-camp__metric">
-              <div class="ma-camp__metric-val">${fmtMoney(m.spend)}</div>
-              <div class="ma-camp__metric-lbl">Gasto</div>
-            </div>
-            <div class="ma-camp__metric">
-              <div class="ma-camp__metric-val">${fmt(m.leads)}</div>
-              <div class="ma-camp__metric-lbl">Leads</div>
-            </div>
-            <div class="ma-camp__metric">
-              <div class="ma-camp__metric-val">${m.cpl ? fmtMoney(Math.round(m.cpl)) : '—'}</div>
-              <div class="ma-camp__metric-lbl">CPL</div>
-            </div>
-            <div class="ma-camp__metric">
-              <div class="ma-camp__metric-val">${m.cpm ? fmtMoney(Math.round(m.cpm)) : '—'}</div>
-              <div class="ma-camp__metric-lbl">CPM</div>
-            </div>
-          </div>
-          ` : '<div style="font-size:11.5px;color:var(--text-3);margin:6px 0">Sin métricas disponibles</div>'}
-          <div class="ma-camp__actions">
-            ${c.status === 'ACTIVE'
-              ? `<button class="ma-btn ma-btn--danger" data-pause="${c.id}">Pausar</button>`
-              : `<button class="ma-btn ma-btn--green" data-resume="${c.id}">Reanudar</button>`}
-            <button class="ma-btn" data-insights="${c.id}">Ver insights</button>
-          </div>
-        </div>
-      `;
-    }).join('');
+  // Acciones compartidas entre la lista y el detalle de campaña.
+  function bindCampaignActions(root, onDone) {
+    root.querySelectorAll('[data-pause]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Pausar esta campaña? Deja de mostrarse de inmediato.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.pause)}/pause`, { method: 'PUT' });
+      if (r && r.ok) { toast('Campaña pausada', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    root.querySelectorAll('[data-resume]').forEach(btn => btn.addEventListener('click', async () => {
+      // "Reanudar" reactiva gasto real — antes era el único botón sin confirmación.
+      if (!confirm('¿Reanudar esta campaña? Esto reactiva el gasto real en Meta.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.resume)}/resume`, { method: 'PUT' });
+      if (r && r.ok) { toast('Campaña reanudada', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    root.querySelectorAll('[data-dup]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Duplicar esta campaña? La copia se crea PAUSADA.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.dup)}/duplicate`, { method: 'POST' });
+      if (r && r.ok) { toast('Campaña duplicada (pausada)', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    root.querySelectorAll('[data-archive]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Archivar esta campaña? Puedes recuperarla desde Ads Manager.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.archive)}/archive`, { method: 'POST' });
+      if (r && r.ok) { toast('Campaña archivada', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    root.querySelectorAll('[data-delete]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿BORRAR esta campaña? Esta acción no se puede deshacer desde el panel.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(btn.dataset.delete)}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Campaña borrada', 'ok'); navigate('#/campaigns'); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
   }
 
-  function renderCreate() {
-    const f = createForm;
+  function errMsg(r) { return (r && (r.userMessage || r.detalle || r.error)) || 'desconocido'; }
+
+  // ════════════════════════════════════════════════════════════
+  // VISTA: Detalle de campaña (drill-down completo en 1 llamada)
+  // ════════════════════════════════════════════════════════════
+  function budgetInfo(entity) {
+    const daily = entity && entity.daily_budget != null && Number(entity.daily_budget) > 0;
+    const lifetime = entity && entity.lifetime_budget != null && Number(entity.lifetime_budget) > 0;
+    if (daily) return { mode: 'daily', value: Number(entity.daily_budget), label: 'Diario' };
+    if (lifetime) return { mode: 'lifetime', value: Number(entity.lifetime_budget), label: 'Total' };
+    return { mode: null, value: null, label: '—' };
+  }
+
+  async function renderCampaignDetail(el, id) {
+    const c = await apiOrThrow(`/api/meta-ads/campaigns/${encodeURIComponent(id)}/full`);
+    const m = c.metrics || {};
+    const adsets = c.adsets || [];
+    const eb = budgetInfo(c).mode ? budgetInfo(c) : budgetInfo(adsets[0]);
+    const statusLabel = { ACTIVE: 'Activa', PAUSED: 'Pausada', ARCHIVED: 'Archivada', DELETED: 'Borrada' }[c.status] || c.status;
+
+    el.innerHTML = `
+      <div class="ma-crumb"><a id="maBack">← Todas las campañas</a></div>
+      <div class="ma-sec">
+        <div class="ma-camp__top" style="margin-bottom:14px">
+          <div>
+            <div class="t-h2" style="font-family:var(--f-title)">${esc(c.name)}</div>
+            <div class="ma-camp__meta">${esc(c.objective || '')} · ${eb.mode ? fmtMoney(eb.value) + ' ' + (eb.mode === 'daily' ? '/ día' : 'total') + (eb.mode !== budgetInfo(c).mode ? ' (a nivel de conjunto)' : '') : 'sin presupuesto detectado'}</div>
+          </div>
+          <span class="ma-badge ma-badge--${c.status === 'ACTIVE' ? 'active' : c.status === 'PAUSED' ? 'paused' : 'archived'}">${statusLabel}</span>
+        </div>
+        ${m.impressions !== undefined ? `
+        <div class="ma-camp__metrics">
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(m.impressions)}</div><div class="ma-camp__metric-lbl">Impresiones</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(m.reach)}</div><div class="ma-camp__metric-lbl">Alcance</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${(m.frequency||0).toFixed(2)}</div><div class="ma-camp__metric-lbl">Frecuencia</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmtPct(m.ctr)}</div><div class="ma-camp__metric-lbl">CTR</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmtMoney(m.spend)}</div><div class="ma-camp__metric-lbl">Gasto</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(m.leads)}</div><div class="ma-camp__metric-lbl">Leads CRM</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(m.leadsMeta)}</div><div class="ma-camp__metric-lbl">Leads Meta</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${m.cpl ? fmtMoney(Math.round(m.cpl)) : '—'}</div><div class="ma-camp__metric-lbl">CPL real</div></div>
+        </div>` : ''}
+        <div class="ma-camp__actions" style="margin-top:14px">
+          ${c.status === 'ACTIVE' ? `<button class="ma-btn ma-btn--danger" data-pause="${esc(c.id)}">Pausar</button>` : (c.status === 'PAUSED' ? `<button class="ma-btn ma-btn--green" data-resume="${esc(c.id)}">Reanudar</button>` : '')}
+          <button class="ma-btn" id="maEditBtn">Editar</button>
+          <button class="ma-btn" data-dup="${esc(c.id)}">Duplicar</button>
+          ${c.status !== 'ARCHIVED' && c.status !== 'DELETED' ? `<button class="ma-btn" data-archive="${esc(c.id)}">Archivar</button>` : ''}
+          <button class="ma-btn ma-btn--danger" data-delete="${esc(c.id)}">Borrar</button>
+        </div>
+        <div id="maEditForm" style="display:none;margin-top:16px;border-top:1px solid var(--border-soft);padding-top:16px"></div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>Rendimiento diario (30 días)</h3>
+        <div class="ma-chart"><canvas id="maChart"></canvas></div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>Conjuntos de anuncios (${adsets.length})</h3>
+        ${adsets.length === 0 ? '<div class="ma-empty">Esta campaña no tiene conjuntos de anuncios.</div>' : adsets.map(as => {
+          const asBudget = budgetInfo(as);
+          const asStatusLabel = { ACTIVE: 'Activo', PAUSED: 'Pausado' }[as.status] || as.status;
+          const nAds = (as.ads && as.ads.data && as.ads.data.length) || 0;
+          return `
+          <div class="ma-camp" data-adset="${esc(as.id)}">
+            <div class="ma-camp__top">
+              <div>
+                <div class="ma-camp__name">${esc(as.name)}</div>
+                <div class="ma-camp__meta">${asBudget.mode ? fmtMoney(asBudget.value) + (asBudget.mode === 'daily' ? '/día' : ' total') : '—'} · ${nAds} anuncio(s)</div>
+              </div>
+              <span class="ma-badge ma-badge--${as.status === 'ACTIVE' ? 'active' : 'paused'}">${asStatusLabel}</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+
+    document.getElementById('maBack').addEventListener('click', () => navigate('#/campaigns'));
+    el.querySelectorAll('[data-adset]').forEach(card => card.addEventListener('click', () => navigate('#/adset/' + encodeURIComponent(card.dataset.adset))));
+    bindCampaignActions(el, () => renderSection(el, (e2) => renderCampaignDetail(e2, id)));
+
+    document.getElementById('maEditBtn').addEventListener('click', () => {
+      const box = document.getElementById('maEditForm');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+      if (box.style.display === 'block') {
+        box.innerHTML = `
+          <div class="ma-form-row"><label>Nombre</label><input type="text" id="edName" value="${esc(c.name)}"></div>
+          <div class="ma-form-row"><label>Presupuesto ${eb.mode === 'daily' ? 'diario' : 'total'} (${(account && account.currency) || 'COP'})</label>
+            <input type="number" id="edBudget" min="1" step="1000" value="${eb.value || ''}">
+            ${eb.mode !== budgetInfo(c).mode ? '<div class="ma-form-hint">Esta cuenta no usa presupuesto por campaña (CBO) — se edita en el conjunto de anuncios.</div>' : ''}
+          </div>
+          <button class="ma-btn ma-btn--gold" id="edSave">Guardar cambios</button>
+        `;
+        document.getElementById('edSave').addEventListener('click', async () => {
+          const name = document.getElementById('edName').value.trim();
+          const budgetVal = Number(document.getElementById('edBudget').value);
+          if (!name) return toast('El nombre no puede estar vacío', 'err');
+          if (budgetVal && budgetVal !== eb.value) {
+            if (!confirm(`¿Cambiar el presupuesto ${eb.mode === 'daily' ? 'diario' : 'total'} a ${fmtMoney(budgetVal)}? Esto afecta el gasto real.`)) return;
+          }
+          const body = { name };
+          if (budgetVal > 0) { if (eb.mode === 'lifetime') body.lifetimeBudget = budgetVal; else body.dailyBudget = budgetVal; }
+          const r = await api(`/api/meta-ads/campaigns/${encodeURIComponent(c.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (r && r.ok) { toast('Campaña actualizada', 'ok'); renderSection(el, (e2) => renderCampaignDetail(e2, id)); }
+          else toast('Error: ' + errMsg(r), 'err');
+        });
+      }
+    });
+
+    // Gráfico diario — se pide aparte porque /full no trae la serie temporal.
+    api(`/api/meta-ads/campaigns/${encodeURIComponent(id)}/insights?days=30`).then(daily => {
+      if (Array.isArray(daily) && daily.length) drawChart(document.getElementById('maChart'), daily);
+    });
+  }
+
+  // ─── Gráfico sin dependencias externas (líneas de gasto y leads) ──
+  function drawChart(canvas, insights) {
+    if (!canvas || !insights.length) return;
+    const ctx2 = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * 2; canvas.height = rect.height * 2;
+    ctx2.scale(2, 2);
+    const W = rect.width, H = rect.height;
+    const pad = { t: 20, r: 10, b: 24, l: 55 };
+    const cW = W - pad.l - pad.r, cH = H - pad.t - pad.b;
+    const maxSpend = Math.max(...insights.map(d => d.spend), 1);
+    const maxLeads = Math.max(...insights.map(d => d.leads), 1);
+
+    ctx2.strokeStyle = 'rgba(255,255,255,.06)'; ctx2.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) { const y = pad.t + (cH / 4) * i; ctx2.beginPath(); ctx2.moveTo(pad.l, y); ctx2.lineTo(pad.l + cW, y); ctx2.stroke(); }
+
+    ctx2.strokeStyle = '#C8A45A'; ctx2.lineWidth = 2; ctx2.beginPath();
+    insights.forEach((d, i) => { const x = pad.l + (cW / (insights.length - 1 || 1)) * i; const y = pad.t + cH - (d.spend / maxSpend) * cH; i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y); });
+    ctx2.stroke();
+
+    ctx2.strokeStyle = '#4E7B46'; ctx2.lineWidth = 2; ctx2.beginPath();
+    insights.forEach((d, i) => { const x = pad.l + (cW / (insights.length - 1 || 1)) * i; const y = pad.t + cH - (d.leads / maxLeads) * cH; i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y); });
+    ctx2.stroke();
+
+    ctx2.font = '10px Inter, sans-serif';
+    ctx2.fillStyle = '#C8A45A'; ctx2.fillRect(pad.l, 4, 12, 3); ctx2.fillText('Gasto', pad.l + 16, 9);
+    ctx2.fillStyle = '#4E7B46'; ctx2.fillRect(pad.l + 60, 4, 12, 3); ctx2.fillText('Leads', pad.l + 76, 9);
+
+    ctx2.fillStyle = 'rgba(255,255,255,.4)'; ctx2.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) { const y = pad.t + (cH / 4) * i; const val = maxSpend - (maxSpend / 4) * i; ctx2.fillText(fmtMoney(Math.round(val)), pad.l - 4, y + 3); }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // VISTA: Detalle de conjunto de anuncios (grid de ads + preview)
+  // ════════════════════════════════════════════════════════════
+  async function renderAdsetDetail(el, id) {
+    const as = await apiOrThrow(`/api/meta-ads/adsets/${encodeURIComponent(id)}`);
+    const ads = await apiOrThrow(`/api/meta-ads/adsets/${encodeURIComponent(id)}/ads`);
+    const b = budgetInfo(as);
+    el.innerHTML = `
+      <div class="ma-crumb"><a id="maBackC">← Volver a la campaña</a></div>
+      <div class="ma-sec">
+        <div class="ma-camp__top" style="margin-bottom:10px">
+          <div>
+            <div class="t-h2" style="font-family:var(--f-title)">${esc(as.name)}</div>
+            <div class="ma-camp__meta">${b.mode ? fmtMoney(b.value) + (b.mode === 'daily' ? '/día' : ' total') : '—'} · ${esc(as.optimization_goal || '')}</div>
+          </div>
+          <span class="ma-badge ma-badge--${as.status === 'ACTIVE' ? 'active' : 'paused'}">${as.status === 'ACTIVE' ? 'Activo' : 'Pausado'}</span>
+        </div>
+        ${as.metrics ? `<div class="ma-camp__metrics">
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(as.metrics.impressions)}</div><div class="ma-camp__metric-lbl">Impresiones</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmtMoney(as.metrics.spend)}</div><div class="ma-camp__metric-lbl">Gasto</div></div>
+          <div class="ma-camp__metric"><div class="ma-camp__metric-val">${fmt(as.metrics.leads)}</div><div class="ma-camp__metric-lbl">Leads</div></div>
+        </div>` : ''}
+        <div class="ma-camp__actions" style="margin-top:10px">
+          <button class="ma-btn" id="asToggle">${as.status === 'ACTIVE' ? 'Pausar' : 'Activar'}</button>
+          <button class="ma-btn" id="asEditBtn">Editar</button>
+        </div>
+        <div id="asEditForm" style="display:none;margin-top:16px;border-top:1px solid var(--border-soft);padding-top:16px"></div>
+      </div>
+
+      <div class="ma-sec">
+        <h3>Anuncios (${(ads || []).length})</h3>
+        ${!ads || !ads.length ? '<div class="ma-empty">Este conjunto no tiene anuncios.</div>' : `<div class="ma-ad-grid">${ads.map(ad => {
+          const cr = ad.creative || {};
+          const img = cr.thumbnail_url || cr.image_url || '';
+          return `
+          <div class="ma-ad-card" data-ad="${esc(ad.id)}">
+            ${img ? `<img class="ma-ad-card__img" src="${esc(img)}" alt="">` : `<div class="ma-ad-card__img" style="display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">Sin imagen</div>`}
+            <div class="ma-ad-card__name">${esc(ad.name)}</div>
+            <span class="ma-badge ma-badge--${ad.status === 'ACTIVE' ? 'active' : 'paused'}">${ad.status === 'ACTIVE' ? 'Activo' : 'Pausado'}</span>
+            <div class="ma-ad-card__actions">
+              <button class="ma-btn ma-btn--xs" data-ad-toggle="${esc(ad.id)}" data-ad-status="${esc(ad.status)}">${ad.status === 'ACTIVE' ? 'Pausar' : 'Activar'}</button>
+              <button class="ma-btn ma-btn--xs" data-ad-preview="${esc(ad.id)}">Preview</button>
+            </div>
+          </div>`;
+        }).join('')}</div>`}
+      </div>
+    `;
+
+    document.getElementById('maBackC').addEventListener('click', () => navigate('#/campaign/' + encodeURIComponent(as.campaign_id)));
+
+    document.getElementById('asToggle').addEventListener('click', async (e) => {
+      const newStatus = as.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      if (newStatus === 'ACTIVE' && !confirm('¿Activar este conjunto de anuncios? Reactiva gasto real.')) return;
+      e.target.disabled = true;
+      const r = await api(`/api/meta-ads/adsets/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) });
+      if (r && r.ok) { toast('Conjunto actualizado', 'ok'); renderSection(el, (e2) => renderAdsetDetail(e2, id)); }
+      else { toast('Error: ' + errMsg(r), 'err'); e.target.disabled = false; }
+    });
+
+    document.getElementById('asEditBtn').addEventListener('click', () => {
+      const box = document.getElementById('asEditForm');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+      if (box.style.display === 'block') {
+        box.innerHTML = `
+          <div class="ma-form-row"><label>Nombre</label><input type="text" id="asEdName" value="${esc(as.name)}"></div>
+          <div class="ma-form-row"><label>Presupuesto ${b.mode === 'daily' ? 'diario' : 'total'}</label><input type="number" id="asEdBudget" min="1" step="1000" value="${b.value || ''}"></div>
+          <button class="ma-btn ma-btn--gold" id="asEdSave">Guardar cambios</button>
+        `;
+        document.getElementById('asEdSave').addEventListener('click', async () => {
+          const name = document.getElementById('asEdName').value.trim();
+          const budgetVal = Number(document.getElementById('asEdBudget').value);
+          if (budgetVal && budgetVal !== b.value && !confirm(`¿Cambiar el presupuesto a ${fmtMoney(budgetVal)}?`)) return;
+          const body = { name };
+          if (budgetVal > 0) { if (b.mode === 'lifetime') body.lifetimeBudget = budgetVal; else body.dailyBudget = budgetVal; }
+          const r = await api(`/api/meta-ads/adsets/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (r && r.ok) { toast('Conjunto actualizado', 'ok'); renderSection(el, (e2) => renderAdsetDetail(e2, id)); }
+          else toast('Error: ' + errMsg(r), 'err');
+        });
+      }
+    });
+
+    el.querySelectorAll('[data-ad-toggle]').forEach(btn => btn.addEventListener('click', async () => {
+      const newStatus = btn.dataset.adStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      if (newStatus === 'ACTIVE' && !confirm('¿Activar este anuncio?')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/ads/${encodeURIComponent(btn.dataset.adToggle)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) });
+      if (r && r.ok) { toast('Anuncio actualizado', 'ok'); renderSection(el, (e2) => renderAdsetDetail(e2, id)); }
+      else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+
+    el.querySelectorAll('[data-ad-preview]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Cargando…';
+      const preview = await api(`/api/meta-ads/ads/${encodeURIComponent(btn.dataset.adPreview)}/preview`);
+      btn.disabled = false; btn.textContent = 'Preview';
+      if (!preview || !preview.body) return toast('No se pudo generar el preview', 'err');
+      showModal('Vista previa del anuncio', `<div class="ma-preview-frame">${preview.body}</div>`);
+    }));
+  }
+
+  // ─── Modal genérico ──────────────────────
+  function showModal(title, bodyHtml) {
+    const ov = document.createElement('div');
+    ov.className = 'ma-modal-ov';
+    ov.innerHTML = `<div class="ma-modal"><button class="ma-modal__close" id="maModalClose">✕</button><h3>${esc(title)}</h3><div style="margin-top:12px">${bodyHtml}</div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    ov.querySelector('#maModalClose').addEventListener('click', close);
+    return { el: ov, close };
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // VISTA: Audiencias
+  // ════════════════════════════════════════════════════════════
+  async function renderAudiencesView(el) {
+    const audiences = await apiOrThrow('/api/meta-ads/audiences');
+    audiencesCache = audiences;
+    el.innerHTML = `
+      <div class="ma-sec">
+        <h3>Audiencias personalizadas</h3>
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="ma-btn ma-btn--gold" id="maSyncLeads">Sincronizar leads del CRM</button>
+          <button class="ma-btn" id="maCreateAudience">Crear audiencia manual</button>
+        </div>
+        <div id="maAudList">${audiences.length === 0 ? '<div class="ma-empty">No hay audiencias creadas aún.</div>' : audiences.map(audienceRowHtml).join('')}</div>
+      </div>
+    `;
+
+    document.getElementById('maSyncLeads').addEventListener('click', async (e) => {
+      if (!confirm('¿Crear una audiencia nueva con todos los leads activos del CRM?')) return;
+      e.target.disabled = true; e.target.textContent = 'Sincronizando…';
+      const name = 'SP CRM — Leads ' + new Date().toLocaleDateString('es-CO');
+      const r = await api('/api/meta-ads/audiences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, leads: [] }) });
+      if (r && r.id) {
+        const sync = await api(`/api/meta-ads/audiences/${r.id}/sync-leads`, { method: 'POST' });
+        if (sync && !sync.error) toast(`${sync.synced} leads sincronizados`, 'ok'); else toast('Audiencia creada, pero falló la sincronización: ' + errMsg(sync), 'err');
+        renderSection(el, renderAudiencesView);
+      } else { toast('Error: ' + errMsg(r), 'err'); e.target.disabled = false; e.target.textContent = 'Sincronizar leads del CRM'; }
+    });
+
+    document.getElementById('maCreateAudience').addEventListener('click', async () => {
+      const name = prompt('Nombre de la audiencia:');
+      if (!name) return;
+      const r = await api('/api/meta-ads/audiences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, leads: [] }) });
+      if (r && r.id) { toast('Audiencia creada', 'ok'); renderSection(el, renderAudiencesView); }
+      else toast('Error: ' + errMsg(r), 'err');
+    });
+
+    bindAudienceActions(el, () => renderSection(el, renderAudiencesView));
+  }
+
+  function audienceRowHtml(a) {
+    return `
+      <div class="ma-aud" data-aud="${esc(a.id)}">
+        <div class="ma-aud__info"><div class="ma-aud__name">${esc(a.name)}</div><div class="ma-aud__meta">${fmt(a.approximate_count || 0)} personas · ${esc(a.status || 'UNKNOWN')}</div></div>
+        <div class="ma-aud__actions">
+          <button class="ma-btn ma-btn--xs" data-sync-aud="${esc(a.id)}">Actualizar</button>
+          <button class="ma-btn ma-btn--xs" data-lookalike="${esc(a.id)}">Lookalike</button>
+          <button class="ma-btn ma-btn--xs ma-btn--danger" data-del-aud="${esc(a.id)}">Borrar</button>
+        </div>
+      </div>`;
+  }
+
+  function bindAudienceActions(root, onDone) {
+    root.querySelectorAll('[data-sync-aud]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/audiences/${btn.dataset.syncAud}/sync-leads`, { method: 'POST' });
+      if (r && !r.error) toast(`${r.synced} leads actualizados`, 'ok'); else toast('Error: ' + errMsg(r), 'err');
+      onDone();
+    }));
+    root.querySelectorAll('[data-lookalike]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Crear audiencia Lookalike al 1% basada en esta audiencia?')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/audiences/${btn.dataset.lookalike}/lookalike`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ country: 'CO', ratio: 0.01 }) });
+      if (r && r.id) { toast('Lookalike creada', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    root.querySelectorAll('[data-del-aud]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta audiencia? No se puede deshacer.')) return;
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/audiences/${btn.dataset.delAud}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Audiencia borrada', 'ok'); onDone(); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // WIZARD: creación avanzada (5 pasos)
+  // ════════════════════════════════════════════════════════════
+  const OBJECTIVES = [
+    { v: 'OUTCOME_LEADS', l: 'Leads (mensajes)' },
+    { v: 'OUTCOME_TRAFFIC', l: 'Tráfico' },
+    { v: 'OUTCOME_ENGAGEMENT', l: 'Interacción' },
+    { v: 'OUTCOME_SALES', l: 'Ventas' },
+    { v: 'OUTCOME_AWARENESS', l: 'Reconocimiento' },
+  ];
+  const CTAS_WHATSAPP = [{ v: 'WHATSAPP_MESSAGE', l: 'Enviar mensaje' }];
+  const CTAS_WEB = [
+    { v: 'LEARN_MORE', l: 'Más información' }, { v: 'CONTACT_US', l: 'Contáctanos' },
+    { v: 'SIGN_UP', l: 'Regístrate' }, { v: 'GET_QUOTE', l: 'Cotizar' },
+  ];
+
+  function freshWizard() {
+    return {
+      step: 1,
+      objective: 'OUTCOME_LEADS', destination: 'whatsapp',
+      campaignName: '', budgetMode: 'lifetime', budgetCOP: '', durationDays: '8',
+      targeting: { cities: [], ageMin: 18, ageMax: 65, genders: [], interests: [], customAudienceIds: [], excludedCustomAudienceIds: [] },
+      creative: { type: 'image', imageHashes: [], imagePreviews: [], videoId: null, videoPreviewUrl: null, videoUploading: false, videoStatus: '', cards: [], primaryText: '', headline: '', description: '', cta: 'WHATSAPP_MESSAGE', linkUrl: '' },
+      citySearch: '', cityResults: [], interestSearch: '', interestResults: [],
+      reachEstimate: null, submitting: false,
+    };
+  }
+  let wizard = freshWizard();
+
+  async function renderWizard(el) {
+    if (!wizard) wizard = freshWizard();
+    if (audiencesCache === null) { try { audiencesCache = await api('/api/meta-ads/audiences') || []; } catch (e) { audiencesCache = []; } }
+    el.innerHTML = `
+      <div class="ma-steps">
+        ${[1,2,3,4,5].map(n => `<div class="ma-step ${wizard.step === n ? 'active' : wizard.step > n ? 'done' : ''}">${n}. ${['Objetivo','Presupuesto','Segmentación','Creativo','Revisión'][n-1]}</div>`).join('')}
+      </div>
+      <div id="maWizStep"></div>
+    `;
+    renderWizardStep(document.getElementById('maWizStep'));
+  }
+
+  function wizNavButtons(canNext, nextLabel) {
+    return `<div style="display:flex;gap:10px;margin-top:18px">
+      ${wizard.step > 1 ? '<button class="ma-btn" id="wizPrev">← Atrás</button>' : ''}
+      <button class="ma-btn ma-btn--gold" id="wizNext" ${canNext ? '' : 'disabled'}>${nextLabel || 'Siguiente →'}</button>
+    </div>`;
+  }
+  function bindWizNav(container, onNext, validate) {
+    const prev = container.querySelector('#wizPrev');
+    if (prev) prev.addEventListener('click', () => { wizard.step--; renderWizardStep(container.parentElement || container); });
+    const next = container.querySelector('#wizNext');
+    if (next) next.addEventListener('click', async () => {
+      if (validate && !validate()) return;
+      await onNext();
+    });
+  }
+
+  async function renderWizardStep(el) {
+    const step = wizard.step;
+    if (step === 1) return renderWizStep1(el);
+    if (step === 2) return renderWizStep2(el);
+    if (step === 3) return renderWizStep3(el);
+    if (step === 4) return renderWizStep4(el);
+    if (step === 5) return renderWizStep5(el);
+  }
+
+  function renderWizStep1(el) {
+    el.innerHTML = `
+      <div class="ma-sec">
+        <h3>1 · Objetivo y destino</h3>
+        <div class="ma-form-row"><label>Objetivo de la campaña</label>
+          <div class="ma-seg">${OBJECTIVES.map(o => `<button type="button" data-obj="${o.v}" class="${wizard.objective === o.v ? 'active' : ''}">${o.l}</button>`).join('')}</div>
+        </div>
+        <div class="ma-form-row"><label>Destino del anuncio</label>
+          <div class="ma-seg">
+            <button type="button" data-dest="whatsapp" class="${wizard.destination === 'whatsapp' ? 'active' : ''}">WhatsApp</button>
+            <button type="button" data-dest="web" class="${wizard.destination === 'web' ? 'active' : ''}">Sitio web / enlace</button>
+          </div>
+        </div>
+        ${wizard.destination === 'web' ? `<div class="ma-form-row"><label>URL de destino</label><input type="url" id="wizLinkUrl" placeholder="https://…" value="${esc(wizard.creative.linkUrl)}"></div>` : ''}
+        <div class="ma-form-row"><label>Nombre de la campaña</label><input type="text" id="wizName" placeholder="Ej: Lotes Girardot · Agosto" value="${esc(wizard.campaignName)}"></div>
+      </div>
+      ${wizNavButtons(true)}
+    `;
+    el.querySelectorAll('[data-obj]').forEach(b => b.addEventListener('click', () => { wizard.objective = b.dataset.obj; renderWizStep1(el); }));
+    el.querySelectorAll('[data-dest]').forEach(b => b.addEventListener('click', () => {
+      wizard.destination = b.dataset.dest;
+      wizard.creative.cta = b.dataset.dest === 'whatsapp' ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
+      renderWizStep1(el);
+    }));
+    const nameEl = document.getElementById('wizName'); if (nameEl) nameEl.addEventListener('input', () => { wizard.campaignName = nameEl.value; });
+    const linkEl = document.getElementById('wizLinkUrl'); if (linkEl) linkEl.addEventListener('input', () => { wizard.creative.linkUrl = linkEl.value; });
+    bindWizNav(el, async () => { wizard.step = 2; renderWizardStep(el.parentElement); }, () => {
+      if (!wizard.campaignName.trim()) { toast('Falta el nombre de la campaña', 'err'); return false; }
+      if (wizard.destination === 'web' && !wizard.creative.linkUrl.trim()) { toast('Falta la URL de destino', 'err'); return false; }
+      return true;
+    });
+  }
+
+  function renderWizStep2(el) {
     const currency = (account && account.currency) || 'COP';
     const minBudget = account && account.min_daily_budget ? Number(account.min_daily_budget) : null;
-    const modo = f.durationDays ? 'lifetime' : 'diario';
-    const totalDias = f.durationDays ? Number(f.durationDays) : null;
-    const promedioDiario = (modo === 'lifetime' && totalDias && f.budgetCOP) ? Math.round(Number(f.budgetCOP) / totalDias) : null;
-
-    return `
-      <div class="ma-safety">
-        <span>🔒</span>
-        <div><b>Se crea PAUSADA.</b> No se activa gasto real. Revísala en <a href="https://business.facebook.com/adsmanager" target="_blank" style="color:var(--gold)">Meta Ads Manager</a> y actívala tú mismo cuando estés listo.</div>
-      </div>
-
-      <div class="ma-sec">
-        <h3>1 · Datos de la campaña</h3>
-        <div class="ma-form-row">
-          <label>Nombre de la campaña</label>
-          <input type="text" id="cfName" placeholder="Ej: Lotes Girardot · Agosto" value="${esc(f.campaignName)}">
-          <div class="ma-form-hint">Se usará también para nombrar el conjunto de anuncios y el creativo.</div>
-        </div>
-      </div>
-
+    el.innerHTML = `
       <div class="ma-sec">
         <h3>2 · Presupuesto y duración</h3>
+        <div class="ma-form-row"><label>Modo</label>
+          <div class="ma-seg">
+            <button type="button" data-mode="daily" class="${wizard.budgetMode === 'daily' ? 'active' : ''}">Diario, sin fin</button>
+            <button type="button" data-mode="lifetime" class="${wizard.budgetMode === 'lifetime' ? 'active' : ''}">Total, con fecha de fin</button>
+          </div>
+        </div>
         <div class="ma-form-grid2--budget">
           <div class="ma-form-row" style="margin-bottom:0">
-            <label>Presupuesto ${modo === 'lifetime' ? 'total' : 'diario'} (${currency})</label>
-            <input type="number" id="cfBudget" min="1" step="1000" placeholder="Ej: 125000" value="${esc(f.budgetCOP)}">
-            <div class="ma-form-hint" id="cfBudgetHint">${minBudget ? `Mínimo de la cuenta: ${fmtMoney(minBudget)} / día` : 'En pesos colombianos directos — Meta no lo multiplica.'}${promedioDiario ? ` · ≈ ${fmtMoney(promedioDiario)}/día` : ''}</div>
+            <label>Presupuesto ${wizard.budgetMode === 'lifetime' ? 'total' : 'diario'} (${currency})</label>
+            <input type="number" id="wizBudget" min="1" step="1000" value="${esc(wizard.budgetCOP)}">
+            <div class="ma-form-hint">${minBudget ? `Mínimo de la cuenta: ${fmtMoney(minBudget)} / día` : 'En pesos colombianos directos.'}</div>
           </div>
-          <div class="ma-form-row" style="margin-bottom:0">
-            <label id="cfDurationLabel">Duración (días)</label>
-            <input type="number" id="cfDuration" min="0" step="1" placeholder="0 = sin fecha de fin" value="${esc(f.durationDays)}">
-            <div class="ma-form-hint" id="cfDurationHint">${modo === 'lifetime' ? `Presupuesto total repartido en ${totalDias} día(s)` : 'Sin duración = gasto diario indefinido hasta que la pausen a mano'}</div>
-          </div>
+          ${wizard.budgetMode === 'lifetime' ? `<div class="ma-form-row" style="margin-bottom:0"><label>Duración (días)</label><input type="number" id="wizDuration" min="1" step="1" value="${esc(wizard.durationDays)}"></div>` : ''}
         </div>
       </div>
+      ${wizNavButtons(true)}
+    `;
+    el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { wizard.budgetMode = b.dataset.mode; renderWizStep2(el); }));
+    const budgetEl = document.getElementById('wizBudget'); if (budgetEl) budgetEl.addEventListener('input', () => { wizard.budgetCOP = budgetEl.value; });
+    const durEl = document.getElementById('wizDuration'); if (durEl) durEl.addEventListener('input', () => { wizard.durationDays = durEl.value; });
+    bindWizNav(el, async () => { wizard.step = 3; renderWizardStep(el.parentElement); }, () => {
+      if (!wizard.budgetCOP || Number(wizard.budgetCOP) <= 0) { toast('El presupuesto debe ser mayor a 0', 'err'); return false; }
+      if (wizard.budgetMode === 'lifetime' && (!wizard.durationDays || Number(wizard.durationDays) <= 0)) { toast('La duración debe ser mayor a 0 días', 'err'); return false; }
+      return true;
+    });
+  }
 
+  let _citySearchTimer = null, _interestSearchTimer = null;
+  function renderWizStep3(el) {
+    const t = wizard.targeting;
+    el.innerHTML = `
       <div class="ma-sec">
         <h3>3 · Segmentación</h3>
-        <div class="ma-form-row ma-city-results" style="margin-bottom:8px">
-          <label>Buscar ciudad</label>
-          <input type="text" id="cfCitySearch" placeholder="Ej: Girardot" value="${esc(f.citySearch)}" autocomplete="off">
-          ${f.cityResults.length ? `
-            <div class="ma-city-dropdown" id="cfCityDropdown">
-              ${f.cityResults.map(c => `<div class="ma-city-opt" data-city-key="${esc(c.key)}" data-city-name="${esc(c.name)}" data-city-region="${esc(c.region || '')}"><span>${esc(c.name)}</span><small>${esc(c.region || '')}</small></div>`).join('')}
-            </div>` : ''}
+        <div class="ma-form-row ma-search-results" style="margin-bottom:8px">
+          <label>Ciudades</label>
+          <input type="text" id="wizCitySearch" placeholder="Buscar ciudad, ej: Girardot" value="${esc(wizard.citySearch)}" autocomplete="off">
+          ${wizard.cityResults.length ? `<div class="ma-dropdown" id="wizCityDD">${wizard.cityResults.map(c => `<div class="ma-dd-opt" data-city-key="${esc(c.key)}" data-city-name="${esc(c.name)}"><span>${esc(c.name)}</span><small>${esc(c.region||'')}</small></div>`).join('')}</div>` : ''}
         </div>
-        <div class="ma-city-chips">
-          ${f.cities.length ? f.cities.map(c => `<span class="ma-city-chip">${esc(c.name)}<button type="button" data-remove-city="${esc(c.key)}">✕</button></span>`).join('')
-            : '<span style="font-size:12px;color:var(--text-3)">Sin ciudades seleccionadas todavía</span>'}
+        <div class="ma-chips">${t.cities.length ? t.cities.map(c => `<span class="ma-chip">${esc(c.name)}<button type="button" data-rm-city="${esc(c.key)}">✕</button></span>`).join('') : '<span style="font-size:12px;color:var(--text-3)">Sin ciudades seleccionadas</span>'}</div>
+
+        <div class="ma-form-grid2" style="margin-top:16px">
+          <div class="ma-form-row" style="margin-bottom:0"><label>Edad mínima</label><input type="number" id="wizAgeMin" min="13" max="65" value="${t.ageMin}"></div>
+          <div class="ma-form-row" style="margin-bottom:0"><label>Edad máxima</label><input type="number" id="wizAgeMax" min="13" max="65" value="${t.ageMax}"></div>
+        </div>
+
+        <div class="ma-form-row" style="margin-top:16px"><label>Género</label>
+          <div class="ma-seg">
+            <button type="button" data-gender="" class="${!t.genders.length ? 'active' : ''}">Todos</button>
+            <button type="button" data-gender="1" class="${t.genders[0] === 1 ? 'active' : ''}">Hombres</button>
+            <button type="button" data-gender="2" class="${t.genders[0] === 2 ? 'active' : ''}">Mujeres</button>
+          </div>
+        </div>
+
+        <div class="ma-form-row ma-search-results" style="margin-top:16px">
+          <label>Intereses (opcional)</label>
+          <input type="text" id="wizInterestSearch" placeholder="Ej: finca raíz, inversión" value="${esc(wizard.interestSearch)}" autocomplete="off">
+          ${wizard.interestResults.length ? `<div class="ma-dropdown" id="wizInterestDD">${wizard.interestResults.map(i => `<div class="ma-dd-opt" data-int-id="${esc(i.id)}" data-int-name="${esc(i.name)}"><span>${esc(i.name)}</span><small>${fmt(i.audience_size)}</small></div>`).join('')}</div>` : ''}
+        </div>
+        <div class="ma-chips">${t.interests.length ? t.interests.map(i => `<span class="ma-chip">${esc(i.name)}<button type="button" data-rm-interest="${esc(i.id)}">✕</button></span>`).join('') : '<span style="font-size:12px;color:var(--text-3)">Sin intereses — Advantage+ optimiza automáticamente</span>'}</div>
+
+        ${audiencesCache && audiencesCache.length ? `
+        <div class="ma-form-row" style="margin-top:16px"><label>Incluir audiencias personalizadas</label>
+          <div class="ma-check-list">${audiencesCache.map(a => `<label class="ma-check-row"><input type="checkbox" data-aud-include="${esc(a.id)}" ${t.customAudienceIds.includes(a.id) ? 'checked' : ''}> ${esc(a.name)} (${fmt(a.approximate_count)})</label>`).join('')}</div>
+        </div>
+        <div class="ma-form-row"><label>Excluir audiencias (ej. ya vendidos)</label>
+          <div class="ma-check-list">${audiencesCache.map(a => `<label class="ma-check-row"><input type="checkbox" data-aud-exclude="${esc(a.id)}" ${t.excludedCustomAudienceIds.includes(a.id) ? 'checked' : ''}> ${esc(a.name)}</label>`).join('')}</div>
+        </div>` : ''}
+
+        <div style="margin-top:16px">
+          <button class="ma-btn" id="wizEstimate" type="button">Estimar alcance</button>
+          <span id="wizEstimateResult" style="font-size:12.5px;color:var(--text-2);margin-left:10px">${wizard.reachEstimate ? (wizard.reachEstimate.available ? `≈ ${fmt(wizard.reachEstimate.usersLower)}–${fmt(wizard.reachEstimate.usersUpper)} personas` : 'No disponible para este targeting') : ''}</span>
         </div>
       </div>
+      ${wizNavButtons(true)}
+    `;
 
+    const citySearchEl = document.getElementById('wizCitySearch');
+    citySearchEl.addEventListener('input', () => {
+      wizard.citySearch = citySearchEl.value;
+      clearTimeout(_citySearchTimer);
+      if (citySearchEl.value.trim().length < 2) { wizard.cityResults = []; renderWizStep3(el); return; }
+      _citySearchTimer = setTimeout(async () => {
+        const results = await api('/api/meta-ads/locations?q=' + encodeURIComponent(citySearchEl.value.trim()));
+        wizard.cityResults = Array.isArray(results) ? results : [];
+        renderWizStep3(el);
+      }, 350);
+    });
+    el.querySelectorAll('[data-city-key]').forEach(opt => opt.addEventListener('click', () => {
+      const key = opt.dataset.cityKey, name = opt.dataset.cityName;
+      if (!t.cities.some(c => c.key === key)) t.cities.push({ key, name, radius: 17 });
+      wizard.citySearch = ''; wizard.cityResults = [];
+      renderWizStep3(el);
+    }));
+    el.querySelectorAll('[data-rm-city]').forEach(b => b.addEventListener('click', () => { t.cities = t.cities.filter(c => c.key !== b.dataset.rmCity); renderWizStep3(el); }));
+
+    const interestSearchEl = document.getElementById('wizInterestSearch');
+    interestSearchEl.addEventListener('input', () => {
+      wizard.interestSearch = interestSearchEl.value;
+      clearTimeout(_interestSearchTimer);
+      if (interestSearchEl.value.trim().length < 2) { wizard.interestResults = []; renderWizStep3(el); return; }
+      _interestSearchTimer = setTimeout(async () => {
+        const results = await api('/api/meta-ads/targeting/search?type=interest&q=' + encodeURIComponent(interestSearchEl.value.trim()));
+        wizard.interestResults = Array.isArray(results) ? results : [];
+        renderWizStep3(el);
+      }, 350);
+    });
+    el.querySelectorAll('[data-int-id]').forEach(opt => opt.addEventListener('click', () => {
+      const id = opt.dataset.intId, name = opt.dataset.intName;
+      if (!t.interests.some(i => i.id === id)) t.interests.push({ id, name });
+      wizard.interestSearch = ''; wizard.interestResults = [];
+      renderWizStep3(el);
+    }));
+    el.querySelectorAll('[data-rm-interest]').forEach(b => b.addEventListener('click', () => { t.interests = t.interests.filter(i => i.id !== b.dataset.rmInterest); renderWizStep3(el); }));
+
+    el.querySelectorAll('[data-gender]').forEach(b => b.addEventListener('click', () => { t.genders = b.dataset.gender ? [Number(b.dataset.gender)] : []; renderWizStep3(el); }));
+    document.getElementById('wizAgeMin').addEventListener('input', (e) => { t.ageMin = Number(e.target.value) || 18; });
+    document.getElementById('wizAgeMax').addEventListener('input', (e) => { t.ageMax = Number(e.target.value) || 65; });
+    el.querySelectorAll('[data-aud-include]').forEach(cb => cb.addEventListener('change', () => {
+      const id = cb.dataset.audInclude;
+      t.customAudienceIds = cb.checked ? [...t.customAudienceIds, id] : t.customAudienceIds.filter(x => x !== id);
+    }));
+    el.querySelectorAll('[data-aud-exclude]').forEach(cb => cb.addEventListener('change', () => {
+      const id = cb.dataset.audExclude;
+      t.excludedCustomAudienceIds = cb.checked ? [...t.excludedCustomAudienceIds, id] : t.excludedCustomAudienceIds.filter(x => x !== id);
+    }));
+
+    document.getElementById('wizEstimate').addEventListener('click', async (e) => {
+      if (!t.cities.length) return toast('Selecciona al menos una ciudad primero', 'err');
+      e.target.disabled = true; e.target.textContent = 'Estimando…';
+      const targeting = buildTargetingForApi(t);
+      const r = await api('/api/meta-ads/targeting/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targeting, optimizationGoal: wizard.destination === 'whatsapp' ? 'CONVERSATIONS' : 'LINK_CLICKS' }) });
+      wizard.reachEstimate = r || { available: false };
+      e.target.disabled = false; e.target.textContent = 'Estimar alcance';
+      document.getElementById('wizEstimateResult').textContent = wizard.reachEstimate.available ? `≈ ${fmt(wizard.reachEstimate.usersLower)}–${fmt(wizard.reachEstimate.usersUpper)} personas` : 'No disponible para este targeting';
+    });
+
+    bindWizNav(el, async () => { wizard.step = 4; renderWizardStep(el.parentElement); }, () => {
+      if (!t.cities.length) { toast('Selecciona al menos una ciudad', 'err'); return false; }
+      return true;
+    });
+  }
+
+  function buildTargetingForApi(t) {
+    return { cities: t.cities, ageMin: t.ageMin, ageMax: t.ageMax, genders: t.genders, interests: t.interests, customAudienceIds: t.customAudienceIds, excludedCustomAudienceIds: t.excludedCustomAudienceIds };
+  }
+
+  function renderWizStep4(el) {
+    const cr = wizard.creative;
+    const ctaOpts = wizard.destination === 'whatsapp' ? CTAS_WHATSAPP : CTAS_WEB;
+    el.innerHTML = `
       <div class="ma-sec">
         <h3>4 · Creativo</h3>
-        <div class="ma-form-row">
-          <label>Imagen del anuncio</label>
-          <div class="ma-image-drop" id="cfImageDrop">
-            ${f.imagePreviewUrl
-              ? `<img src="${f.imagePreviewUrl}" class="ma-image-preview"><div style="font-size:11.5px;color:var(--text-3)">Click para cambiar</div>`
-              : `<div style="font-size:13px;color:var(--text-2)">📷 Click para subir una imagen</div><div class="ma-form-hint">Opcional — sin imagen, el creativo se crea solo con el texto</div>`}
+        <div class="ma-form-row"><label>Tipo</label>
+          <div class="ma-seg">
+            <button type="button" data-ctype="image" class="${cr.type === 'image' ? 'active' : ''}">Imagen</button>
+            <button type="button" data-ctype="video" class="${cr.type === 'video' ? 'active' : ''}">Video</button>
+            <button type="button" data-ctype="carousel" class="${cr.type === 'carousel' ? 'active' : ''}">Carrusel</button>
           </div>
-          <input type="file" id="cfImageInput" accept="image/*" style="display:none">
         </div>
-        <div class="ma-form-row" style="margin-bottom:0">
-          <label>Texto del anuncio</label>
-          <textarea id="cfMessage" placeholder="Ej: Lotes desde $40M en Girardot, financiación directa. Escríbenos por WhatsApp.">${esc(f.adMessage)}</textarea>
+
+        <div style="margin:10px 0">
+          <button class="ma-btn" id="wizUseCsp" type="button">📁 Usar creativos de Campañas SP</button>
+        </div>
+
+        <div id="wizCreativeMedia"></div>
+
+        <div class="ma-form-row" style="margin-top:16px"><label>Texto principal</label><textarea id="wizPrimaryText" placeholder="Ej: Lotes desde $40M en Girardot, financiación directa.">${esc(cr.primaryText)}</textarea></div>
+        <div class="ma-form-grid2">
+          <div class="ma-form-row" style="margin-bottom:0"><label>Titular (opcional)</label><input type="text" id="wizHeadline" value="${esc(cr.headline)}"></div>
+          <div class="ma-form-row" style="margin-bottom:0"><label>Descripción (opcional)</label><input type="text" id="wizDescription" value="${esc(cr.description)}"></div>
+        </div>
+        <div class="ma-form-row" style="margin-top:16px"><label>Llamado a la acción</label>
+          <select id="wizCta">${ctaOpts.map(o => `<option value="${o.v}" ${cr.cta === o.v ? 'selected' : ''}>${o.l}</option>`).join('')}</select>
         </div>
       </div>
+      ${wizNavButtons(true)}
+    `;
 
+    renderCreativeMedia(document.getElementById('wizCreativeMedia'));
+
+    el.querySelectorAll('[data-ctype]').forEach(b => b.addEventListener('click', () => { cr.type = b.dataset.ctype; renderWizStep4(el); }));
+    document.getElementById('wizPrimaryText').addEventListener('input', (e) => { cr.primaryText = e.target.value; });
+    document.getElementById('wizHeadline').addEventListener('input', (e) => { cr.headline = e.target.value; });
+    document.getElementById('wizDescription').addEventListener('input', (e) => { cr.description = e.target.value; });
+    document.getElementById('wizCta').addEventListener('change', (e) => { cr.cta = e.target.value; });
+    document.getElementById('wizUseCsp').addEventListener('click', () => openCampanasSpPicker(el));
+
+    bindWizNav(el, async () => { wizard.step = 5; renderWizardStep(el.parentElement); }, () => {
+      if (cr.type === 'image' && !cr.imageHashes.length) { toast('Sube o elige al menos una imagen', 'err'); return false; }
+      if (cr.type === 'video' && !cr.videoId) { toast('Sube un video (espera a que termine de procesar)', 'err'); return false; }
+      if (cr.type === 'carousel' && cr.cards.length < 2) { toast('El carrusel necesita al menos 2 tarjetas', 'err'); return false; }
+      if (!cr.primaryText.trim()) { toast('Falta el texto principal', 'err'); return false; }
+      return true;
+    });
+  }
+
+  function renderCreativeMedia(el) {
+    const cr = wizard.creative;
+    if (cr.type === 'video') {
+      el.innerHTML = `
+        <div class="ma-image-drop" id="wizVideoDrop">
+          ${cr.videoPreviewUrl ? `<video src="${cr.videoPreviewUrl}" style="max-width:100%;max-height:220px;border-radius:10px" controls></video>` : '<div style="font-size:13px;color:var(--text-2)">🎬 Click para subir un video</div>'}
+          <div class="ma-form-hint">${cr.videoUploading ? cr.videoStatus || 'Subiendo…' : (cr.videoId ? '✅ Video listo (' + esc(cr.videoStatus || 'ready') + ')' : 'MP4, hasta 500MB')}</div>
+        </div>
+        <input type="file" id="wizVideoInput" accept="video/*" style="display:none">`;
+      const drop = document.getElementById('wizVideoDrop'), input = document.getElementById('wizVideoInput');
+      drop.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => { const f = input.files && input.files[0]; if (f) uploadWizardVideo(f, el); });
+      return;
+    }
+    if (cr.type === 'carousel') {
+      el.innerHTML = `
+        <div class="ma-image-drop" id="wizImgDrop"><div style="font-size:13px;color:var(--text-2)">📷 Agregar imágenes (2-10 tarjetas)</div></div>
+        <input type="file" id="wizImgInput" accept="image/*" multiple style="display:none">
+        <div id="wizCardEditor">${cr.cards.map((c, i) => cardEditorHtml(c, i)).join('')}</div>`;
+      const drop = document.getElementById('wizImgDrop'), input = document.getElementById('wizImgInput');
+      drop.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => uploadWizardImages(Array.from(input.files || []), el, true));
+      bindCardEditorEvents(el);
+      return;
+    }
+    // imagen simple
+    el.innerHTML = `
+      <div class="ma-image-drop" id="wizImgDrop">
+        ${cr.imagePreviews[0] ? `<img src="${cr.imagePreviews[0]}" class="ma-image-preview">` : '<div style="font-size:13px;color:var(--text-2)">📷 Click para subir una imagen</div>'}
+      </div>
+      <input type="file" id="wizImgInput" accept="image/*" style="display:none">`;
+    const drop = document.getElementById('wizImgDrop'), input = document.getElementById('wizImgInput');
+    drop.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { const f = input.files && input.files[0]; if (f) uploadWizardImages([f], el, false); });
+  }
+
+  function cardEditorHtml(c, i) {
+    return `<div class="ma-card-editor" data-card="${i}">
+      <img src="${esc(c.previewUrl)}">
+      <div class="ma-card-editor__fields">
+        <input type="text" placeholder="Titular de la tarjeta" data-card-headline="${i}" value="${esc(c.headline)}">
+        <input type="text" placeholder="Descripción (opcional)" data-card-desc="${i}" value="${esc(c.description)}">
+      </div>
+      <button type="button" class="ma-btn ma-btn--xs ma-btn--danger" data-card-rm="${i}" style="align-self:flex-start">✕</button>
+    </div>`;
+  }
+  function bindCardEditorEvents(el) {
+    el.querySelectorAll('[data-card-headline]').forEach(inp => inp.addEventListener('input', () => { wizard.creative.cards[Number(inp.dataset.cardHeadline)].headline = inp.value; }));
+    el.querySelectorAll('[data-card-desc]').forEach(inp => inp.addEventListener('input', () => { wizard.creative.cards[Number(inp.dataset.cardDesc)].description = inp.value; }));
+    el.querySelectorAll('[data-card-rm]').forEach(btn => btn.addEventListener('click', () => { wizard.creative.cards.splice(Number(btn.dataset.cardRm), 1); renderCreativeMedia(document.getElementById('wizCreativeMedia')); }));
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadWizardImages(files, mediaEl, isCarousel) {
+    if (!files.length) return;
+    if (files.length > 10) { toast('Máximo 10 imágenes', 'err'); return; }
+    for (const f of files) { if (f.size > 8 * 1024 * 1024) { toast(`${f.name} supera 8MB`, 'err'); return; } }
+    mediaEl.innerHTML = '<div class="ma-loading"><div class="ma-spinner"></div> Subiendo imágenes…</div>';
+    try {
+      const base64s = await Promise.all(files.map(fileToBase64));
+      const previews = await Promise.all(files.map(fileToDataUrl));
+      const r = await api('/api/meta-ads/media/images', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ images: base64s }) });
+      if (!r || !r.ok) { toast('Error subiendo imágenes: ' + errMsg(r), 'err'); renderCreativeMedia(mediaEl); return; }
+      if (isCarousel) {
+        r.images.forEach((img, i) => wizard.creative.cards.push({ imageHash: img.hash, previewUrl: previews[i], headline: '', description: '' }));
+      } else {
+        wizard.creative.imageHashes = [r.images[0].hash];
+        wizard.creative.imagePreviews = [previews[0]];
+      }
+      toast('Imagen(es) subida(s)', 'ok');
+    } catch (e) {
+      toast('Error leyendo el archivo: ' + e.message, 'err');
+    }
+    renderCreativeMedia(mediaEl);
+    bindCardEditorEvents(mediaEl);
+  }
+
+  async function uploadWizardVideo(file, mediaEl) {
+    if (file.size > 500 * 1024 * 1024) { toast('El video supera 500MB', 'err'); return; }
+    const cr = wizard.creative;
+    cr.videoUploading = true; cr.videoStatus = 'Subiendo video…';
+    cr.videoPreviewUrl = URL.createObjectURL(file);
+    renderCreativeMedia(mediaEl);
+    try {
+      const form = new FormData();
+      form.append('video', file, file.name);
+      const r = await fetch('/api/meta-ads/media/videos', { method: 'POST', credentials: 'include', body: form }).then(res => res.json());
+      if (!r || !r.ok) { toast('Error subiendo video: ' + errMsg(r), 'err'); cr.videoUploading = false; renderCreativeMedia(mediaEl); return; }
+      cr.videoId = r.videoId;
+      cr.videoStatus = 'Procesando…';
+      renderCreativeMedia(mediaEl);
+      await pollVideoStatus(cr.videoId, mediaEl);
+    } catch (e) {
+      toast('Error subiendo el video: ' + e.message, 'err');
+      cr.videoUploading = false;
+      renderCreativeMedia(mediaEl);
+    }
+  }
+
+  async function pollVideoStatus(videoId, mediaEl) {
+    const cr = wizard.creative;
+    for (let i = 0; i < 40; i++) { // hasta ~3-4 min de polling
+      await new Promise(r => setTimeout(r, 5000));
+      const st = await api(`/api/meta-ads/media/videos/${videoId}/status`);
+      if (!st) continue;
+      cr.videoStatus = st.status;
+      if (st.ready) { cr.videoUploading = false; toast('Video listo', 'ok'); renderCreativeMedia(mediaEl); return; }
+      if (st.status === 'error') { cr.videoUploading = false; toast('Meta no pudo procesar el video', 'err'); renderCreativeMedia(mediaEl); return; }
+      renderCreativeMedia(mediaEl);
+    }
+    cr.videoUploading = false;
+    toast('El video sigue procesando en Meta — revisa más tarde', 'err');
+    renderCreativeMedia(mediaEl);
+  }
+
+  // ─── Picker: usar assets ya generados por Campañas SP ──────────
+  async function openCampanasSpPicker(wizStepEl) {
+    const modal = showModal('Elegir creativos de Campañas SP', '<div class="ma-loading"><div class="ma-spinner"></div> Cargando proyectos…</div>');
+    const body = modal.el.querySelector('.ma-modal > div');
+    const projects = await api('/api/campanas-sp/projects');
+    if (!projects || !projects.length) { body.innerHTML = '<div class="ma-empty">No hay proyectos de Campañas SP generados todavía.</div>'; return; }
+    body.innerHTML = projects.map(p => `<div class="ma-csp-project" data-project="${p.id}">${esc(p.name || p.slug)} ${p.status === 'ready' ? '✅' : '⏳'}</div>`).join('');
+    body.querySelectorAll('[data-project]').forEach(row => row.addEventListener('click', () => openCampanasSpAssets(row.dataset.project, body, wizStepEl, modal)));
+  }
+
+  async function openCampanasSpAssets(projectId, body, wizStepEl, modal) {
+    body.innerHTML = '<div class="ma-loading"><div class="ma-spinner"></div> Cargando assets…</div>';
+    const assets = await api(`/api/campanas-sp/projects/${projectId}/assets`);
+    if (!assets || !assets.assets) { body.innerHTML = '<div class="ma-empty">Este proyecto no tiene assets generados.</div>'; return; }
+    const selected = [];
+    let html = '';
+    if (assets.reel_video) {
+      html += `<div style="margin-bottom:8px"><b style="font-size:11px;color:var(--gold);text-transform:uppercase">Reel (video)</b>
+        <div class="ma-csp-asset-grid"><div class="ma-csp-asset" data-cat="reel" data-file="reel.mp4"><video src="/api/campanas-sp/projects/${projectId}/file/reel/reel.mp4" muted></video></div></div></div>`;
+    }
+    for (const [cat, files] of Object.entries(assets.assets)) {
+      const imgs = (files || []).filter(f => /\.(png|jpe?g)$/i.test(f));
+      if (!imgs.length) continue;
+      html += `<div style="margin-top:8px"><b style="font-size:11px;color:var(--gold);text-transform:uppercase">${esc(cat)}</b>
+        <div class="ma-csp-asset-grid">${imgs.map(f => `<div class="ma-csp-asset" data-cat="${esc(cat)}" data-file="${esc(f)}"><img src="/api/campanas-sp/projects/${projectId}/file/${encodeURIComponent(cat)}/${encodeURIComponent(f)}" loading="lazy"></div>`).join('')}</div></div>`;
+    }
+    html += `<div style="margin-top:16px;display:flex;gap:10px"><button class="ma-btn ma-btn--gold" id="cspUseSelected" disabled>Usar seleccionados</button><span id="cspSelCount" style="font-size:12px;color:var(--text-3);align-self:center">0 elegidos</span></div>`;
+    body.innerHTML = html;
+
+    body.querySelectorAll('.ma-csp-asset').forEach(card => card.addEventListener('click', () => {
+      const key = card.dataset.cat + '/' + card.dataset.file;
+      const idx = selected.findIndex(s => s.category === card.dataset.cat && s.filename === card.dataset.file);
+      if (idx >= 0) { selected.splice(idx, 1); card.classList.remove('selected'); }
+      else {
+        const isCarousel = wizard.creative.type === 'carousel';
+        const limit = isCarousel ? 10 : 1;
+        if (selected.length >= limit) { toast(wizard.creative.type === 'image' ? 'Solo se usa 1 imagen para este tipo' : `Máximo ${limit}`, 'err'); return; }
+        selected.push({ category: card.dataset.cat, filename: card.dataset.file });
+        card.classList.add('selected');
+      }
+      document.getElementById('cspSelCount').textContent = selected.length + ' elegido(s)';
+      document.getElementById('cspUseSelected').disabled = !selected.length;
+    }));
+
+    document.getElementById('cspUseSelected').addEventListener('click', async () => {
+      const btn = document.getElementById('cspUseSelected');
+      btn.disabled = true; btn.textContent = 'Subiendo a Meta…';
+      const r = await api('/api/meta-ads/media/from-project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: Number(projectId), files: selected }) });
+      if (!r || !r.ok) { toast('Error subiendo a Meta: ' + errMsg(r), 'err'); btn.disabled = false; btn.textContent = 'Usar seleccionados'; return; }
+      const cr = wizard.creative;
+      const failed = r.results.filter(x => x.error);
+      if (failed.length) toast(`${failed.length} archivo(s) fallaron al subir`, 'err');
+      const ok = r.results.filter(x => !x.error);
+      if (cr.type === 'video') {
+        const v = ok.find(x => x.type === 'video');
+        if (v) { cr.videoId = v.videoId; cr.videoPreviewUrl = `/api/campanas-sp/projects/${projectId}/file/reel/reel.mp4`; cr.videoStatus = 'Procesando…'; cr.videoUploading = true; }
+      } else if (cr.type === 'carousel') {
+        ok.filter(x => x.type === 'image').forEach(img => cr.cards.push({ imageHash: img.hash, previewUrl: `/api/campanas-sp/projects/${projectId}/file/${img.category}/${img.filename}`, headline: '', description: '' }));
+      } else {
+        const img = ok.find(x => x.type === 'image');
+        if (img) { cr.imageHashes = [img.hash]; cr.imagePreviews = [`/api/campanas-sp/projects/${projectId}/file/${img.category}/${img.filename}`]; }
+      }
+      toast('Creativos importados desde Campañas SP', 'ok');
+      modal.close();
+      renderCreativeMedia(document.getElementById('wizCreativeMedia'));
+      if (cr.type === 'video' && cr.videoId) pollVideoStatus(cr.videoId, document.getElementById('wizCreativeMedia'));
+    });
+  }
+
+  // ─── Paso 5: revisión + preview real + submit ──────────────
+  async function renderWizStep5(el) {
+    const w = wizard, t = w.targeting, cr = w.creative;
+    el.innerHTML = `
+      <div class="ma-safety"><span>🔒</span><div><b>Se crea PAUSADA.</b> No se activa gasto real. Revísala en Ads Manager y actívala cuando estés listo.</div></div>
       <div class="ma-sec">
         <h3>5 · Revisión</h3>
         <div class="ma-review">
           <dl>
-            <dt>Nombre</dt><dd id="cfRevName">${esc(f.campaignName) || '—'}</dd>
-            <dt>Presupuesto</dt><dd id="cfRevBudget">${f.budgetCOP ? fmtMoney(Number(f.budgetCOP)) + (modo === 'lifetime' ? ' total' : ' / día') : '—'}</dd>
-            <dt>Duración</dt><dd id="cfRevDuration">${modo === 'lifetime' ? `${totalDias} día(s), con fecha de fin` : 'Indefinida (gasto diario)'}</dd>
-            <dt>Ciudades</dt><dd id="cfRevCities">${f.cities.length ? f.cities.map(c => esc(c.name)).join(', ') : '—'}</dd>
-            <dt>Imagen</dt><dd id="cfRevImage">${f.imagePreviewUrl ? 'Sí, adjunta' : 'Sin imagen'}</dd>
-            <dt>Texto</dt><dd id="cfRevMessage">${esc(f.adMessage) || '—'}</dd>
+            <dt>Nombre</dt><dd>${esc(w.campaignName)}</dd>
+            <dt>Objetivo</dt><dd>${esc((OBJECTIVES.find(o => o.v === w.objective) || {}).l || w.objective)}</dd>
+            <dt>Destino</dt><dd>${w.destination === 'whatsapp' ? 'WhatsApp' : 'Sitio web (' + esc(cr.linkUrl) + ')'}</dd>
+            <dt>Presupuesto</dt><dd>${fmtMoney(w.budgetCOP)} ${w.budgetMode === 'lifetime' ? `total en ${w.durationDays} día(s)` : '/ día'}</dd>
+            <dt>Ciudades</dt><dd>${t.cities.map(c => esc(c.name)).join(', ') || '—'}</dd>
+            <dt>Edad</dt><dd>${t.ageMin} - ${t.ageMax}</dd>
+            <dt>Género</dt><dd>${!t.genders.length ? 'Todos' : (t.genders[0] === 1 ? 'Hombres' : 'Mujeres')}</dd>
+            <dt>Intereses</dt><dd>${t.interests.map(i => esc(i.name)).join(', ') || '—'}</dd>
+            <dt>Tipo de creativo</dt><dd>${{image:'Imagen',video:'Video',carousel:'Carrusel'}[cr.type]}</dd>
+            <dt>CTA</dt><dd>${esc(cr.cta)}</dd>
           </dl>
         </div>
+        <div style="margin-top:16px"><button class="ma-btn" id="wizPreviewBtn" type="button">Ver preview real</button></div>
+        <div id="wizPreviewBox" style="margin-top:12px"></div>
         <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
-          <button class="ma-btn ma-btn--gold" id="cfSubmit" ${f.submitting ? 'disabled' : ''}>${f.submitting ? 'Creando…' : 'Crear campaña (PAUSADA)'}</button>
-          <span id="cfSubmitMsg" style="font-size:12px;color:var(--text-3)"></span>
+          <button class="ma-btn ma-btn--gold" id="wizSubmit" ${w.submitting ? 'disabled' : ''}>${w.submitting ? 'Creando…' : 'Crear campaña (PAUSADA)'}</button>
+          <span id="wizSubmitMsg" style="font-size:12px;color:var(--text-3)"></span>
         </div>
       </div>
+      ${wizNavButtons(true, '')}
     `;
-  }
+    // El botón "Siguiente" no aplica en el último paso — se oculta.
+    const nextBtn = document.getElementById('wizNext'); if (nextBtn) nextBtn.style.display = 'none';
 
-  function renderAudiences() {
-    return `
-      <div class="ma-sec">
-        <h3>Audiencias personalizadas</h3>
-        <div style="display:flex;gap:8px;margin-bottom:14px">
-          <button class="ma-btn ma-btn--gold" id="maSyncLeads">Sincronizar leads del CRM</button>
-          <button class="ma-btn" id="maCreateAudience">Crear audiencia manual</button>
-        </div>
-        ${audiences.length === 0
-          ? '<div class="ma-empty">No hay audiencias creadas aún.</div>'
-          : audiences.map(a => `
-            <div class="ma-aud">
-              <div class="ma-aud__info">
-                <div class="ma-aud__name">${esc(a.name)}</div>
-                <div class="ma-aud__meta">${fmt(a.approximate_count || 0)} personas · ${a.status || 'UNKNOWN'}</div>
-              </div>
-              <div class="ma-aud__actions">
-                <button class="ma-btn" data-sync-aud="${a.id}">Actualizar</button>
-                <button class="ma-btn" data-lookalike="${a.id}">Crear Lookalike</button>
-              </div>
-            </div>
-          `).join('')}
-      </div>
-    `;
-  }
-
-  function renderInsights() {
-    if (insights.length === 0) {
-      return `
-        <div class="ma-sec">
-          <h3>Insights diarios</h3>
-          <p>Selecciona una campaña y haz clic en "Ver insights" para ver el desglose diario.</p>
-          <div class="ma-empty">No hay datos de insights cargados.</div>
-        </div>
-      `;
-    }
-    const total = insights.reduce((acc, d) => ({
-      spend: acc.spend + d.spend,
-      leads: acc.leads + d.leads,
-      impressions: acc.impressions + d.impressions,
-    }), { spend: 0, leads: 0, impressions: 0 });
-
-    return `
-      <div class="ma-sec">
-        <h3>Insights diarios — Últimos ${insights.length} días</h3>
-        <div class="ma-kpis" style="margin-bottom:14px">
-          <div class="ma-kpi">
-            <div class="ma-kpi__val">${fmtMoney(total.spend)}</div>
-            <div class="ma-kpi__label">Gasto total</div>
-          </div>
-          <div class="ma-kpi">
-            <div class="ma-kpi__val">${fmt(total.leads)}</div>
-            <div class="ma-kpi__label">Leads</div>
-          </div>
-          <div class="ma-kpi">
-            <div class="ma-kpi__val">${total.leads > 0 ? fmtMoney(Math.round(total.spend / total.leads)) : '—'}</div>
-            <div class="ma-kpi__label">CPL promedio</div>
-          </div>
-        </div>
-        <div class="ma-chart"><canvas id="maChart"></canvas></div>
-        <div style="max-height:200px;overflow-y:auto;margin-top:10px">
-          <table style="width:100%;font-size:11.5px;border-collapse:collapse">
-            <thead><tr style="color:var(--text-3);text-transform:uppercase;font-size:9.5px;letter-spacing:.05em">
-              <th style="text-align:left;padding:4px 8px">Fecha</th>
-              <th style="text-align:right;padding:4px 8px">Impresiones</th>
-              <th style="text-align:right;padding:4px 8px">CTR</th>
-              <th style="text-align:right;padding:4px 8px">Gasto</th>
-              <th style="text-align:right;padding:4px 8px">Leads</th>
-              <th style="text-align:right;padding:4px 8px">CPL</th>
-            </tr></thead>
-            <tbody>
-              ${insights.map(d => `
-                <tr style="border-top:1px solid var(--border)">
-                  <td style="padding:4px 8px">${d.date}</td>
-                  <td style="text-align:right;padding:4px 8px">${fmt(d.impressions)}</td>
-                  <td style="text-align:right;padding:4px 8px">${d.ctr ? d.ctr.toFixed(2)+'%' : '—'}</td>
-                  <td style="text-align:right;padding:4px 8px">${fmtMoney(d.spend)}</td>
-                  <td style="text-align:right;padding:4px 8px">${d.leads}</td>
-                  <td style="text-align:right;padding:4px 8px">${d.cpl ? fmtMoney(Math.round(d.cpl)) : '—'}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
-
-  // ─── Chart (sin dependencias externas) ──
-  function drawChart() {
-    const canvas = document.getElementById('maChart');
-    if (!canvas || insights.length === 0) return;
-    const ctx2 = canvas.getContext('2d');
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
-    ctx2.scale(2, 2);
-    const W = rect.width, H = rect.height;
-    const pad = { t: 20, r: 50, b: 24, l: 50 };
-    const cW = W - pad.l - pad.r, cH = H - pad.t - pad.b;
-
-    const maxSpend = Math.max(...insights.map(d => d.spend), 1);
-    const maxLeads = Math.max(...insights.map(d => d.leads), 1);
-
-    // Grid
-    ctx2.strokeStyle = 'rgba(255,255,255,.06)';
-    ctx2.lineWidth = 0.5;
-    for (let i = 0; i <= 4; i++) {
-      const y = pad.t + (cH / 4) * i;
-      ctx2.beginPath(); ctx2.moveTo(pad.l, y); ctx2.lineTo(pad.l + cW, y); ctx2.stroke();
-    }
-
-    // Spend line (gold)
-    ctx2.strokeStyle = '#C8A45A';
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    insights.forEach((d, i) => {
-      const x = pad.l + (cW / (insights.length - 1 || 1)) * i;
-      const y = pad.t + cH - (d.spend / maxSpend) * cH;
-      i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
-    });
-    ctx2.stroke();
-
-    // Leads line (green)
-    ctx2.strokeStyle = '#4E7B46';
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    insights.forEach((d, i) => {
-      const x = pad.l + (cW / (insights.length - 1 || 1)) * i;
-      const y = pad.t + cH - (d.leads / maxLeads) * cH;
-      i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
-    });
-    ctx2.stroke();
-
-    // Legend
-    ctx2.font = '10px Inter, sans-serif';
-    ctx2.fillStyle = '#C8A45A';
-    ctx2.fillRect(pad.l, 4, 12, 3);
-    ctx2.fillText('Gasto', pad.l + 16, 9);
-    ctx2.fillStyle = '#4E7B46';
-    ctx2.fillRect(pad.l + 60, 4, 12, 3);
-    ctx2.fillText('Leads', pad.l + 76, 9);
-
-    // Y-axis labels (spend)
-    ctx2.fillStyle = 'rgba(255,255,255,.4)';
-    ctx2.textAlign = 'right';
-    for (let i = 0; i <= 4; i++) {
-      const y = pad.t + (cH / 4) * i;
-      const val = maxSpend - (maxSpend / 4) * i;
-      ctx2.fillText(fmtMoney(Math.round(val)), pad.l - 4, y + 3);
-    }
-  }
-
-  // ─── Events ─────────────────────────────
-  function bindEvents() {
-    // Tabs
-    document.querySelectorAll('.ma-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        currentTab = btn.dataset.tab;
-        render();
-      });
+    document.getElementById('wizPreviewBtn').addEventListener('click', async () => {
+      const box = document.getElementById('wizPreviewBox');
+      box.innerHTML = '<div class="ma-loading"><div class="ma-spinner"></div> Generando preview…</div>';
+      const creativePayload = buildCreativePayload(cr);
+      const r = await api('/api/meta-ads/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ creative: creativePayload, destination: w.destination, adFormat: 'MOBILE_FEED_STANDARD' }) });
+      if (!r || !r.body) { box.innerHTML = `<div class="ma-error"><p>${esc(errMsg(r))}</p></div>`; return; }
+      box.innerHTML = `<div class="ma-preview-frame">${r.body}</div>`;
     });
 
-    // Pause
-    document.querySelectorAll('[data-pause]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('¿Pausar esta campaña?')) return;
-        btn.disabled = true;
-        const r = await api(`/api/meta-ads/campaigns/${btn.dataset.pause}/pause`, { method: 'PUT' });
-        if (r && r.ok) { toast('Campaña pausada', 'success'); await loadAll(); }
-        else toast('Error: ' + (r?.error || 'desconocido'), 'error');
-      });
-    });
-
-    // Resume
-    document.querySelectorAll('[data-resume]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        const r = await api(`/api/meta-ads/campaigns/${btn.dataset.resume}/resume`, { method: 'PUT' });
-        if (r && r.ok) { toast('Campaña reanudada', 'success'); await loadAll(); }
-        else toast('Error: ' + (r?.error || 'desconocido'), 'error');
-      });
-    });
-
-    // Insights
-    document.querySelectorAll('[data-insights]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.disabled = true; btn.textContent = 'Cargando...';
-        const data = await api(`/api/meta-ads/campaigns/${btn.dataset.insights}/insights?days=30`);
-        if (data && !data.error) { insights = data; currentTab = 'insights'; render(); }
-        else toast('Error cargando insights', 'error');
-      });
-    });
-
-    // Sync leads
-    const syncBtn = document.getElementById('maSyncLeads');
-    if (syncBtn) syncBtn.addEventListener('click', async () => {
-      if (!confirm('¿Sincronizar todos los leads activos del CRM como audiencia en Meta?')) return;
-      syncBtn.disabled = true; syncBtn.textContent = 'Sincronizando...';
-      // Primero crear audiencia si no hay ninguna seleccionada
-      const name = 'SP CRM — Leads ' + new Date().toLocaleDateString('es-CO');
-      const r = await api('/api/meta-ads/audiences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, leads: [] }),
-      });
-      if (r && r.id) {
-        const sync = await api(`/api/meta-ads/audiences/${r.id}/sync-leads`, { method: 'POST' });
-        if (sync && !sync.error) {
-          toast(`${sync.synced} leads sincronizados`, 'success');
-          await loadAudiences();
-        } else toast('Error sincronizando leads', 'error');
-      } else toast('Error creando audiencia', 'error');
-    });
-
-    // Sync audience
-    document.querySelectorAll('[data-sync-aud]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        const r = await api(`/api/meta-ads/audiences/${btn.dataset.syncAud}/sync-leads`, { method: 'POST' });
-        if (r && !r.error) { toast(`${r.synced} leads actualizados`, 'success'); }
-        else toast('Error actualizando audiencia', 'error');
-        btn.disabled = false;
-      });
-    });
-
-    // Lookalike
-    document.querySelectorAll('[data-lookalike]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('¿Crear audiencia Lookalike al 1% basada en esta audiencia?')) return;
-        btn.disabled = true;
-        const r = await api(`/api/meta-ads/audiences/${btn.dataset.lookalike}/lookalike`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ country: 'CO', ratio: 0.01 }),
-        });
-        if (r && r.id) { toast('Lookalike creada', 'success'); await loadAudiences(); }
-        else toast('Error creando Lookalike', 'error');
-        btn.disabled = false;
-      });
-    });
-
-    // Create audience (manual)
-    const createAudBtn = document.getElementById('maCreateAudience');
-    if (createAudBtn) createAudBtn.addEventListener('click', async () => {
-      const name = prompt('Nombre de la audiencia:');
-      if (!name) return;
-      const r = await api('/api/meta-ads/audiences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, leads: [] }),
-      });
-      if (r && r.id) { toast('Audiencia creada', 'success'); await loadAudiences(); }
-      else toast('Error creando audiencia', 'error');
-    });
-
-    bindCreateFormEvents();
-  }
-
-  // ─── Asistente de creación de campaña ──────────────────
-  // Los inputs de texto/numero NUNCA disparan un render() completo mientras se escribe
-  // — eso reemplaza el DOM entero y el navegador pierde el foco/cursor a mitad de
-  // palabra. Se parchan solo los nodos puntuales que dependen de ese campo (hints,
-  // revisión). El render() completo solo pasa en acciones discretas (click, blur) donde
-  // no hay foco de texto que proteger.
-  function patchCreateReview() {
-    const f = createForm;
-    const modo = f.durationDays ? 'lifetime' : 'diario';
-    const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-    set('cfRevName', esc(f.campaignName) || '—');
-    set('cfRevBudget', f.budgetCOP ? fmtMoney(Number(f.budgetCOP)) + (modo === 'lifetime' ? ' total' : ' / día') : '—');
-    set('cfRevDuration', modo === 'lifetime' ? `${Number(f.durationDays)} día(s), con fecha de fin` : 'Indefinida (gasto diario)');
-    set('cfRevCities', f.cities.length ? f.cities.map(c => esc(c.name)).join(', ') : '—');
-    set('cfRevImage', f.imagePreviewUrl ? 'Sí, adjunta' : 'Sin imagen');
-    set('cfRevMessage', esc(f.adMessage) || '—');
-  }
-
-  function patchBudgetHints() {
-    const f = createForm;
-    const minBudget = account && account.min_daily_budget ? Number(account.min_daily_budget) : null;
-    const modo = f.durationDays ? 'lifetime' : 'diario';
-    const totalDias = f.durationDays ? Number(f.durationDays) : null;
-    const promedioDiario = (modo === 'lifetime' && totalDias && f.budgetCOP) ? Math.round(Number(f.budgetCOP) / totalDias) : null;
-    const bh = document.getElementById('cfBudgetHint');
-    if (bh) bh.textContent = (minBudget ? `Mínimo de la cuenta: ${fmtMoney(minBudget)} / día` : 'En pesos colombianos directos — Meta no lo multiplica.') + (promedioDiario ? ` · ≈ ${fmtMoney(promedioDiario)}/día` : '');
-    const dh = document.getElementById('cfDurationHint');
-    if (dh) dh.textContent = modo === 'lifetime' ? `Presupuesto total repartido en ${totalDias} día(s)` : 'Sin duración = gasto diario indefinido hasta que la pausen a mano';
-  }
-
-  let _citySearchTimer = null;
-  function refreshCityDropdown() {
-    const container = document.querySelector('.ma-city-results');
-    if (!container) return;
-    const old = document.getElementById('cfCityDropdown');
-    if (old) old.remove();
-    if (!createForm.cityResults.length) return;
-    const dd = document.createElement('div');
-    dd.className = 'ma-city-dropdown'; dd.id = 'cfCityDropdown';
-    dd.innerHTML = createForm.cityResults.map(c =>
-      `<div class="ma-city-opt" data-city-key="${esc(c.key)}" data-city-name="${esc(c.name)}"><span>${esc(c.name)}</span><small>${esc(c.region || '')}</small></div>`
-    ).join('');
-    container.appendChild(dd);
-    dd.querySelectorAll('.ma-city-opt').forEach(opt => {
-      opt.addEventListener('click', () => {
-        const key = opt.dataset.cityKey, name = opt.dataset.cityName;
-        if (!createForm.cities.some(c => c.key === key)) createForm.cities.push({ key, name });
-        createForm.citySearch = ''; createForm.cityResults = [];
-        render(); // click, no hay texto en edición que proteger
-      });
-    });
-  }
-
-  function bindCreateFormEvents() {
-    const name = document.getElementById('cfName');
-    if (name) name.addEventListener('input', () => { createForm.campaignName = name.value; patchCreateReview(); });
-
-    const budget = document.getElementById('cfBudget');
-    if (budget) {
-      budget.addEventListener('input', () => { createForm.budgetCOP = budget.value; patchBudgetHints(); patchCreateReview(); });
-      budget.addEventListener('blur', render); // fija bien la etiqueta "total"/"diario" al salir del campo
-    }
-
-    const duration = document.getElementById('cfDuration');
-    if (duration) {
-      duration.addEventListener('input', () => { createForm.durationDays = duration.value; patchBudgetHints(); patchCreateReview(); });
-      duration.addEventListener('blur', render);
-    }
-
-    const message = document.getElementById('cfMessage');
-    if (message) message.addEventListener('input', () => { createForm.adMessage = message.value; patchCreateReview(); });
-
-    const citySearch = document.getElementById('cfCitySearch');
-    if (citySearch) {
-      citySearch.addEventListener('input', () => {
-        createForm.citySearch = citySearch.value;
-        clearTimeout(_citySearchTimer);
-        if (citySearch.value.trim().length < 2) { createForm.cityResults = []; refreshCityDropdown(); return; }
-        _citySearchTimer = setTimeout(async () => {
-          const results = await api('/api/meta-ads/locations?q=' + encodeURIComponent(citySearch.value.trim()));
-          createForm.cityResults = Array.isArray(results) ? results : [];
-          refreshCityDropdown();
-        }, 350);
-      });
-    }
-
-    document.querySelectorAll('[data-remove-city]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        createForm.cities = createForm.cities.filter(c => c.key !== btn.dataset.removeCity);
-        render();
-      });
-    });
-
-    const imageDrop = document.getElementById('cfImageDrop');
-    const imageInput = document.getElementById('cfImageInput');
-    if (imageDrop && imageInput) {
-      imageDrop.addEventListener('click', () => imageInput.click());
-      imageInput.addEventListener('change', () => {
-        const file = imageInput.files && imageInput.files[0];
-        if (!file) return;
-        if (file.size > 8 * 1024 * 1024) { toast('La imagen no debe superar 8MB', 'error'); return; }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = String(reader.result);
-          createForm.imagePreviewUrl = dataUrl;
-          createForm.imageBase64 = dataUrl.split(',')[1] || null; // Meta espera solo el base64, sin el prefijo data:...
-          render();
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-
-    const submitBtn = document.getElementById('cfSubmit');
-    if (submitBtn) submitBtn.addEventListener('click', async () => {
-      const f = createForm;
-      const msgEl = document.getElementById('cfSubmitMsg');
-      const setMsg = (text, kind) => { if (msgEl) { msgEl.textContent = text; msgEl.style.color = kind === 'error' ? '#ff6b6b' : kind === 'ok' ? 'var(--green)' : 'var(--text-3)'; } };
-
-      if (!f.campaignName.trim()) return setMsg('Falta el nombre de la campaña', 'error');
-      if (!f.budgetCOP || Number(f.budgetCOP) <= 0) return setMsg('El presupuesto debe ser mayor a 0', 'error');
-      if (!f.cities.length) return setMsg('Selecciona al menos una ciudad', 'error');
-      if (!f.adMessage.trim()) return setMsg('Falta el texto del anuncio', 'error');
-
-      f.submitting = true; render();
-      const body = {
-        campaignName: f.campaignName.trim(),
-        budgetCOP: Number(f.budgetCOP),
-        durationDays: f.durationDays ? Number(f.durationDays) : null,
-        targeting: { cities: f.cities, ageMin: 18, ageMax: 65 },
-        adMessage: f.adMessage.trim(),
-        imageBase64: f.imageBase64,
+    document.getElementById('wizSubmit').addEventListener('click', async () => {
+      const setMsg = (text, kind) => { const m = document.getElementById('wizSubmitMsg'); if (m) { m.textContent = text; m.style.color = kind === 'err' ? '#ff6b6b' : 'var(--text-3)'; } };
+      w.submitting = true; renderWizStep5(el);
+      const payload = {
+        objective: w.objective, destination: w.destination,
+        campaignName: w.campaignName, budgetMode: w.budgetMode, budgetCOP: Number(w.budgetCOP),
+        durationDays: w.budgetMode === 'lifetime' ? Number(w.durationDays) : null,
+        targeting: buildTargetingForApi(t),
+        creative: buildCreativePayload(cr),
       };
-      const r = await api('/api/meta-ads/campaigns/whatsapp', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
-      f.submitting = false;
+      const r = await api('/api/meta-ads/campaigns/advanced', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      w.submitting = false;
       if (r && r.ok) {
-        toast('Campaña creada — PAUSADA, revísala en Ads Manager', 'success');
-        // Limpiar el formulario y volver a la lista para que la vea aparecer
-        Object.assign(f, { campaignName: '', budgetCOP: '', durationDays: '8', cities: [], adMessage: '', imageBase64: null, imagePreviewUrl: null, citySearch: '', cityResults: [] });
-        currentTab = 'campaigns';
-        await loadAll();
+        toast('Campaña creada — PAUSADA, revísala en Ads Manager', 'ok');
+        const newId = r.created.campaign.id;
+        wizard = freshWizard();
+        status = null; account = null; audiencesCache = null;
+        navigate('#/campaign/' + encodeURIComponent(newId));
       } else {
-        setMsg((r && (r.detalle || r.error)) || 'Error desconocido creando la campaña', 'error');
-        render();
+        const detail = errMsg(r) + (r && r.rollback ? ` (rollback: ${r.rollback === 'done' ? 'se deshizo lo creado' : 'revisa Ads Manager, puede haber quedado algo parcial'})` : '');
+        setMsg(detail, 'err');
+        renderWizStep5(el);
       }
     });
+
+    bindWizNav(el, async () => {}, null);
   }
 
-  // ─── Data loading ───────────────────────
-  async function loadAll() {
-    loading = true; render();
-    try {
-      const dbg = await fetch('/api/meta-ads-debug').then(r => r.json());
-      window.__metaDebug = dbg;
-    } catch (e) {}
-    status = await api('/api/meta-ads/status');
-    console.log('[META-ADS] status response:', JSON.stringify(status));
-    if (status && status.configured) {
-      // `api()` devuelve el BODY del error en cualquier fallo HTTP (no null — solo
-      // null en caída de red), así que `|| []` nunca protegía nada: un objeto de
-      // error como {error:'...'} es truthy y pasaba de largo. Cuando Meta rechazó un
-      // campo en /audiences (ver fix en meta-ads.js), esto dejó `audiences` como el
-      // objeto de error, .map() reventó en renderAudiences(), y esa excepción sin
-      // capturar abortó TODO el render — la página quedó pegada mostrando el banner
-      // de "no configurado" del primer render (el de "cargando"), aunque el status
-      // real decía configured:true. Un solo endpoint roto tumbaba la página entera.
-      campaigns = arraySeguro(await api('/api/meta-ads/campaigns'));
-      await loadAudiences();
-      account = await api('/api/meta-ads/account'); // moneda + presupuesto mínimo, para el asistente de creación
-    }
-    loading = false;
-    try {
-      render();
-    } catch (e) {
-      // Red de seguridad: si algo más revienta durante el render, que se vea un error
-      // legible en vez de quedar pegado en silencio mostrando una pantalla que miente.
-      console.error('[META-ADS] Error renderizando la página:', e);
-      ctx.content.innerHTML = `<div class="ma-banner"><h4>Error mostrando Meta Ads</h4><p>${esc(e.message)}</p><p style="font-size:11px">Revisa la consola del navegador (F12) para más detalle, o recarga la página.</p></div>`;
-    }
-  }
-
-  function arraySeguro(r) { return Array.isArray(r) ? r : []; }
-
-  async function loadAudiences() {
-    audiences = arraySeguro(await api('/api/meta-ads/audiences'));
+  function buildCreativePayload(cr) {
+    const base = { type: cr.type, primaryText: cr.primaryText, headline: cr.headline, description: cr.description, cta: cr.cta, linkUrl: cr.linkUrl };
+    if (cr.type === 'video') return { ...base, videoId: cr.videoId };
+    if (cr.type === 'carousel') return { ...base, cards: cr.cards.map(c => ({ imageHash: c.imageHash, headline: c.headline, description: c.description })) };
+    return { ...base, imageHashes: cr.imageHashes };
   }
 
   // ─── Boot ───────────────────────────────
-  await loadAll();
+  await render();
 })();
 </script>
 </body>

@@ -4129,6 +4129,80 @@ app.get('/api/campanas-sp/projects/:id/file/:category/:filename', auth.requireAd
   });
 });
 
+// Puente Campañas SP → Meta Ads: sube assets YA GENERADOS directo desde el disco del
+// servidor a la cuenta de anuncios (adimages/advideos), sin que el navegador tenga que
+// bajarlos y volver a subirlos. Antes no existía ningún puente entre el generador de
+// creativos y el creador de campañas — cada uno vivía aislado.
+app.post('/api/meta-ads/media/from-project', auth.requireAdmin, asyncH(async (req, res) => {
+  const { projectId, files } = req.body || {};
+  if (!projectId || !Array.isArray(files) || !files.length) {
+    return res.status(400).json({ error: 'faltan_projectId_o_files' });
+  }
+  if (files.length > 12) return res.status(400).json({ error: 'maximo_12_archivos' });
+  const p = store.getCampanasSpProject(Number(projectId));
+  if (!p || !p.output_dir) return res.status(404).json({ error: 'proyecto_no_encontrado' });
+
+  const metaAdsSvc = require('./services/meta-ads');
+  const root = path.resolve(p.output_dir);
+  const results = [];
+  for (const f of files) {
+    const category = String(f.category || ''), filename = String(f.filename || '');
+    if (!CSP_FILE_SAFE.test(category) || !CSP_FILE_SAFE.test(filename)) {
+      results.push({ category, filename, error: 'nombre_invalido' });
+      continue;
+    }
+    const filePath = path.join(root, category, filename);
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      results.push({ category, filename, error: 'archivo_no_encontrado' });
+      continue;
+    }
+    try {
+      if (/\.(mp4|mov)$/i.test(filename)) {
+        const buffer = fs.readFileSync(filePath);
+        const up = await metaAdsSvc.uploadAdVideo(buffer, filename);
+        results.push({ category, filename, type: 'video', videoId: up.videoId });
+      } else {
+        const base64 = fs.readFileSync(filePath).toString('base64');
+        const up = await metaAdsSvc.uploadAdImage(base64);
+        results.push({ category, filename, type: 'image', hash: up.hash, url: up.url });
+      }
+    } catch (e) {
+      results.push({ category, filename, error: e.message });
+    }
+  }
+  res.json({ ok: true, results });
+}));
+
+// Puente Campañas SP → mensajes masivos: header de imagen en una plantilla de
+// WhatsApp. La Cloud API exige una URL PÚBLICA para el header (no un archivo servido
+// tras sesión de admin, que WhatsApp no puede autenticar) — reusa el mismo mecanismo
+// de token firmado que ya usan Messenger/Instagram (ver mediaStore.signMediaToken),
+// solo que firmando un identificador compuesto en vez de un filename de MEDIA_DIR.
+app.get('/api/campanas-sp/projects/:id/public-url', auth.requireAdmin, (req, res) => {
+  const p = store.getCampanasSpProject(Number(req.params.id));
+  if (!p || !p.output_dir) return res.status(404).json({ error: 'not_found' });
+  const category = String(req.query.category || ''), filename = String(req.query.filename || '');
+  if (!CSP_FILE_SAFE.test(category) || !CSP_FILE_SAFE.test(filename)) return res.status(400).json({ error: 'nombre_invalido' });
+  if (!fs.existsSync(path.join(path.resolve(p.output_dir), category, filename))) return res.status(404).json({ error: 'archivo_no_encontrado' });
+  const resourceId = `campanas-sp/${p.id}/${category}/${filename}`;
+  const token = mediaStore.signMediaToken(resourceId);
+  const base = process.env.BASE_URL || 'https://spcrm.duckdns.org';
+  res.json({ url: `${base}/api/public/campanas-sp-media/${p.id}/${encodeURIComponent(category)}/${encodeURIComponent(filename)}?token=${token}` });
+});
+
+app.get('/api/public/campanas-sp-media/:id/:category/:filename', asyncH(async (req, res) => {
+  const { id, category, filename } = req.params;
+  if (!CSP_FILE_SAFE.test(category) || !CSP_FILE_SAFE.test(filename)) return res.status(400).json({ error: 'nombre_invalido' });
+  const resourceId = `campanas-sp/${id}/${category}/${filename}`;
+  if (!mediaStore.verifyMediaToken(resourceId, req.query.token)) return res.status(403).json({ error: 'token_invalido_o_expirado' });
+  const p = store.getCampanasSpProject(Number(id));
+  if (!p || !p.output_dir) return res.status(404).json({ error: 'not_found' });
+  const root = path.resolve(p.output_dir);
+  res.sendFile(path.join(category, filename), { root }, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'archivo_no_encontrado' });
+  });
+}));
+
 // Carpeta de escaneo temporal (fuera del proyecto — solo sirve para que Gemini categorice
 // una muestra antes de guardar nada). Usa detectRoot() en vez de process.cwd(): el proceso
 // puede arrancar desde un cwd distinto según cómo se lance (ver wrappers de desarrollo),

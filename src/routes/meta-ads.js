@@ -257,11 +257,16 @@ router.get('/media/videos/:id/status', requireConfig, wrap(async (req, res) => {
   res.json(await metaAds.getVideoStatus(req.params.id));
 }));
 
-// Preview del anuncio ANTES de crearlo — paso de revisión del wizard.
+// Preview del anuncio ANTES de crearlo — paso de revisión del wizard. Recibe el mismo
+// shape simplificado que POST /campaigns/advanced (creative + destination + pageId),
+// arma el object_story_spec real con buildCreativeSpec y pide la previsualización a
+// Meta con ese spec exacto — así lo que el admin ve en la revisión es pixel a pixel
+// lo que se crearía si confirma.
 router.post('/preview', requireConfig, wrap(async (req, res) => {
-  const { creative, adFormat } = req.body || {};
+  const { creative, destination, pageId, adFormat } = req.body || {};
   if (!creative) return res.status(400).json({ error: 'falta_creativo' });
-  res.json(await metaAds.generatePreview(creative, adFormat));
+  const spec = metaAds.buildCreativeSpec({ creative, pageId, destination: destination === 'web' ? 'web' : 'whatsapp' });
+  res.json(await metaAds.generatePreview(spec, adFormat));
 }));
 
 // ─── Ad Sets ─────────────────────────────────────────────────
