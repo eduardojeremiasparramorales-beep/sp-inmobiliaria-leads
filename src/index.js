@@ -45,6 +45,14 @@ const CFG = require('./config');
 const app = express();
 app.set('trust proxy', 1);
 
+// DIAGNÓSTICO: ¿llegan los requests a Express?
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/api/login') {
+    console.log('[DIAG] >>> POST /api/login llegó a Express, UA:', (req.headers['user-agent'] || '').substring(0, 80));
+  }
+  next();
+});
+
 // Vid.a V1 — cada request corre dentro del contexto del tenant activo (hoy siempre
 // empresa #1 hardcodeada; V2 es quien resolverá el tenant real por dominio/canal).
 // Va primero, antes que cualquier otro middleware, para que TODO lo que siga
@@ -209,7 +217,12 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'Leons Group', version: '1.1.0' }));
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html')));
 
-app.use('/api', apiLimiter);
+app.use('/api', (req, res, next) => {
+  if (req.method === 'POST' && req.path === '/login') {
+    console.log('[DIAG] >>> POST /api/login después de apiLimiter');
+  }
+  next();
+}, apiLimiter);
 
 app.get('/api/health', (req, res) => {
   const dbOk = (() => { try { return !!store.getDB(); } catch { return false; } })();
