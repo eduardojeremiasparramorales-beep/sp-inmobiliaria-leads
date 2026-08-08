@@ -154,6 +154,25 @@
   .msg.ok{color:var(--green)}
 
   /* ── Crear cuenta ── */
+  /* Genérico para elementos que no son pantallas. `.screen.hidden` (2 clases) gana
+     por especificidad, así que las pantallas conservan su transición de opacidad. */
+  .hidden{display:none}
+  .hint{text-align:center;margin-top:14px;font-size:.75rem;color:var(--txt-2);line-height:1.5}
+  .hint b{color:var(--gold);font-weight:700;letter-spacing:.08em}
+  /* Aviso de PIN de fábrica: explica por qué se pide el cambio en vez de saltar
+     directo al teclado, que se leía como un error del sistema. */
+  .aviso{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+    padding:24px;background:rgba(10,10,10,.82);backdrop-filter:blur(14px)}
+  /* Doble clase: `.hidden` a secas empata en especificidad con `.aviso` y, al ir antes
+     en la hoja, perdía — el overlay se quedaba tapando el login. */
+  .aviso.hidden{display:none}
+  .aviso-card{width:100%;max-width:340px;text-align:center;
+    background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));
+    border:1px solid rgba(200,164,90,.28);border-radius:22px;padding:28px 24px;
+    box-shadow:0 24px 60px rgba(0,0,0,.6)}
+  .aviso-t{font-family:'Cinzel',serif;font-size:1.05rem;color:var(--gold);letter-spacing:.06em;margin-bottom:12px}
+  .aviso-p{font-size:.83rem;color:var(--txt-2);line-height:1.65;margin-bottom:22px}
+  .aviso-p b{color:var(--txt-1);letter-spacing:.1em}
   .link-row{text-align:center;margin-top:18px;font-size:.78rem;color:var(--txt-2)}
   .link-row a{color:var(--gold);text-decoration:none;font-weight:600;cursor:pointer}
   .reg-photo{width:76px;height:76px;border-radius:20px;margin:0 auto 16px;background:var(--glass);border:1.5px dashed var(--glass-border);display:grid;place-items:center;cursor:pointer;overflow:hidden;font-size:1.4rem;color:var(--txt-3)}
@@ -281,6 +300,16 @@
 
   <div class="keypad" id="keypad"></div>
   <div class="msg" id="msg2"></div>
+  <div class="hint" id="pinHint">¿Primera vez o no recuerdas tu PIN? Intenta con <b>0000</b></div>
+</div>
+
+<!-- Aviso de PIN de fábrica (se muestra tras entrar con 0000) -->
+<div class="aviso hidden" id="avisoPin">
+  <div class="aviso-card">
+    <div class="aviso-t">Crea tu PIN</div>
+    <div class="aviso-p">Entraste con <b>0000</b>, el PIN de fábrica. Elige uno propio de 4 dígitos para que nadie más pueda entrar con tu cuenta.</div>
+    <button class="btn-entrar" id="btnCambiarPin">Crear mi PIN nuevo</button>
+  </div>
 </div>
 
 <div class="foot"><span class="foot-line"></span>Desarrollado por Parra Studios</div>
@@ -344,6 +373,7 @@
     updatePinDots();
     renderKeypad();
     $('msg2').textContent = '';
+    $('pinHint').classList.remove('hidden');
     // Bloquear teclado nativo: focus en un input oculto readonly
     const trap = document.createElement('input');
     trap.setAttribute('readonly','');
@@ -438,8 +468,10 @@
       }
       const destino = destinoPorRol(data.usuario && data.usuario.rol);
       if(data.must_change){
-        // PIN de fábrica: obligar a crear uno nuevo antes de entrar
-        iniciarCambioPin(destino);
+        // PIN de fábrica: avisar por qué se pide el cambio y que lo confirmen con
+        // un botón. Antes saltaba directo al teclado y se leía como si el login
+        // hubiera fallado.
+        mostrarAvisoPin(destino);
         return;
       }
       $('msg2').textContent = 'Bienvenido'; $('msg2').className = 'msg ok';
@@ -452,12 +484,24 @@
 
   // ── Cambio de PIN obligatorio (PIN de fábrica) ──
   let cambioPin = null; // null = login normal · {paso:'nuevo'|'confirmar', nuevo, destino}
+
+  // `attempting` sigue en true mientras el aviso está arriba: el teclado queda
+  // detrás del overlay y no debe aceptar dígitos hasta que pulsen el botón.
+  function mostrarAvisoPin(destino){
+    $('avisoPin').classList.remove('hidden');
+    $('btnCambiarPin').onclick = ()=>{
+      $('avisoPin').classList.add('hidden');
+      iniciarCambioPin(destino);
+    };
+  }
+
   function iniciarCambioPin(destino){
     cambioPin = { paso:'nuevo', nuevo:'', destino };
     pin = ''; attempting = false; updatePinDots();
     $('pinSub').textContent = 'Crea tu PIN nuevo';
-    $('msg2').textContent = 'Tu PIN es el de fábrica. Elige uno propio.';
+    $('msg2').textContent = 'Elige 4 dígitos que recuerdes.';
     $('msg2').className = 'msg';
+    $('pinHint').classList.add('hidden'); // la pista del 0000 ya no aplica aquí
   }
   async function procesarPinCompleto(){
     if(!cambioPin) return doLogin();
