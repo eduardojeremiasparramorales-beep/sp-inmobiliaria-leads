@@ -26,15 +26,13 @@
   const st = await api('/api/channels/status') || {};
   const conn = (k) => st[k] === true;
 
+  // Solo canales realmente conectables desde este CRM (ver CLAUDE.md — "Multicanal:
+  // WhatsApp + Messenger + Instagram"). Facebook/Email/Telegram/Calendar/Stripe se
+  // quitaron: eran tarjetas "Próximamente" sin ningún plan de desarrollo detrás.
   const INTS = [
     { k:'whatsapp', n:'WhatsApp', e:'🟢', bg:'rgba(87,193,104,.14)', on:conn('whatsapp'), cfg:'/os/whatsapp.html', d:'Número oficial de la empresa' },
     { k:'instagram', n:'Instagram', e:'🟣', bg:'rgba(200,164,90,.14)', on:conn('instagram'), cfg:'/os/instagram.html', d:'Mensajes directos de IG' },
     { k:'messenger', n:'Messenger', e:'🔵', bg:'rgba(91,141,239,.14)', on:conn('messenger'), cfg:'/os/messenger.html', d:'Facebook Messenger' },
-    { k:'facebook', n:'Facebook', e:'📘', bg:'rgba(91,141,239,.14)', on:false, soon:true, d:'Comentarios y páginas' },
-    { k:'email', n:'Email', e:'✉️', bg:'rgba(248,248,248,.08)', on:false, soon:true, d:'Correo entrante y saliente' },
-    { k:'telegram', n:'Telegram', e:'🛩️', bg:'rgba(91,141,239,.14)', on:false, soon:true, d:'Bot de Telegram' },
-    { k:'calendar', n:'Google Calendar', e:'📅', bg:'rgba(229,72,77,.12)', on:false, soon:true, d:'Agenda y citas' },
-    { k:'stripe', n:'Stripe', e:'💳', bg:'rgba(120,120,220,.14)', on:false, soon:true, d:'Cobros y suscripciones' },
   ];
 
   const connected = INTS.filter(i=>i.on).length;
