@@ -138,6 +138,33 @@
     return p;
   };
 
+  // --- Fechas/horas: convención unificada (Fase 1.1, docs/AUDITORIA_2026-08.md 1.7) ---
+  // El backend guarda SIEMPRE en UTC. Un texto con sufijo 'Z'/offset es un dato nuevo y se
+  // parsea directo; un texto sin sufijo es un dato legado — se asume UTC (coincide con el
+  // DEFAULT congelado de la mayoría de las tablas de producción). Mostrar SIEMPRE con
+  // timeZone:'America/Bogota' fijo, para que todos vean la misma hora real sin importar la
+  // configuración del dispositivo — el comportamiento tipo WhatsApp.
+  function parseDbDate(ts) {
+    if (!ts) return null;
+    const s = String(ts).trim();
+    if (!s) return null;
+    const conOffset = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(s);
+    const d = new Date(conOffset ? s : s.replace(' ', 'T') + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const fmtHora = (ts, opts) => {
+    const d = parseDbDate(ts);
+    return d ? d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota', ...opts }) : '';
+  };
+  const fmtFecha = (ts, opts) => {
+    const d = parseDbDate(ts);
+    return d ? d.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', ...opts }) : '';
+  };
+  const fmtFechaHora = (ts, opts) => {
+    const d = parseDbDate(ts);
+    return d ? d.toLocaleString('es-CO', { timeZone: 'America/Bogota', ...opts }) : '';
+  };
+
   /* --- Nav mínima para vendedores --- */
   const NAV_VENDEDOR = [{
     title: 'Mi Trabajo',
@@ -629,7 +656,7 @@
     });
   }
 
-  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc, on, tabs, sortTable,
+  window.SPOS = { ICONS, NAV, api, toast, mount, avatarColor, initials, fmtPhone, fmtHora, fmtFecha, fmtFechaHora, parseDbDate, abrirCopiloto, sugerirRespuesta, cerrarCopiloto, esc, on, tabs, sortTable,
     fmt: {
       n: (v) => (v == null ? '—' : Number(v).toLocaleString('es-CO')),
       money: (v) => (v == null ? '—' : '$' + Number(v).toLocaleString('es-CO')),

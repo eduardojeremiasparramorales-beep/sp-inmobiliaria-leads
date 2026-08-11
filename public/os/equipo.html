@@ -15,7 +15,7 @@
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
-  const { ICONS, api, fmt, avatarColor, initials, toast } = SPOS;
+  const { ICONS, api, fmt, avatarColor, initials, toast, fmtFechaHora } = SPOS;
 
   // Inline SVG helper for icons not in SPOS
   const S = {
@@ -285,7 +285,7 @@
         const directo = m.to_vendedor_id != null;
         const quien = m.from_nombre_full || m.from_nombre || (Number(m.from_vendedor_id)===0?'Admin':'Asesor');
         const destino = directo ? ('→ ' + (m.to_nombre || 'Asesor')) : '';
-        const hora = new Date(String(m.created_at).replace(' ','T')).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+        const hora = fmtFechaHora(m.created_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
         return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-soft)">
           <div class="avatar avatar--sm" style="background:${avatarColor(quien)};flex-shrink:0">${initials(quien)}</div>
           <div style="flex:1;min-width:0">

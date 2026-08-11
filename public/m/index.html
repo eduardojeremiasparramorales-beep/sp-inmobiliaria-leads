@@ -924,11 +924,23 @@ async function limpiarCache(){
   toast('Caché limpiado');
 }
 
-function horaCorta(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')); if(isNaN(d)) return ''; const h=new Date(); const sd=d.toDateString()===h.toDateString(); return sd? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'}); }
-function soloHora(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')); return isNaN(d)?'':d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
-function dateLabel(ts){ if(!ts) return ''; const d=new Date(String(ts).replace(' ','T')); if(isNaN(d)) return ''; const h=new Date(), a=new Date(); a.setDate(h.getDate()-1); const sd=(x,y)=>x.toDateString()===y.toDateString(); if(sd(d,h)) return 'Hoy'; if(sd(d,a)) return 'Ayer'; return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long'}); }
+// Convención unificada de tiempo (Fase 1.1, docs/AUDITORIA_2026-08.md 1.7): el backend
+// guarda SIEMPRE en UTC. Un texto con sufijo 'Z'/offset es un dato nuevo y se parsea
+// directo; sin sufijo se asume UTC (dato legado, coincide con el DEFAULT congelado de la
+// mayoría de las tablas de producción). Todo lo que se MUESTRA usa timeZone:'America/Bogota'
+// fijo, para que el asesor vea la misma hora real sin importar la config. de su teléfono.
+function parseDbDate(ts){
+  if(!ts) return null;
+  const s=String(ts).trim(); if(!s) return null;
+  const conOffset=/[Zz]$|[+-]\d{2}:?\d{2}$/.test(s);
+  const d=new Date(conOffset?s:s.replace(' ','T')+'Z');
+  return isNaN(d.getTime())?null:d;
+}
+function horaCorta(ts){ const d=parseDbDate(ts); if(!d) return ''; const h=new Date(); const sd=d.toDateString()===h.toDateString(); return sd? d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'}) : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',timeZone:'America/Bogota'}); }
+function soloHora(ts){ const d=parseDbDate(ts); return d?d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'}):''; }
+function dateLabel(ts){ const d=parseDbDate(ts); if(!d) return ''; const h=new Date(), a=new Date(); a.setDate(h.getDate()-1); const sd=(x,y)=>x.toDateString()===y.toDateString(); if(sd(d,h)) return 'Hoy'; if(sd(d,a)) return 'Ayer'; return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long',timeZone:'America/Bogota'}); }
 
-function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const dias=ref?(Date.now()-new Date(String(ref).replace(' ','T')).getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
+function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const refD=parseDbDate(ref); const dias=refD?(Date.now()-refD.getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
 function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=88; else if(e==='cita')s=80; else if(e==='interesado')s=66; else if(e==='vendido')s=100; s+=Math.min(20,(l.messages_count||0)); return Math.min(99,s); }
 
 /* ════════ API ════════ */
@@ -973,14 +985,14 @@ function apiUpload(url, body, pb){
   });
 }
 /* ════════ Datos demo ════════ */
-function demoLeads(){ const now=new Date().toLocaleString('sv-SE').replace('T',' '); return [
+function demoLeads(){ const now=new Date().toISOString(); return [
   {id:1,customer_name:'Juan Díaz',customer_phone:'+573001234567',etiqueta:'negociacion',status:'activo',updated_at:now,created_at:now,unread_count:3,last_message:'¿Cuál es el precio del lote de 250m²?',messages_count:14,assigned_to_nombre:'Asesor Test'},
   {id:2,customer_name:'María Gómez',customer_phone:'+573019876543',etiqueta:'interesado',status:'activo',updated_at:now,created_at:now,unread_count:0,last_message:'Perfecto, quedo atenta 🙏',messages_count:6,assigned_to_nombre:'Asesor Test'},
   {id:3,customer_name:'Pedro Ruiz',customer_phone:'+573025551122',etiqueta:'cita',status:'activo',updated_at:'2026-07-02 10:00:00',created_at:'2026-06-19 09:00:00',unread_count:1,last_message:'Nos vemos el sábado en el proyecto',messages_count:22,assigned_to_nombre:'Asesor Test'},
   {id:4,customer_name:'Laura Ortiz',customer_phone:'+573036667788',etiqueta:'sin_clasificar',status:'nuevo',updated_at:now,created_at:now,unread_count:2,last_message:'Hola, vi el anuncio en Facebook',messages_count:2,assigned_to_nombre:'Asesor Test'},
   {id:5,customer_name:'Andrés Peña',customer_phone:'+573041239876',etiqueta:'vendido',status:'cerrado',updated_at:'2026-06-10 12:00:00',created_at:'2026-05-01 09:00:00',unread_count:0,last_message:'¡Muchas gracias por todo!',messages_count:40,assigned_to_nombre:'Asesor Test'},
 ]; }
-function demoMsgs(){ const now=new Date().toLocaleString('sv-SE').replace('T',' '); return [
+function demoMsgs(){ const now=new Date().toISOString(); return [
   {id:101,body:'Hola, vi el anuncio de los lotes en Tocaima.',direction:'incoming',timestamp:now},
   {id:102,body:'¡Hola Juan! Con gusto te ayudo. ¿Buscas para vivienda o inversión?',direction:'outgoing',timestamp:now},
   {id:103,body:'Para inversión. ¿Qué precios manejan?',direction:'incoming',timestamp:now},
@@ -1209,19 +1221,18 @@ function eqHexToRgba(hex,a){
   return `rgba(${r},${g},${b},${a})`;
 }
 function eqDayLabel(ts){
-  if(!ts) return '';
-  const d=new Date(String(ts).replace(' ','T')); if(isNaN(d)) return '';
+  const d=parseDbDate(ts); if(!d) return '';
   const now=new Date(), y=new Date(now); y.setDate(y.getDate()-1);
   if(d.toDateString()===now.toDateString()) return 'Hoy';
   if(d.toDateString()===y.toDateString()) return 'Ayer';
-  return d.toLocaleDateString('es-CO',{day:'numeric',month:'long'});
+  return d.toLocaleDateString('es-CO',{day:'numeric',month:'long',timeZone:'America/Bogota'});
 }
 function eqMsgHTML(m, idx, arr){
   const mio=esMio(m);
   const hora=horaCorta(m.created_at);
   if(m.deleted) return `<div class="eq-msg-row ${mio?'mio':'otro'}"><div class="bub bub--${mio?'out':'in'}" style="max-width:75%;opacity:.5;font-style:italic"><span class="bub-body">Mensaje eliminado</span><div class="bub__t">${hora}</div></div></div>`;
   const prev=arr[idx-1];
-  const grouped=prev && !prev.deleted && prev.from_vendedor_id===m.from_vendedor_id && (new Date(String(m.created_at).replace(' ','T'))-new Date(String(prev.created_at).replace(' ','T')))<120000;
+  const grouped=prev && !prev.deleted && prev.from_vendedor_id===m.from_vendedor_id && (parseDbDate(m.created_at)-parseDbDate(prev.created_at))<120000;
   const v=eqFindVendedor(m.from_vendedor_id);
   const avatarBg=v.foto?'':`background:${eqColor(m.from_vendedor_id)}`;
   const avatarContent=v.foto?`<img src="${esc(v.foto)}" alt="">`:initials(v.nombre);
@@ -2169,7 +2180,7 @@ function tempBadge(t){
 function llamarYRegistrar(phone, leadId){
   const p=(phone||'').replace(/[^\d+]/g,'');
   if(!p){ toast('Sin número'); return; }
-  const hora=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+  const hora=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'});
   if(leadId){
     openSheet('Registrar llamada', `<div style="font-size:13px;color:var(--text-3);margin-bottom:12px">Iniciando llamada… cuando termines, marca cómo te fue:</div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -2855,9 +2866,10 @@ async function toggleReaction(msgId,emoji){
 function showMsgInfo(msgId){
   const m=currentMsgs.find(x=>String(x.id)===String(msgId));
   if(!m) return;
-  const ts=m.timestamp?new Date(String(m.timestamp).replace(' ','T')).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-  const readTs=m.read_at?new Date(String(m.read_at).replace(' ','T')).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-  const editTs=m.edited_at?new Date(String(m.edited_at).replace(' ','T')).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):null;
+  const fInfo={weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'};
+  const ts=m.timestamp?parseDbDate(m.timestamp).toLocaleString('es-CO',fInfo):'—';
+  const readTs=m.read_at?parseDbDate(m.read_at).toLocaleString('es-CO',fInfo):'—';
+  const editTs=m.edited_at?parseDbDate(m.edited_at).toLocaleString('es-CO',fInfo):null;
   openSheet('Info del mensaje', `<div class="msg-info">
     <div class="mi-row"><span class="mi-l">Enviado</span><span class="mi-v">${esc(ts)}</span></div>
     ${m.status==='read'?`<div class="mi-row"><span class="mi-l">Visto</span><span class="mi-v">${esc(readTs)}</span></div>`:''}
@@ -2949,7 +2961,7 @@ async function renderSchList(){
   const box=$('#schList'); if(!box) return;
   const s=await api('/api/programados')||[];
   if(!s.length){ box.innerHTML='<div style="font-size:13px;color:var(--text-3);text-align:center;padding:12px">Sin mensajes programados</div>'; return; }
-  box.innerHTML=s.map(m=>`<div class="sch-item"><span class="sch-time">${new Date(m.send_at.replace(' ','T')).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${m.customer_name?esc(m.customer_name)+': ':''}${esc(m.body)}</span><button class="sch-del" data-sch="${m.id}">${I(SVG.x,14)}</button></div>`).join('');
+  box.innerHTML=s.map(m=>`<div class="sch-item"><span class="sch-time">${parseDbDate(m.send_at).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'})}</span><span class="sch-body">${m.customer_name?esc(m.customer_name)+': ':''}${esc(m.body)}</span><button class="sch-del" data-sch="${m.id}">${I(SVG.x,14)}</button></div>`).join('');
   box.querySelectorAll('[data-sch]').forEach(b=>b.onclick=async()=>{ const r=await api('/api/programados/'+b.dataset.sch,{method:'DELETE'}); if(r){ renderSchList(); toast('Cancelado'); } });
 }
 // Migración one-shot: programados viejos de localStorage → servidor
@@ -3146,10 +3158,10 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
     } else toast('Error al editar');
     cancelEdit(); inp.value=''; inp.style.height='auto'; updateSend(); cancelarReply(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return;
   }
-  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toLocaleString('sv-SE').replace('T',' ')}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return; }
+  if(DEMO){ currentMsgs.push({id:Date.now(),body:msg,direction:'outgoing',timestamp:new Date().toISOString()}); inp.value=''; inp.style.height='auto'; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; updateSend(); window._sending=false; if(sendBtn) sendBtn.disabled=false; return; }
   // Optimistic — mostrar mensaje inmediatamente
   const tempId = 'temp_'+Date.now();
-  const tempMsg = {id:tempId,body:msg,direction:'outgoing',timestamp:new Date().toLocaleString('sv-SE').replace('T',' ')};
+  const tempMsg = {id:tempId,body:msg,direction:'outgoing',timestamp:new Date().toISOString()};
   currentMsgs.push(tempMsg);
   inp.value=''; inp.style.height='auto'; updateSend();
   $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
@@ -3828,7 +3840,7 @@ function exportarConversacion(){
   const nombre=current.customer_name||'Cliente';
   const lines=currentMsgs.filter(m=>!m.deleted_for_sender).map(m=>{
     const who=m.direction==='incoming'?'Cliente':'Tú';
-    const ts=m.timestamp?new Date(String(m.timestamp).replace(' ','T')).toLocaleString('es-CO'):'';
+    const ts=m.timestamp?parseDbDate(m.timestamp).toLocaleString('es-CO',{timeZone:'America/Bogota'}):'';
     const body=m.media_type?`[${m.media_type}]`:m.body||'';
     return `[${ts}] ${who}: ${body}`;
   });
@@ -4445,8 +4457,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         msg=`Responde a <b>${esc(masViejo.customer_name||'Cliente')}</b> — es el lead que más tiempo lleva esperando (${sinResp.length} sin responder en total).`;
       } else {
         const citas=await api('/api/citas'); const hoy=new Date().toDateString();
-        const citaHoy=(citas||[]).find(c=>c.estado==='pendiente'&&new Date(String(c.fecha).replace(' ','T')).toDateString()===hoy);
-        if(citaHoy) msg=`Hoy tienes cita: <b>${esc(citaHoy.titulo)}</b> a las ${new Date(String(citaHoy.fecha).replace(' ','T')).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}.`;
+        const citaHoy=(citas||[]).find(c=>c.estado==='pendiente'&&parseDbDate(c.fecha)&&parseDbDate(c.fecha).toDateString()===hoy);
+        if(citaHoy) msg=`Hoy tienes cita: <b>${esc(citaHoy.titulo)}</b> a las ${parseDbDate(citaHoy.fecha).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'})}.`;
         else {
           const tareas=await api('/api/tareas');
           const vencida=(tareas||[]).find(t=>Number(t.completada)!==1&&t.vence_at&&new Date(t.vence_at)<new Date());
@@ -4595,7 +4607,7 @@ async function renderRecordatorios(){
   const d=await api('/api/tareas');
   const r=(d||[]).filter(t=>t.vence_at&&Number(t.completada)!==1);
   if(!r.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3);text-align:center;padding:10px">Sin recordatorios</div>'; return; }
-  box.innerHTML=r.map(x=>`<div class="sch-item"><span class="sch-time">${new Date(x.vence_at).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span class="sch-body">${esc(x.texto)}</span><button class="sch-del" data-rec="${x.id}">${I(SVG.x,14)}</button></div>`).join('');
+  box.innerHTML=r.map(x=>`<div class="sch-item"><span class="sch-time">${parseDbDate(x.vence_at).toLocaleString('es-CO',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'})}</span><span class="sch-body">${esc(x.texto)}</span><button class="sch-del" data-rec="${x.id}">${I(SVG.x,14)}</button></div>`).join('');
   box.querySelectorAll('[data-rec]').forEach(b=>b.onclick=async()=>{ await api('/api/tareas/'+b.dataset.rec,{method:'DELETE'}); renderRecordatorios(); });
 }
 function initRecordatorios(){
@@ -4655,9 +4667,9 @@ async function cargarStats(){
 let _citasCal = [], _vistaCal = new Date();
 const DIAS_CAL = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const MESES_CAL = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-function fechaLocalCal(ts){ const d=new Date(String(ts).replace(' ','T')); return isNaN(d)?null:d; }
+function fechaLocalCal(ts){ return parseDbDate(ts); }
 function mismoDiaCal(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
-function fmtFechaCal(d){ return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short'})+' · '+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
+function fmtFechaCal(d){ return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',timeZone:'America/Bogota'})+' · '+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'}); }
 async function cargarCalendario(){
   _vistaCal.setDate(1);
   const d=await api('/api/citas'); _citasCal=Array.isArray(d)?d:[];
@@ -4752,7 +4764,7 @@ async function abrirRecordatorio(citaId, yaProgramado, btnEl){
   const chips=ANTELACIONES_REC.map(([h,label])=>`<button data-ah="${h}" style="flex:1;padding:9px 0;border-radius:10px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:12px;font-family:inherit;cursor:pointer">${label}</button>`).join('');
   openSheet('🔔 Recordatorio de cita',`<div style="display:flex;flex-direction:column;gap:10px">
     <div style="font-size:12px;color:var(--text-3);line-height:1.5">El cliente recibirá un mensaje automático de WhatsApp con la <b style="color:var(--text)">plantilla de recordatorio</b> antes de la cita. Como va como plantilla, llega incluso si la ventana de 24h ya está cerrada (ej. cita del domingo).</div>
-    ${tiene?`<div style="font-size:12px;color:var(--gold);background:rgba(200,164,90,.1);border:1px solid rgba(200,164,90,.3);border-radius:10px;padding:9px 11px">✓ Recordatorio programado ${estado.recordatorio&&estado.recordatorio.send_at?'para '+new Date(String(estado.recordatorio.send_at).replace(' ','T')).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>`:''}
+    ${tiene?`<div style="font-size:12px;color:var(--gold);background:rgba(200,164,90,.1);border:1px solid rgba(200,164,90,.3);border-radius:10px;padding:9px 11px">✓ Recordatorio programado ${estado.recordatorio&&estado.recordatorio.send_at?'para '+parseDbDate(estado.recordatorio.send_at).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'}):''}</div>`:''}
     ${sinTpl?`<div style="font-size:12px;color:var(--red);border:1px solid var(--red);border-radius:10px;padding:9px 11px">El admin aún no configura el template de recordatorio (Configuración → Template de recordatorio de citas).</div>`:''}
     <div style="font-size:11px;color:var(--text-3);margin-top:2px">Antelación del recordatorio:</div>
     <div style="display:flex;gap:6px">${chips}</div>
@@ -4884,7 +4896,7 @@ async function cargarTareas(){
   if(!d||!d.length){ box.innerHTML='<div style="text-align:center;color:var(--text-3);padding:20px">Sin tareas pendientes</div>'; } else {
     box.innerHTML=d.map(t=>{
       const done=Number(t.completada)===1;
-      const cuando=t.vence_at?new Date(t.vence_at).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+      const cuando=t.vence_at?parseDbDate(t.vence_at).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'America/Bogota'}):'';
       const vencida=!done&&t.vence_at&&new Date(t.vence_at)<new Date();
       return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-soft)"><button class="task-toggle" data-id="${t.id}" style="width:24px;height:24px;border-radius:6px;border:2px solid ${done?'var(--green)':'var(--border-strong)'};background:${done?'var(--green)':'transparent'};display:grid;place-items:center;flex-shrink:0;color:#0A0A0A;${done?'':'color:transparent'}">${I(SVG.check,14)}</button><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:500;${done?'text-decoration:line-through;opacity:.5':''}">${esc(t.texto)}</div>${cuando?`<div style="font-size:11px;color:${vencida?'var(--red)':'var(--text-3)'};margin-top:2px">🔔 ${cuando}${Number(t.lead_id)?' · Lead #'+t.lead_id:''}</div>`:(Number(t.lead_id)?`<div style="font-size:11px;color:var(--text-3);margin-top:2px">Lead #${t.lead_id}</div>`:'')}</div><button class="task-del" data-id="${t.id}" style="width:28px;height:28px;border-radius:50%;background:none;border:none;color:var(--text-3);display:grid;place-items:center">${I(SVG.x,14)}</button></div>`;
     }).join('');
@@ -4925,7 +4937,7 @@ async function refrescarLead(leadId){
   } else if(Number(l.assigned_to_id)===Number(miId()) || miId()===0) {
     leads.unshift(l);
   }
-  leads.sort((a,b)=>new Date(String(b.updated_at||b.created_at).replace(' ','T'))-new Date(String(a.updated_at||a.created_at).replace(' ','T')));
+  leads.sort((a,b)=>parseDbDate(b.updated_at||b.created_at)-parseDbDate(a.updated_at||a.created_at));
 }
 let _primeraConexion=true;
 

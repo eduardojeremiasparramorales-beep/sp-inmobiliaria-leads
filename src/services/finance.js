@@ -19,7 +19,7 @@ function ensureTable() {
       vendedor_id INTEGER,
       fecha TEXT DEFAULT (date('now')),
       notas TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
       FOREIGN KEY (lead_id) REFERENCES leads(id),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
@@ -35,7 +35,7 @@ function ensureTable() {
       estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagada', 'cancelada')),
       fecha_calculo TEXT DEFAULT (date('now')),
       fecha_pago TEXT,
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (vendedor_id) REFERENCES vendedores(id),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );

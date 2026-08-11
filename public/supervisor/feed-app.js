@@ -49,16 +49,15 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
   function timeAgo(createdAt) {
-    if (!createdAt) return '';
-    const t = new Date(String(createdAt).replace(' ', 'T'));
-    if (isNaN(t.getTime())) return '';
+    const t = window.SPOS && SPOS.parseDbDate ? SPOS.parseDbDate(createdAt) : (createdAt ? new Date(String(createdAt).replace(' ', 'T') + 'Z') : null);
+    if (!t || isNaN(t.getTime())) return '';
     const s = Math.floor((Date.now() - t.getTime()) / 1000);
     if (s < 10) return 'Ahora';
     if (s < 60) return 'hace ' + s + ' s';
     if (s < 3600) return 'hace ' + Math.floor(s / 60) + ' min';
     if (s < 86400) return 'hace ' + Math.floor(s / 3600) + ' h';
     if (s < 172800) return 'Ayer';
-    return t.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+    return t.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' });
   }
 
   function parsePayload(raw) {

@@ -1,6 +1,6 @@
 const adapter = require('./adapter');
 const { createNewTables } = require('./schema');
-const { parseLocalDbTime } = require('../utils/tiempo');
+const { parseLocalDbTime, SQL_NOW_UTC, nowUTC } = require('../utils/tiempo');
 
 // Obtener funciones del adapter
 let all = (sql, params) => adapter.all(sql, params);
@@ -43,7 +43,7 @@ function createSchema() {
       rol TEXT DEFAULT 'vendedor',
       two_fa INTEGER DEFAULT 0,
       total_leads INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
 
     CREATE TABLE IF NOT EXISTS leads (
@@ -58,8 +58,8 @@ function createSchema() {
       last_message TEXT,
       first_response_at DATETIME,
       escalation_level INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
-      updated_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +68,7 @@ function createSchema() {
       to_number TEXT NOT NULL,
       body TEXT NOT NULL,
       direction TEXT DEFAULT 'incoming',
-      timestamp DATETIME DEFAULT (datetime('now','localtime')),
+      timestamp DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
     CREATE TABLE IF NOT EXISTS usuarios (
@@ -78,13 +78,13 @@ function createSchema() {
       nombre TEXT,
       rol TEXT DEFAULT 'vendedor',
       vendedor_id INTEGER,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE TABLE IF NOT EXISTS templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       titulo TEXT NOT NULL,
       cuerpo TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
 
@@ -169,6 +169,12 @@ function createSchema() {
   ensureColumn('leads', 'ad_name', 'TEXT');
   ensureColumn('leads', 'ad_source_url', 'TEXT');
   ensureColumn('leads', 'ctwa_clid', 'TEXT');
+  // Asignación por zona geográfica: qué zona cubre cada asesor (CSV de slugs, vacío =
+  // sin zona asignada, participa solo del fallback por menor carga) y qué zona se
+  // resolvió para cada lead a partir del anuncio de Meta que lo trajo (ver zonas.js).
+  ensureColumn('vendedores', 'zonas', 'TEXT');
+  ensureColumn('leads', 'zona', 'TEXT');
+  ensureColumn('leads', 'zona_fuente', 'TEXT'); // anuncio | manual | fallback
   ensureColumn('messages', 'edited_at', 'DATETIME');
   ensureColumn('messages', 'deleted_for_sender', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
@@ -191,7 +197,7 @@ function createSchema() {
       intentos INTEGER DEFAULT 0,
       last_error TEXT,
       sent_at DATETIME,
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     );
   `);
@@ -237,7 +243,7 @@ function createSchema() {
       from_nombre TEXT DEFAULT '',
       to_vendedor_id INTEGER,
       body TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
 
@@ -248,7 +254,7 @@ function createSchema() {
       emoji TEXT NOT NULL,
       sender_number TEXT NOT NULL,
       direction TEXT DEFAULT 'incoming',
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(message_id, emoji, sender_number),
       FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
     );
@@ -260,7 +266,7 @@ function createSchema() {
       lead_id INTEGER NOT NULL,
       autor TEXT DEFAULT '',
       nota TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_lead_notes_lead ON lead_notes(lead_id)`);
@@ -301,7 +307,7 @@ function createSchema() {
       nombre TEXT NOT NULL UNIQUE,
       idioma TEXT DEFAULT 'es',
       params TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
   // Columnas del catálogo real de plantillas de Meta (sincronizado, no escrito a mano):
@@ -313,6 +319,61 @@ function createSchema() {
   ensureColumn('wa_templates', 'componentes', 'TEXT');
   ensureColumn('wa_templates', 'variables', 'TEXT');
   ensureColumn('wa_templates', 'var_mapping', 'TEXT');
+  // Gestor de plantillas (creación/edición/borrado desde el CRM, no solo sync de lectura):
+  ensureColumn('wa_templates', 'meta_template_id', 'TEXT');   // id real de Meta — clave para editar/borrar y para casar el webhook de estado
+  ensureColumn('wa_templates', 'motivo_rechazo', 'TEXT');     // rejected_reason de Meta
+  ensureColumn('wa_templates', 'estado_detalle', 'TEXT');     // other_info.title/description del webhook — texto humano del rechazo
+  ensureColumn('wa_templates', 'calidad', 'TEXT');            // quality_score.score: GREEN/YELLOW/RED
+  ensureColumn('wa_templates', 'spec_json', 'TEXT');          // borrador del constructor tal como lo escribió el admin (Meta normaliza los components al devolverlos)
+  ensureColumn('wa_templates', 'creado_por', 'INTEGER');
+  ensureColumn('wa_templates', 'creado_en_crm', 'INTEGER DEFAULT 0'); // 1 = nació en el CRM (editable/borrable), 0 = vino del sync
+  ensureColumn('wa_templates', 'updated_at', 'DATETIME');
+  ensureColumn('wa_templates', 'meta_sync_at', 'DATETIME');
+
+  // Meta permite el MISMO name en varios idiomas (son plantillas distintas, con id
+  // distinto) — el UNIQUE inline sobre `nombre` de la creación original de la tabla
+  // pisaba una contra otra en upsertWATemplateFull. SQLite no permite quitar un UNIQUE
+  // inline sin recrear la tabla; se hace una sola vez, guardado por la existencia del
+  // índice compuesto, preservando los `id` (campaigns.template_id los referencia).
+  try {
+    const yaMigrado = all("PRAGMA index_list('wa_templates')").some(ix => ix.name === 'ux_wa_templates_nombre_idioma');
+    if (!yaMigrado) {
+      execSQL(`
+        BEGIN;
+        CREATE TABLE wa_templates_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nombre TEXT NOT NULL,
+          idioma TEXT DEFAULT 'es',
+          params TEXT DEFAULT '',
+          created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          categoria TEXT,
+          estado TEXT DEFAULT 'APPROVED',
+          componentes TEXT,
+          variables TEXT,
+          var_mapping TEXT,
+          meta_template_id TEXT,
+          motivo_rechazo TEXT,
+          estado_detalle TEXT,
+          calidad TEXT,
+          spec_json TEXT,
+          creado_por INTEGER,
+          creado_en_crm INTEGER DEFAULT 0,
+          updated_at DATETIME,
+          meta_sync_at DATETIME
+        );
+        INSERT INTO wa_templates_new (id, nombre, idioma, params, created_at, categoria, estado, componentes, variables, var_mapping, meta_template_id, motivo_rechazo, estado_detalle, calidad, spec_json, creado_por, creado_en_crm, updated_at, meta_sync_at)
+          SELECT id, nombre, idioma, params, created_at, categoria, estado, componentes, variables, var_mapping, meta_template_id, motivo_rechazo, estado_detalle, calidad, spec_json, creado_por, creado_en_crm, updated_at, meta_sync_at
+          FROM wa_templates;
+        DROP TABLE wa_templates;
+        ALTER TABLE wa_templates_new RENAME TO wa_templates;
+        CREATE UNIQUE INDEX ux_wa_templates_nombre_idioma ON wa_templates(nombre, idioma);
+        COMMIT;
+      `);
+      console.log('[DB] wa_templates migrada: UNIQUE(nombre) → UNIQUE(nombre, idioma)');
+    }
+  } catch (e) {
+    console.error('[DB] Error migrando wa_templates a UNIQUE(nombre, idioma):', e.message);
+  }
 
   // --- Campañas masivas (broadcast) ---
   execSQL(`
@@ -330,8 +391,8 @@ function createSchema() {
       total_entregados INTEGER DEFAULT 0,
       total_leidos INTEGER DEFAULT 0,
       total_fallidos INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
-      updated_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       started_at DATETIME,
       finished_at DATETIME
     );
@@ -353,7 +414,7 @@ function createSchema() {
       estado TEXT DEFAULT 'queued',
       error_detail TEXT,
       wamid TEXT,
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       sent_at DATETIME,
       delivered_at DATETIME,
       read_at DATETIME,
@@ -372,7 +433,7 @@ function createSchema() {
       phone TEXT PRIMARY KEY,
       canal TEXT DEFAULT 'whatsapp',
       motivo TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
 
@@ -396,7 +457,7 @@ function createSchema() {
       endpoint TEXT NOT NULL UNIQUE,
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_push_vendedor ON push_subscriptions(vendedor_id)`);
@@ -408,7 +469,7 @@ function createSchema() {
     vendedor_id INTEGER NOT NULL,
     titulo TEXT NOT NULL,
     cuerpo TEXT NOT NULL,
-    created_at DATETIME DEFAULT (datetime('now','localtime'))
+    created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_vt_vendedor ON vendedor_templates(vendedor_id)`);
 
@@ -422,7 +483,7 @@ function createSchema() {
     tipo TEXT DEFAULT 'lote',
     estado TEXT DEFAULT 'disponible' CHECK (estado IN ('disponible','reservado','vendido')),
     imagen_url TEXT DEFAULT '',
-    created_at DATETIME DEFAULT (datetime('now','localtime'))
+    created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )`);
 
   execSQL(`CREATE TABLE IF NOT EXISTS galeria (
@@ -432,7 +493,7 @@ function createSchema() {
     filename TEXT NOT NULL,
     activa INTEGER NOT NULL DEFAULT 1,
     orden INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT (datetime('now','localtime'))
+    created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_galeria_cat ON galeria(categoria)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_galeria_orden ON galeria(orden)`);
@@ -460,7 +521,7 @@ function createSchema() {
       context TEXT NOT NULL DEFAULT '{}',
       run_at DATETIME NOT NULL,
       estado TEXT NOT NULL DEFAULT 'pending',
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (workflow_id) REFERENCES workflows(id)
     )
   `);
@@ -485,7 +546,7 @@ function createSchema() {
       fecha DATETIME NOT NULL,
       notas TEXT DEFAULT '',
       estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'hecha', 'cancelada')),
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_fecha ON citas(fecha)`);
@@ -497,7 +558,7 @@ function createSchema() {
       lead_id INTEGER,
       phone TEXT NOT NULL,
       body TEXT NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_pending_outbound_phone ON pending_outbound(phone)`);
@@ -545,7 +606,7 @@ function createSchema() {
       autor TEXT DEFAULT '',
       creado_por INTEGER,
       activo INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
   execSQL('CREATE INDEX IF NOT EXISTS idx_sp_feed_fecha ON sp_feed(activo, created_at)');
@@ -572,7 +633,7 @@ function createSchema() {
       message_id INTEGER NOT NULL,
       emoji TEXT NOT NULL,
       from_vendedor_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT (datetime('now','localtime')),
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(message_id, emoji, from_vendedor_id)
     );
   `);
@@ -581,7 +642,7 @@ function createSchema() {
   execSQL(`
     CREATE TABLE IF NOT EXISTS team_presence (
       vendedor_id INTEGER PRIMARY KEY,
-      last_heartbeat DATETIME DEFAULT (datetime('now','localtime'))
+      last_heartbeat DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
 
@@ -591,7 +652,7 @@ function createSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vendedor_id INTEGER NOT NULL,
       codigo TEXT NOT NULL,
-      otorgada_at DATETIME DEFAULT (datetime('now','localtime')),
+      otorgada_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(vendedor_id, codigo)
     );
   `);
@@ -641,7 +702,7 @@ function saveLead(customerPhone, customerName, messageBody) {
   // confiar en el DEFAULT de la columna si la tabla en producción es más vieja que el
   // esquema actual (CREATE TABLE IF NOT EXISTS nunca lo actualiza retroactivamente).
   try {
-    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct, created_at) VALUES (?, ?, ?, ?, 1, datetime(\'now\',\'localtime\'), \'sin_clasificar\', 5, datetime(\'now\',\'localtime\'))', [phone, customerName || 'Cliente', messageBody, messageBody]);
+    run('INSERT INTO leads (customer_phone, customer_name, first_message, last_message, unread_count, last_customer_message_at, etiqueta, progress_pct, created_at) VALUES (?, ?, ?, ?, 1, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'), \'sin_clasificar\', 5, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [phone, customerName || 'Cliente', messageBody, messageBody]);
   } catch (e) {
     // Condición de carrera: otro webhook concurrente insertó/reabrió este teléfono entre
     // el SELECT y el INSERT (o el UNIQUE INDEX lo bloqueó). Se trata como actualización
@@ -662,9 +723,9 @@ function saveLead(customerPhone, customerName, messageBody) {
 
 function reopenOrUpdateLead(leadId, wasClosed, messageBody) {
   if (wasClosed) {
-    run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\',\'localtime\'), last_customer_message_at = datetime(\'now\',\'localtime\') WHERE id = ?', ['asignado', messageBody, leadId]);
+    run('UPDATE leads SET status = ?, first_response_at = NULL, escalation_level = 0, messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'), last_customer_message_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', ['asignado', messageBody, leadId]);
   } else {
-    run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = datetime(\'now\',\'localtime\'), last_customer_message_at = datetime(\'now\',\'localtime\') WHERE id = ?', [messageBody, leadId]);
+    run('UPDATE leads SET messages_count = messages_count + 1, last_message = ?, unread_count = COALESCE(unread_count,0) + 1, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'), last_customer_message_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [messageBody, leadId]);
   }
 }
 
@@ -682,7 +743,7 @@ function assignLeadToVendedor(leadId, vendedor) {
   const prev = one('SELECT assigned_to_id, customer_name FROM leads WHERE id = ?', [leadId]);
   const esAsignacionInicial = !prev || prev.assigned_to_id == null || Number(prev.assigned_to_id) === 0;
 
-  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
+  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
 
   // SP Feed: publicar "nuevo lead asignado" solo en la asignación inicial (las
@@ -701,17 +762,16 @@ function assignLeadToVendedor(leadId, vendedor) {
 function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid, status) {
   const m = media || {};
   const st = status || (direction === 'outgoing' ? 'sent' : null);
-  // `timestamp` se fija EXPLÍCITAMENTE aquí, sin depender del DEFAULT de la columna.
-  // `messages` es la única tabla que existe en producción desde antes de que el esquema
-  // en código tuviera 'localtime' — CREATE TABLE IF NOT EXISTS nunca reescribe una tabla
-  // que ya existe, así que su DEFAULT en la BD real quedó congelado en UTC (`datetime('now')`
-  // a secas) aunque el CREATE de aquí ya diga 'localtime'. Cada mensaje se veía ~5h adelantado.
-  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id, wamid, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\',\'localtime\'))', [
+  // `timestamp` se fija EXPLÍCITAMENTE aquí, en UTC con sufijo 'Z' (nunca ambiguo), sin
+  // depender del DEFAULT de la columna — CREATE TABLE IF NOT EXISTS nunca reescribe una
+  // tabla que ya existe, así que el DEFAULT real de producción puede no coincidir con lo
+  // que diga el CREATE de este archivo. Ver docs/AUDITORIA_2026-08.md secciones 1.1/1.7.
+  run('INSERT INTO messages (lead_id, from_number, to_number, body, direction, media_type, media_id, media_mime, media_filename, reply_to_id, wamid, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [
     leadId, from, to, body, direction,
     m.media_type || null, m.media_id || null, m.media_mime || null, m.media_filename || null,
     replyToId ? Number(replyToId) : null, wamid || null, st,
   ]);
-  run('UPDATE leads SET last_message = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
+  run('UPDATE leads SET last_message = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [String(body).slice(0, 255), leadId]);
   // Incrementar unread_count para mensajes entrantes del cliente
   if (direction === 'incoming') {
     run('UPDATE leads SET unread_count = COALESCE(unread_count,0) + 1 WHERE id = ?', [leadId]);
@@ -729,11 +789,11 @@ function setMessageError(wamid, detail) {
 }
 
 function markMessageAsRead(messageId) {
-  run("UPDATE messages SET status = 'read', read_at = datetime('now','localtime') WHERE id = ? AND status != 'read'", [messageId]);
+  run("UPDATE messages SET status = 'read', read_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND status != 'read'", [messageId]);
 }
 
 function markLeadMessagesAsRead(leadId, fromNumber) {
-  run("UPDATE messages SET status = 'read', read_at = datetime('now','localtime') WHERE lead_id = ? AND from_number = ? AND (status IS NULL OR status != 'read')", [leadId, fromNumber]);
+  run("UPDATE messages SET status = 'read', read_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE lead_id = ? AND from_number = ? AND (status IS NULL OR status != 'read')", [leadId, fromNumber]);
 }
 
 function getMessageById(id) {
@@ -770,7 +830,7 @@ function getReactionsForMessages(messageIds) {
 
 // --- Editar mensaje ---
 function editMessage(messageId, newBody) {
-  run("UPDATE messages SET body = ?, edited_at = datetime('now','localtime') WHERE id = ?", [String(newBody).trim(), messageId]);
+  run("UPDATE messages SET body = ?, edited_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [String(newBody).trim(), messageId]);
 }
 
 // --- Mensajes destacados ⭐ ---
@@ -779,7 +839,7 @@ function toggleStarMessage(messageId) {
   if (!m) return null;
   const nuevo = !m.starred_at;
   run(nuevo
-    ? "UPDATE messages SET starred_at = datetime('now','localtime') WHERE id = ?"
+    ? "UPDATE messages SET starred_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?"
     : 'UPDATE messages SET starred_at = NULL WHERE id = ?', [messageId]);
   return nuevo;
 }
@@ -851,7 +911,7 @@ function saveTeamMessage(fromVendedorId, fromNombre, body, opts = {}) {
   const mediaUrl = opts.mediaUrl || null;
   // created_at explícito por la misma razón que en saveMessage() — no confiar en el
   // DEFAULT de la columna si la tabla en producción es más vieja que el esquema actual.
-  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\',\'localtime\'))',
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))',
     [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo, mediaType, mediaUrl]);
   return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id ORDER BY tm.id DESC LIMIT 1');
 }
@@ -896,7 +956,7 @@ function markTeamDirectRead(vendedorId, otroId) {
   // Devuelve los from_vendedor_id de los mensajes que se marcaron como leídos,
   // para poder emitir SSE `equipo_read` al emisor y que vea ✓✓ en tiempo real.
   const unread = all("SELECT DISTINCT from_vendedor_id FROM team_messages WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
-  run("UPDATE team_messages SET read_at = datetime('now','localtime') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
+  run("UPDATE team_messages SET read_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE to_vendedor_id = ? AND from_vendedor_id = ? AND read_at IS NULL", [vendedorId, otroId]);
   return unread.map(r => r.from_vendedor_id);
 }
 function markTeamGeneralRead(vendedorId, lastMessageId) {
@@ -1015,7 +1075,7 @@ function pinTeamMessage(messageId, vendedorId) {
     run('UPDATE team_messages SET pinned_at = NULL, pinned_by = NULL WHERE id = ?', [messageId]);
     return { pinned: false };
   }
-  run("UPDATE team_messages SET pinned_at = datetime('now','localtime'), pinned_by = ? WHERE id = ?", [vendedorId || 0, messageId]);
+  run("UPDATE team_messages SET pinned_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), pinned_by = ? WHERE id = ?", [vendedorId || 0, messageId]);
   return { pinned: true };
 }
 function getPinnedTeamMessage(channel) {
@@ -1035,7 +1095,7 @@ function editTeamMessage(messageId, vendedorId, newBody) {
   const msg = one('SELECT * FROM team_messages WHERE id = ?', [messageId]);
   if (!msg) return null;
   if (Number(msg.from_vendedor_id) !== vendedorId && vendedorId !== 0) return null; // solo autor o admin
-  run("UPDATE team_messages SET body = ?, edited_at = datetime('now','localtime') WHERE id = ?", [String(newBody).slice(0, 2000), messageId]);
+  run("UPDATE team_messages SET body = ?, edited_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [String(newBody).slice(0, 2000), messageId]);
   return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id WHERE tm.id = ?', [messageId]);
 }
 
@@ -1069,7 +1129,7 @@ function forwardTeamMessage(messageId, toVendedorId, fromVendedorId, fromNombre)
 
 // --- Presencia ---
 function updatePresence(vendedorId) {
-  run('INSERT OR REPLACE INTO team_presence (vendedor_id, last_heartbeat) VALUES (?, datetime(\'now\',\'localtime\'))', [vendedorId]);
+  run('INSERT OR REPLACE INTO team_presence (vendedor_id, last_heartbeat) VALUES (?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [vendedorId]);
 }
 function getPresenceMap() {
   const rows = all('SELECT vendedor_id, last_heartbeat FROM team_presence');
@@ -1110,7 +1170,7 @@ function getMessageByWamid(wamid) {
 // --- Pin de lead ---
 function pinLead(leadId, pinned) {
   if (pinned) {
-    run("UPDATE leads SET pinned_at = datetime('now','localtime') WHERE id = ?", [leadId]);
+    run("UPDATE leads SET pinned_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [leadId]);
   } else {
     run("UPDATE leads SET pinned_at = NULL WHERE id = ?", [leadId]);
   }
@@ -1124,7 +1184,7 @@ function clearLeadMessages(leadId) {
 
 function muteLead(leadId, muted) {
   if (muted) {
-    run("UPDATE leads SET muted_at = datetime('now','localtime') WHERE id = ?", [leadId]);
+    run("UPDATE leads SET muted_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [leadId]);
   } else {
     run("UPDATE leads SET muted_at = NULL WHERE id = ?", [leadId]);
   }
@@ -1135,11 +1195,11 @@ function muteLead(leadId, muted) {
 function updateCustomerMessageTimestamp(leadId) {
   // Al responder el cliente, se limpia el guard para que pueda generarse un nuevo
   // seguimiento automático si el asesor vuelve a quedar como último en escribir.
-  run('UPDATE leads SET last_customer_message_at = datetime(\'now\',\'localtime\'), followup_task_at = NULL WHERE id = ?', [leadId]);
+  run('UPDATE leads SET last_customer_message_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'), followup_task_at = NULL WHERE id = ?', [leadId]);
   try {
     const lead = one('SELECT lead_id FROM conversations WHERE lead_id = ?', [leadId]);
     if (lead) {
-      run('UPDATE conversations SET last_customer_message_at = datetime(\'now\',\'localtime\') WHERE lead_id = ?', [leadId]);
+      run('UPDATE conversations SET last_customer_message_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE lead_id = ?', [leadId]);
     }
   } catch (e) { /* conversación puede no existir aún */ }
 }
@@ -1188,7 +1248,7 @@ function getLeadByCustomerPhone(phone) {
 }
 
 function updateLeadStatus(leadId, status) {
-  run('UPDATE leads SET status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [status, leadId]);
+  run('UPDATE leads SET status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [status, leadId]);
 }
 
 function resetLead(leadId) {
@@ -1197,7 +1257,7 @@ function resetLead(leadId) {
     first_response_at = NULL,
     escalation_level = 0,
     unread_count = 0,
-    updated_at = datetime('now','localtime')
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
   WHERE id = ?`, [leadId]);
 }
 
@@ -1206,12 +1266,12 @@ function reopenLead(leadId) {
     status = 'asignado',
     first_response_at = NULL,
     escalation_level = 0,
-    updated_at = datetime('now','localtime')
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
   WHERE id = ? AND status = 'cerrado'`, [leadId]);
 }
 
 function setFirstResponse(leadId) {
-  run('UPDATE leads SET first_response_at = datetime(\'now\',\'localtime\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
+  run('UPDATE leads SET first_response_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
 }
 
 function getDuplicateGroups() {
@@ -1261,7 +1321,7 @@ function mergeLeads(keepLeadId, removeLeadId) {
     const convs = all('SELECT id FROM conversations WHERE lead_id = ?', [removeLeadId]);
     if (convs.length > 0) {
       const ids = convs.map(c => c.id).join(',');
-      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ?, status = 'cerrado', updated_at = datetime('now','localtime') WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
+      run(`UPDATE conversations SET lead_id = ?, assigned_to_id = ?, status = 'cerrado', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id IN (${ids})`, [keepLeadId, keep.assigned_to_id]);
     }
   } catch(e) {}
 
@@ -1278,7 +1338,7 @@ function closeOrphanConversations() {
     WHERE l.id IS NULL OR l.status = 'cerrado'
   `);
   orphans.forEach(o => {
-    run("UPDATE conversations SET status = 'cerrado', updated_at = datetime('now','localtime') WHERE id = ?", [o.id]);
+    run("UPDATE conversations SET status = 'cerrado', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [o.id]);
   });
   return { closed: orphans.length };
 }
@@ -1359,7 +1419,7 @@ function setUnreadCount(leadId, count) {
 
 // Editar el nombre del contacto
 function setLeadNombre(leadId, nombre) {
-  run('UPDATE leads SET customer_name = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [String(nombre), Number(leadId)]);
+  run('UPDATE leads SET customer_name = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [String(nombre), Number(leadId)]);
 }
 
 function setLeadOrigen(leadId, origen) {
@@ -1392,7 +1452,7 @@ function countLeadsByAdIds(adIds, days) {
   const placeholders = ids.map(() => '?').join(',');
   let sql = `SELECT COUNT(*) as c FROM leads WHERE ad_id IN (${placeholders})`;
   const params = [...ids];
-  if (days) { sql += ` AND created_at >= datetime('now','localtime',?)`; params.push(`-${Number(days)} days`); }
+  if (days) { sql += ` AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now',?)`; params.push(`-${Number(days)} days`); }
   const r = one(sql, params);
   return r ? r.c : 0;
 }
@@ -1407,7 +1467,7 @@ function getLeadCountsByAdIds(adIds, days) {
   const placeholders = ids.map(() => '?').join(',');
   let sql = `SELECT ad_id, COUNT(*) as c FROM leads WHERE ad_id IN (${placeholders})`;
   const params = [...ids];
-  if (days) { sql += ` AND created_at >= datetime('now','localtime',?)`; params.push(`-${Number(days)} days`); }
+  if (days) { sql += ` AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now',?)`; params.push(`-${Number(days)} days`); }
   sql += ' GROUP BY ad_id';
   const rows = all(sql, params);
   const map = {};
@@ -1884,6 +1944,12 @@ function getWATemplates() {
   return all('SELECT * FROM wa_templates ORDER BY nombre');
 }
 
+// Solo las que se pueden enviar de verdad — es el filtro que usan por defecto los
+// consumidores que no distinguen estado (inbox, campañas, panel vendedor).
+function getWATemplatesAprobadas() {
+  return all("SELECT * FROM wa_templates WHERE estado = 'APPROVED' ORDER BY nombre");
+}
+
 function addWATemplate(nombre, idioma, params) {
   run('INSERT OR REPLACE INTO wa_templates (nombre, idioma, params) VALUES (?, ?, ?)', [nombre, idioma || 'es', params || '']);
 }
@@ -1896,27 +1962,91 @@ function getWATemplateById(id) {
   return one('SELECT * FROM wa_templates WHERE id = ?', [id]);
 }
 
+// Ambigua a propósito por compatibilidad (la usa sendMessageSmart para la reactivación,
+// que solo conoce un nombre configurado en `config`, no un idioma) — prioriza APPROVED
+// y español cuando hay varias filas con el mismo nombre en distintos idiomas.
 function getWATemplateByName(nombre) {
-  return one('SELECT * FROM wa_templates WHERE nombre = ?', [nombre]);
+  return one(
+    "SELECT * FROM wa_templates WHERE nombre = ? ORDER BY (estado = 'APPROVED') DESC, (idioma = 'es') DESC LIMIT 1",
+    [nombre]
+  );
+}
+
+function getWATemplateByNameIdioma(nombre, idioma) {
+  return one('SELECT * FROM wa_templates WHERE nombre = ? AND idioma = ?', [nombre, idioma || 'es']);
+}
+
+function getWATemplateByMetaId(metaId) {
+  return one('SELECT * FROM wa_templates WHERE meta_template_id = ?', [String(metaId)]);
 }
 
 // Guarda/actualiza una plantilla tal como la reporta Meta (sync real, no entrada manual).
-// Usa nombre como clave: si Meta reporta el mismo nombre en dos idiomas, la última
-// sincronizada sobrescribe — limitación aceptada mientras el negocio opera en un solo idioma.
+// Clave = (nombre, idioma): Meta permite el mismo name en varios idiomas — son plantillas
+// distintas, cada una con su propio meta_template_id.
 function upsertWATemplateFull(t) {
-  const existing = getWATemplateByName(t.nombre);
+  const existing = getWATemplateByNameIdioma(t.nombre, t.idioma);
+  const now = SQL_NOW_UTC();
   if (existing) {
-    run('UPDATE wa_templates SET idioma = ?, categoria = ?, estado = ?, componentes = ?, variables = ? WHERE id = ?',
-      [t.idioma || 'es', t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]', t.variables || '[]', existing.id]);
+    run(`UPDATE wa_templates SET categoria = ?, estado = ?, componentes = ?, variables = ?,
+           meta_template_id = COALESCE(?, meta_template_id), motivo_rechazo = ?, estado_detalle = ?,
+           calidad = ?, updated_at = ?, meta_sync_at = ? WHERE id = ?`,
+      [t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]', t.variables || '[]',
+       t.metaTemplateId || null, t.motivoRechazo || null, t.estadoDetalle || null,
+       t.calidad || null, now, now, existing.id]);
     return existing.id;
   }
-  run('INSERT INTO wa_templates (nombre, idioma, categoria, estado, componentes, variables) VALUES (?, ?, ?, ?, ?, ?)',
-    [t.nombre, t.idioma || 'es', t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]', t.variables || '[]']);
-  return one('SELECT id FROM wa_templates WHERE nombre = ?', [t.nombre]).id;
+  run(`INSERT INTO wa_templates (nombre, idioma, categoria, estado, componentes, variables,
+         meta_template_id, motivo_rechazo, estado_detalle, calidad, updated_at, meta_sync_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [t.nombre, t.idioma || 'es', t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]', t.variables || '[]',
+     t.metaTemplateId || null, t.motivoRechazo || null, t.estadoDetalle || null, t.calidad || null, now, now]);
+  return getWATemplateByNameIdioma(t.nombre, t.idioma).id;
+}
+
+// Casa por meta_template_id cuando existe (es la clave real de Meta) — el webhook de
+// estado y el refresco puntual traen el id, no siempre el (nombre, idioma) exacto.
+function upsertWATemplateByMetaId(t) {
+  const existing = t.metaTemplateId ? getWATemplateByMetaId(t.metaTemplateId) : null;
+  if (existing) {
+    const now = SQL_NOW_UTC();
+    run(`UPDATE wa_templates SET nombre = ?, idioma = ?, categoria = ?, estado = ?, componentes = ?,
+           variables = ?, motivo_rechazo = ?, estado_detalle = ?, calidad = ?, updated_at = ?, meta_sync_at = ?
+         WHERE id = ?`,
+      [t.nombre, t.idioma || 'es', t.categoria || '', t.estado || 'APPROVED', t.componentes || '[]',
+       t.variables || '[]', t.motivoRechazo || null, t.estadoDetalle || null, t.calidad || null, now, now, existing.id]);
+    return existing.id;
+  }
+  return upsertWATemplateFull(t);
 }
 
 function setWATemplateMapping(id, mappingJson) {
   run('UPDATE wa_templates SET var_mapping = ? WHERE id = ?', [mappingJson, id]);
+}
+
+// Actualiza el estado tras un webhook o un refresco puntual (message_template_status_update).
+function setWATemplateEstado(id, { estado, motivo, detalle, calidad } = {}) {
+  run(`UPDATE wa_templates SET estado = COALESCE(?, estado), motivo_rechazo = ?, estado_detalle = ?,
+         calidad = COALESCE(?, calidad), updated_at = ? WHERE id = ?`,
+    [estado || null, motivo || null, detalle || null, calidad || null, SQL_NOW_UTC(), id]);
+}
+
+// Alta de un borrador creado en el constructor del CRM (antes de que Meta confirme):
+// queda como PENDING con el spec crudo hasta que el webhook (o el POST de creación) lo
+// actualice con lo que Meta normalizó.
+function insertWATemplateBorrador({ nombre, idioma, categoria, componentes, variables, specJson, creadoPor, metaTemplateId, estado }) {
+  const now = SQL_NOW_UTC();
+  run(`INSERT INTO wa_templates (nombre, idioma, categoria, estado, componentes, variables, spec_json,
+         creado_por, creado_en_crm, meta_template_id, updated_at, meta_sync_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    [nombre, idioma || 'es', categoria || '', estado || 'PENDING', componentes || '[]', variables || '[]',
+     specJson || '{}', creadoPor || null, metaTemplateId || null, now, now]);
+  return getWATemplateByNameIdioma(nombre, idioma || 'es').id;
+}
+
+function updateWATemplateSpec(id, { componentes, variables, specJson, estado }) {
+  run(`UPDATE wa_templates SET componentes = COALESCE(?, componentes), variables = COALESCE(?, variables),
+         spec_json = COALESCE(?, spec_json), estado = COALESCE(?, estado), updated_at = ? WHERE id = ?`,
+    [componentes || null, variables || null, specJson || null, estado || null, SQL_NOW_UTC(), id]);
 }
 
 // ═══════════════════════ Campañas masivas (broadcast) ═══════════════════════
@@ -1936,12 +2066,12 @@ function getCampaignById(id) {
 }
 
 function updateCampaignEstado(id, estado, pauseReason) {
-  const timestampCol = estado === 'running' ? ', started_at = datetime(\'now\',\'localtime\')'
-    : (estado === 'done' || estado === 'failed') ? ', finished_at = datetime(\'now\',\'localtime\')' : '';
+  const timestampCol = estado === 'running' ? ', started_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\')'
+    : (estado === 'done' || estado === 'failed') ? ', finished_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\')' : '';
   // pause_reason solo tiene sentido mientras está paused — se limpia en cualquier otra
   // transición (running/done/failed/draft) para no dejar rastro viejo confundiendo al cron.
   const reason = estado === 'paused' ? (pauseReason || 'manual') : null;
-  run(`UPDATE campaigns SET estado = ?, pause_reason = ?, updated_at = datetime('now','localtime')${timestampCol} WHERE id = ?`, [estado, reason, id]);
+  run(`UPDATE campaigns SET estado = ?, pause_reason = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')${timestampCol} WHERE id = ?`, [estado, reason, id]);
 }
 
 // Campañas colgadas en 'running' por un reinicio del servidor, o pausadas por el
@@ -1978,7 +2108,7 @@ function updateCampaignRecipient(id, fields) {
   if (fields.estado) {
     sets.push('estado = ?'); vals.push(fields.estado);
     const col = colByEstado[fields.estado];
-    if (col) sets.push(`${col} = datetime('now','localtime')`);
+    if (col) sets.push(`${col} = strftime('%Y-%m-%dT%H:%M:%fZ','now')`);
   }
   if (fields.wamid !== undefined) { sets.push('wamid = ?'); vals.push(fields.wamid); }
   if (fields.errorDetail !== undefined) { sets.push('error_detail = ?'); vals.push(fields.errorDetail); }
@@ -2138,7 +2268,7 @@ const PROGRESS_MAP = { sin_clasificar: 5, interesado: 30, negociacion: 60, cita:
 // --- Etiqueta de pipeline del lead ---
 function setLeadEtiqueta(leadId, etiqueta) {
   const pct = PROGRESS_MAP[etiqueta] || 0;
-  run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [etiqueta, pct, leadId]);
+  run('UPDATE leads SET etiqueta = ?, progress_pct = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [etiqueta, pct, leadId]);
 }
 
 // Marca atómicamente "evento CAPI enviado" para un lead — devuelve true solo la primera
@@ -2146,19 +2276,19 @@ function setLeadEtiqueta(leadId, etiqueta) {
 // lead no pueden mandar el evento dos veces a Meta.
 function markCapiEventSent(leadId, eventKey) {
   const col = eventKey === 'vendido' ? 'capi_vendido_sent_at' : 'capi_cita_sent_at';
-  const r = run(`UPDATE leads SET ${col} = datetime('now','localtime') WHERE id = ? AND ${col} IS NULL`, [leadId]);
+  const r = run(`UPDATE leads SET ${col} = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND ${col} IS NULL`, [leadId]);
   return r && r.changes > 0;
 }
 
 function updateLeadProgress(leadId, pct) {
   const clamped = Math.max(0, Math.min(100, pct));
-  run('UPDATE leads SET progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [clamped, leadId]);
+  run('UPDATE leads SET progress_pct = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [clamped, leadId]);
 }
 
 // Calificación IA de temperatura del lead (caliente|tibio|frio).
 function setLeadTemperatura(leadId, temp) {
   if (!['caliente', 'tibio', 'frio'].includes(temp)) return;
-  run('UPDATE leads SET temperatura = ?, temperatura_at = datetime(\'now\',\'localtime\') WHERE id = ?', [temp, leadId]);
+  run('UPDATE leads SET temperatura = ?, temperatura_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [temp, leadId]);
 }
 
 // Posponer chat (C2): guarda hasta cuándo queda pospuesto (ISO o null para reactivar).
@@ -2250,7 +2380,7 @@ function deleteNota(id) {
 
 // --- Reasignación de un lead (admin o automática) ---
 function reassignLead(leadId, vendedor, vendedorAnteriorId) {
-  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [vendedor.id, vendedor.telefono, leadId]);
+  run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
   if (vendedorAnteriorId) {
     run('UPDATE vendedores SET total_leads = MAX(0, total_leads - 1) WHERE id = ?', [vendedorAnteriorId]);
@@ -2265,7 +2395,7 @@ function deleteVendedor(id) {
   if (activos.length > 0) {
     const siguiente = activos[0];
     leadsReasignar.forEach(lead => {
-      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
+      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
       run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [siguiente.id]);
     });
     // Reasignar también las conversaciones del schema multicanal — tienen su propia
@@ -2276,7 +2406,7 @@ function deleteVendedor(id) {
   } else {
     // No hay vendedores activos: marcar leads como huérfanos (sin asignar) y cambiar status a 'nuevo' para que round-robin los reasigne
     leadsReasignar.forEach(lead => {
-      run('UPDATE leads SET assigned_to_id = NULL, assigned_to_phone = NULL, status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', ['nuevo', lead.id]);
+      run('UPDATE leads SET assigned_to_id = NULL, assigned_to_phone = NULL, status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', ['nuevo', lead.id]);
     });
     run('UPDATE conversations SET assigned_to_id = NULL, status = ? WHERE assigned_to_id = ?', ['nuevo', id]);
   }
@@ -2487,16 +2617,16 @@ function getChannelUserIdForLead(leadId, channel) {
 }
 
 function updateConversationStatus(id, status) {
-  run('UPDATE conversations SET status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [status, id]);
+  run('UPDATE conversations SET status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [status, id]);
 }
 
 function updateConversationTag(id, etiqueta) {
   const pct = PROGRESS_MAP[etiqueta] || 0;
-  run('UPDATE conversations SET etiqueta = ?, progress_pct = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [etiqueta, pct, id]);
+  run('UPDATE conversations SET etiqueta = ?, progress_pct = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [etiqueta, pct, id]);
 }
 
 function updateConversationPriority(id, priority) {
-  run('UPDATE conversations SET priority = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [priority, id]);
+  run('UPDATE conversations SET priority = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [priority, id]);
 }
 
 function getConversations({ channel, status, etiqueta, busqueda, vendedorId, limite, offset } = {}) {
@@ -2555,6 +2685,15 @@ function getCitas({ vendedorId, desde, hasta } = {}) {
 
 function getCitaById(id) {
   return one('SELECT * FROM citas WHERE id = ?', [id]);
+}
+
+// Próxima cita futura del lead (o null) — usada para resolver {{fecha_cita}}/{{hora_cita}}
+// en plantillas fuera del flujo específico de "recordatorio de cita" (ver template-vars.js).
+function getProximaCitaByLead(leadId) {
+  return one(
+    "SELECT * FROM citas WHERE lead_id = ? AND estado != 'cancelada' AND fecha >= datetime('now') ORDER BY fecha ASC LIMIT 1",
+    [Number(leadId)]
+  );
 }
 
 function createCita({ leadId, vendedorId, titulo, fecha, notas }) {
@@ -2643,7 +2782,7 @@ function syncLeadToConversation(lead, data = {}) {
     // 3. Mantener asignación/etiqueta/estado en espejo con el lead
     const eta = lead.etiqueta || conv.etiqueta || 'sin_clasificar';
     const convPct = PROGRESS_MAP[eta] || 5;
-    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, progress_pct = ?, status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [
+    run('UPDATE conversations SET assigned_to_id = ?, etiqueta = ?, progress_pct = ?, status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [
       lead.assigned_to_id || null,
       eta, convPct,
       lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
@@ -2666,7 +2805,7 @@ function syncLeadToConversation(lead, data = {}) {
         metadata: data.messageId ? { legacy_message_id: data.messageId } : undefined,
       });
       const inc = data.direction === 'incoming' ? 1 : 0;
-      run('UPDATE conversations SET last_message = ?, last_message_at = datetime(\'now\',\'localtime\'), unread_count = CASE WHEN ? = 1 THEN COALESCE(unread_count,0) + 1 ELSE unread_count END, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?',
+      run('UPDATE conversations SET last_message = ?, last_message_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'), unread_count = CASE WHEN ? = 1 THEN COALESCE(unread_count,0) + 1 ELSE unread_count END, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?',
         [String(data.body || `[${(data.media || {}).media_type || 'media'}]`).slice(0, 200), inc, conv.id]);
     }
     return conv;
@@ -2679,15 +2818,21 @@ function syncLeadToConversation(lead, data = {}) {
 // --- Timeline ---
 function addTimelineEvent(conversationId, eventType, data = {}) {
   const d = data || {};
+  // created_at se fija explícito en UTC (nowUTC()) en vez de dejar que decida el DEFAULT
+  // de la columna — ese DEFAULT quedó congelado en UTC sin sufijo 'Z' en la BD real de
+  // producción (creada antes de unificar la convención), y depender de él es exactamente
+  // lo que causaba que el inbox admin (lee timeline) y el panel móvil (lee messages, que
+  // sí fija timestamp explícito) mostraran horas distintas para el mismo mensaje.
+  // Ver docs/AUDITORIA_2026-08.md sección 1.3.
   run(`
     INSERT INTO timeline (
       conversation_id, event_type, channel, body, direction,
-      from_number, to_number, media_type, media_id, media_mime, media_filename, metadata
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      from_number, to_number, media_type, media_id, media_mime, media_filename, metadata, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     conversationId, eventType || 'message', d.channel || '', d.body || '', d.direction || 'incoming',
     d.from_number || '', d.to_number || '', d.media_type || null, d.media_id || null,
-    d.media_mime || null, d.media_filename || null, d.metadata ? JSON.stringify(d.metadata) : '{}',
+    d.media_mime || null, d.media_filename || null, d.metadata ? JSON.stringify(d.metadata) : '{}', nowUTC(),
   ]);
   return one('SELECT * FROM timeline WHERE id = (SELECT last_insert_rowid())');
 }
@@ -2826,7 +2971,7 @@ function getWorkflowById(id) {
 // viene (creación vieja vía trigger_event/conditions/actions), migrateWorkflowsToGraph()
 // lo completa en el próximo arranque; no hace falta duplicar esa lógica aquí.
 function createWorkflow(data) {
-  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions, graph, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime(\'now\',\'localtime\'))', [
+  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions, graph, updated_at) VALUES (?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [
     data.nombre, data.activo === false ? 0 : 1, data.trigger_event || (data.graph && inferTriggerFromGraph(data.graph)) || '',
     JSON.stringify(data.conditions || []), JSON.stringify(data.actions || []),
     data.graph ? JSON.stringify(data.graph) : null,
@@ -2838,7 +2983,7 @@ function updateWorkflow(id, data) {
   const actual = getWorkflowById(id);
   if (!actual) return null;
   const graph = data.graph !== undefined ? data.graph : null;
-  run('UPDATE workflows SET nombre = ?, activo = ?, trigger_event = ?, conditions = ?, actions = ?, graph = COALESCE(?, graph), updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', [
+  run('UPDATE workflows SET nombre = ?, activo = ?, trigger_event = ?, conditions = ?, actions = ?, graph = COALESCE(?, graph), updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [
     data.nombre !== undefined ? data.nombre : actual.nombre,
     data.activo !== undefined ? (data.activo ? 1 : 0) : actual.activo,
     data.trigger_event !== undefined ? data.trigger_event : (graph ? inferTriggerFromGraph(graph) : actual.trigger_event),
@@ -2886,7 +3031,7 @@ function createWorkflowJob(workflowId, nodeId, context, runAt) {
 }
 
 function getDueWorkflowJobs() {
-  return all("SELECT * FROM workflow_jobs WHERE estado = 'pending' AND run_at <= datetime('now','localtime') ORDER BY run_at ASC LIMIT 100");
+  return all("SELECT * FROM workflow_jobs WHERE estado = 'pending' AND run_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now') ORDER BY run_at ASC LIMIT 100");
 }
 
 function markWorkflowJobDone(id) {
@@ -2979,7 +3124,7 @@ function createProyecto(d = {}) {
 function updateProyecto(id, d = {}) {
   const p = getProyectoById(id);
   if (!p) return null;
-  run(`UPDATE proyectos SET nombre=?, ciudad=?, departamento=?, descripcion=?, imagen_url=?, estado=?, fecha_inicio=?, plano_url=?, plano_bounds=?, updated_at=datetime('now','localtime') WHERE id=?`,
+  run(`UPDATE proyectos SET nombre=?, ciudad=?, departamento=?, descripcion=?, imagen_url=?, estado=?, fecha_inicio=?, plano_url=?, plano_bounds=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`,
     [d.nombre ?? p.nombre, d.ciudad ?? p.ciudad, d.departamento ?? p.departamento, d.descripcion ?? p.descripcion,
      d.imagen_url ?? p.imagen_url, d.estado ?? p.estado, d.fecha_inicio ?? p.fecha_inicio,
      d.plano_url ?? p.plano_url, d.plano_bounds ?? p.plano_bounds, id]);
@@ -3063,7 +3208,7 @@ function bulkCreateLotes(proyectoId, lotes = []) {
 function updateLote(id, d = {}) {
   const l = getLoteById(id);
   if (!l) return null;
-  run(`UPDATE lotes SET numero=?, manzana=?, area=?, dimensiones=?, precio=?, cliente_id=?, asesor_id=?, poligono=?, observaciones=?, updated_at=datetime('now','localtime') WHERE id=?`,
+  run(`UPDATE lotes SET numero=?, manzana=?, area=?, dimensiones=?, precio=?, cliente_id=?, asesor_id=?, poligono=?, observaciones=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`,
     [d.numero ?? l.numero, d.manzana ?? l.manzana, d.area ?? l.area, d.dimensiones ?? l.dimensiones,
      d.precio ?? l.precio, d.cliente_id ?? l.cliente_id, d.asesor_id ?? l.asesor_id,
      d.poligono != null ? (typeof d.poligono === 'string' ? d.poligono : JSON.stringify(d.poligono)) : l.poligono,
@@ -3084,8 +3229,8 @@ function getLoteHistorial(loteId) {
 function updateLoteEstado(id, estado, opts = {}) {
   const l = getLoteById(id);
   if (!l) return null;
-  const now = "datetime('now','localtime')";
-  let sets = ['estado = ?', "updated_at = datetime('now','localtime')"];
+  const now = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+  let sets = ['estado = ?', "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')"];
   const params = [estado];
   if (opts.cliente_id !== undefined) { sets.push('cliente_id = ?'); params.push(opts.cliente_id || null); }
   if (opts.asesor_id !== undefined) { sets.push('asesor_id = ?'); params.push(opts.asesor_id || null); }
@@ -3100,7 +3245,7 @@ function updateLoteEstado(id, estado, opts = {}) {
 function setLoteObservacion(id, texto, autor) {
   const l = getLoteById(id);
   if (!l) return null;
-  run(`UPDATE lotes SET observaciones = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [texto || '', id]);
+  run(`UPDATE lotes SET observaciones = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, [texto || '', id]);
   addLoteHistorial(id, 'observacion', texto || '', autor || '');
   return getLoteById(id);
 }
@@ -3108,7 +3253,7 @@ function setLoteObservacion(id, texto, autor) {
 function setLotePrecio(id, precio, autor) {
   const l = getLoteById(id);
   if (!l) return null;
-  run(`UPDATE lotes SET precio = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [precio || 0, id]);
+  run(`UPDATE lotes SET precio = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, [precio || 0, id]);
   addLoteHistorial(id, 'precio', `$${l.precio} → $${precio}`, autor || '');
   return getLoteById(id);
 }
@@ -3120,7 +3265,7 @@ function addLoteMedia(id, campo, item) {
   let arr = [];
   try { arr = JSON.parse(l[campo] || '[]'); } catch (e) { arr = []; }
   arr.push(item);
-  run(`UPDATE lotes SET ${campo} = ?, updated_at = datetime('now','localtime') WHERE id = ?`, [JSON.stringify(arr), id]);
+  run(`UPDATE lotes SET ${campo} = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, [JSON.stringify(arr), id]);
   return getLoteById(id);
 }
 
@@ -3157,6 +3302,120 @@ function getProyectoStats(proyectoId) {
     ventas_hoy: ventasHoy, ventas_mes: ventasMes, separaciones_mes: sepMes,
     tiempo_promedio_dias: Math.round(tprom || 0), pct_vendido,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Zonas geográficas — asignación de leads por municipio/región.
+// La lógica de resolución (qué zona le toca a un lead, qué asesor la cubre) vive en
+// services/zonas.js; aquí solo el acceso a datos.
+// ─────────────────────────────────────────────────────────────
+function getZonas() {
+  return all(`
+    SELECT z.*,
+      (SELECT COUNT(*) FROM vendedores v WHERE v.estado != 'pendiente' AND (',' || REPLACE(COALESCE(v.zonas,''),' ','') || ',') LIKE ('%,' || z.slug || ',%')) AS total_asesores,
+      (SELECT COUNT(*) FROM leads l WHERE l.zona = z.slug AND l.status != 'cerrado') AS leads_activos
+    FROM zonas z ORDER BY z.nombre
+  `);
+}
+
+function getZonaById(id) {
+  return one('SELECT * FROM zonas WHERE id = ? LIMIT 1', [id]);
+}
+
+function getZonaBySlug(slug) {
+  return one('SELECT * FROM zonas WHERE slug = ? LIMIT 1', [slug]);
+}
+
+function slugify(s) {
+  return String(s || '').trim().toLowerCase()
+    .normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '') // quita tildes
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function createZona(nombre) {
+  const slug = slugify(nombre);
+  if (!slug) return null;
+  run('INSERT OR IGNORE INTO zonas (nombre, slug) VALUES (?, ?)', [String(nombre).trim(), slug]);
+  return getZonaBySlug(slug);
+}
+
+function updateZona(id, { nombre, activo } = {}) {
+  const z = getZonaById(id);
+  if (!z) return null;
+  const sets = [], params = [];
+  if (nombre != null) { sets.push('nombre = ?'); params.push(String(nombre).trim()); }
+  if (activo != null) { sets.push('activo = ?'); params.push(activo ? 1 : 0); }
+  if (!sets.length) return z;
+  params.push(id);
+  run(`UPDATE zonas SET ${sets.join(', ')} WHERE id = ?`, params);
+  return getZonaById(id);
+}
+
+// Bloquea el borrado si algún asesor sigue cubriendo la zona — evita dejar reglas
+// huérfanas apuntando a una zona que ya no existe.
+function deleteZona(id) {
+  const z = getZonaById(id);
+  if (!z) return { ok: false, error: 'zona_no_existe' };
+  const enUso = (one(`SELECT COUNT(*) AS n FROM vendedores WHERE (',' || REPLACE(COALESCE(zonas,''),' ','') || ',') LIKE ('%,' || ? || ',%')`, [z.slug]) || {}).n || 0;
+  if (enUso > 0) return { ok: false, error: 'zona_en_uso', asesores: enUso };
+  run('DELETE FROM zona_reglas WHERE zona_id = ?', [id]);
+  run('DELETE FROM zonas WHERE id = ?', [id]);
+  return { ok: true };
+}
+
+function getReglasByZona(zonaId) {
+  return all('SELECT * FROM zona_reglas WHERE zona_id = ? ORDER BY prioridad DESC, id ASC', [zonaId]);
+}
+
+function getReglasActivas() {
+  return all(`
+    SELECT r.*, z.slug AS zona_slug, z.nombre AS zona_nombre
+    FROM zona_reglas r JOIN zonas z ON z.id = r.zona_id
+    WHERE z.activo = 1
+    ORDER BY r.prioridad DESC, r.id ASC
+  `);
+}
+
+function addZonaRegla(zonaId, { campo, operador, valor, prioridad } = {}) {
+  if (!['ad_id', 'ad_name', 'source_url'].includes(campo)) return null;
+  if (!['equals', 'contains'].includes(operador)) return null;
+  if (!valor || !String(valor).trim()) return null;
+  run('INSERT INTO zona_reglas (zona_id, campo, operador, valor, prioridad) VALUES (?, ?, ?, ?, ?)',
+    [zonaId, campo, operador, String(valor).trim(), Number(prioridad) || 0]);
+  return one('SELECT * FROM zona_reglas WHERE id = (SELECT last_insert_rowid())');
+}
+
+function deleteZonaRegla(reglaId) {
+  run('DELETE FROM zona_reglas WHERE id = ?', [reglaId]);
+}
+
+// Anuncios que ya trajeron leads, para que el admin los mapee a una zona sin tener
+// que adivinar el nombre exacto de la campaña.
+function getAnunciosDetectados() {
+  return all(`
+    SELECT ad_id, ad_name, COUNT(*) AS total_leads, MAX(created_at) AS ultimo_lead
+    FROM leads WHERE ad_id IS NOT NULL AND ad_id != ''
+    GROUP BY ad_id ORDER BY ultimo_lead DESC
+  `);
+}
+
+function setVendedorZonas(vendedorId, zonasSlugs) {
+  const csv = Array.isArray(zonasSlugs) ? zonasSlugs.filter(Boolean).join(',') : '';
+  run('UPDATE vendedores SET zonas = ? WHERE id = ?', [csv, vendedorId]);
+}
+
+// fuente: 'anuncio' | 'manual' | 'fallback'. Además de leads.zona escribe leads.ciudad
+// con el nombre display de la zona, para que segmentación y {{ciudad}} (ya cableadas)
+// se enciendan sin trabajo extra.
+function setLeadZona(leadId, zonaSlug, fuente, zonaNombre) {
+  run('UPDATE leads SET zona = ?, zona_fuente = ?, ciudad = COALESCE(?, ciudad) WHERE id = ?',
+    [zonaSlug || null, fuente || null, zonaNombre || null, Number(leadId)]);
+}
+
+// Solo actualiza la procedencia (p.ej. degradar a 'fallback' cuando nadie cubre la zona
+// ya detectada) sin tocar la zona/ciudad ya guardadas.
+function setLeadZonaFuente(leadId, fuente) {
+  run('UPDATE leads SET zona_fuente = ? WHERE id = ?', [fuente || null, Number(leadId)]);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -3212,7 +3471,7 @@ function getLeadsNecesitanSeguimiento() {
   ).filter(l => l.last_dir === 'outgoing' && l.last_ts && (Date.now() - new Date(String(l.last_ts).replace(' ', 'T')).getTime()) > 24 * 3600 * 1000);
 }
 function setFollowupCreated(leadId) {
-  run("UPDATE leads SET followup_task_at = datetime('now','localtime') WHERE id = ?", [leadId]);
+  run("UPDATE leads SET followup_task_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [leadId]);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -3292,7 +3551,7 @@ function updateCampanasSpProject(id, d = {}) {
   const sets = fields.filter(f => input[f] !== undefined).map(f => `${f}=?`).join(', ');
   if (!sets) return p;
   const vals = fields.filter(f => input[f] !== undefined).map(f => input[f]);
-  run(`UPDATE campanas_sp_projects SET ${sets}, updated_at=datetime('now','localtime') WHERE id=?`, [...vals, id]);
+  run(`UPDATE campanas_sp_projects SET ${sets}, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`, [...vals, id]);
   const updated = one('SELECT * FROM campanas_sp_projects WHERE id = ?', [id]);
   return updated;
 }
@@ -3371,7 +3630,9 @@ module.exports = {
   getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout,
   countMessagesByLead, getLeadAggregates, getLeadCountsByAdIds,
   getConfig, setConfig,
-  getWATemplates, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName, upsertWATemplateFull, setWATemplateMapping,
+  getWATemplates, getWATemplatesAprobadas, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName,
+  getWATemplateByNameIdioma, getWATemplateByMetaId, upsertWATemplateFull, upsertWATemplateByMetaId, setWATemplateMapping,
+  setWATemplateEstado, insertWATemplateBorrador, updateWATemplateSpec,
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
   getCampaignsByEstado, getCampaignsPausadasAutomaticas,
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,
@@ -3392,7 +3653,7 @@ module.exports = {
   addTimelineEvent, getTimelineByConversation, getLastMessageByConversation,
   syncLeadToConversation,
   getUnlinkedLeads, getOrCreateConversationForLead, getUnifiedConversations,
-  getCitas, getCitaById, createCita, updateCita, deleteCita,
+  getCitas, getCitaById, getProximaCitaByLead, createCita, updateCita, deleteCita,
   getRecordatorioCita, createRecordatorioCita, cancelarRecordatorioCita, cancelarRecordatorioByCitaCierre,
   getAllWorkflows, getWorkflowById, createWorkflow, updateWorkflow, deleteWorkflow,
   addWorkflowLog, getWorkflowLogs,
@@ -3409,6 +3670,10 @@ module.exports = {
   getLotesByProyecto, getLoteById, createLote, bulkCreateLotes, updateLote, updateLoteEstado, deleteLote,
   setLoteObservacion, setLotePrecio, addLoteMedia, addLoteHistorial, getLoteHistorial,
   getProyectosPublicos, getProyectoPublicoById,
+  // Zonas geográficas
+  getZonas, getZonaById, getZonaBySlug, createZona, updateZona, deleteZona,
+  getReglasByZona, getReglasActivas, addZonaRegla, deleteZonaRegla,
+  getAnunciosDetectados, setVendedorZonas, setLeadZona, setLeadZonaFuente,
   // Chat Pro / IA / programados / equipo
   toggleStarMessage, getStarredMessages, searchMessages,
   setTranscript, setTranslation,
