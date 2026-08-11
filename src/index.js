@@ -1734,6 +1734,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
     const displayBody = caption || `[${tipo}]`;
     const fromNumber = lead.assigned_to_phone || req.session.email || 'panel';
     const replyToId = replyTo ? Number(replyTo) : null;
+    let syncedFilename = null;
 
     if (channel === 'whatsapp') {
       let displayMime = mime, displayFilename = filename, sendMime = mime, sendFilename = filename;
@@ -1744,6 +1745,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
         displayMime = mime;
       }
       const storedFilename = tipo === 'audio' ? displayFilename : mediaStore.saveOutgoingMedia(buffer, sendMime, sendFilename);
+      syncedFilename = storedFilename;
       const mediaId = await uploadMedia(buffer, sendMime, sendFilename);
       if (!mediaId) return res.status(502).json({ error: 'error_upload', detalle: 'WhatsApp no retornó media ID' });
       await new Promise(r => setTimeout(r, CFG.MEDIA_PROPAGATION_DELAY));
@@ -1771,6 +1773,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
         msBuffer = conv2.buffer; msMime = conv2.mime; msFilename = `audio-${Date.now()}.m4a`;
       }
       const storedFilename = mediaStore.saveOutgoingMedia(msBuffer, msMime, msFilename);
+      syncedFilename = storedFilename;
       const publicUrl = `${process.env.BASE_URL || 'https://spcrm.duckdns.org'}/api/public/media/${storedFilename}?token=${mediaStore.signMediaToken(storedFilename)}`;
       await adapter.sendMedia(channelUserId, publicUrl, tipo, caption);
       store.saveMessage(lead.id, fromNumber, lead.customer_phone, displayBody, 'outgoing', {
@@ -1782,7 +1785,7 @@ app.post('/api/leads/:id/responder-media', auth.requireAuth, mediaLimiter, messa
     if (lead.status === 'nuevo' || lead.status === 'asignado') store.updateLeadStatus(lead.id, 'contactado');
     store.syncLeadToConversation(store.getLeadById(lead.id), {
       direction: 'outgoing', body: displayBody, fromNumber, toNumber: lead.customer_phone,
-      media: { media_type: tipo, media_id: null, media_mime: mime, media_filename: null },
+      media: { media_type: tipo, media_id: null, media_mime: mime, media_filename: syncedFilename },
     });
     events.emitToVendedor(lead.assigned_to_id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
     events.emitToAdmins('nuevo_mensaje', { leadId: lead.id, tipo: 'respuesta_panel', ts: Date.now() });
@@ -5301,9 +5304,13 @@ function ensurePlatformAdmin() {
     logger.logError('express', err, { ruta: req.method + ' ' + req.originalUrl });
     res.status(500).json({ error: 'error_interno' });
   });
-  // Errores no capturados: registrar sin tumbar el proceso (Docker lo reinicia si muere)
+  // unhandledRejection: se registra pero no tumba el proceso — una promesa rechazada
+  // sin catch no deja el proceso en un estado inconsistente, solo indica un bug a corregir.
   process.on('unhandledRejection', (err) => logger.logError('unhandledRejection', err));
-  process.on('uncaughtException', (err) => { logger.logError('uncaughtException', err); });
+  // uncaughtException: Node ya no garantiza que el proceso esté en un estado consistente
+  // después de esto (recursos a medio liberar, listeners colgados). Registrar y salir —
+  // Docker (restart: unless-stopped + healthcheck) lo reinicia limpio en segundos.
+  process.on('uncaughtException', (err) => { logger.logError('uncaughtException', err); process.exit(1); });
 
   const http = require('http');
   const httpServer = http.createServer(app);

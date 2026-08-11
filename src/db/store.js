@@ -653,7 +653,7 @@ function saveLead(customerPhone, customerName, messageBody) {
     return { leadId: race.id, isNew: false, wasClosed };
   }
 
-  const r = one('SELECT id FROM leads WHERE customer_phone = ? ORDER BY id DESC LIMIT 1', [phone]);
+  const r = one('SELECT id FROM leads WHERE id = last_insert_rowid()');
   if (!r || !r.id) {
     throw new Error('No se pudo obtener ID del lead después de INSERT');
   }
@@ -716,7 +716,7 @@ function saveMessage(leadId, from, to, body, direction, media, replyToId, wamid,
   if (direction === 'incoming') {
     run('UPDATE leads SET unread_count = COALESCE(unread_count,0) + 1 WHERE id = ?', [leadId]);
   }
-  const r = one('SELECT id FROM messages WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [leadId]);
+  const r = one('SELECT id FROM messages WHERE id = last_insert_rowid()');
   return r ? r.id : null;
 }
 
@@ -816,7 +816,7 @@ function setTranslation(messageId, text) {
 function createScheduled(leadId, vendedorId, body, sendAt) {
   run('INSERT INTO scheduled_messages (lead_id, vendedor_id, body, send_at) VALUES (?, ?, ?, ?)',
     [leadId, vendedorId, body, sendAt]);
-  const r = one('SELECT id FROM scheduled_messages ORDER BY id DESC LIMIT 1');
+  const r = one('SELECT id FROM scheduled_messages WHERE id = last_insert_rowid()');
   return r ? r.id : null;
 }
 function getScheduledByVendedor(vendedorId, isAdmin) {
@@ -1496,7 +1496,7 @@ function getMessagesByLead(leadId, opts = {}) {
     FROM messages m
     LEFT JOIN messages r ON r.id = m.reply_to_id
     WHERE m.lead_id = ?${beforeId ? ' AND m.id < ?' : ''}
-    ORDER BY m.timestamp DESC, m.id DESC
+    ORDER BY m.id DESC
     LIMIT ?
   `, beforeId ? [leadId, beforeId, limit] : [leadId, limit]);
   return rows.reverse();

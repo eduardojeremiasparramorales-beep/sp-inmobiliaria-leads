@@ -2047,6 +2047,9 @@ async function init(){
     await cargarArchivados();
     conectarStream();
     eqStartPresence();
+    // Capacitor 'resume' (vuelta desde segundo plano en la app nativa) no siempre coincide
+    // con visibilitychange dentro del WebView — se engancha aparte para no depender de uno solo.
+    if(esNativo()){ try{ window.Capacitor.Plugins.App.addListener('resume', resyncStream); }catch(e){} }
   }
   wire();
   initFileInput();
@@ -2852,9 +2855,9 @@ async function toggleReaction(msgId,emoji){
 function showMsgInfo(msgId){
   const m=currentMsgs.find(x=>String(x.id)===String(msgId));
   if(!m) return;
-  const ts=m.timestamp?new Date(m.timestamp).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-  const readTs=m.read_at?new Date(m.read_at).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-  const editTs=m.edited_at?new Date(m.edited_at).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):null;
+  const ts=m.timestamp?new Date(String(m.timestamp).replace(' ','T')).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const readTs=m.read_at?new Date(String(m.read_at).replace(' ','T')).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const editTs=m.edited_at?new Date(String(m.edited_at).replace(' ','T')).toLocaleString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):null;
   openSheet('Info del mensaje', `<div class="msg-info">
     <div class="mi-row"><span class="mi-l">Enviado</span><span class="mi-v">${esc(ts)}</span></div>
     ${m.status==='read'?`<div class="mi-row"><span class="mi-l">Visto</span><span class="mi-v">${esc(readTs)}</span></div>`:''}
@@ -3825,7 +3828,7 @@ function exportarConversacion(){
   const nombre=current.customer_name||'Cliente';
   const lines=currentMsgs.filter(m=>!m.deleted_for_sender).map(m=>{
     const who=m.direction==='incoming'?'Cliente':'Tú';
-    const ts=m.timestamp?new Date(m.timestamp).toLocaleString('es-CO'):'';
+    const ts=m.timestamp?new Date(String(m.timestamp).replace(' ','T')).toLocaleString('es-CO'):'';
     const body=m.media_type?`[${m.media_type}]`:m.body||'';
     return `[${ts}] ${who}: ${body}`;
   });
@@ -5118,9 +5121,15 @@ function abSuperChat(conv){
   }).catch(()=>{ var tc = document.getElementById('superChatTimeline'); if(tc) tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Error cargando mensajes</div>'; });
 }
 
-function conectarStream(){ try{ const es=new EventSource('/api/stream');
-  // Al (re)conectar: refresco completo una vez — pudo perderse algo mientras no había stream
-  es.addEventListener('conectado',async()=>{ if(_primeraConexion){ _primeraConexion=false; return; } const d=await api('/api/mis-leads'); if(d){ leads=d; renderList(); } });
+let _es=null, _esReconnectDelay=2000;
+function conectarStream(){ try{ const es=new EventSource('/api/stream'); _es=es;
+  // Al (re)conectar: refresco completo una vez — pudo perderse algo mientras no había stream.
+  // Si además hay un chat abierto, sus mensajes también se refrescan — lo que haya llegado
+  // mientras la conexión estuvo caída (SSE no tiene replay: eventos perdidos, perdidos).
+  es.addEventListener('conectado',async()=>{ _esReconnectDelay=2000; if(_primeraConexion){ _primeraConexion=false; return; }
+    const d=await api('/api/mis-leads'); if(d){ leads=d; renderFilters(); updateCardBadges(); renderList(); }
+    if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
+  });
   es.addEventListener('nuevo_mensaje',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){}
     await refrescarLead(x.leadId);
     if(tab==='supervision'){ try{ cargarSuperVisionRefresh(); }catch(e){} }
@@ -5171,8 +5180,20 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream');
   // Programados del servidor
   es.addEventListener('programado_enviado',async ev=>{ try{ const x=JSON.parse(ev.data); toast('⏰ Mensaje programado enviado'); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b2=$('#cMsgs'); b2.scrollTop=b2.scrollHeight; } } }catch(e){} });
   es.addEventListener('programado_fallido',ev=>{ try{ const x=JSON.parse(ev.data); toast('⚠️ Un mensaje programado no se pudo enviar'); haptic([80,40,80]); }catch(e){} });
-  es.onerror=()=>{ es.close(); setTimeout(conectarStream,5000); };
+  // Backoff exponencial (2s, 4s, 8s… tope 30s): un reintento fijo de 5s hace que todos los
+  // clientes conectados golpeen al servidor a la vez si cae — esto lo espacia.
+  es.onerror=()=>{ es.close(); setTimeout(conectarStream,_esReconnectDelay); _esReconnectDelay=Math.min(_esReconnectDelay*2,30000); };
   }catch(e){} }
+
+// Resincronización al volver de segundo plano: Android puede congelar el WebView y matar
+// la conexión SSE sin disparar onerror de forma confiable — sin esto, la app se queda
+// mostrando datos viejos hasta que el usuario hace pull-to-refresh a mano.
+async function resyncStream(){
+  if(!_es || _es.readyState!==EventSource.OPEN) conectarStream();
+  const d=await api('/api/mis-leads'); if(d){ leads=d; renderFilters(); updateCardBadges(); renderList(); }
+  if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) resyncStream(); });
 
 /* ════════ Lightbox preview ════════ */
 let _lbMsgs=[],_lbIdx=0;
