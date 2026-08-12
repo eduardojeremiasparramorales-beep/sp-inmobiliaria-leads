@@ -133,9 +133,12 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'microphone=(self), camera=(), geolocation=()');
+  // Fuentes auto-hospedadas en /fonts/ (Fase 1.3, docs/AUDITORIA_2026-08.md) — ya no se
+  // depende de Google Fonts en tiempo de ejecución, así que font-src/style-src vuelven
+  // a 'self'.
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+    "font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");
   if (req.headers['x-forwarded-proto'] === 'https' || req.secure) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -635,6 +638,10 @@ app.get('/api/pixel-config', (req, res) => {
 
 // ===================== META ADS DEBUG (solo admin) =====================
 app.get('/api/meta-ads-debug', auth.requireAdmin, (req, res) => {
+  // Fase 1.3 (docs/AUDITORIA_2026-08.md): consistente con /api/seed, /api/test-webhook y
+  // /api/test-reply — endpoint de diagnóstico de desarrollo, no debe existir en producción
+  // (expone tokenPrefix, los primeros 10 caracteres del token de Meta Ads).
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'no_disponible' });
   const token = process.env.META_MARKETING_API_TOKEN || '';
   const accountId = process.env.META_AD_ACCOUNT_ID || '';
   const pixelId = process.env.META_PIXEL_ID || '';

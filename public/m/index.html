@@ -11,9 +11,7 @@
 <title>Leons Group · Móvil</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/fonts/fonts.css">
 <script src="/os/theme.js"></script>
 <script src="/os/safe-area.js"></script>
 <link rel="stylesheet" href="/os/sp-os.css">
@@ -941,6 +939,8 @@ function soloHora(ts){ const d=parseDbDate(ts); return d?d.toLocaleTimeString('e
 function dateLabel(ts){ const d=parseDbDate(ts); if(!d) return ''; const h=new Date(), a=new Date(); a.setDate(h.getDate()-1); const sd=(x,y)=>x.toDateString()===y.toDateString(); if(sd(d,h)) return 'Hoy'; if(sd(d,a)) return 'Ayer'; return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long',timeZone:'America/Bogota'}); }
 
 function estado(l){ const e=l.etiqueta||'sin_clasificar'; if(['interesado','negociacion','cita'].includes(e)) return {cls:'st-caliente',label:'Lead caliente'}; const ref=l.updated_at||l.created_at; const refD=parseDbDate(ref); const dias=refD?(Date.now()-refD.getTime())/864e5:0; if(dias>7) return {cls:'st-inactivo',label:'Inactivo'}; if(Number(l.unread_count||0)>0) return {cls:'st-esperando',label:'Esperando respuesta'}; return {cls:'st-disponible',label:'Disponible'}; }
+// Solo WhatsApp soporta plantillas Meta / llamadas — Messenger e Instagram usan sus propios canales.
+function esWhatsAppLead(l){ const p=(l&&l.customer_phone)||''; return !p.startsWith('instagram_')&&!p.startsWith('messenger_'); }
 function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=88; else if(e==='cita')s=80; else if(e==='interesado')s=66; else if(e==='vendido')s=100; s+=Math.min(20,(l.messages_count||0)); return Math.min(99,s); }
 
 /* ════════ API ════════ */
@@ -2390,6 +2390,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       <div class="c-id" id="cId"><div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}</div><div style="min-width:0"><div class="c-name">${esc(nombre)}</div><div class="c-sub"><span class="m-avatar__st ${st.cls}" style="position:static;width:8px;height:8px;border:none"></span>${st.label}</div></div></div>
       <div class="c-acts">
         <button class="c-act" data-ca="call">${I(SVG.phone,20)}</button>
+        ${esWhatsAppLead(l)?`<button class="c-act" data-ca="tpl" title="Plantillas de WhatsApp">${I(SVG.megaphone,20)}</button>`:''}
         <button class="c-act" data-ca="search">${I(SVG.search,20)}</button>
         <button class="c-act" data-ca="more">${I(SVG.dots,20)}</button>
       </div>
@@ -3255,7 +3256,8 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
   window._sending=false; if(sendBtn) sendBtn.disabled=false;
 }
 function chatAccion(a){ haptic(10); const p=(current.customer_phone||'').replace(/[^\d+]/g,'');
-  if(a==='call'){ if(current&&(current.customer_phone||'').startsWith('instagram_')||(current.customer_phone||'').startsWith('messenger_')){ toast('Llamadas no disponibles para este canal'); return; } llamarYRegistrar(p, current&&current.id); }
+  if(a==='call'){ if(current&&!esWhatsAppLead(current)){ toast('Llamadas no disponibles para este canal'); return; } llamarYRegistrar(p, current&&current.id); }
+  else if(a==='tpl'){ abrirPlantillaMeta(); }
   else if(a==='search'){ const s=$('#cSearch'); if(s){ s.classList.toggle('show'); if(s.classList.contains('show')){ const i=$('#cSearchInput'); if(i){ i.focus(); i.value=''; } } else { const i=$('#cSearchInput'); if(i) i.value=''; if($('#cMsgs')) $('#cMsgs').innerHTML=msgsHTML(currentMsgs||[]); } } }
   else if(a==='more'){ abrirPerfil(); }
 }
@@ -3275,7 +3277,7 @@ const QUICK=[
 ];
 
 function abrirAdjuntos(){
-  const items=[...(current&&((current.customer_phone||'').startsWith('instagram_')||(current.customer_phone||'').startsWith('messenger_'))?[]:[['metaTpl','Plantilla Meta',SVG.megaphone]]),['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['audio','Audio',SVG.mic||SVG.megaphone],['proyecto','Proyecto',SVG.building],['sticker','Sticker',SVG.smile],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
+  const items=[...(current&&esWhatsAppLead(current)?[['metaTpl','Plantilla Meta',SVG.megaphone]]:[]),['camera','Cámara',SVG.image],['image','Imagen',SVG.image],['video','Video',SVG.video],['audio','Audio',SVG.mic||SVG.megaphone],['proyecto','Proyecto',SVG.building],['sticker','Sticker',SVG.smile],['file','Documento',SVG.file],['location','Ubicación',SVG.mapPin],['tpl','Plantilla',SVG.zap],['clock','Programar',SVG.clock],['ia','Copiloto',SVG.sparkles]];
   openSheet('Adjuntar', `<div class="att-grid">${items.map(([k,l,ic])=>`<button class="att-i" data-att="${k}"><span class="ic">${I(ic,24)}</span>${l}</button>`).join('')}</div>`);
   $('#sheetBody').querySelectorAll('.att-i').forEach(b=>b.onclick=()=>{ haptic(10); const k=b.dataset.att; closeSheet(); if(k==='tpl') abrirPlantillas(); else if(k==='metaTpl') abrirPlantillaMeta(); else if(k==='sticker') abrirStickers(); else if(k==='ia') abrirCopiloto(); else if(k==='clock') abrirProgramar(); else if(k==='camera') tomarFotoNativa(); else if(k==='proyecto') abrirCompartirProyecto(); else if(k==='image'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='image/*'; fi.click(); } } else if(k==='video'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='video/*'; fi.click(); } } else if(k==='audio'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='audio/*'; fi.click(); } } else if(k==='file'){ const fi=$('#fileInput'); if(fi){ fi.removeAttribute('capture'); fi.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt'; fi.click(); } } else if(k==='location') abrirEnviarUbicacion(); else toast('Adjuntar '+b.textContent+' — próximamente'); });
 }
@@ -3321,7 +3323,7 @@ async function abrirCompartirProyecto(){
 // Estado de la ventana de 24h de WhatsApp para el lead abierto — badge + CTA de reactivación
 async function checkWindowStatus(leadId){
   const badge=$('#cWindowBadge'); if(!badge) return;
-  if(current && ((current.customer_phone||'').startsWith('instagram_')||(current.customer_phone||'').startsWith('messenger_'))){ badge.style.display='none'; badge.innerHTML=''; return; }
+  if(current && !esWhatsAppLead(current)){ badge.style.display='none'; badge.innerHTML=''; return; }
   try{
     const st=await api(`/api/leads/${leadId}/window-status`);
     if(!st || st.open){ badge.style.display='none'; badge.innerHTML=''; return; }
@@ -3331,56 +3333,119 @@ async function checkWindowStatus(leadId){
   }catch(e){ badge.style.display='none'; }
 }
 
-// Enviar una plantilla de WhatsApp aprobada por Meta al lead actual (primer contacto o reactivación post-24h)
+// Enviar una plantilla de WhatsApp aprobada por Meta al lead actual (primer contacto o
+// reactivación post-24h) — siempre disponible, no solo cuando la ventana está cerrada.
+// Paso 1: buscador + lista con el texto ya resuelto con los datos del lead.
 async function abrirPlantillaMeta(prefillName){
   if(!current){ toast('Selecciona un lead primero'); return; }
-  const allWaTemplates = await api('/api/wa-templates') || [];
-  const waTemplates = allWaTemplates.filter(t => t.estado === 'APPROVED');
-  if(!waTemplates.length){ toast('No hay plantillas aprobadas. Pide al admin que sincronice desde Configuración.','err'); return; }
-  openSheet('Plantilla de WhatsApp', `
-    <form id="mtForm" style="display:flex;flex-direction:column;gap:12px">
-      <div style="font-size:12px;color:var(--text-3)">Envía una plantilla aprobada por Meta a ${esc(current.customer_name||'este cliente')}.</div>
-      <select name="templateId" id="mtTemplate" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
-        <option value="">Selecciona una plantilla</option>
-        ${waTemplates.map(t=>`<option value="${t.id}" ${prefillName&&t.nombre===prefillName?'selected':''}>${esc(t.nombre)}</option>`).join('')}
-      </select>
-      <div id="mtVarFields"></div>
-      <button type="submit" class="cop-use" style="margin-top:4px">${I(SVG.send,16)} Enviar plantilla</button>
-    </form>`);
-  const renderVarFields=()=>{
-    const box=$('#mtVarFields'); if(!box) return;
-    const sel=$('#mtTemplate'); const tpl=waTemplates.find(t=>String(t.id)===sel.value);
-    if(!tpl){ box.innerHTML=''; return; }
-    let vars=[]; try{ vars=JSON.parse(tpl.variables||'[]'); }catch(e){}
+  const leadId=current.id;
+  let waTemplates=[], leadVars={};
+  try{
+    const [tpls, vars]=await Promise.all([api('/api/wa-templates'), api(`/api/leads/${leadId}/template-vars`)]);
+    waTemplates=tpls||[]; leadVars=vars||{};
+  }catch(e){}
+  if(!waTemplates.length){ toast('No hay plantillas aprobadas. Pídele al admin que las cree en Plantillas de WhatsApp.','err'); return; }
+
+  // Snippet local (sin ir al servidor por cada plantilla): sustituye {{ph}} con el
+  // mapping guardado → variables ya resueltas del lead. Coherente con resolveTemplateValues.
+  const snippetDe=(tpl)=>{
+    let componentes=[]; try{ componentes=JSON.parse(tpl.componentes||'[]'); }catch(e){}
+    const body=(componentes||[]).find(c=>c.type==='BODY');
+    if(!body||!body.text) return '';
     let mapping={}; try{ mapping=JSON.parse(tpl.var_mapping||'{}'); }catch(e){}
-    if(!vars.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">Esta plantilla no tiene variables.</div>'; return; }
-    const leadVars={
-      nombre_cliente:current.customer_name||'',
-      telefono:current.customer_phone||'',
-      proyecto:current.proyecto||'',
-      ciudad:current.ciudad||'',
-      precio:current.presupuesto||'',
-      vendedor_nombre:current.vendedor_nombre||'',
-      vendedor_telefono:current.vendedor_telefono||'',
-      empresa:'Leons Group'
-    };
-    box.innerHTML=vars.map(ph=>{
-      const catalogKey=mapping[ph];
-      const prefill=(catalogKey&&leadVars[catalogKey])?esc(leadVars[catalogKey]):'';
-      return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph]?' — '+esc(mapping[ph]):' (sin asignar)'}" value="${prefill}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:4px">`;
-    }).join('');
+    return body.text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(m,k)=>{
+      const clave=mapping[k]||k; const v=leadVars[clave];
+      return (v!=null&&v!=='')?v:`[${k}]`;
+    });
   };
-  $('#mtTemplate')?.addEventListener('change', renderVarFields);
-  if(prefillName) renderVarFields();
-  $('#mtForm').addEventListener('submit', async e=>{
-    e.preventDefault();
-    if(window._sending) return;
-    const templateId=$('#mtTemplate').value;
-    if(!templateId){ toast('Selecciona una plantilla'); return; }
-    const overrides={}; $('#mtVarFields')?.querySelectorAll('[data-var]').forEach(inp=>{ overrides[inp.dataset.var]=inp.value.trim(); });
+
+  const renderLista=(filtro)=>{
+    const f=(filtro||'').toLowerCase().trim();
+    let lista=waTemplates.map(t=>({t,snippet:snippetDe(t)}));
+    if(f) lista=lista.filter(({t,snippet})=>t.nombre.toLowerCase().includes(f)||snippet.toLowerCase().includes(f));
+    if(prefillName) lista.sort((a,b)=>(b.t.nombre===prefillName?1:0)-(a.t.nombre===prefillName?1:0));
+    if(!lista.length) return `<div style="padding:24px 8px;text-align:center;color:var(--text-3);font-size:13px">Ninguna plantilla coincide con la búsqueda.</div>`;
+    return lista.map(({t,snippet})=>`
+      <button class="lp-cell wide" data-tplid="${t.id}" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;width:100%;padding:12px 14px;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:14px;color:var(--txt);margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;width:100%">
+          <span style="font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.nombre)}</span>
+          ${t.categoria?`<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--gold-soft,rgba(200,164,90,.12));color:var(--gold);flex-shrink:0">${esc(t.categoria)}</span>`:''}
+        </div>
+        <span style="font-size:12px;color:var(--text-3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(snippet)}</span>
+      </button>`).join('');
+  };
+
+  openSheet('Plantillas de WhatsApp', `
+    <input id="mtSearch" placeholder="Buscar plantilla…" autocomplete="off" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:10px">
+    <div id="mtLista">${renderLista('')}</div>`);
+  const wireLista=()=>{ $('#mtLista')?.querySelectorAll('[data-tplid]').forEach(b=>b.onclick=()=>abrirDetallePlantilla(Number(b.dataset.tplid), leadId, waTemplates)); };
+  wireLista();
+  const search=$('#mtSearch');
+  if(search){ search.oninput=()=>{ const l=$('#mtLista'); if(l) l.innerHTML=renderLista(search.value); wireLista(); }; if(!prefillName) search.focus(); }
+}
+
+// Paso 2: detalle de una plantilla — burbuja estilo WhatsApp con el texto ya resuelto
+// por el servidor (GET .../preview) + un input editable por variable, re-renderizando la
+// burbuja en vivo. El envío queda deshabilitado mientras falte alguna variable, para no
+// dejar que el asesor descubra el error recién al enviar (antes tiraba 400 variables_vacias).
+async function abrirDetallePlantilla(templateId, leadId, waTemplates){
+  haptic(8);
+  const tpl=waTemplates.find(t=>Number(t.id)===Number(templateId));
+  const preview=await api(`/api/wa-templates/${templateId}/preview?leadId=${leadId}`);
+  if(!tpl||!preview){ toast('No se pudo cargar la plantilla','err'); return; }
+  let componentes=[]; try{ componentes=JSON.parse(tpl.componentes||'[]'); }catch(e){}
+  const headerC=componentes.find(c=>c.type==='HEADER');
+  const bodyC=componentes.find(c=>c.type==='BODY');
+  const footerC=componentes.find(c=>c.type==='FOOTER');
+  const botonesC=componentes.find(c=>c.type==='BUTTONS');
+
+  const valores={}; (preview.variables||[]).forEach(v=>{ valores[v.ph]=v.valor||''; });
+
+  const sustituir=(txt)=>String(txt||'').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(m,k)=>{
+    const v=valores[k];
+    return v?esc(v):`<span style="color:#ffb4b4">{{${esc(k)}}}</span>`;
+  });
+
+  const pintarBurbuja=()=>{
+    const box=$('#mtBubble'); if(!box) return;
+    box.innerHTML=`${headerC&&headerC.format==='TEXT'?`<div style="font-weight:700;margin-bottom:4px">${sustituir(headerC.text)}</div>`:''}
+      <div style="white-space:pre-wrap">${sustituir(bodyC&&bodyC.text)}</div>
+      ${footerC?`<div style="opacity:.7;font-size:11px;margin-top:6px">${esc(footerC.text)}</div>`:''}
+      ${botonesC?`<div style="border-top:1px solid rgba(255,255,255,.25);margin-top:8px;padding-top:6px;display:flex;flex-direction:column;gap:4px">${(botonesC.buttons||[]).map(b=>`<div style="text-align:center;font-size:12.5px;color:#53bdeb">${esc(b.text)}</div>`).join('')}</div>`:''}`;
+  };
+
+  const actualizarBotonEnviar=()=>{
+    const btn=$('#mtEnviarBtn'); if(!btn) return;
+    const faltan=(preview.variables||[]).some(v=>!valores[v.ph]||!String(valores[v.ph]).trim());
+    btn.disabled=faltan; btn.style.opacity=faltan?'.5':'1';
+  };
+
+  const camposHtml=(preview.variables||[]).map(v=>`
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">${esc(v.label)}</label>
+      <input type="text" data-var="${esc(v.ph)}" value="${esc(v.valor||'')}" placeholder="Completa este dato" style="width:100%;padding:11px 13px;border-radius:11px;border:1px solid ${v.valor?'var(--border)':'var(--gold,#c8a45a)'};background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+    </div>`).join('') || `<div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Esta plantilla no tiene variables.</div>`;
+
+  openSheet(tpl.nombre, `
+    <div id="mtBubble" style="background:#005c4b;color:#fff;border-radius:12px 12px 12px 2px;padding:11px 13px;font-size:13.5px;line-height:1.45;margin-bottom:16px"></div>
+    <div id="mtCampos">${camposHtml}</div>
+    <button id="mtBackBtn" type="button" style="background:none;border:none;color:var(--text-3);font-size:13px;padding:6px 0;text-align:left;font-family:inherit">← Elegir otra plantilla</button>
+    <button id="mtEnviarBtn" class="cop-use" style="margin-top:8px;width:100%">${I(SVG.send,16)} Enviar plantilla</button>`);
+
+  pintarBurbuja();
+  actualizarBotonEnviar();
+
+  $('#mtCampos')?.querySelectorAll('[data-var]').forEach(inp=>{
+    inp.oninput=()=>{ valores[inp.dataset.var]=inp.value; inp.style.borderColor=inp.value.trim()?'var(--border)':'var(--gold,#c8a45a)'; pintarBurbuja(); actualizarBotonEnviar(); };
+  });
+  const backBtn=$('#mtBackBtn'); if(backBtn) backBtn.onclick=()=>abrirPlantillaMeta();
+
+  const enviarBtn=$('#mtEnviarBtn');
+  if(enviarBtn) enviarBtn.onclick=async()=>{
+    if(window._sending||enviarBtn.disabled) return;
+    const overrides={...valores};
     window._sending=true;
     haptic(10); closeSheet(); toast('Enviando plantilla…');
-    const leadId=current.id;
     try{
       const r=await apiDetailed(`/api/leads/${leadId}/enviar-template`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templateId,overrides})});
       if(r&&r.ok){
@@ -3395,7 +3460,7 @@ async function abrirPlantillaMeta(prefillName){
       }
     }catch(e){ toast('Error de conexión','err'); }
     finally{ window._sending=false; }
-  });
+  };
 }
 // Reverse geocoding con manejo de error visible (antes se tragaba silenciosamente)
 async function reverseGeocodeUbic(lat,lng){

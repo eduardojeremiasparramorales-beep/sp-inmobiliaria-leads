@@ -38,4 +38,20 @@ find "$BACKUP_DIR" -name "sp-media-*.tar.gz" -mtime +$RETENTION_DAYS -delete
 ls -t "$BACKUP_DIR"/sp-leads-*.db.gz 2>/dev/null | tail -n +61 | xargs rm -f 2>/dev/null
 ls -t "$BACKUP_DIR"/sp-media-*.tar.gz 2>/dev/null | tail -n +61 | xargs rm -f 2>/dev/null
 
+# Copia fuera de la VM (Fase 1.3, docs/AUDITORIA_2026-08.md 3.3): hasta aquí, la BD y
+# todos sus backups viven en el mismo disco de la misma e2-micro — si se pierde la VM
+# (disco, borrado accidental, facturación), se pierde todo a la vez. Si GCS_BACKUP_BUCKET
+# está configurado (export en el entorno del cron, o en /etc/environment) y `gsutil` está
+# disponible, sube el backup de esta corrida a un bucket de Google Cloud Storage. Falla
+# en silencio (best-effort) para no romper el backup local, que es lo prioritario.
+if [ -n "$GCS_BACKUP_BUCKET" ] && command -v gsutil >/dev/null 2>&1; then
+  gsutil -q cp "$BACKUP_DIR/sp-leads-$TIMESTAMP.db.gz" "gs://$GCS_BACKUP_BUCKET/sp-leads/" \
+    && echo "[$(date)] Subido a gs://$GCS_BACKUP_BUCKET/sp-leads/" >> "$BACKUP_DIR/backup.log" \
+    || echo "[$(date)] ERROR subiendo sp-leads-$TIMESTAMP.db.gz a GCS" >> "$BACKUP_DIR/backup.log"
+  if [ -f "$BACKUP_DIR/sp-media-$TIMESTAMP.tar.gz" ]; then
+    gsutil -q cp "$BACKUP_DIR/sp-media-$TIMESTAMP.tar.gz" "gs://$GCS_BACKUP_BUCKET/sp-media/" \
+      || echo "[$(date)] ERROR subiendo sp-media-$TIMESTAMP.tar.gz a GCS" >> "$BACKUP_DIR/backup.log"
+  fi
+fi
+
 echo "[$(date)] Backup completado: sp-leads-$TIMESTAMP.db.gz + sp-media-$TIMESTAMP.tar.gz" >> "$BACKUP_DIR/backup.log"
