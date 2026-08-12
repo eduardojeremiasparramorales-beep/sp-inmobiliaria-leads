@@ -23,13 +23,44 @@ function removeClient(vendedorId, res) {
   }
 }
 
+// --- Fase 1.2 (docs/AUDITORIA_2026-08.md 2.2): numerar eventos + buffer de replay ---
+// SSE sin numeración no puede distinguir "no pasó nada mientras estuvo caída" de "se
+// perdieron N eventos" — el único remedio hoy es un refetch completo al reconectar. Con
+// un id monotónico creciente por evento y un buffer corto por vendedor, un cliente que
+// reconecta puede pedir "todo lo que pasó desde el id X" (Last-Event-ID, estándar SSE)
+// en vez de siempre traer todo de nuevo. El buffer es en memoria y por proceso — se
+// pierde en un restart del servidor, lo cual es aceptable: en ese caso el cliente ya
+// hace un refetch completo igual (ver `conectado` en el frontend).
+let _nextEventId = 1;
+const MAX_BUFFER_PER_CLIENT = 200; // suficiente para cubrir minutos de actividad normal
+const _buffer = new Map(); // vendedorId -> [{id, evento, data}]
+
+function _pushToBuffer(vendedorId, entry) {
+  const id = Number(vendedorId);
+  if (!_buffer.has(id)) _buffer.set(id, []);
+  const arr = _buffer.get(id);
+  arr.push(entry);
+  if (arr.length > MAX_BUFFER_PER_CLIENT) arr.shift();
+}
+
+// Eventos recientes de un vendedor con id > sinceId — usado al reconectar con
+// Last-Event-ID para no perder lo que llegó durante la desconexión.
+function getEventsSince(vendedorId, sinceId) {
+  const arr = _buffer.get(Number(vendedorId)) || [];
+  const since = Number(sinceId) || 0;
+  return arr.filter(e => e.id > since);
+}
+
 // Enviar un evento a TODAS las conexiones abiertas de un vendedor
 function emitToVendedor(vendedorId, evento, data) {
   const id = Number(vendedorId);
+  const eventId = _nextEventId++;
+  _pushToBuffer(id, { id: eventId, evento, data });
+
   const set = clients.get(id);
   if (!set || set.size === 0) return;
 
-  const payload = `event: ${evento}\ndata: ${JSON.stringify(data)}\n\n`;
+  const payload = `id: ${eventId}\nevent: ${evento}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const res of set) {
     try {
       res.write(payload);
@@ -49,4 +80,4 @@ function emitToTodos(evento, data) {
   for (const id of clients.keys()) emitToVendedor(id, evento, data);
 }
 
-module.exports = { addClient, removeClient, emitToVendedor, emitToAdmins, emitToTodos };
+module.exports = { addClient, removeClient, emitToVendedor, emitToAdmins, emitToTodos, getEventsSince };

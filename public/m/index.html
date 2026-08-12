@@ -953,6 +953,58 @@ async function api(url, opts){
   }
   catch(e){ return null; }
 }
+// --- Cola offline de mensajes salientes (Fase 1.2, docs/AUDITORIA_2026-08.md 2.3) ---
+// Si el dispositivo pierde señal justo al enviar, el mensaje no se descarta: se guarda
+// en localStorage y se reintenta solo al volver la conexión ('online') o al reabrir la
+// app. Solo se encola cuando el fetch falla por RED (fetch lanza TypeError) — un rechazo
+// real del servidor (400/500, r.ok===false) NO se encola, para no esconder un error real
+// detrás de un "ya se va a enviar" falso.
+const OUTBOX_KEY = 'sp_outbox_msgs_v1';
+function outboxGet(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY)||'[]'); }catch(e){ return []; } }
+function outboxSet(arr){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(arr)); }catch(e){} }
+function outboxAdd(item){ const arr=outboxGet(); arr.push(item); outboxSet(arr); }
+function outboxRemove(tempId){ outboxSet(outboxGet().filter(x=>x.tempId!==tempId)); }
+function outboxPendingCount(){ return outboxGet().length; }
+
+// POST normal; si falla por falta de red (no por rechazo del servidor), encola y
+// devuelve {queued:true} en vez de null.
+async function postOrQueue(url, payload, tempId, leadId){
+  try{
+    const r = await fetch(url, {method:'POST', credentials:'include', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(payload)});
+    if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
+    if(!r.ok) return null; // rechazo real del servidor — no se encola, error visible como siempre
+    const ct=r.headers.get('content-type')||'';
+    return ct.includes('json')? await r.json() : await r.text();
+  }catch(e){
+    outboxAdd({tempId, leadId, url, payload, ts:Date.now()});
+    return {queued:true};
+  }
+}
+
+// Reintenta lo pendiente en orden. Se detiene en el primer fallo (probablemente sigue
+// sin red) en vez de recorrer todo — el próximo evento 'online' retoma desde ahí.
+let _outboxFlushing=false;
+async function outboxFlush(){
+  if(_outboxFlushing) return; _outboxFlushing=true;
+  try{
+    const pendientes=outboxGet();
+    if(!pendientes.length) return;
+    let huboExito=false;
+    for(const item of pendientes){
+      try{
+        const r=await fetch(item.url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(item.payload)});
+        if(r.ok){ outboxRemove(item.tempId); huboExito=true; } else break;
+      }catch(e){ break; }
+    }
+    if(huboExito){
+      toast('Mensajes pendientes enviados');
+      if(current){ const d=await api(`/api/leads/${current.id}/mensajes`); if(d){ currentMsgs=d.mensajes; const c=$('#cMsgs'); if(c){ c.innerHTML=msgsHTML(currentMsgs); c.scrollTop=c.scrollHeight; } } }
+      cargar();
+    }
+  } finally { _outboxFlushing=false; }
+}
+window.addEventListener('online', outboxFlush);
+
 async function apiDetailed(url, opts){
   try{
     const r = await fetch(url, Object.assign({credentials:'include', headers:{'Accept':'application/json'}}, opts||{}));
@@ -2058,6 +2110,7 @@ async function init(){
     await cargarArchivados();
     conectarStream();
     eqStartPresence();
+    if(outboxPendingCount()>0) outboxFlush(); // mensajes que quedaron pendientes de una sesión sin red anterior
     // Capacitor 'resume' (vuelta desde segundo plano en la app nativa) no siempre coincide
     // con visibilitychange dentro del WebView — se engancha aparte para no depender de uno solo.
     if(esNativo()){ try{ window.Capacitor.Plugins.App.addListener('resume', resyncStream); }catch(e){} }
@@ -3062,6 +3115,7 @@ function linkPreviews(){
   });
 }
 function chkHTML(st,readAt){
+  if(st==='queued') return '<span class="chk chk-queued" title="Sin conexión — se enviará solo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>';
   const visto=readAt?` <span class="chk-visto">Visto ${soloHora(readAt)}</span>`:'';
   if(st==='read') return `<span class="chk chk-read"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>${visto}`;
   if(st==='delivered') return `<span class="chk chk-delivered"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>`;
@@ -3166,9 +3220,15 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
   inp.value=''; inp.style.height='auto'; updateSend();
   $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight;
   const body = replyTo ? {mensaje:msg, replyTo:replyTo.id} : {mensaje:msg};
-  const r=await api(`/api/leads/${current.id}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r=await postOrQueue(`/api/leads/${current.id}/responder`, body, tempId, current.id);
   cancelarReply();
-  if(r!==null){
+  if(r && r.queued){
+    // Sin red: el mensaje optimista se queda en pantalla marcado como pendiente,
+    // se reintenta solo al volver la conexión (outboxFlush, evento 'online').
+    tempMsg.status='queued';
+    $('#cMsgs').innerHTML=msgsHTML(currentMsgs); b.scrollTop=b.scrollHeight;
+    toast('Sin conexión — se enviará cuando vuelva la señal');
+  } else if(r!==null){
     // Si el lead estaba archivado, moverlo de archivados a activos
     if(r.reopened){
       const idx=archivedLeads.findIndex(l=>l.id===current.id);
@@ -5201,6 +5261,7 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream'); _es=es;
 // la conexión SSE sin disparar onerror de forma confiable — sin esto, la app se queda
 // mostrando datos viejos hasta que el usuario hace pull-to-refresh a mano.
 async function resyncStream(){
+  if(outboxPendingCount()>0) outboxFlush();
   if(!_es || _es.readyState!==EventSource.OPEN) conectarStream();
   const d=await api('/api/mis-leads'); if(d){ leads=d; renderFilters(); updateCardBadges(); renderList(); }
   if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
