@@ -3371,14 +3371,6 @@ function exportarPerfil(){
     toast('Perfil exportado');
   })();
 }
-async function toggle2FA(){
-  const tg = document.getElementById('btnToggle2FA'); if(!tg) return;
-  const on = tg.classList.contains('on');
-  haptic(10);
-  const r = await api('/api/me/2fa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ enable: !on }) });
-  if(r){ tg.classList.toggle('on', !!r.two_fa); if(me) me.two_fa = !!r.two_fa; toast(r.two_fa ? 'Verificación 2FA activada' : 'Verificación 2FA desactivada'); }
-  else toast('No se pudo cambiar la verificación','err');
-}
 function fmtTs(ts){
   if(!ts) return '—';
   const n = typeof ts === 'number' ? (ts > 1e12 ? ts : ts*1000) : new Date(ts).getTime();
@@ -3465,8 +3457,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
             <div class="sec-row" id="rowCambiarPin"><label>🔒 Cambiar PIN</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Cambiar</button></div>
             <div class="sec-row" id="rowSesiones"><label>📱 Sesiones activas</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Ver</button></div>
             <div class="sec-row" id="rowExportar"><label>⬇️ Exportar mi perfil</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">JSON</button></div>
-            <div class="sec-row"><label>🛡️ Verificación en 2 pasos</label><button class="toggle-sw${me&&me.two_fa?' on':''}" id="btnToggle2FA"></button></div>
-            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Pide tu PIN en cada dispositivo nuevo al iniciar sesión.</div>
+            <div class="sec-row"><label>🛡️ Verificación en 2 pasos</label><span style="color:var(--text-3);font-size:12.5px">Próximamente</span></div>
+            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Aún no disponible. Por ahora, protege tu cuenta con un PIN que solo tú conozcas.</div>
             <div class="sec-row"><label>ℹ️ Versión de la app</label><span id="lblVersion" style="color:var(--text-2);font-size:12.5px">…</span></div>
           </div>
         </div>
@@ -3679,8 +3671,6 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if (sesRow) sesRow.addEventListener('click', () => { haptic(8); abrirSesiones(); });
       const expRow = document.getElementById('rowExportar');
       if (expRow) expRow.addEventListener('click', () => { haptic(8); exportarPerfil(); });
-      const t2fa = document.getElementById('btnToggle2FA');
-      if (t2fa) t2fa.addEventListener('click', toggle2FA);
       cargarVersionApp();
       // Mis respuestas
       cargarMisTpl();

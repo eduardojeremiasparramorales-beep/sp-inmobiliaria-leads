@@ -131,7 +131,7 @@ function obtenerReserva(leadId) {
 
 function listarReservas(estado) {
   ensureTable();
-  const where = estado ? `WHERE r.estado = '${estado}'` : `WHERE r.estado IN ('activa', 'vencida')`;
+  const where = estado ? `WHERE r.estado = ?` : `WHERE r.estado IN ('activa', 'vencida')`;
   return store.all(
      `SELECT r.*, l.numero as lote_numero, p.nombre as proyecto_nombre, v.nombre as vendedor_nombre,
             ld.customer_name as lead_nombre, ld.customer_phone as lead_telefono
@@ -141,7 +141,8 @@ function listarReservas(estado) {
      LEFT JOIN vendedores v ON r.vendedor_id = v.id
      LEFT JOIN leads ld ON r.lead_id = ld.id
      ${where}
-     ORDER BY r.fecha_vence ASC`
+     ORDER BY r.fecha_vence ASC`,
+     estado ? [estado] : []
   );
 }
 

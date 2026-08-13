@@ -1105,6 +1105,9 @@ app.get('/api/leads/:id/mensajes', auth.requireAuth, (req, res) => {
 app.get('/api/leads/:id/window-status', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (!esAccesoGlobal(req) && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
   const isOpen = store.isWindowOpen(lead.id);
   const expiresAt = store.getWindowExpiresAt(lead.id);
   const templateName = store.getConfig('reengagement_template') || '';
@@ -4479,11 +4482,11 @@ function sanitizeAllPins() {
   for (const v of vendedores) {
     if (!v.pin) {
       store.setVendedorPin(v.id, auth.hashPassword(DEFAULT_PIN));
-      console.log(`[PIN-SANITIZE] ${v.nombre} (${v.telefono}) — sin PIN, reset a ${DEFAULT_PIN}`);
+      console.log(`[PIN-SANITIZE] ${v.nombre} (${v.telefono}) — sin PIN, reseteado al PIN por defecto`);
       fixed++;
     } else if (!isValidPinHash(v.pin)) {
       store.setVendedorPin(v.id, auth.hashPassword(DEFAULT_PIN));
-      console.log(`[PIN-SANITIZE] ${v.nombre} (${v.telefono}) — PIN corrupto, reset a ${DEFAULT_PIN}`);
+      console.log(`[PIN-SANITIZE] ${v.nombre} (${v.telefono}) — PIN corrupto, reseteado al PIN por defecto`);
       fixed++;
     }
   }
@@ -4505,7 +4508,7 @@ function ensureAdminUser() {
     console.log('===========================================');
     console.log('Usuario ADMIN inicial creado:');
     console.log(`  Email:    ${email}`);
-    console.log(`  Password: ${password}`);
+    console.log('  Password: (ver ADMIN_PASSWORD en .env)');
     console.log('  (cámbialo en .env: ADMIN_EMAIL / ADMIN_PASSWORD)');
     console.log('===========================================');
   }
@@ -4516,10 +4519,10 @@ function ensureAdminUser() {
     const vId = store.addVendedor('Administrador', ADMIN_PHONE);
     store.setVendedorPin(vId, auth.hashPassword(ADMIN_PIN));
     vendedorAdmin = store.getVendedorByTelefono(ADMIN_PHONE);
-    console.log(`Vendedor admin creado: ${ADMIN_PHONE} · PIN: ${ADMIN_PIN}`);
+    console.log(`Vendedor admin creado: ${ADMIN_PHONE} (ver ADMIN_PIN en .env)`);
   } else if (!isValidPinHash(vendedorAdmin.pin)) {
     store.setVendedorPin(vendedorAdmin.id, auth.hashPassword(ADMIN_PIN));
-    console.log(`PIN reset para admin (formato inválido): ${ADMIN_PIN}`);
+    console.log('PIN reset para admin (formato inválido) — ver ADMIN_PIN en .env');
   }
 
   // Vincular con el usuario admin si no lo está
@@ -4553,10 +4556,10 @@ function ensureSupervisor() {
     const vId = store.addVendedor(SUPERVISOR_NAME, SUPERVISOR_PHONE);
     store.setVendedorPin(vId, auth.hashPassword(SUPERVISOR_PIN));
     vendedorSup = store.getVendedorByTelefono(SUPERVISOR_PHONE);
-    console.log(`Vendedor supervisor creado: ${SUPERVISOR_PHONE} · PIN: ${SUPERVISOR_PIN} (cambiar tras primer login)`);
+    console.log(`Vendedor supervisor creado: ${SUPERVISOR_PHONE} (ver SUPERVISOR_PIN en .env — cambiar tras primer login)`);
   } else if (!vendedorSup.pin) {
     store.setVendedorPin(vendedorSup.id, auth.hashPassword(SUPERVISOR_PIN));
-    console.log(`PIN reset para supervisor: ${SUPERVISOR_PIN}`);
+    console.log('PIN reset para supervisor — ver SUPERVISOR_PIN en .env');
   }
   // Crear la fila en usuarios.rol='supervisor' vinculada al vendedor, si no existe ya.
   const usuarioSup = store.getUsuarioByVendedorId(vendedorSup.id);
@@ -4586,10 +4589,10 @@ function ensureJefe() {
     const vId = store.addVendedor(JEFE_NAME, JEFE_PHONE);
     store.setVendedorPin(vId, auth.hashPassword(JEFE_PIN));
     vendedorJefe = store.getVendedorByTelefono(JEFE_PHONE);
-    console.log(`Vendedor jefe creado: ${JEFE_PHONE} · PIN: ${JEFE_PIN} (cambiar tras primer login)`);
+    console.log(`Vendedor jefe creado: ${JEFE_PHONE} (ver JEFE_PIN en .env — cambiar tras primer login)`);
   } else if (!vendedorJefe.pin) {
     store.setVendedorPin(vendedorJefe.id, auth.hashPassword(JEFE_PIN));
-    console.log(`PIN reset para jefe: ${JEFE_PIN}`);
+    console.log('PIN reset para jefe — ver JEFE_PIN en .env');
   }
   const usuarioJefe = store.getUsuarioByVendedorId(vendedorJefe.id);
   if (!usuarioJefe) {
