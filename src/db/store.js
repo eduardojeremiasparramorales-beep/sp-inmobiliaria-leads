@@ -2816,7 +2816,18 @@ function syncLeadToConversation(lead, data = {}) {
     }
     return conv;
   } catch (e) {
-    console.error('syncLeadToConversation:', e.message);
+    // Fase 4 (docs/AUDITORIA_2026-08.md 2.4): antes solo console.error — un fallo de
+    // sincronización entre el esquema legacy (leads/messages) y el multicanal
+    // (customers/conversations/timeline) quedaba solo en logs de proceso, sin que nadie
+    // se enterara hasta que un usuario reportaba el síntoma (el bug de media_filename
+    // fue exactamente así). logger.logError() lo deja en data/errors.log Y lo suma al
+    // contador que /api/admin/salud expone en el panel de Salud del Sistema — un fallo
+    // de sync ahora es visible sin esperar a que alguien note el dato desalineado.
+    try {
+      require('../services/logger').logError('syncLeadToConversation', e, {
+        leadId: lead && lead.id, direction: data && data.direction,
+      });
+    } catch (logErr) { console.error('syncLeadToConversation:', e.message); }
     return null;
   }
 }
