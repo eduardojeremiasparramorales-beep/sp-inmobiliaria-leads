@@ -154,15 +154,24 @@ function requireSupervisor(req, res, next) {
 
 function requireSupervisorOrAdmin(req, res, next) {
   requireAuth(req, res, () => {
-    if (req.session.rol !== 'admin' && req.session.rol !== 'supervisor' && req.session.rol !== 'jefe') {
+    if (!esAccesoGlobal(req)) {
       return res.status(403).json({ error: 'requiere_supervisor_o_admin' });
     }
     next();
   });
 }
 
+// ¿La sesión ve/opera datos de cualquier asesor (no solo los propios)? admin,
+// supervisor y jefe comparten este criterio en todo el backend — fuente única para
+// no repetir `rol === 'admin'` sueltos que dejan afuera a supervisor/jefe por error
+// (fue la causa de que el jefe recibiera 403 en varios endpoints del inbox).
+function esAccesoGlobal(req) {
+  return req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe';
+}
+
 module.exports = {
   hashPassword, verifyPassword,
   createSession, getSession, destroySession, getTokenFromReq,
   requireAuth, requireAdmin, requireSupervisor, requireSupervisorOrAdmin,
+  esAccesoGlobal,
 };

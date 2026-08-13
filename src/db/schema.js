@@ -47,11 +47,17 @@ function createNewTables(db) {
       last_message_at DATETIME,
       etiqueta TEXT DEFAULT 'sin_clasificar',
       progress_pct INTEGER DEFAULT 5,
+      -- Puente al esquema legacy (leads). Antes solo llegaba vía ensureColumn en
+      -- store.js, sin restricción — una conversación podía crearse sin lead_id y el
+      -- backfill de arranque (getOrCreateConversationForLead) le creaba una SEGUNDA
+      -- conversación duplicando el timeline. El UNIQUE de abajo hace eso imposible.
+      lead_id INTEGER,
       created_at DATETIME DEFAULT (datetime('now')),
       updated_at DATETIME DEFAULT (datetime('now')),
       FOREIGN KEY (customer_id) REFERENCES customers(id),
       FOREIGN KEY (assigned_to_id) REFERENCES vendedores(id)
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id) WHERE lead_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS timeline (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

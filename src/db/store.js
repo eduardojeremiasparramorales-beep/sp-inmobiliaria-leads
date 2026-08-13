@@ -528,9 +528,19 @@ function createSchema() {
   execSQL(`CREATE INDEX IF NOT EXISTS idx_workflow_jobs_due ON workflow_jobs(estado, run_at)`);
   migrateWorkflowsToGraph();
 
-  // Puente legacy → multicanal: cada conversación puede apuntar a su lead
+  // Puente legacy → multicanal: cada conversación puede apuntar a su lead. En BDs
+  // nuevas la columna y el índice único (idx_conversations_lead_id, ver schema.js)
+  // ya vienen en el CREATE TABLE; esto es el respaldo idempotente para BDs existentes
+  // que arrancaron antes de ese cambio y no tienen ni la columna ni el índice.
   ensureColumn('conversations', 'lead_id', 'INTEGER');
-  execSQL(`CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id)`);
+  // Intento de blindaje en BDs existentes: si ya hay lead_id duplicados (arrastre de
+  // la doble escritura frágil), la creación falla y queda logueado — se resuelve solo
+  // corriendo scripts/reset-leads.js o deduplicando antes del próximo arranque.
+  try {
+    execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_lead_id ON conversations(lead_id) WHERE lead_id IS NOT NULL`);
+  } catch (e) {
+    console.warn('[SCHEMA] No se pudo crear el índice único de conversations.lead_id (hay duplicados pendientes de limpiar):', e.message);
+  }
   // Defensivo: en DBs creadas antes de que `progress_pct` estuviera en el CREATE
   // TABLE de schema.js, la columna no existe y syncLeadToConversation() falla
   // silenciosamente (try/catch) en cada INSERT — ninguna conversación se crea.
@@ -2828,6 +2838,10 @@ function syncLeadToConversation(lead, data = {}) {
         leadId: lead && lead.id, direction: data && data.direction,
       });
     } catch (logErr) { console.error('syncLeadToConversation:', e.message); }
+    // En desarrollo, propagar en vez de tragar: un fallo aquí es exactamente el tipo
+    // de desincronización legacy↔multicanal que se quiere detectar temprano, antes de
+    // que llegue a producción como "el chat no aparece en el inbox del admin".
+    if (process.env.NODE_ENV !== 'production') throw e;
     return null;
   }
 }
@@ -2873,39 +2887,58 @@ function getUnlinkedLeads() {
   `);
 }
 
+// Único camino de creación de una conversación a partir de un lead legacy. Antes el
+// INSERT de `conversations`, el backfill de mensajes al timeline y sus updates iban
+// sueltos — si algo fallaba a la mitad (p.ej. un addTimelineEvent con datos corruptos),
+// la conversación quedaba a medias: creada pero sin todos sus mensajes, indistinguible
+// de una nueva a ojos del siguiente arranque. Envuelto en una transacción: o se crea
+// completa, o no se crea nada. El índice único de conversations.lead_id (schema.js)
+// sigue siendo la última línea de defensa contra la carrera de dos requests concurrentes
+// intentando crear la misma conversación a la vez.
 function getOrCreateConversationForLead(leadId) {
   const lead = one('SELECT * FROM leads WHERE id = ?', [leadId]);
   if (!lead) return null;
   let conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
   if (conv) return getConversationById(conv.id);
-  const phone = lead.customer_phone || '';
-  let customer = findCustomerByChannel('whatsapp', phone);
-  if (!customer) {
-    customer = createCustomer(lead.customer_name || 'Cliente', phone);
-    linkChannelToCustomer(customer.id, 'whatsapp', phone, lead.customer_name || '');
-  }
-  run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta, last_message, last_message_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null,
-     lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
-     lead.etiqueta || 'sin_clasificar',
-     lead.last_message || '', lead.updated_at || lead.created_at, lead.updated_at || lead.created_at]);
-  conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
-  if (!conv) return null;
-  const msgs = getMessagesByLead(lead.id, { limit: 500 }); // backfill: hasta 500 mensajes recientes
-  msgs.forEach(m => {
-    addTimelineEvent(conv.id, 'message', {
-      channel: 'whatsapp',
-      body: m.body || '',
-      direction: m.direction || 'incoming',
-      from_number: m.from_number || '',
-      to_number: m.to_number || '',
-      media_type: m.media_type || null,
-      media_id: m.media_id || null,
-      media_mime: m.media_mime || null,
-      media_filename: m.media_filename || null,
-      metadata: JSON.stringify({ legacy_message_id: m.id }),
+
+  const adapter = require('./adapter');
+  adapter.exec('BEGIN');
+  try {
+    const phone = lead.customer_phone || '';
+    let customer = findCustomerByChannel('whatsapp', phone);
+    if (!customer) {
+      customer = createCustomer(lead.customer_name || 'Cliente', phone);
+      linkChannelToCustomer(customer.id, 'whatsapp', phone, lead.customer_name || '');
+    }
+    run('INSERT INTO conversations (channel, channel_conversation_id, customer_id, lead_id, assigned_to_id, status, etiqueta, last_message, last_message_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ['whatsapp', phone, customer.id, lead.id, lead.assigned_to_id || null,
+       lead.status === 'cerrado' ? 'cerrado' : (lead.assigned_to_id ? 'asignado' : 'nuevo'),
+       lead.etiqueta || 'sin_clasificar',
+       lead.last_message || '', lead.updated_at || lead.created_at, lead.updated_at || lead.created_at]);
+    conv = one('SELECT * FROM conversations WHERE lead_id = ? ORDER BY id DESC LIMIT 1', [lead.id]);
+    if (!conv) throw new Error('conversación no se pudo insertar');
+    const msgs = getMessagesByLead(lead.id, { limit: 500 }); // backfill: hasta 500 mensajes recientes
+    msgs.forEach(m => {
+      addTimelineEvent(conv.id, 'message', {
+        channel: 'whatsapp',
+        body: m.body || '',
+        direction: m.direction || 'incoming',
+        from_number: m.from_number || '',
+        to_number: m.to_number || '',
+        media_type: m.media_type || null,
+        media_id: m.media_id || null,
+        media_mime: m.media_mime || null,
+        media_filename: m.media_filename || null,
+        metadata: JSON.stringify({ legacy_message_id: m.id }),
+      });
     });
-  });
+    adapter.exec('COMMIT');
+  } catch (e) {
+    try { adapter.exec('ROLLBACK'); } catch (rbErr) { /* nada que revertir si BEGIN nunca aplicó */ }
+    try { require('../services/logger').logError('getOrCreateConversationForLead', e, { leadId }); }
+    catch (logErr) { console.error('getOrCreateConversationForLead:', e.message); }
+    return null;
+  }
   return getConversationById(conv.id);
 }
 

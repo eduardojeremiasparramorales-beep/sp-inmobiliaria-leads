@@ -6,9 +6,6 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "migrate": "node src/db/migrate.js",
-    "migrate:os": "node scripts/migrate-legacy-to-os.js",
-    "reopen": "node scripts/reopen-lead.js",
     "release:apk": "node scripts/release-apk.js",
     "test": "vitest run",
     "test:watch": "vitest",

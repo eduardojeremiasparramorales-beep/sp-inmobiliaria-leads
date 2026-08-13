@@ -3,6 +3,104 @@
 
 ---
 
+## ⚠️ ADDENDUM (2026-08-13) — bug real reportado por el jefe + limpieza de esquema legacy
+
+El jefe (rol `jefe`) reportó chat siempre vacío en Supervisión y no poder ver los chats de los asesores.
+Diagnóstico: **tres bugs concretos**, no un problema de "sincronización" — ver detalle y fix en cada uno:
+
+- `abSuperChat()` en `public/m/app.js` trataba la respuesta de `/api/leads/:id/mensajes` (un objeto
+  `{lead, mensajes, ...}`) como si fuera un array — `msgs.length` era siempre `undefined`, así que el
+  chat se pintaba vacío el 100% de las veces. **Corregido**, bifurcando por `_type` igual que ya hacía
+  correctamente `public/supervisor/conversaciones.html`.
+- El id usado para pedir mensajes (`conv.lead_id || conv.id`) podía apuntar al lead equivocado cuando la
+  conversación no tenía `lead_id` — exactamente la clase de bug que describe 2.4 más abajo. **Corregido**
+  desambiguando por `_type` antes de pedir nada.
+- Varios endpoints comprobaban `rol === 'admin'` a pelo en vez del helper `esAccesoGlobal` (admin ∪
+  supervisor ∪ jefe), devolviendo 403 a jefe/supervisor. **Corregido**, moviendo `esAccesoGlobal` a
+  `src/services/auth.js` como fuente única y reemplazando los chequeos sueltos.
+
+**Esquema legacy — Etapas 0 y 2 del plan de retiro completadas** (ver 2.4 y 1.7 para el diagnóstico
+original):
+- `conversations.lead_id` ahora está en el `CREATE TABLE` de `src/db/schema.js` con
+  `UNIQUE INDEX ... WHERE lead_id IS NOT NULL` — una conversación duplicada para el mismo lead ya no
+  puede insertarse, sin importar qué falle arriba.
+- El backfill de arranque (`[INBOX-BACKFILL]`, replicaba hasta 500 mensajes por lead huérfano en cada
+  reinicio) quedó apagado por defecto detrás de `INBOX_BACKFILL=1`; el arranque ahora solo *reporta*
+  huérfanos (`[LEGACY-CHECK]`) sin mutar la BD.
+- `getOrCreateConversationForLead()` quedó envuelto en una transacción (`BEGIN`/`COMMIT`/`ROLLBACK`): o
+  se crea la conversación completa con todo su backfill, o no se crea nada — antes un fallo a mitad de
+  camino dejaba una conversación a medias, indistinguible de una nueva.
+- `syncLeadToConversation()` ahora relanza el error en desarrollo (`NODE_ENV !== 'production'`) en vez de
+  tragarlo siempre; en producción se sigue registrando en `data/errors.log` y en `/api/admin/salud`.
+- Scripts redundantes o peligrosos eliminados: `src/db/migrate.js`, `scripts/migrate-legacy-to-os.js`,
+  `src/scripts/migrate-legacy-to-multichannel.js` (las tres migraciones legacy→multicanal, ninguna
+  rellenaba `lead_id`), `scripts/limpiar.js` (SQL interpolado, sin backup), `scripts/reset-datos.js`
+  (redundante con `reset-leads.js`), `scripts/reopen-lead.js` (caso puntual ya resuelto) y
+  `scripts/migrar-horario.js` (confirmado en el addendum de 2026-08-11 que nunca corrió en producción;
+  aplicarlo hoy habría corrompido datos).
+- Nuevo `scripts/escanear-bd.js`, de solo lectura: reporta duplicados por teléfono, leads sin
+  conversación, conversaciones con `lead_id` NULL o duplicado, conversaciones huérfanas, mensajes en
+  `messages` sin espejo en `timeline`, y columnas de tiempo sin sufijo `Z`.
+
+**Pendiente, deliberadamente fuera de esta tanda** (Etapas 3–5 del diseño completo): hacer de `timeline`
+la única escritura de mensajes (retirar `syncLeadToConversation` y la tabla `messages`), y colapsar
+`getUnifiedConversations()`/el marcador `_type`. Tocan el camino crítico de WhatsApp y el panel móvil (0
+tests dedicados todavía), así que conviene abordarlas en una tanda propia con tests de contrato previos.
+Tampoco se tocó `parseDbTimeUTC()` ni se normalizaron timestamps — sigue siendo un frente aparte, ver 1.7.
+
+---
+
+## ⚠️ ADDENDUM (2026-08-11) — corrección verificada contra la VM real, leer antes de tocar 1.1/1.7
+
+Este informe se escribió leyendo la copia **local** de `data/sp-leads.db` (la del portátil), sin acceso todavía
+a la VM de producción. El **2026-08-11** conseguí acceso SSH real a `sp-crm-server` y verifiqué los hechos
+directamente contra la base en vivo. Hay una corrección importante a la sección 1.1:
+
+**La migración `+5h` en dirección contraria (`migrar-horario.js`) NUNCA corrió contra producción.**
+Verificado: `SELECT * FROM config` en la BD real de la VM tiene 18 filas y **ninguna es
+`migracion_horario_utc5`** — esa marca solo existe en la copia local. Producción nunca sufrió el
+doble-corrimiento (+10h) descrito en 1.1. **No apliques la "corrección dirigida por corte de fecha
+(-5h/-10h)" de 1.1 contra producción tal como está escrita — partía de una premisa falsa y corrompería
+datos que hoy están bien.**
+
+Lo que sí es real en producción (diagnosticado y ya corregido para `leads`, ver detalle abajo): el bug
+"DEFAULT congelado en UTC vs. cuándo se agregó el INSERT explícito con `datetime('now','localtime')`"
+— un desfase simple de **+5h** (no +10h), y el corte no es una fecha única para todas las tablas: cada
+columna tiene su propio momento de fix (verifiqué que `messages.timestamp` y `leads.created_at` se
+arreglaron en commits distintos, con varias horas de diferencia entre sí). No hay atajo: hay que medir
+cada tabla por separado comparando contra un ancla confiable (ver método abajo), no asumir un único
+`WHERE created_at < 'X'` global.
+
+**Ya corregido en producción, con backup previo verificado (`sp-leads-PRE-fix-horario-20260811-220857.db`
+en `~/backup-fix-horario/` en la VM):** `leads.created_at` para los ids 1–17 (los únicos con el bug —
+confirmado comparando contra el primer mensaje real de cada lead, que sirvió de ancla). Verificación
+posterior: los 29 leads alinean con diferencia 0.0h contra su primer mensaje. `leads.updated_at` no se
+tocó — se reescribe en cada UPDATE por rutas que ya usan `'localtime'` explícito, así que no tiene este
+bug. `messages.timestamp` tampoco se tocó — la evidencia sobre su corte exacto fue contradictoria entre
+el historial de git y el patrón real de los datos, así que se dejó intacta hasta tener certeza (ver
+sección "Pendiente" abajo).
+
+**Riesgo nuevo detectado en el trabajo de unificación (1.7) que ya está en curso:** el nuevo
+`parseDbTimeUTC()` en `src/utils/tiempo.js` asume "sin sufijo `Z` → es UTC". Esa regla es correcta para
+las ~34 tablas que siguen en el DEFAULT congelado (`timeline`, `citas`, `notificaciones`, `tareas`,
+`conversations`, `feed_events`, etc.) pero **incorrecta** para `messages.timestamp`, `leads.created_at`/
+`updated_at`/`last_customer_message_at` y `team_messages.created_at` — esas columnas ya guardan hora
+Bogotá correcta sin `Z` desde antes (vía INSERT/UPDATE explícito con `'localtime'`). Si `parseDbTimeUTC`/
+`formatBogota` se conectan al frontend sin distinguir estas dos familias de columnas, los mensajes del
+chat (el síntoma original reportado) van a mostrarse **5 horas antes** de lo real — el mismo tipo de bug,
+en dirección contraria. **Antes de wire-up al frontend:** o bien (a) migrar también estas columnas al
+nuevo formato UTC+`Z` como parte del mismo cambio (reescribiendo su historial, con backup), o (b) hacer
+que `parseDbTimeUTC` distinga explícitamente estas columnas como "ya UTC-5, no reinterpretar".
+
+**Pendiente de resolver con más certeza:** el corte exacto de `messages.timestamp` (cuándo pasó de usar
+el DEFAULT viejo a la escritura explícita correcta). El historial de git sugiere una fecha, el patrón
+horario real de los mensajes sugiere otra — no hay ancla independiente (WhatsApp no expone su timestamp
+crudo en el webhook actual, `msg.timestamp` nunca se lee, y los logs de Docker no alcanzan tan atrás).
+Antes de tocar esta tabla, confirmar con un asesor 2-3 horas reales de mensajes viejos concretos
+(anteriores al 8 de agosto), o aceptar dejar esas ~130 filas antiguas sin corregir dado el bajo volumen.
+
+---
+
 ## 0. Resumen ejecutivo
 
 Reportaste dos síntomas: **la hora no es la real** (un mensaje de las 3 p.m. aparece a las 12 a.m.) y **los chats no siempre se sincronizan**. Ambos están diagnosticados con evidencia concreta. En orden de lo que conviene atacar primero:
@@ -260,6 +358,12 @@ Si algo falla a mitad de la sincronización, el error solo queda en logs — nad
 
 **Recomendación:** no es urgente resolverlo de raíz ahora, pero conviene decidir a mediano plazo si el esquema legacy (`leads`/`messages`) se retira en favor del multicanal (`conversations`/`timeline`/`customers`) — mantener dos fuentes de verdad sincronizadas a mano seguirá generando bugs de este tipo cada vez que se agregue un campo nuevo.
 
+**Actualización 2026-08-13 — parcialmente atacado, ver addendum arriba:** se blindó la mitad estructural
+del problema (índice único en `conversations.lead_id`, creación transaccional, `syncLeadToConversation`
+ya no traga errores en desarrollo). El retiro completo de `messages`/`syncLeadToConversation` en favor de
+`timeline` como única fuente de mensajes sigue pendiente — es la recomendación de este párrafo, sin
+cambios en su fondo.
+
 ---
 
 ### 2.5 — 🔵 BAJO — Leads sin asignar no notifican en tiempo real
@@ -270,9 +374,13 @@ Si algo falla a mitad de la sincronización, el error solo queda en logs — nad
 
 ## 3. Estabilidad y robustez
 
-### 3.1 — 🟠 ALTO — `uncaughtException` no termina el proceso
+### 3.1 — 🟠 ALTO → ✅ RESUELTO — `uncaughtException` no termina el proceso
 
-**Evidencia:** [`index.js:5308-5309`](../src/index.js#L5308-L5309):
+**Estado 2026-08-13:** ya corregido. [`index.js:4862`](../src/index.js#L4862) llama `process.exit(1)` tras
+loguear, dejando que `restart: unless-stopped` de Docker reinicie limpio. Se deja el hallazgo original
+como referencia histórica.
+
+**Evidencia original (ya no aplica):**
 
 ```js
 process.on('unhandledRejection', (err) => logger.logError('unhandledRejection', err));
@@ -320,13 +428,20 @@ Y el mismo patrón en `createScheduled` ([`store.js:816-820`](../src/db/store.js
 
 ---
 
-### 3.4 — 🔵 BAJO — Cero tests automatizados y sin CI de calidad
+### 3.4 — 🔵 BAJO → parcialmente resuelto — Cobertura de tests todavía delgada
 
-**Evidencia:** no existe ningún archivo `*.test.js` en el proyecto. El único workflow de GitHub Actions es [`.github/workflows/ios-build.yml`](../.github/workflows/ios-build.yml) — build de la app nativa, no valida el backend ni el frontend web.
+**Estado 2026-08-13:** ya no es cero. Existe `vitest` (`npm test`, corre en CI) con 4 archivos —
+`test/db/store.test.js` (ventana de 24h, anti-duplicados de leads, y desde esta tanda la no-duplicación
+de `conversations` por `lead_id`), `test/services/assigner.test.js` (round-robin), `test/utils/tiempo.test.js`
+y `test/services/auth.test.js` (nuevo — `esAccesoGlobal`), 30 tests en total. Cubre exactamente las
+funciones que esta auditoría recomendaba priorizar (`isWindowOpen`, el round-robin, y ahora el helper de
+tiempo y de roles).
 
-**Impacto:** cada fix (como el de horario, 1.1) se prueba manualmente y se despliega directo a producción — el propio historial de commits (`fix(horas)`, `fix(login)`, `fix(templates)` repetidos) muestra el patrón de "arreglar, desplegar, descubrir el siguiente bug relacionado". Un test de regresión para la lógica de fechas habría atrapado el error de 1.1 antes de correr en producción.
-
-**Recomendación (no urgente, pero de alto retorno):** empezar por tests unitarios de las funciones más críticas y ya probadas de forma manual y documentada — `isWindowOpen`/`getWindowExpiresAt` (ventana de 24h de WhatsApp), el nuevo helper de tiempo (1.7), y el round-robin de asignación (`assigner.js`) — antes que cobertura exhaustiva.
+**Sigue faltando:** ningún test de nivel HTTP/endpoint (no hay `supertest` ni equivalente) y cero
+cobertura del panel móvil (`public/m/app.js`, ~4900 líneas) ni del webhook de WhatsApp — los dos caminos
+más críticos y menos probados del sistema. Antes de tocar `syncLeadToConversation`/`messages` a fondo
+(ver 2.4), conviene añadir tests de contrato para `getMessagesByLead`/`getTimelineByConversation` que
+congelen la forma del objeto que devuelven.
 
 ---
 

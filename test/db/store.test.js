@@ -118,3 +118,42 @@ describe('saveLead — regla anti-duplicados (CLAUDE.md: sin clientes cruzados)'
     });
   });
 });
+
+// Fase 2/5 (docs de migración): conversations.lead_id ahora es UNIQUE (WHERE lead_id
+// IS NOT NULL) y la creación va en transacción — esto es lo que impide el bug real
+// reportado ("faltan sincronizaciones"): un lead legacy terminando con DOS
+// conversaciones y su timeline duplicado.
+describe('getOrCreateConversationForLead — sin duplicar conversación', () => {
+  it('crea una sola conversación aunque se llame varias veces para el mismo lead', async () => {
+    await conTenant(() => {
+      const { leadId } = store.saveLead('573000000030', 'Cliente Multicanal', 'hola, quiero info');
+
+      const conv1 = store.getOrCreateConversationForLead(leadId);
+      const conv2 = store.getOrCreateConversationForLead(leadId);
+
+      expect(conv1).toBeTruthy();
+      expect(conv2.id).toBe(conv1.id);
+
+      const count = dbAdapter.one(
+        'SELECT COUNT(*) AS n FROM conversations WHERE lead_id = ?',
+        [leadId]
+      );
+      expect(count.n).toBe(1);
+    });
+  });
+
+  it('el backfill de mensajes solo corre una vez — reabrir la conversación no duplica el timeline', async () => {
+    await conTenant(() => {
+      const { leadId } = store.saveLead('573000000031', 'Cliente Con Mensajes', 'primer mensaje');
+      store.saveMessage(leadId, '', '573000000031', 'segundo mensaje', 'outgoing', null);
+
+      const conv = store.getOrCreateConversationForLead(leadId);
+      const totalTras1a = store.getTimelineByConversation(conv.id).length;
+      store.getOrCreateConversationForLead(leadId);
+      const totalTras2a = store.getTimelineByConversation(conv.id).length;
+
+      expect(totalTras1a).toBeGreaterThan(0);
+      expect(totalTras2a).toBe(totalTras1a);
+    });
+  });
+});

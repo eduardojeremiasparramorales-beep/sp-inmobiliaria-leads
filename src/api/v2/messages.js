@@ -13,7 +13,7 @@ router.get('/', (req, res) => {
   const conversation = store.getConversationById(conversationId);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
 
-  if (req.session.rol !== 'admin' && Number(conversation.assigned_to_id) !== Number(req.session.vendedorId)) {
+  if (!auth.esAccesoGlobal(req) && Number(conversation.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ data: null, error: 'sin_permiso' });
   }
 
@@ -29,7 +29,7 @@ router.post('/', async (req, res) => {
   const conversation = store.getConversationById(conversationId);
   if (!conversation) return res.status(404).json({ data: null, error: 'conversation_no_existe' });
 
-  if (req.session.rol !== 'admin' && Number(conversation.assigned_to_id) !== Number(req.session.vendedorId)) {
+  if (!auth.esAccesoGlobal(req) && Number(conversation.assigned_to_id) !== Number(req.session.vendedorId)) {
     return res.status(403).json({ data: null, error: 'sin_permiso' });
   }
 

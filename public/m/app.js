@@ -172,14 +172,20 @@ function esWhatsAppLead(l){ const p=(l&&l.customer_phone)||''; return !p.startsW
 function leadScore(l){ let s=40; const e=l.etiqueta||''; if(e==='negociacion')s=88; else if(e==='cita')s=80; else if(e==='interesado')s=66; else if(e==='vendido')s=100; s+=Math.min(20,(l.messages_count||0)); return Math.min(99,s); }
 
 /* ════════ API ════════ */
+// api.lastStatus queda con el código HTTP de la última llamada que falló (o 0 si fue
+// error de red). Antes cualquier !r.ok (incluido 403 "sin_permiso") se tragaba como
+// null indistinguible de "no hay datos" — el chat se veía vacío en vez de avisar que
+// era un problema de permisos. Los callers que quieran distinguir leen api.lastStatus
+// justo después del await; los que no, siguen funcionando igual que antes.
 async function api(url, opts){
   try{
     const r = await fetch(url, Object.assign({credentials:'include', headers:{'Accept':'application/json'}}, opts||{}));
-    if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
-    if(!r.ok) return null;
+    if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); api.lastStatus=401; return null; }
+    if(!r.ok){ api.lastStatus=r.status; return null; }
+    api.lastStatus=0;
     const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json() : r.text();
   }
-  catch(e){ return null; }
+  catch(e){ api.lastStatus=0; return null; }
 }
 // --- Cola offline de mensajes salientes (Fase 1.2, docs/AUDITORIA_2026-08.md 2.3) ---
 // Si el dispositivo pierde señal justo al enviar, el mensaje no se descarta: se guarda
@@ -1600,7 +1606,8 @@ async function abrirChat(id){ let l; let msgs;
         api(`/api/leads/${id}/leido`,{method:'POST'});
         api(`/api/leads/${id}/mark-all-read`,{method:'POST'});
         if(l) l.unread_count=0;
-      } else { msgs=[]; toast('No se pudo cargar la conversación. Desliza para reintentar.'); }
+      } else if(api.lastStatus===403){ msgs=[]; toast('No tienes permiso para ver este chat','err'); }
+      else { msgs=[]; toast('No se pudo cargar la conversación. Desliza para reintentar.'); }
     }
   }catch(e){ console.error('abrirChat/api',e); msgs=msgs||[]; }
   try{
@@ -4421,21 +4428,67 @@ function _superSetupFilters(){
   if(ffS) ffS.addEventListener('change', function(){ cargarSuperConversaciones(false); });
 }
 
+// Chat de Supervisión actualmente abierto (o null). El handler SSE 'nuevo_mensaje' lo
+// usa para saber si debe refrescar este overlay en vivo — antes solo el chat normal
+// (#scChat) escuchaba el stream; Supervisión se quedaba con la foto del momento en que
+// se abrió hasta que el jefe cerraba y volvía a entrar.
+let _superChatAbierto = null;
+
+// Recarga el timeline del chat de Supervisión abierto. Se usa tanto al abrirlo como
+// al llegar un evento en vivo que le pertenece — mismo bifurcado por _type que
+// public/supervisor/conversaciones.html, porque legacy (/mensajes) y multicanal
+// (/timeline) devuelven formas distintas ({lead,mensajes,...} vs {messages:[...]}).
+function _superCargarTimeline(){
+  if(!_superChatAbierto) return;
+  var conv = _superChatAbierto;
+  var tc = document.getElementById('superChatTimeline');
+  if(!tc) return;
+  var loadMsgs = conv.isLead
+    ? api('/api/leads/'+conv.id+'/mensajes').then(function(d){ return (d && d.mensajes) || []; })
+    : api('/api/inbox/conversations/'+conv.id+'/timeline').then(function(d){
+        return (d && d.messages || []).filter(function(m){ return m.event_type === 'message'; })
+          .map(function(m){ return { body: m.body, direction: m.direction, timestamp: m.created_at }; });
+      });
+  loadMsgs.then(function(msgs) {
+    if(!_superChatAbierto || _superChatAbierto !== conv) return; // se cerró o cambió mientras cargaba
+    if(!msgs || !msgs.length) { tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Sin mensajes</div>'; return; }
+    var html = '';
+    for(var i=0; i<msgs.length; i++){
+      var m = msgs[i];
+      var isOut = m.direction === 'outgoing';
+      var h = soloHora(m.timestamp);
+      html += `<div style="display:flex;flex-direction:column;align-items:${isOut?'flex-end':'flex-start'};margin-bottom:8px">
+        <div style="max-width:80%;padding:10px 14px;border-radius:16px;background:${isOut?'rgba(200,164,90,.12)':'var(--bg-2)'};font-size:14px;line-height:1.4;color:var(--text);word-break:break-word">${esc(m.body||'')}</div>
+        <span style="font-size:10px;color:#6D6D6D;margin-top:2px">${h}</span>
+      </div>`;
+    }
+    tc.innerHTML = html;
+    setTimeout(function(){ tc.scrollTop = tc.scrollHeight; }, 100);
+  }).catch(function(){ if(tc) tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Error cargando mensajes (¿sin permiso?)</div>'; });
+}
+
 function abSuperChat(conv){
-  var lid = conv.lead_id || conv.id;
-  if(!lid) return;
+  // conv puede venir de getUnifiedConversations(): mezcla ids de `conversations` y
+  // de `leads` legacy en el mismo campo `id`, distinguidos por _type. No asumir
+  // nunca que conv.id es un lead_id — hay que desambiguar antes de pedir mensajes.
+  var isLead = conv._type === 'lead';
+  if(!isLead && !conv.lead_id) { toast('No se pudo abrir esta conversación','err'); return; }
   var loading = document.createElement('div');
   loading.id = 'superChatOverlay';
   loading.style.cssText = 'position:fixed;inset:0;background:#0A0A0A;z-index:6000;overflow-y:auto;color:var(--text)';
   loading.innerHTML = `<div style="padding:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 0;border-bottom:1px solid var(--border)">
     <button id="superBackBtn" style="background:none;border:none;color:#C8A45A;font-size:24px;padding:0 4px;cursor:pointer;line-height:1;margin-top:-3px">←</button>
-    <div style="min-width:0"><div style="font-weight:600;font-size:14px">${esc(conv.customer_name||'Cliente')}</div><div style="font-size:10px;color:#6D6D6D">${esc(conv.assigned_to_name||'Sin asesor')}</div></div>
+    <div style="min-width:0"><div style="font-weight:600;font-size:14px">${esc(conv.customer_name||'Cliente')}</div><div style="font-size:10px;color:#6D6D6D">${esc(conv.assigned_to_nombre||'Sin asesor')}</div></div>
     <button id="superReassignBtn" style="margin-left:auto;border:1px solid rgba(200,164,90,.4);padding:8px 14px;border-radius:10px;color:#C8A45A;background:rgba(200,164,90,.06);font-size:12px;cursor:pointer;font-family:inherit">Reasignar ↻</button>
   </div>
   <div id="superChatTimeline" style="display:flex;flex-direction:column;gap:8px"><div style="text-align:center;color:#6D6D6D;padding:30px"><div style="animation:spin 1s linear infinite;width:24px;height:24px;border:2px solid #C8A45A;border-top-color:transparent;border-radius:50%;margin:0 auto 12px"></div><p>Cargando...</p></div></div></div>`;
   document.body.appendChild(loading);
+  // leadId siempre resuelto de antemano (no en cada refresco) para que el handler SSE
+  // pueda comparar contra x.leadId en O(1) sin repetir la lógica de desambiguación.
+  _superChatAbierto = { isLead: isLead, id: conv.id, leadId: isLead ? conv.id : (conv.lead_id || null) };
   // Back button
   document.getElementById('superBackBtn').addEventListener('click', function(){
+    _superChatAbierto = null;
     document.body.removeChild(loading);
   });
   // Reassign button
@@ -4452,31 +4505,15 @@ function abSuperChat(conv){
     document.body.appendChild(modal);
     modal.querySelectorAll('.reasign-opt').forEach(br=>br.onclick = async()=>{
       var vid = br.dataset.vid;
-      var r = await api('/api/supervisor/reasignar/'+conv.lead_id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendedorId: parseInt(vid)})});
-      if(r&&r.ok){ toast('Lead reasignado'); document.body.removeChild(modal); document.body.removeChild(loading); cargarSuperConversaciones(false); }
+      var reasignLeadId = isLead ? conv.id : conv.lead_id;
+      var r = await api('/api/supervisor/reasignar/'+reasignLeadId, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendedorId: parseInt(vid)})});
+      if(r&&r.ok){ toast('Lead reasignado'); document.body.removeChild(modal); _superChatAbierto=null; document.body.removeChild(loading); cargarSuperConversaciones(false); }
       else toast('No se pudo reasignar','err');
     });
     document.getElementById('reasignCancel').onclick = ()=> modal.parentNode && modal.parentNode.removeChild(modal);
     }catch(e){ toast('No se pudo cargar asesores','err'); }
   });
-  // Load timeline
-  api('/api/leads/'+lid+'/mensajes').then(function(msgs) {
-    var tc = document.getElementById('superChatTimeline');
-    if(!tc||!msgs||!msgs.length) { if(tc) tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Sin mensajes</div>'; return; }
-    var html = '';
-    for(var i=0; i<msgs.length; i++){
-      var m = msgs[i];
-      var isOut = m.direction === 'outgoing';
-      var h = soloHora(m.timestamp);
-      html += `<div style="display:flex;flex-direction:column;align-items:${isOut?'flex-end':'flex-start'};margin-bottom:8px">
-        <div style="max-width:80%;padding:10px 14px;border-radius:16px;background:${isOut?'rgba(200,164,90,.12)':'var(--bg-2)'};font-size:14px;line-height:1.4;color:var(--text);word-break:break-word">${esc(m.body||'')}</div>
-        <span style="font-size:10px;color:#6D6D6D;margin-top:2px">${h}</span>
-      </div>`;
-    }
-    tc.innerHTML = html;
-    setTimeout(function(){ tc.scrollTop = tc.scrollHeight; }, 100);
-    // Auto-scroll on new timeline content
-  }).catch(()=>{ var tc = document.getElementById('superChatTimeline'); if(tc) tc.innerHTML = '<div style="text-align:center;color:#6D6D6D;padding:30px">Error cargando mensajes</div>'; });
+  _superCargarTimeline();
 }
 
 let _es=null, _esReconnectDelay=2000;
@@ -4493,14 +4530,18 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream'); _es=es;
     if(tab==='supervision'){ try{ cargarSuperVisionRefresh(); }catch(e){} }
     const dot=$('#navDot'); const totalUnread=leads.reduce((s,l)=>s+Number(l.unread_count||0),0); if(dot) dot.style.display=totalUnread>0?'':'none'; try{ navigator.setAppBadge&&navigator.setAppBadge(totalUnread); }catch(e){}
     if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); }
+    if(_superChatAbierto&&_superChatAbierto.leadId&&Number(_superChatAbierto.leadId)===Number(x.leadId)) _superCargarTimeline();
     try{ if(x.tipo==='mensaje_cliente'){ haptic([100,50,100]); playNotifSound(); } }catch(e){} });
-  es.addEventListener('lead_actualizado',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} await refrescarLead(x.leadId); if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); } });
+  es.addEventListener('lead_actualizado',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} await refrescarLead(x.leadId); if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); }
+    if(_superChatAbierto&&_superChatAbierto.leadId&&Number(_superChatAbierto.leadId)===Number(x.leadId)) _superCargarTimeline(); });
   // Checkmark en vivo cuando el cliente recibe/lee (sin re-render del chat)
   es.addEventListener('status_update',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m) m.status=x.status; const wrap=document.getElementById('msg_'+x.messageId); if(wrap){ const t=wrap.querySelector('.bub__t'); if(t){ const old=t.querySelector('.chk'); if(old){ const tmp=document.createElement('span'); tmp.innerHTML=chkHTML(x.status,null); old.replaceWith(tmp.firstChild); } } } }catch(e){} });
   // Mensaje eliminado (por un asesor o por el cliente — anti-delete)
-  es.addEventListener('mensaje_eliminado',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } if(x.byClient) toast('El cliente eliminó un mensaje — texto conservado'); } }catch(e){} });
+  es.addEventListener('mensaje_eliminado',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } if(x.byClient) toast('El cliente eliminó un mensaje — texto conservado'); }
+    if(_superChatAbierto&&_superChatAbierto.leadId&&Number(_superChatAbierto.leadId)===Number(x.leadId)) _superCargarTimeline(); }catch(e){} });
   // Reacción del cliente en vivo
-  es.addEventListener('reaccion',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } } }catch(e){} });
+  es.addEventListener('reaccion',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } }
+    if(_superChatAbierto&&_superChatAbierto.leadId&&Number(_superChatAbierto.leadId)===Number(x.leadId)) _superCargarTimeline(); }catch(e){} });
   // Notificación del centro (asignaciones, escalamientos, recordatorios…)
   es.addEventListener('notificacion',ev=>{ try{ const x=JSON.parse(ev.data); const b=document.getElementById('notifBadge'); const cur=b?Number(b.textContent)||0:0; setNotifBadge(cur+1); if(x.tipo!=='mensaje_cliente'){ toast('🔔 '+(x.titulo||'Notificación')); haptic([80,40,80]); playNotifSound(); } }catch(e){} });
   // Chat interno del equipo en vivo

@@ -11,9 +11,9 @@ function asyncH(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-// Un vendedor solo puede tocar conversaciones asignadas a él; el admin, todas.
+// Un vendedor solo puede tocar conversaciones asignadas a él; admin/supervisor/jefe, todas.
 function puedeVer(req, conversation) {
-  return req.session.rol === 'admin' || req.session.rol === 'jefe' || Number(conversation.assigned_to_id) === Number(req.session.vendedorId);
+  return auth.esAccesoGlobal(req) || Number(conversation.assigned_to_id) === Number(req.session.vendedorId);
 }
 
 // GET / → lista filtrable
@@ -23,7 +23,7 @@ router.get('/', (req, res) => {
   const off = Number(offset) || 0;
 
   // Vendedor: forzar filtro a sus propias conversaciones
-  const vendedorId = (req.session.rol === 'admin' || req.session.rol === 'jefe') ? req.query.vendedorId : req.session.vendedorId;
+  const vendedorId = auth.esAccesoGlobal(req) ? req.query.vendedorId : req.session.vendedorId;
   const data = store.getConversations({ channel, status, etiqueta, busqueda, vendedorId, limite: lim, offset: off });
   const total = store.getConversationCount();
 

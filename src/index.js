@@ -1054,9 +1054,10 @@ app.post('/api/admin/recalcular-insignias', auth.requireAdmin, (req, res) => {
 
 // ===================== PANEL DEL VENDEDOR =====================
 
-// Leads asignados al vendedor logueado (admin ve todos)
+// Leads asignados al vendedor logueado (admin/supervisor ven todos; el jefe además
+// trabaja los suyos como cualquier asesor — ver getVendedoresActivos en store.js).
 app.get('/api/mis-leads', auth.requireAuth, (req, res) => {
-  if (req.session.rol === 'admin') return res.json(getLeads());
+  if (req.session.rol === 'admin' || req.session.rol === 'supervisor') return res.json(getLeads());
   if (req.session.rol === 'jefe') return res.json(store.getLeadsByVendedorId(req.session.vendedorId));
   if (!req.session.vendedorId) return res.json([]);
   const leads = store.getLeadsByVendedorId(req.session.vendedorId);
@@ -1125,15 +1126,15 @@ app.get('/api/inbox/conversations', auth.requireAuth, (req, res) => {
 // Devuelve true si la sesión puede operar sobre esta conversación (admin o vendedor asignado).
 // Si no puede, ya envía el 403 y el caller debe hacer `return`.
 function assertConvAccess(req, res, conv) {
-  if (req.session.rol === 'admin' || Number(conv.assigned_to_id) === Number(req.session.vendedorId)) return true;
+  if (esAccesoGlobal(req) || Number(conv.assigned_to_id) === Number(req.session.vendedorId)) return true;
   res.status(403).json({ error: 'sin_permiso' });
   return false;
 }
 
-// ¿La sesión ve/opera conversaciones de cualquier asesor? (admin o supervisor)
-function esAccesoGlobal(req) {
-  return req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe';
-}
+// ¿La sesión ve/opera conversaciones de cualquier asesor? (admin, supervisor o jefe)
+// Fuente única — también exportada vía auth.esAccesoGlobal para src/api/v2/* y
+// cualquier otro router que necesite el mismo criterio sin duplicarlo.
+const esAccesoGlobal = auth.esAccesoGlobal;
 
 app.get('/api/inbox/conversations/:id/timeline', auth.requireAuth, (req, res) => {
   let conv = store.getConversationById(req.params.id);
@@ -1225,7 +1226,7 @@ app.get('/api/inbox/unified-conversations', auth.requireAuth, (req, res) => {
 app.post('/api/inbox/leads/:id/open', auth.requireAuth, (req, res) => {
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId))
+  if (!esAccesoGlobal(req) && Number(lead.assigned_to_id) !== Number(req.session.vendedorId))
     return res.status(403).json({ error: 'sin_permiso' });
   const conversation = store.getOrCreateConversationForLead(lead.id);
   if (!conversation) return res.status(500).json({ error: 'error_conversion' });
@@ -4808,16 +4809,23 @@ function ensurePlatformAdmin() {
   sanitizeAllPins();
   ensureSupervisor(); // opcional vía .env (SUPERVISOR_PHONE/NAME/PIN)
   ensureJefe(); // opcional vía .env (JEFE_PHONE/NAME/PIN)
-  // Backfill inbox: re-vincular leads legacy que no tienen conversación en el
-  // schema multicanal (p.ej. insertados por scripts). Migra sus mensajes al timeline
-  // para que TODOS los chats aparezcan en el inbox del admin.
+  // Backfill inbox: re-vincular leads legacy que no tienen conversación en el schema
+  // multicanal. APAGADO por defecto (poner INBOX_BACKFILL=1 en .env para reactivarlo
+  // puntualmente) — con conversations.lead_id ahora UNIQUE (src/db/schema.js), correr
+  // esto en cada arranque ya no puede duplicar conversaciones, pero sigue sin tener
+  // sentido re-migrar 500 mensajes por lead en cada reinicio si no hay huérfanos
+  // reales. Si aparecen huérfanos (p.ej. un script viejo los dejó sueltos), el chequeo
+  // de salud de abajo los reporta sin tocar la BD; re-vincularlos es una acción manual.
   try {
     const huerfanos = store.getUnlinkedLeads();
-    let revinculados = 0;
-    for (const lead of huerfanos) {
-      if (store.getOrCreateConversationForLead(lead.id)) revinculados++;
+    if (huerfanos.length) console.log(`[LEGACY-CHECK] ${huerfanos.length} lead(s) sin conversación en el inbox multicanal`);
+    if (process.env.INBOX_BACKFILL === '1') {
+      let revinculados = 0;
+      for (const lead of huerfanos) {
+        if (store.getOrCreateConversationForLead(lead.id)) revinculados++;
+      }
+      if (huerfanos.length) console.log(`[INBOX-BACKFILL] ${revinculados}/${huerfanos.length} leads re-vinculados al inbox`);
     }
-    if (huerfanos.length) console.log(`[INBOX-BACKFILL] ${revinculados}/${huerfanos.length} leads re-vinculados al inbox`);
   } catch (e) {
     console.error('[INBOX-BACKFILL] error:', e.message);
   }
