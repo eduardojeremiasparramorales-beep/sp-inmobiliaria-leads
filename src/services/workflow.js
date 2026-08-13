@@ -151,7 +151,7 @@ class WorkflowEngine {
             const customer = store.getCustomerById(conversation.customer_id);
             const channels = store.getCustomerChannels(conversation.customer_id).filter(c => c.channel === conversation.channel);
             const to = channels.length > 0 ? channels[0].channel_user_id : (customer ? customer.phone : null);
-            await chAdapter.sendTemplate(to, params.name, params.params || null);
+            await chAdapter.sendTemplate(to, params.name, params.params || null, conversation.lead_id || null);
           }
           break;
         }
@@ -386,7 +386,7 @@ class WorkflowEngine {
         convs = adapter.all(
           `SELECT id, lead_id, customer_id FROM conversations
            WHERE status != 'cerrado' AND last_customer_message_at IS NOT NULL
-           AND last_customer_message_at <= datetime('now','localtime',?)`,
+           AND last_customer_message_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now',?)`,
           [`-${hours} hours`]
         );
       } catch (e) { continue; }

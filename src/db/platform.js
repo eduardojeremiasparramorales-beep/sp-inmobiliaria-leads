@@ -90,7 +90,7 @@ function createPlatformSchema() {
       db_path TEXT NOT NULL,
       plan_status TEXT DEFAULT 'fundador',
       activo INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE TABLE IF NOT EXISTS empresa_dominios (
       hostname TEXT PRIMARY KEY,
@@ -103,14 +103,14 @@ function createPlatformSchema() {
       canal_id TEXT NOT NULL UNIQUE,
       token_cifrado TEXT NOT NULL,
       extra_json TEXT DEFAULT '{}',
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE TABLE IF NOT EXISTS platform_admins (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
       nombre TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (datetime('now','localtime'))
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE TABLE IF NOT EXISTS platform_sessions (
       token TEXT PRIMARY KEY,
@@ -153,6 +153,26 @@ function getCanalToken(canalId) {
   return row ? row.token_cifrado : null;
 }
 
+// El webhook de estado de plantillas (message_template_status_update) identifica al
+// dueño por entry.id, que es el WABA_ID — no el phone_number_id de getEmpresaByCanalId.
+// El waba_id de cada canal whatsapp vive en extra_json (no hace falta columna nueva).
+// Fallback: si coincide con el WABA_ID legacy de .env, es la empresa #1 (mismo patrón
+// que resolveEmpresaForWebhook en webhook/messages.js).
+function getEmpresaByWabaId(wabaId) {
+  if (!wabaId) return null;
+  const rows = all("SELECT empresa_id, extra_json FROM empresa_canales WHERE canal = 'whatsapp'");
+  for (const row of rows) {
+    try {
+      const extra = JSON.parse(row.extra_json || '{}');
+      if (extra.waba_id && String(extra.waba_id) === String(wabaId)) return getEmpresaById(row.empresa_id);
+    } catch (e) { /* extra_json corrupto — seguir con las demás filas */ }
+  }
+  if (String(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '') === String(wabaId)) {
+    return getEmpresaById(1); // DEFAULT_EMPRESA_ID, empresa #1 legacy
+  }
+  return null;
+}
+
 // ---- platform_admins + sesiones propias (separadas de las de cada negocio) ----
 function countPlatformAdmins() { return (one('SELECT COUNT(*) as c FROM platform_admins') || {}).c || 0; }
 function createPlatformAdmin(email, passwordHash, nombre) { run('INSERT INTO platform_admins (email, password, nombre) VALUES (?, ?, ?)', [email.toLowerCase(), passwordHash, nombre || '']); }
@@ -165,7 +185,7 @@ module.exports = {
   initPlatformDB,
   getEmpresas, getEmpresaById, getEmpresaBySlug, createEmpresa, setEmpresaActivo, setEmpresaPlanStatus,
   getEmpresaByHostname, addEmpresaDominio,
-  getCanalesByEmpresa, getEmpresaByCanalId, addEmpresaCanal, getCanalToken,
+  getCanalesByEmpresa, getEmpresaByCanalId, addEmpresaCanal, getCanalToken, getEmpresaByWabaId,
   countPlatformAdmins, createPlatformAdmin, getPlatformAdminByEmail,
   createPlatformSession, getPlatformSession, deletePlatformSession,
   DATA_DIR, PLATFORM_DB_PATH,

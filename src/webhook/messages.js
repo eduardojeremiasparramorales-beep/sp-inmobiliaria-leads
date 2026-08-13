@@ -33,6 +33,27 @@ function resolveEmpresaForWebhook(phoneNumberId) {
   return null;
 }
 
+// Espejo de resolveEmpresaForWebhook, pero para eventos de PLANTILLA (message_template_
+// status_update / quality_update / template_category_update): esos NO traen
+// value.metadata.phone_number_id — el dueño se identifica por entry.id, que es el
+// WABA_ID, no el phone_number_id. Sin esta función esos webhooks se descartaban en la
+// resolución de arriba (phoneNumberId quedaba undefined) y el CRM nunca se enteraba de
+// una aprobación o rechazo de plantilla.
+function resolveEmpresaForWaba(wabaId) {
+  if (!wabaId) return null;
+  try {
+    const platform = require('../db/platform');
+    const emp = platform.getEmpresaByWabaId(wabaId);
+    if (emp) return emp;
+  } catch (e) {
+    console.error('[Webhook] error resolviendo empresa por WABA_ID:', e.message);
+    if (String(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '') === String(wabaId)) {
+      return { id: adapter.DEFAULT_EMPRESA_ID, db_path: adapter.DEFAULT_DB_PATH, nombre: 'SP Leons Group' };
+    }
+  }
+  return null;
+}
+
 // Palabras de baja reconocidas — se comparan contra el mensaje COMPLETO (no como
 // substring) para no confundir "quiero cancelar la cita" con una orden real de baja.
 const OPTOUT_KEYWORDS = ['stop', 'baja', 'no molestar', 'no molestes', 'no molestes mas', 'unsubscribe', 'detener'];
@@ -113,6 +134,26 @@ function handleMessage(req, res) {
     for (const entry of body.entry || []) {
       if (!entry || !Array.isArray(entry.changes)) continue;
 
+      // Los eventos de ciclo de vida de plantilla (aprobación/rechazo/calidad/categoría)
+      // no traen value.metadata — se resuelven por entry.id (el WABA_ID) ANTES de la
+      // resolución por phone_number_id de abajo, o el entry se descartaría entero sin
+      // que el CRM se enterara nunca de una aprobación.
+      const CAMPOS_PLANTILLA = ['message_template_status_update', 'message_template_quality_update', 'template_category_update'];
+      const cambiosTpl = (entry.changes || []).filter(c => c && CAMPOS_PLANTILLA.includes(c.field));
+      if (cambiosTpl.length) {
+        const empTpl = resolveEmpresaForWaba(entry.id);
+        if (empTpl) {
+          const ctxTpl = { empresaId: empTpl.id, dbPath: empTpl.db_path };
+          adapter.tenantContext.run(ctxTpl, () => {
+            try { require('../services/wa-templates').handleTemplateWebhook(cambiosTpl, ctxTpl); }
+            catch (e) { console.error('[Webhook] handleTemplateWebhook:', e.message); }
+          });
+        } else {
+          console.log(`[Webhook] WABA_ID ${entry.id} no registrado — evento de plantilla ignorado (200 ya respondido a Meta)`);
+        }
+        if (cambiosTpl.length === (entry.changes || []).length) continue; // el entry era solo de plantillas
+      }
+
       // Vid.a V3 — cada entry de Meta pertenece a UNA WABA concreta: su metadata lleva
       // phone_number_id, que resuelve al negocio dueño (control plane, fallback .env
       // para empresa #1). Todo el procesamiento del entry corre en el tenant de ESE negocio.
@@ -182,7 +223,11 @@ function processEntry(entry, entryCtx) {
         // CSAT (F3.2): si es la respuesta a la encuesta de satisfacción, se consume aquí.
         if (tryCaptureCsat(fromPhone, messageBody)) continue;
 
-        routeReply(fromPhone, messageBody, customerName, msg.id || null, (err, result) => re(() => {
+        // F-zonas: el referral se pasa DENTRO de routeReply (no después) para que la
+        // zona del anuncio se resuelva antes de elegir asesor — antes esto corría
+        // después de asignar, así que el lead ya había caído en el asesor equivocado
+        // para cuando se sabía de qué anuncio/zona venía (ver services/zonas.js).
+        routeReply(fromPhone, messageBody, customerName, msg.id || null, msg.referral || null, (err, result) => re(() => {
           if (err) { console.error('Error routing message:', err.message); return; }
           if (result.forwarded) console.log(`Mensaje reenviado a ${result.to}`);
           if (result.message === 'no_hay_vendedores') {
@@ -194,10 +239,11 @@ function processEntry(entry, entryCtx) {
           }
         }));
 
-        // Click-to-WhatsApp ads incluyen `referral` en el primer mensaje (anuncio/campaña
-        // de origen). saveLead ya corrió de forma síncrona dentro de routeReply, así que
-        // el lead ya existe aquí — se guarda el origen real para que reportes y la
-        // distribución inteligente de leads (assigner.js) lo puedan usar.
+        // Para un lead RECIÉN creado, routeReply/assigner.js ya guardó esta misma
+        // atribución antes de asignar (con la zona resuelta a tiempo). Este bloque queda
+        // como red de seguridad para el caso de un lead YA EXISTENTE que recibe un
+        // referral por primera vez (p.ej. un cliente que vuelve a escribir desde un
+        // anuncio distinto) — los guards de abajo hacen que sea no-op si ya se guardó.
         if (msg.referral) {
           try {
             const origen = msg.referral.headline || msg.referral.body || msg.referral.source_url || null;
@@ -230,7 +276,7 @@ function processEntry(entry, entryCtx) {
       if (msg.type === 'location') {
         const loc = msg.location;
         if (!loc) continue;
-        routeIncomingLocation(fromPhone, customerName, { latitude: loc.latitude, longitude: loc.longitude, name: loc.name || '', address: loc.address || '' }, msg.id || null, (err, result) => re(() => {
+        routeIncomingLocation(fromPhone, customerName, { latitude: loc.latitude, longitude: loc.longitude, name: loc.name || '', address: loc.address || '' }, msg.id || null, msg.referral || null, (err, result) => re(() => {
           if (err) { console.error('Error routing location:', err.message); return; }
           if (result && result.forwarded) console.log(`Ubicación reenviada a ${result.to}`);
         }));
@@ -365,7 +411,7 @@ async function handleMediaMessage(msg, fromPhone, customerName, entryCtx) {
       caption: mediaObj.caption || '',
     };
 
-    routeIncomingMedia(fromPhone, customerName, mediaData, msg.id || null, (err, result) => {
+    routeIncomingMedia(fromPhone, customerName, mediaData, msg.id || null, msg.referral || null, (err, result) => {
       // Re-entrar al tenant por si el callback se invoca con el contexto ya desmontado.
       adapter.tenantContext.run(entryCtx, () => {
         if (err) { console.error('Error routing media:', err.message); return; }

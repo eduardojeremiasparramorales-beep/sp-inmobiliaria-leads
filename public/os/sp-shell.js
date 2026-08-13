@@ -58,6 +58,7 @@
     sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
     moon: P('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
     monitor: P('<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'),
+    mapPin: P('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>'),
   };
 
   /* --- Navegación (una sola verdad) --- */
@@ -72,7 +73,9 @@
     ]},
     { title: 'Negocio', items: [
       { id: 'proyectos', label: 'Proyectos', icon: 'properties', href: '/os/proyectos.html' },
+      { id: 'zonas', label: 'Zonas', icon: 'mapPin', href: '/os/zonas.html', admin: true },
       { id: 'galeria', label: 'Galería', icon: 'spark', href: '/os/galeria.html' },
+      { id: 'plantillas', label: 'Plantillas WhatsApp', icon: 'msg', href: '/os/plantillas.html', admin: true },
       { id: 'campaigns', label: 'Mensajes masivos', icon: 'campaigns', href: '/os/campanas.html' },
       { id: 'campanas-sp', label: 'Estudio creativo', icon: 'spark', href: '/os/campanas-sp.html' },
       { id: 'meta-ads', label: 'Meta Ads', icon: 'campaigns', href: '/os/meta-ads.html', admin: true },

@@ -33,7 +33,23 @@ class WhatsAppAdapter extends ChannelAdapter {
     return res.data;
   }
 
-  async sendTemplate(to, templateName, params) {
+  // Antes armaba el payload a mano: solo body posicional y `language` fijo en 'es', sin
+  // var_mapping — las automatizaciones (workflow.js, acción send_template) mandaban
+  // parámetros ciegos en vez de resolver las variables del lead. Si la plantilla está
+  // sincronizada en el CRM, delega en el motor completo (mismo que usa el envío 1-a-1,
+  // campañas y reactivación) para que los cuatro caminos de envío compartan reglas.
+  // Si no está sincronizada (aún no la trajo el sync), cae al comportamiento anterior.
+  async sendTemplate(to, templateName, params, leadId) {
+    const store = require('../db/store');
+    const tpl = store.getWATemplateByName(templateName);
+    if (tpl) {
+      const { sendResolvedTemplate } = require('../services/wa-templates');
+      const lead = leadId ? store.getLeadById(leadId) : null;
+      const vendedor = lead && lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+      // params posicional (legacy) se traduce a overrides por índice solo si la plantilla
+      // no tiene var_mapping — si lo tiene, se resuelve del lead como en cualquier otro envío.
+      return sendResolvedTemplate(to, tpl, lead, vendedor, {});
+    }
     const { url, headers } = this.getApiConfig();
     const components = params ? [{
       type: 'body',

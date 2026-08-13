@@ -5,10 +5,11 @@ const WINDOW_CLOSED_CODE = 131047;
 const TOKEN_INVALID_CODE = 190;
 
 // Vid.a V3 — credenciales del canal SEGÚN el tenant activo:
-//   · Empresa #1 (SP Leons Group, legacy): WHATSAPP_TOKEN / PHONE_NUMBER_ID de .env.
+//   · Empresa #1 (SP Leons Group, legacy): WHATSAPP_TOKEN / PHONE_NUMBER_ID / WABA_ID de .env.
 //   · Negocios clientes: canal registrado en el control plane (token cifrado con
-//     AES-256-GCM, ver db/platform.js + services/crypto-vault.js) — canal_id = phone_number_id.
-// Devuelve { token, phoneNumberId, empresaId }.
+//     AES-256-GCM, ver db/platform.js + services/crypto-vault.js) — canal_id = phone_number_id,
+//     y el waba_id (necesario para gestionar plantillas, no para enviar mensajes) vive en extra_json.
+// Devuelve { token, phoneNumberId, wabaId, empresaId }.
 function getAuth() {
   const adapter = require('../db/adapter');
   const ctx = adapter.tenantContext.getStore();
@@ -17,8 +18,9 @@ function getAuth() {
   if (empresaId === adapter.DEFAULT_EMPRESA_ID) {
     const token = process.env.WHATSAPP_TOKEN;
     const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
     if (!token || !phoneNumberId) throw new Error('Faltan WHATSAPP_TOKEN o PHONE_NUMBER_ID');
-    return { token, phoneNumberId, empresaId };
+    return { token, phoneNumberId, wabaId, empresaId };
   }
 
   const platform = require('../db/platform');
@@ -26,13 +28,28 @@ function getAuth() {
   const canal = (platform.getCanalesByEmpresa(empresaId) || []).find(c => c.canal === 'whatsapp');
   if (!canal) throw new Error(`Empresa #${empresaId}: canal WhatsApp no conectado en el control plane`);
   const token = vault.decrypt(platform.getCanalToken(canal.canal_id));
-  return { token, phoneNumberId: canal.canal_id, empresaId };
+  let wabaId = null;
+  try { wabaId = JSON.parse(canal.extra_json || '{}').waba_id || null; } catch (e) { /* extra_json corrupto */ }
+  return { token, phoneNumberId: canal.canal_id, wabaId, empresaId };
 }
 
 function getApiConfig() {
   const { token, phoneNumberId, empresaId } = getAuth();
   return {
     url: `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    empresaId,
+  };
+}
+
+// Config para las llamadas de GESTIÓN de plantillas (distinto del endpoint /messages de
+// arriba): usan la WABA_ID, no el phone_number_id.
+function getGraphConfig() {
+  const { token, wabaId, empresaId } = getAuth();
+  if (!wabaId) throw new Error(`Empresa #${empresaId}: falta el WABA_ID del canal WhatsApp (no se puede gestionar plantillas)`);
+  return {
+    base: `https://graph.facebook.com/${API_VERSION}`,
+    wabaId,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     empresaId,
   };
@@ -102,6 +119,7 @@ async function sendMessageSmart(to, text, leadId) {
     if (!templateName) {
       const e2 = new Error('Ventana de 24h cerrada. Configura un template de reactivación en Configuración.');
       e2.windowClosed = true;
+      e2.accion = 'configurar_plantilla_reactivacion';
       throw e2;
     }
 
@@ -317,4 +335,4 @@ async function revokeMessage(to, wamid) {
   }
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality, getApiConfig, getAuth };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality, getApiConfig, getAuth, getGraphConfig };

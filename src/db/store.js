@@ -1985,7 +1985,7 @@ function getWATemplateByMetaId(metaId) {
 // distintas, cada una con su propio meta_template_id.
 function upsertWATemplateFull(t) {
   const existing = getWATemplateByNameIdioma(t.nombre, t.idioma);
-  const now = SQL_NOW_UTC();
+  const now = nowUTC();
   if (existing) {
     run(`UPDATE wa_templates SET categoria = ?, estado = ?, componentes = ?, variables = ?,
            meta_template_id = COALESCE(?, meta_template_id), motivo_rechazo = ?, estado_detalle = ?,
@@ -2008,7 +2008,7 @@ function upsertWATemplateFull(t) {
 function upsertWATemplateByMetaId(t) {
   const existing = t.metaTemplateId ? getWATemplateByMetaId(t.metaTemplateId) : null;
   if (existing) {
-    const now = SQL_NOW_UTC();
+    const now = nowUTC();
     run(`UPDATE wa_templates SET nombre = ?, idioma = ?, categoria = ?, estado = ?, componentes = ?,
            variables = ?, motivo_rechazo = ?, estado_detalle = ?, calidad = ?, updated_at = ?, meta_sync_at = ?
          WHERE id = ?`,
@@ -2027,14 +2027,14 @@ function setWATemplateMapping(id, mappingJson) {
 function setWATemplateEstado(id, { estado, motivo, detalle, calidad } = {}) {
   run(`UPDATE wa_templates SET estado = COALESCE(?, estado), motivo_rechazo = ?, estado_detalle = ?,
          calidad = COALESCE(?, calidad), updated_at = ? WHERE id = ?`,
-    [estado || null, motivo || null, detalle || null, calidad || null, SQL_NOW_UTC(), id]);
+    [estado || null, motivo || null, detalle || null, calidad || null, nowUTC(), id]);
 }
 
 // Alta de un borrador creado en el constructor del CRM (antes de que Meta confirme):
 // queda como PENDING con el spec crudo hasta que el webhook (o el POST de creación) lo
 // actualice con lo que Meta normalizó.
 function insertWATemplateBorrador({ nombre, idioma, categoria, componentes, variables, specJson, creadoPor, metaTemplateId, estado }) {
-  const now = SQL_NOW_UTC();
+  const now = nowUTC();
   run(`INSERT INTO wa_templates (nombre, idioma, categoria, estado, componentes, variables, spec_json,
          creado_por, creado_en_crm, meta_template_id, updated_at, meta_sync_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
@@ -2046,7 +2046,7 @@ function insertWATemplateBorrador({ nombre, idioma, categoria, componentes, vari
 function updateWATemplateSpec(id, { componentes, variables, specJson, estado }) {
   run(`UPDATE wa_templates SET componentes = COALESCE(?, componentes), variables = COALESCE(?, variables),
          spec_json = COALESCE(?, spec_json), estado = COALESCE(?, estado), updated_at = ? WHERE id = ?`,
-    [componentes || null, variables || null, specJson || null, estado || null, SQL_NOW_UTC(), id]);
+    [componentes || null, variables || null, specJson || null, estado || null, nowUTC(), id]);
 }
 
 // ═══════════════════════ Campañas masivas (broadcast) ═══════════════════════
@@ -2389,14 +2389,20 @@ function reassignLead(leadId, vendedor, vendedorAnteriorId) {
 
 // --- Eliminar vendedor y reasignar sus leads ---
 function deleteVendedor(id) {
-  const activos = all("SELECT * FROM vendedores WHERE estado = ? AND id != ? AND id NOT IN (SELECT vendedor_id FROM usuarios WHERE rol = 'admin' AND vendedor_id IS NOT NULL) ORDER BY total_leads ASC LIMIT 1", ['activo', id]);
-  const leadsReasignar = all('SELECT id FROM leads WHERE assigned_to_id = ? AND status != ?', [id, 'cerrado']);
+  const activos = all("SELECT * FROM vendedores WHERE estado = ? AND id != ? AND id NOT IN (SELECT vendedor_id FROM usuarios WHERE rol = 'admin' AND vendedor_id IS NOT NULL) ORDER BY total_leads ASC", ['activo', id]);
+  const leadsReasignar = all('SELECT id, zona FROM leads WHERE assigned_to_id = ? AND status != ?', [id, 'cerrado']);
 
   if (activos.length > 0) {
     const siguiente = activos[0];
+    // Por lead: si tiene zona resuelta, se prefiere un asesor que la cubra (mismo
+    // criterio que el resto de la app, F-zonas) antes que el fallback global de menor
+    // carga — evita que los leads huérfanos de Mariquita caigan en un asesor de Tocaima
+    // solo porque quedó con menos leads en el momento del borrado.
+    const { vendedorCubreZona } = require('../services/zonas');
     leadsReasignar.forEach(lead => {
-      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [siguiente.id, siguiente.telefono, lead.id]);
-      run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [siguiente.id]);
+      const destino = (lead.zona && activos.find(v => vendedorCubreZona(v, lead.zona))) || siguiente;
+      run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [destino.id, destino.telefono, lead.id]);
+      run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [destino.id]);
     });
     // Reasignar también las conversaciones del schema multicanal — tienen su propia
     // FK (conversations.assigned_to_id → vendedores.id) independiente de `leads`, y

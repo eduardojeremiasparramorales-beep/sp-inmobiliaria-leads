@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>Leons Group · Plantillas WhatsApp</title><link rel="stylesheet" href="/fonts/fonts.css">
+<script src="/os/theme.js"></script>
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .pl-page { max-width: 1100px; margin: 0 auto; }
+  .pl-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: var(--s3); }
+  .pl-toolbar input[type="text"], .pl-toolbar input:not([type]) { flex: 1; min-width: 180px; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 9px 12px; font-family: var(--f-ui); font-size: 13.5px; outline: none; }
+  .pl-toolbar select { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 9px 10px; font-family: var(--f-ui); font-size: 13px; outline: none; }
+  .pl-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pl-chip { padding: 7px 13px; border-radius: 999px; background: var(--bg-3); border: 1px solid var(--border); color: var(--text-3); font-size: 12.5px; cursor: pointer; font-family: var(--f-ui); white-space: nowrap; }
+  .pl-chip.on { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 600; }
+  .pl-btn { height: 38px; padding: 0 18px; background: var(--gold); color: #000; border: none; border-radius: var(--r-sm); font-weight: 600; font-size: 13px; cursor: pointer; font-family: var(--f-ui); white-space: nowrap; }
+  .pl-btn--ghost { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
+  .pl-btn--danger { background: #c0392b; color: #fff; }
+  .pl-btn--sm { height: 30px; padding: 0 12px; font-size: 12px; }
+  .pl-btn:disabled { opacity: .45; cursor: default; }
+  .pl-empty { text-align: center; padding: 46px 20px; color: var(--text-3); background: var(--bg-2); border-radius: 16px; border: 1px dashed var(--border); }
+  .pl-card { border: 1px solid var(--border-soft); border-radius: 14px; padding: 16px; margin-bottom: 12px; background: var(--bg-2); }
+  .pl-card__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .pl-card__name { font-size: 15px; font-weight: 600; }
+  .pl-card__meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+  .pl-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pl-badge { font-size: 10.5px; padding: 2px 9px; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .pl-badge--APPROVED { background: rgba(78,123,70,.18); color: var(--green); }
+  .pl-badge--PENDING, .pl-badge--IN_APPEAL { background: rgba(200,164,90,.18); color: var(--gold); }
+  .pl-badge--REJECTED, .pl-badge--DISABLED { background: rgba(255,80,80,.15); color: #ff5050; }
+  .pl-badge--PAUSED { background: rgba(255,170,0,.15); color: #ffaa00; }
+  .pl-badge--DELETED { background: rgba(150,150,150,.15); color: var(--text-3); }
+  .pl-badge--gold { background: rgba(200,164,90,.18); color: var(--gold); }
+  .pl-snippet { font-size: 12.5px; color: var(--text-2); margin: 8px 0; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pl-reject { background: rgba(255,80,80,.1); border: 1px solid rgba(255,80,80,.3); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: #ff8080; margin: 8px 0; }
+  .pl-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .pl-mapping { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+  .pl-mapping__row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .pl-mapping__row span { font-size: 12px; color: var(--text-3); min-width: 100px; }
+  .pl-mapping__row select { flex: 1; background: var(--bg-0); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 9px; font-size: 12.5px; }
+
+  /* Constructor modal */
+  .pl-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; }
+  .pl-modal-bg.show { display: block; }
+  .pl-modal { position: fixed; inset: 0; z-index: 1000; display: none; overflow-y: auto; background: var(--bg-0); }
+  .pl-modal.show { display: block; }
+  .pl-modal__head { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: var(--bg-1); border-bottom: 1px solid var(--border-soft); }
+  .pl-modal__head h2 { font-family: var(--f-title); font-size: 16px; }
+  .pl-modal__body { display: grid; grid-template-columns: 1fr 380px; gap: 24px; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 900px) { .pl-modal__body { grid-template-columns: 1fr; } }
+  .pl-field { margin-bottom: 16px; }
+  .pl-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
+  .pl-field input, .pl-field select, .pl-field textarea { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 10px 12px; font-family: var(--f-ui); font-size: 13.5px; outline: none; }
+  .pl-field textarea { resize: vertical; min-height: 70px; }
+  .pl-field .pl-hint { font-size: 11px; color: var(--text-3); margin-top: 5px; }
+  .pl-field .pl-count { font-size: 11px; color: var(--text-3); text-align: right; margin-top: 4px; }
+  .pl-row { display: flex; gap: 12px; }
+  .pl-row > .pl-field { flex: 1; }
+  .pl-sec-title { font-family: var(--f-title); font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 20px 0 10px; }
+  .pl-varbtn { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 10px; border-radius: 8px; background: rgba(200,164,90,.12); color: var(--gold); border: 1px solid rgba(200,164,90,.3); cursor: pointer; margin: 3px 4px 3px 0; }
+  .pl-boton-row { border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: var(--bg-2); }
+  .pl-boton-row__top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .pl-boton-row__top select { flex: 1; }
+  .pl-x { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 16px; padding: 4px 8px; }
+
+  /* Preview column */
+  .pl-preview-wrap { position: sticky; top: 80px; }
+  .pl-wa-bg { background: #0b141a; border-radius: 16px; padding: 20px 14px; min-height: 200px; }
+  .pl-bubble { background: #005c4b; color: #fff; border-radius: 12px 12px 12px 2px; padding: 11px 13px; font-size: 13.5px; line-height: 1.45; max-width: 260px; margin: 0 auto; }
+  .pl-bubble__hdr { font-weight: 700; margin-bottom: 4px; }
+  .pl-bubble__ftr { opacity: .7; font-size: 11px; margin-top: 6px; }
+  .pl-bubble__btns { border-top: 1px solid rgba(255,255,255,.25); margin-top: 8px; padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .pl-bubble__btns div { text-align: center; font-size: 12.5px; color: #53bdeb; }
+  .pl-var-missing { color: #ffb4b4; }
+  .pl-validation { margin-top: 16px; }
+  .pl-verr { background: rgba(255,80,80,.1); border: 1px solid rgba(255,80,80,.3); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: #ff8080; margin-bottom: 6px; }
+  .pl-vwarn { background: rgba(255,170,0,.1); border: 1px solid rgba(255,170,0,.3); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: #ffaa00; margin-bottom: 6px; }
+  .pl-vok { font-size: 12.5px; color: var(--green); padding: 8px 0; }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  'use strict';
+  const { api, toast } = SPOS;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const ctx = await SPOS.mount({ active: 'plantillas', title: 'Plantillas de WhatsApp', crumb: 'Marketing · Meta', padded: true, adminOnly: true });
+  if (!ctx) return;
+
+  // ===== Estado =====
+  let templates = [], catalog = [], cfg = {};
+  let filtro = { q: '', estado: 'todos', categoria: '', idioma: '' };
+
+  const DEFAULT_EJEMPLOS = {
+    nombre_cliente: 'Juan Pérez', telefono: '+573001234567', proyecto: 'Sabana Real', ciudad: 'Tocaima',
+    precio: '$45.000.000', vendedor_nombre: 'Sergio Parra', vendedor_telefono: '+573214625618',
+    link_ubicacion: 'https://maps.google.com/?q=4.6,-74.1', link_catalogo: 'https://spcrm.duckdns.org/catalogo/',
+    empresa: 'Leons Group', fecha_cita: 'viernes 12 de septiembre', hora_cita: '10:00 a.m.',
+  };
+
+  function extraerVariables(texto) {
+    const m = String(texto || '').match(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g) || [];
+    return [...new Set(m.map(x => x.replace(/[{}]/g, '').trim()))];
+  }
+
+  // ===== Carga =====
+  async function cargar() {
+    const [t, c, config] = await Promise.all([api('/api/wa-templates?estado=todos'), api('/api/template-vars'), api('/api/config')]);
+    templates = t || []; catalog = c || []; cfg = config || {};
+  }
+
+  function renderPage() {
+    ctx.content.innerHTML = `
+      <div class="pl-page">
+        <div class="pl-toolbar">
+          <input type="text" id="plSearch" placeholder="Buscar plantilla…">
+          <select id="plCategoria"><option value="">Todas las categorías</option><option value="MARKETING">Marketing</option><option value="UTILITY">Utilidad</option><option value="AUTHENTICATION">Autenticación</option></select>
+          <select id="plIdioma"><option value="">Todos los idiomas</option></select>
+          <button class="pl-btn" id="btnNueva">+ Nueva plantilla</button>
+          <button class="pl-btn pl-btn--ghost" id="btnSync">Sincronizar desde Meta</button>
+        </div>
+        <div class="pl-chips" id="plChips" style="margin-bottom:16px"></div>
+        <div id="plList"></div>
+      </div>
+      ${modalHtml()}`;
+    wireToolbar();
+    wireModalStatic();
+    renderChips();
+    renderList();
+  }
+
+  function estadoLabel(e) {
+    return { APPROVED: 'Aprobada', PENDING: 'En revisión', IN_APPEAL: 'En apelación', REJECTED: 'Rechazada', PAUSED: 'Pausada', DISABLED: 'Deshabilitada', DELETED: 'Eliminada en Meta' }[e] || e || '—';
+  }
+  function categoriaLabel(c) { return { MARKETING: 'Marketing', UTILITY: 'Utilidad', AUTHENTICATION: 'Autenticación' }[c] || c || ''; }
+
+  function snippetDe(t) {
+    let componentes = []; try { componentes = JSON.parse(t.componentes || '[]'); } catch (e) {}
+    const body = (componentes || []).find(c => c.type === 'BODY');
+    return body && body.text ? body.text : '(sin cuerpo)';
+  }
+
+  function renderChips() {
+    const chips = [
+      ['todos', 'Todas'], ['APPROVED', 'Aprobadas'], ['PENDING', 'Pendientes'], ['REJECTED', 'Rechazadas'], ['PAUSED', 'Pausadas'],
+    ];
+    document.getElementById('plChips').innerHTML = chips.map(([v, l]) => {
+      const n = v === 'todos' ? templates.length : templates.filter(t => t.estado === v).length;
+      return `<button class="pl-chip ${filtro.estado === v ? 'on' : ''}" data-estado="${v}">${l}${n ? ` (${n})` : ''}</button>`;
+    }).join('');
+    document.getElementById('plChips').querySelectorAll('[data-estado]').forEach(b => b.onclick = () => { filtro.estado = b.dataset.estado; renderChips(); renderList(); });
+
+    const idiomas = [...new Set(templates.map(t => t.idioma).filter(Boolean))];
+    const selIdioma = document.getElementById('plIdioma');
+    if (selIdioma) selIdioma.innerHTML = '<option value="">Todos los idiomas</option>' + idiomas.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+  }
+
+  function renderList() {
+    const box = document.getElementById('plList');
+    let lista = templates.filter(t => t.estado !== 'DELETED' || filtro.estado === 'todos');
+    if (filtro.estado !== 'todos') lista = lista.filter(t => t.estado === filtro.estado);
+    if (filtro.categoria) lista = lista.filter(t => t.categoria === filtro.categoria);
+    if (filtro.idioma) lista = lista.filter(t => t.idioma === filtro.idioma);
+    if (filtro.q) { const q = filtro.q.toLowerCase(); lista = lista.filter(t => t.nombre.toLowerCase().includes(q) || snippetDe(t).toLowerCase().includes(q)); }
+
+    if (!lista.length) { box.innerHTML = '<div class="pl-empty">Ninguna plantilla coincide. Crea una nueva o sincroniza desde Meta.</div>'; return; }
+
+    box.innerHTML = lista.map(t => {
+      let vars = [], mapping = {};
+      try { vars = JSON.parse(t.variables || '[]'); } catch (e) {}
+      try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+      const esReactivacion = cfg.reengagement_template === t.nombre;
+      const esRecordatorio = cfg.recordatorio_template === t.nombre;
+      const editable = !!t.meta_template_id;
+      const creadaAqui = !!t.creado_en_crm;
+      return `<div class="pl-card" data-id="${t.id}">
+        <div class="pl-card__top">
+          <div>
+            <div class="pl-card__name">${esc(t.nombre)}</div>
+            <div class="pl-card__meta">${esc(t.idioma || '')} · ${esc(categoriaLabel(t.categoria))}${t.calidad ? ' · calidad ' + esc(t.calidad) : ''}</div>
+          </div>
+          <div class="pl-badges">
+            ${esReactivacion ? '<span class="pl-badge pl-badge--gold">Reactivación</span>' : ''}
+            ${esRecordatorio ? '<span class="pl-badge pl-badge--gold">Recordatorio</span>' : ''}
+            <span class="pl-badge pl-badge--${esc(t.estado)}">${estadoLabel(t.estado)}</span>
+          </div>
+        </div>
+        <div class="pl-snippet">${esc(snippetDe(t))}</div>
+        ${t.estado === 'REJECTED' ? `<div class="pl-reject">❌ ${esc(t.motivo_rechazo || 'Rechazada por Meta')}${t.estado_detalle ? ' — ' + esc(t.estado_detalle) : ''}</div>` : ''}
+        ${t.estado === 'PAUSED' ? `<div class="pl-reject">⚠️ Pausada por Meta (calidad baja) — no se puede enviar hasta que la reactives en Meta Business Suite.</div>` : ''}
+        <div class="pl-actions">
+          ${creadaAqui ? `<button class="pl-btn pl-btn--sm pl-btn--ghost" data-a="editar">Editar</button>` : ''}
+          <button class="pl-btn pl-btn--sm pl-btn--ghost" data-a="duplicar">Duplicar</button>
+          ${editable ? `<button class="pl-btn pl-btn--sm pl-btn--ghost" data-a="refrescar">Comprobar estado</button>` : ''}
+          ${t.estado === 'APPROVED' && !esReactivacion ? `<button class="pl-btn pl-btn--sm pl-btn--ghost" data-a="usar-reactivacion">Usar como reactivación</button>` : ''}
+          <button class="pl-btn pl-btn--sm pl-btn--danger" data-a="eliminar">Eliminar</button>
+        </div>
+        ${vars.length ? `<div class="pl-mapping">${vars.map(ph => `
+          <div class="pl-mapping__row">
+            <span>{{${esc(ph)}}}</span>
+            <select data-ph="${esc(ph)}">
+              <option value="">Sin asignar (se pide a mano al enviar)</option>
+              ${catalog.map(c => `<option value="${c.key}" ${mapping[ph] === c.key ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
+            </select>
+          </div>`).join('')}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    box.querySelectorAll('.pl-card').forEach(card => {
+      const id = Number(card.dataset.id);
+      const t = templates.find(x => x.id === id);
+      card.querySelectorAll('[data-a]').forEach(btn => btn.onclick = () => accionCard(btn.dataset.a, t));
+      card.querySelectorAll('select[data-ph]').forEach(sel => sel.onchange = async () => {
+        let mapping = {}; try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+        mapping[sel.dataset.ph] = sel.value;
+        const r = await api(`/api/wa-templates/${t.id}/mapping`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mapping }) });
+        if (r) { t.var_mapping = JSON.stringify(mapping); toast('Variable asignada', 'ok'); } else toast('Error al guardar', 'err');
+      });
+    });
+  }
+
+  async function accionCard(a, t) {
+    if (a === 'editar') return abrirConstructor(t);
+    if (a === 'duplicar') return abrirDuplicar(t);
+    if (a === 'refrescar') {
+      const r = await api(`/api/wa-templates/${t.id}/refrescar`, { method: 'POST' });
+      if (r && r.ok) { toast(`Estado actualizado: ${estadoLabel(r.estado)}`, 'ok'); await cargar(); renderChips(); renderList(); }
+      else toast('Error: ' + (r && r.detalle || 'no se pudo consultar Meta'), 'err');
+      return;
+    }
+    if (a === 'usar-reactivacion') {
+      const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reengagement_template: t.nombre }) });
+      if (r) { cfg.reengagement_template = t.nombre; toast(`"${t.nombre}" es ahora la plantilla de reactivación`, 'ok'); renderList(); } else toast('Error al guardar', 'err');
+      return;
+    }
+    if (a === 'eliminar') {
+      if (!confirm(`¿Eliminar "${t.nombre}"? Esto la borra también en Meta. El nombre queda bloqueado ~30 días antes de poder reusarse.`)) return;
+      const r = await api(`/api/wa-templates/${t.id}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Plantilla eliminada', 'ok'); await cargar(); renderChips(); renderList(); }
+      else toast('Error: ' + (r && r.detalle || 'no se pudo eliminar'), 'err');
+      return;
+    }
+  }
+
+  function wireToolbar() {
+    document.getElementById('plSearch').oninput = e => { filtro.q = e.target.value; renderList(); };
+    document.getElementById('plCategoria').onchange = e => { filtro.categoria = e.target.value; renderList(); };
+    document.getElementById('plIdioma').onchange = e => { filtro.idioma = e.target.value; renderList(); };
+    document.getElementById('btnNueva').onclick = () => abrirConstructor(null);
+    document.getElementById('btnSync').onclick = async () => {
+      const btn = document.getElementById('btnSync');
+      btn.disabled = true; btn.textContent = 'Sincronizando…';
+      const r = await api('/api/wa-templates/sync', { method: 'POST' });
+      btn.disabled = false; btn.textContent = 'Sincronizar desde Meta';
+      if (r && r.ok) { toast(`${r.synced} de ${r.total} plantilla(s) sincronizada(s)`, 'ok'); await cargar(); renderChips(); renderList(); }
+      else toast('Error al sincronizar: ' + (r && r.detalle || 'revisa el token/WABA_ID'), 'err');
+    };
+  }
+
+  // ===================== CONSTRUCTOR =====================
+  function modalHtml() {
+    return `
+    <div class="pl-modal-bg" id="plModalBg"></div>
+    <div class="pl-modal" id="plModal">
+      <div class="pl-modal__head">
+        <h2 id="plModalTitle">Nueva plantilla</h2>
+        <button class="pl-btn pl-btn--ghost pl-btn--sm" id="plModalClose">Cerrar ✕</button>
+      </div>
+      <div class="pl-modal__body">
+        <div>
+          <div class="pl-row">
+            <div class="pl-field">
+              <label>Nombre</label>
+              <input type="text" id="fNombre" placeholder="recordatorio_visita">
+              <div class="pl-hint" id="fNombreSlug">se guardará como: —</div>
+            </div>
+            <div class="pl-field" style="max-width:140px">
+              <label>Idioma</label>
+              <select id="fIdioma"><option value="es">Español (es)</option><option value="es_CO">Español CO</option><option value="es_MX">Español MX</option><option value="en_US">Inglés (en_US)</option></select>
+            </div>
+          </div>
+          <div class="pl-field">
+            <label>Categoría</label>
+            <select id="fCategoria">
+              <option value="UTILITY">Utilidad — confirmaciones, recordatorios, actualizaciones de una acción del cliente</option>
+              <option value="MARKETING">Marketing — promociones, novedades, reactivación</option>
+              <option value="AUTHENTICATION">Autenticación — códigos de un solo uso</option>
+            </select>
+            <div class="pl-hint">Declarar la categoría incorrecta es la causa #1 de rechazo de Meta.</div>
+          </div>
+
+          <div class="pl-sec-title">Encabezado (opcional)</div>
+          <div class="pl-field">
+            <select id="fHeaderTipo">
+              <option value="ninguno">Sin encabezado</option>
+              <option value="texto">Texto</option>
+              <option value="imagen" disabled>Imagen (próximamente)</option>
+              <option value="video" disabled>Video (próximamente)</option>
+              <option value="documento" disabled>Documento (próximamente)</option>
+            </select>
+          </div>
+          <div id="fHeaderTextoWrap" style="display:none">
+            <div class="pl-field"><input type="text" id="fHeaderTexto" maxlength="60" placeholder="Tu visita a {{proyecto}}"><div class="pl-count" id="fHeaderCount">0/60</div></div>
+            <div id="fHeaderEjemplos"></div>
+          </div>
+
+          <div class="pl-sec-title">Cuerpo del mensaje</div>
+          <div class="pl-field">
+            <textarea id="fBody" maxlength="1024" placeholder="Hola {{nombre_cliente}}, te esperamos el {{fecha_cita}} en {{proyecto}}."></textarea>
+            <div class="pl-count" id="fBodyCount">0/1024</div>
+          </div>
+          <div>
+            <div class="pl-hint" style="margin-bottom:6px">Insertar variable en el cuerpo:</div>
+            <div id="fVarBtns"></div>
+          </div>
+          <div id="fBodyEjemplos"></div>
+
+          <div class="pl-sec-title">Pie (opcional)</div>
+          <div class="pl-field"><input type="text" id="fFooter" maxlength="60" placeholder="Leons Group"><div class="pl-count" id="fFooterCount">0/60</div></div>
+
+          <div class="pl-sec-title">Botones (opcional)</div>
+          <div id="fBotones"></div>
+          <button type="button" class="pl-btn pl-btn--ghost pl-btn--sm" id="btnAddBoton">+ Añadir botón</button>
+
+          <div style="margin-top:24px;display:flex;gap:10px">
+            <button class="pl-btn" id="btnGuardar">Guardar y enviar a Meta</button>
+            <div class="pl-hint" style="align-self:center">Meta suele revisar en minutos, a veces hasta 24 horas.</div>
+          </div>
+        </div>
+
+        <div class="pl-preview-wrap">
+          <div class="pl-wa-bg"><div class="pl-bubble" id="plBubble"></div></div>
+          <div class="pl-validation" id="plValidation"></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Estado del constructor (se resetea cada vez que se abre)
+  let editando = null; // fila existente, o null si es nueva
+  let botones = []; // [{tipo,texto,url,telefono,ejemplo}]
+  let headerEjemplos = {}, bodyEjemplos = {};
+  let ultimoFocoBody = true; // true=body, false=header — dónde insertar la variable
+
+  function wireModalStatic() {
+    document.getElementById('plModalClose').onclick = cerrarConstructor;
+    document.getElementById('plModalBg').onclick = cerrarConstructor;
+    document.getElementById('fHeaderTipo').onchange = () => { document.getElementById('fHeaderTextoWrap').style.display = document.getElementById('fHeaderTipo').value === 'texto' ? 'block' : 'none'; actualizar(); };
+    document.getElementById('fHeaderTexto').oninput = actualizar;
+    document.getElementById('fHeaderTexto').onfocus = () => { ultimoFocoBody = false; };
+    document.getElementById('fBody').oninput = actualizar;
+    document.getElementById('fBody').onfocus = () => { ultimoFocoBody = true; };
+    document.getElementById('fFooter').oninput = actualizar;
+    document.getElementById('fNombre').oninput = actualizar;
+    document.getElementById('fIdioma').onchange = actualizar;
+    document.getElementById('fCategoria').onchange = actualizar;
+    document.getElementById('btnAddBoton').onclick = () => { botones.push({ tipo: 'QUICK_REPLY', texto: '' }); renderBotones(); actualizar(); };
+    document.getElementById('btnGuardar').onclick = guardar;
+  }
+
+  function abrirConstructor(t) {
+    editando = t || null;
+    botones = []; headerEjemplos = {}; bodyEjemplos = {};
+    document.getElementById('plModalTitle').textContent = t ? `Editar «${t.nombre}»` : 'Nueva plantilla';
+    document.getElementById('fNombre').value = t ? t.nombre : '';
+    document.getElementById('fNombre').disabled = !!t; // el nombre no se puede cambiar en Meta al editar
+    document.getElementById('fIdioma').value = t ? t.idioma : 'es';
+    document.getElementById('fIdioma').disabled = !!t;
+    document.getElementById('fCategoria').value = t ? t.categoria : 'UTILITY';
+    document.getElementById('fHeaderTipo').value = 'ninguno';
+    document.getElementById('fHeaderTexto').value = '';
+    document.getElementById('fHeaderTextoWrap').style.display = 'none';
+    document.getElementById('fBody').value = '';
+    document.getElementById('fFooter').value = '';
+
+    if (t && t.spec) {
+      const spec = t.spec;
+      if (spec.header && spec.header.tipo === 'texto') {
+        document.getElementById('fHeaderTipo').value = 'texto';
+        document.getElementById('fHeaderTextoWrap').style.display = 'block';
+        document.getElementById('fHeaderTexto').value = spec.header.texto || '';
+        headerEjemplos = { ...(spec.header.ejemplos || {}) };
+      }
+      document.getElementById('fBody').value = (spec.body && spec.body.texto) || '';
+      bodyEjemplos = { ...((spec.body && spec.body.ejemplos) || {}) };
+      document.getElementById('fFooter').value = (spec.footer && spec.footer.texto) || '';
+      botones = (spec.botones || []).map(b => ({ ...b }));
+    }
+
+    document.getElementById('fVarBtns').innerHTML = catalog.map(c => `<button type="button" class="pl-varbtn" data-key="${c.key}">+ ${esc(c.label)}</button>`).join('');
+    document.getElementById('fVarBtns').querySelectorAll('[data-key]').forEach(b => b.onclick = () => insertarVariable(b.dataset.key));
+
+    renderBotones();
+    document.getElementById('plModalBg').classList.add('show');
+    document.getElementById('plModal').classList.add('show');
+    actualizar();
+  }
+
+  function abrirDuplicar(t) {
+    if (!t.spec_json) { toast('Esta plantilla no tiene un borrador guardado — solo se pueden duplicar las creadas en el CRM.', 'err'); return; }
+    const nombre = prompt(`Nombre de la copia de "${t.nombre}" (ej. ${t.nombre}_en para la versión en inglés):`, t.nombre + '_copia');
+    if (!nombre) return;
+    const idioma = prompt('Idioma (código, ej. es, en_US):', t.idioma) || t.idioma;
+    (async () => {
+      const r = await api(`/api/wa-templates/${t.id}/duplicar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, idioma }) });
+      if (r && r.ok) { toast('Duplicada y enviada a Meta', 'ok'); await cargar(); renderChips(); renderList(); }
+      else toast('Error: ' + (r && (r.errores ? r.errores.map(e => e.mensaje).join(' · ') : r.detalle) || 'no se pudo duplicar'), 'err');
+    })();
+  }
+
+  function cerrarConstructor() {
+    document.getElementById('plModalBg').classList.remove('show');
+    document.getElementById('plModal').classList.remove('show');
+  }
+
+  function insertarVariable(key) {
+    const campo = document.getElementById(ultimoFocoBody ? 'fBody' : 'fHeaderTexto');
+    const token = `{{${key}}}`;
+    const start = campo.selectionStart != null ? campo.selectionStart : campo.value.length;
+    const end = campo.selectionEnd != null ? campo.selectionEnd : campo.value.length;
+    campo.value = campo.value.slice(0, start) + token + campo.value.slice(end);
+    campo.focus(); campo.selectionStart = campo.selectionEnd = start + token.length;
+    const ejemplos = ultimoFocoBody ? bodyEjemplos : headerEjemplos;
+    if (!ejemplos[key]) ejemplos[key] = DEFAULT_EJEMPLOS[key] || '';
+    actualizar();
+  }
+
+  function renderBotones() {
+    const box = document.getElementById('fBotones');
+    box.innerHTML = botones.map((b, i) => `
+      <div class="pl-boton-row" data-i="${i}">
+        <div class="pl-boton-row__top">
+          <select data-f="tipo">
+            <option value="QUICK_REPLY" ${b.tipo === 'QUICK_REPLY' ? 'selected' : ''}>Respuesta rápida</option>
+            <option value="URL" ${b.tipo === 'URL' ? 'selected' : ''}>Ir a URL</option>
+            <option value="PHONE_NUMBER" ${b.tipo === 'PHONE_NUMBER' ? 'selected' : ''}>Llamar</option>
+          </select>
+          <button type="button" class="pl-x" data-del="1">✕</button>
+        </div>
+        <input type="text" data-f="texto" placeholder="Texto del botón" maxlength="25" value="${esc(b.texto || '')}" style="width:100%;margin-bottom:6px;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px">
+        ${b.tipo === 'URL' ? `<input type="text" data-f="url" placeholder="https://…/{{1}} (variable solo al final, opcional)" value="${esc(b.url || '')}" style="width:100%;margin-bottom:6px;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px">
+        <input type="text" data-f="ejemplo" placeholder="Ejemplo de la URL completa (si tiene variable)" value="${esc(b.ejemplo || '')}" style="width:100%;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px">` : ''}
+        ${b.tipo === 'PHONE_NUMBER' ? `<input type="text" data-f="telefono" placeholder="+573001234567" value="${esc(b.telefono || '')}" style="width:100%;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px">` : ''}
+      </div>`).join('');
+    box.querySelectorAll('.pl-boton-row').forEach(row => {
+      const i = Number(row.dataset.i);
+      row.querySelectorAll('[data-f]').forEach(el => el.oninput = el.onchange = () => {
+        botones[i][el.dataset.f] = el.value;
+        if (el.dataset.f === 'tipo') renderBotones();
+        actualizar();
+      });
+      const delBtn = row.querySelector('[data-del]'); if (delBtn) delBtn.onclick = () => { botones.splice(i, 1); renderBotones(); actualizar(); };
+    });
+  }
+
+  function leerSpec() {
+    const headerTipo = document.getElementById('fHeaderTipo').value;
+    const bodyTexto = document.getElementById('fBody').value;
+    const headerTexto = document.getElementById('fHeaderTexto').value;
+    // Limpia ejemplos huérfanos (variable ya no está en el texto)
+    const varsBody = extraerVariables(bodyTexto), varsHeader = extraerVariables(headerTexto);
+    Object.keys(bodyEjemplos).forEach(k => { if (!varsBody.includes(k)) delete bodyEjemplos[k]; });
+    Object.keys(headerEjemplos).forEach(k => { if (!varsHeader.includes(k)) delete headerEjemplos[k]; });
+    varsBody.forEach(k => { if (bodyEjemplos[k] === undefined) bodyEjemplos[k] = DEFAULT_EJEMPLOS[k] || ''; });
+    varsHeader.forEach(k => { if (headerEjemplos[k] === undefined) headerEjemplos[k] = DEFAULT_EJEMPLOS[k] || ''; });
+
+    return {
+      nombre: document.getElementById('fNombre').value,
+      idioma: document.getElementById('fIdioma').value,
+      categoria: document.getElementById('fCategoria').value,
+      parameterFormat: 'NAMED',
+      header: headerTipo === 'texto' ? { tipo: 'texto', texto: headerTexto, ejemplos: headerEjemplos } : { tipo: headerTipo },
+      body: { texto: bodyTexto, ejemplos: bodyEjemplos },
+      footer: { texto: document.getElementById('fFooter').value },
+      botones,
+    };
+  }
+
+  function renderEjemplosBoxes() {
+    const spec = leerSpec();
+    const boxBody = document.getElementById('fBodyEjemplos');
+    const varsBody = extraerVariables(spec.body.texto);
+    boxBody.innerHTML = varsBody.length ? `<div class="pl-hint" style="margin:8px 0 4px">Ejemplos (obligatorios, Meta los exige para aprobar):</div>` + varsBody.map(k => `
+      <input type="text" data-ejemplo-body="${esc(k)}" placeholder="Ejemplo de {{${esc(k)}}}" value="${esc(bodyEjemplos[k] || '')}" style="width:100%;margin-bottom:6px;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px">`).join('') : '';
+    boxBody.querySelectorAll('[data-ejemplo-body]').forEach(inp => inp.oninput = () => { bodyEjemplos[inp.dataset.ejemploBody] = inp.value; actualizar(); });
+
+    const boxHeader = document.getElementById('fHeaderEjemplos');
+    const varsHeader = extraerVariables(spec.header.texto || '');
+    boxHeader.innerHTML = varsHeader.length ? varsHeader.map(k => `
+      <input type="text" data-ejemplo-header="${esc(k)}" placeholder="Ejemplo de {{${esc(k)}}}" value="${esc(headerEjemplos[k] || '')}" style="width:100%;margin-top:6px;background:var(--bg-0);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px">`).join('') : '';
+    boxHeader.querySelectorAll('[data-ejemplo-header]').forEach(inp => inp.oninput = () => { headerEjemplos[inp.dataset.ejemploHeader] = inp.value; actualizar(); });
+  }
+
+  function pintarPreview(spec) {
+    const sustituir = (txt, ejemplos) => esc(txt || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => {
+      const v = ejemplos[k];
+      return v ? esc(v) : `<span class="pl-var-missing">{{${esc(k)}}}</span>`;
+    });
+    const bubble = document.getElementById('plBubble');
+    bubble.innerHTML = `
+      ${spec.header.tipo === 'texto' && spec.header.texto ? `<div class="pl-bubble__hdr">${sustituir(spec.header.texto, spec.header.ejemplos || {})}</div>` : ''}
+      <div style="white-space:pre-wrap">${sustituir(spec.body.texto, spec.body.ejemplos || {}) || '<span style="opacity:.5">Escribe el cuerpo del mensaje…</span>'}</div>
+      ${spec.footer.texto ? `<div class="pl-bubble__ftr">${esc(spec.footer.texto)}</div>` : ''}
+      ${spec.botones.length ? `<div class="pl-bubble__btns">${spec.botones.map(b => `<div>${esc(b.texto || '(sin texto)')}</div>`).join('')}</div>` : ''}`;
+  }
+
+  let debounceTimer = null, validationSeq = 0;
+  function actualizar() {
+    // contadores
+    document.getElementById('fBodyCount').textContent = document.getElementById('fBody').value.length + '/1024';
+    document.getElementById('fHeaderCount').textContent = document.getElementById('fHeaderTexto').value.length + '/60';
+    document.getElementById('fFooterCount').textContent = document.getElementById('fFooter').value.length + '/60';
+    const slug = document.getElementById('fNombre').value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9_\s-]/g, '').trim().replace(/[\s-]+/g, '_');
+    document.getElementById('fNombreSlug').textContent = 'se guardará como: ' + (slug || '—');
+
+    renderEjemplosBoxes();
+    const spec = leerSpec();
+    pintarPreview(spec);
+
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => validar(spec), 400);
+  }
+
+  // Cada tecleo dispara una validación; si dos quedan en vuelo, la respuesta más lenta
+  // puede llegar después de una más nueva y pisar el resultado correcto en pantalla —
+  // se descarta cualquier respuesta que no sea la de la última petición disparada.
+  async function validar(spec) {
+    const miSeq = ++validationSeq;
+    const box = document.getElementById('plValidation');
+    const body = { spec };
+    if (editando) body.excludeId = editando.id;
+    const r = await api('/api/wa-templates/validar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (miSeq !== validationSeq) return; // llegó una más nueva mientras esta estaba en vuelo
+    const btnGuardar = document.getElementById('btnGuardar');
+    if (!r) { box.innerHTML = ''; return; }
+    let html = '';
+    (r.errores || []).forEach(e => { html += `<div class="pl-verr">⚠ ${esc(e.mensaje)}</div>`; });
+    (r.advertencias || []).forEach(w => { html += `<div class="pl-vwarn">ℹ ${esc(w.mensaje)}</div>`; });
+    if (r.ok) html += `<div class="pl-vok">✓ Lista para enviar a Meta</div>`;
+    box.innerHTML = html;
+    btnGuardar.disabled = !r.ok;
+  }
+
+  async function guardar() {
+    const spec = leerSpec();
+    const btn = document.getElementById('btnGuardar');
+    btn.disabled = true; btn.textContent = 'Enviando a Meta…';
+    let r;
+    if (editando) {
+      r = await api(`/api/wa-templates/${editando.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec }) });
+    } else {
+      r = await api('/api/wa-templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec }) });
+    }
+    btn.disabled = false; btn.textContent = 'Guardar y enviar a Meta';
+    if (r && r.ok) {
+      toast('Enviada a Meta. La revisión suele tardar entre minutos y 24 horas.', 'ok');
+      cerrarConstructor();
+      await cargar(); renderChips(); renderList();
+    } else {
+      const detalle = r && (r.errores ? r.errores.map(e => e.mensaje).join(' · ') : (r.sugerencia || r.detalle)) || 'Error desconocido';
+      toast('Error: ' + detalle, 'err');
+    }
+  }
+
+  // ===== Arranque + tiempo real =====
+  await cargar();
+  renderPage();
+  SPOS.on && SPOS.on('plantilla_estado', async () => { await cargar(); renderChips(); renderList(); });
+})();
+</script>
+</body>
+</html>

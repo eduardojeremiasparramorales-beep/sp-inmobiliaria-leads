@@ -17,11 +17,39 @@ const CATALOG = [
   { key: 'hora_cita', label: 'Hora de la cita' },
 ];
 
+// Formateo compartido de fecha/hora de cita en español (Colombia) — usado tanto para
+// {{fecha_cita}}/{{hora_cita}} de cualquier plantilla (resolveLeadVariables) como para
+// el flujo específico de recordatorio de cita (wa-templates.js buildCitaRecordatorioValues),
+// para no tener dos formateos que puedan divergir.
+function formatearFechaHoraCita(fechaRaw) {
+  const fec = new Date(String(fechaRaw || '').replace(' ', 'T'));
+  const valido = !isNaN(fec.getTime());
+  return {
+    valido,
+    fechaTxt: valido ? fec.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' }) : '',
+    horaTxt: valido ? fec.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '',
+    horaTxt12: valido ? fec.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
+  };
+}
+
 // Resuelve los valores reales de cada variable del catálogo a partir de un lead
 // (y opcionalmente su vendedor asignado). Campos que el lead no tiene aún quedan
 // en '' — el remitente los completa a mano antes de enviar (ver Fase 1.4).
 function resolveLeadVariables(lead, vendedor) {
   const store = require('../db/store');
+  // fecha_cita/hora_cita: antes quedaban SIEMPRE vacías fuera del flujo específico de
+  // "recordatorio de cita" — cualquier plantilla de reactivación mapeada a ellas moría
+  // con 400 variables_vacias. Se resuelven desde la próxima cita agendada del lead.
+  let fechaCita = '', horaCita = '';
+  try {
+    const proxima = lead && lead.id ? store.getProximaCitaByLead(lead.id) : null;
+    if (proxima) {
+      const f = formatearFechaHoraCita(proxima.fecha);
+      fechaCita = f.fechaTxt;
+      horaCita = f.horaTxt;
+    }
+  } catch (e) { /* sin cita agendada o error de BD — queda vacío, el remitente lo completa */ }
+
   return {
     nombre_cliente: (lead && lead.customer_name) || 'Cliente',
     telefono: (lead && lead.customer_phone) || '',
@@ -36,9 +64,9 @@ function resolveLeadVariables(lead, vendedor) {
     // (sin sesión, OG tags para preview en WhatsApp) vive en /catalogo/.
     link_catalogo: `${process.env.BASE_URL || ''}/catalogo/`,
     empresa: store.getConfig('company_name') || 'Leons Group',
-    fecha_cita: '',
-    hora_cita: '',
+    fecha_cita: fechaCita,
+    hora_cita: horaCita,
   };
 }
 
-module.exports = { CATALOG, resolveLeadVariables };
+module.exports = { CATALOG, resolveLeadVariables, formatearFechaHoraCita };

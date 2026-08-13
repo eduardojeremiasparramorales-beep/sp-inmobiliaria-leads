@@ -2843,6 +2843,85 @@ app.post('/api/proyectos/:id/lotes/bulk', auth.requireAdmin, (req, res) => {
   res.json({ ok: true, creados: n });
 });
 
+// ===================== ZONAS (asignación de leads por zona geográfica) =====================
+// Un municipio/región con uno o varios asesores asignados (vendedores.zonas, CSV de
+// slugs). Las reglas mapean el anuncio de Meta que trajo el lead (ad_id/ad_name/
+// source_url) a una zona; la resolución y elección de asesor viven en services/zonas.js.
+app.get('/api/zonas', auth.requireAuth, (req, res) => res.json(store.getZonas()));
+
+app.post('/api/zonas', auth.requireAdmin, (req, res) => {
+  const { nombre } = req.body || {};
+  if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'nombre_requerido' });
+  const z = store.createZona(nombre);
+  if (!z) return res.status(400).json({ error: 'nombre_invalido' });
+  res.json({ ok: true, zona: z });
+});
+
+app.put('/api/zonas/:id', auth.requireAdmin, (req, res) => {
+  const z = store.updateZona(req.params.id, req.body || {});
+  if (!z) return res.status(404).json({ error: 'no_existe' });
+  res.json({ ok: true, zona: z });
+});
+
+app.delete('/api/zonas/:id', auth.requireAdmin, (req, res) => {
+  const r = store.deleteZona(req.params.id);
+  if (!r.ok) return res.status(400).json(r);
+  res.json({ ok: true });
+});
+
+app.get('/api/zonas/:id/reglas', auth.requireAdmin, (req, res) => res.json(store.getReglasByZona(req.params.id)));
+
+app.post('/api/zonas/:id/reglas', auth.requireAdmin, (req, res) => {
+  const regla = store.addZonaRegla(req.params.id, req.body || {});
+  if (!regla) return res.status(400).json({ error: 'regla_invalida' });
+  require('./services/zonas').invalidateReglasCache();
+  res.json({ ok: true, regla });
+});
+
+app.delete('/api/zonas/reglas/:reglaId', auth.requireAdmin, (req, res) => {
+  store.deleteZonaRegla(req.params.reglaId);
+  require('./services/zonas').invalidateReglasCache();
+  res.json({ ok: true });
+});
+
+// Anuncios que ya trajeron leads — para que el admin los mapee a una zona sin adivinar
+// el nombre exacto de la campaña.
+app.get('/api/zonas/anuncios-detectados', auth.requireAdmin, (req, res) => res.json(store.getAnunciosDetectados()));
+
+app.post('/api/vendedores/:id/zonas', auth.requireAdmin, (req, res) => {
+  const { zonas } = req.body || {};
+  if (!Array.isArray(zonas)) return res.status(400).json({ error: 'zonas_debe_ser_array' });
+  const v = store.getVendedorById(req.params.id);
+  if (!v) return res.status(404).json({ error: 'vendedor_no_existe' });
+  store.setVendedorZonas(req.params.id, zonas);
+  res.json({ ok: true });
+});
+
+// Corrección manual de la zona de un lead — un asesor puede corregir la de sus propios
+// leads; el admin, la de cualquiera. `reasignar` reenruta de inmediato al asesor que
+// cubra la nueva zona (si nadie la cubre, no mueve el lead, solo etiqueta zona_fuente).
+app.post('/api/leads/:id/zona', auth.requireAuth, (req, res) => {
+  const { zona, reasignar } = req.body || {};
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
+  const zonaRecord = zona ? store.getZonaBySlug(String(zona)) : null;
+  if (zona && !zonaRecord) return res.status(400).json({ error: 'zona_no_existe' });
+  store.setLeadZona(lead.id, zonaRecord ? zonaRecord.slug : null, 'manual', zonaRecord ? zonaRecord.nombre : null);
+  if (reasignar && zonaRecord) {
+    const activos = store.getVendedoresActivos();
+    const { elegirVendedor } = require('./services/zonas');
+    const { vendedor: elegido, fuente } = elegirVendedor(activos, { zona: zonaRecord.slug });
+    if (elegido) {
+      store.reassignLead(lead.id, elegido, lead.assigned_to_id);
+      if (fuente === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
+    }
+  }
+  res.json({ ok: true, lead: store.getLeadById(lead.id) });
+});
+
 app.get('/api/lotes/:id', auth.requireAuth, (req, res) => {
   const l = store.getLoteById(req.params.id);
   if (!l) return res.status(404).json({ error: 'no_existe' });
@@ -3366,7 +3445,7 @@ app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
 // ===================== LEAD PROACTIVO (iniciar chat sin que el cliente escriba) =====================
 
 app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
-  const { phone, name, message, templateName, templateId, templateVars } = req.body || {};
+  const { phone, name, message, templateName, templateId, templateVars, zona } = req.body || {};
   if (!phone || !String(phone).trim()) return res.status(400).json({ error: 'telefono_requerido' });
   if (!message || !String(message).trim()) return res.status(400).json({ error: 'mensaje_requerido' });
 
@@ -3378,10 +3457,17 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
     const result = store.saveLead(cleanPhone, name || 'Cliente', String(message).trim());
     const lead = store.getLeadById(result.leadId);
 
-    // 2. Asignar vendedor por round-robin
+    // 2. Asignar vendedor — si el admin eligió zona en el modal (F-zonas), se prefiere
+    // un asesor que la cubra; si no, o si nadie la cubre, cae al reparto por menor carga.
+    const zonaRecord = zona ? store.getZonaBySlug(String(zona)) : null;
+    if (zonaRecord) store.setLeadZona(lead.id, zonaRecord.slug, 'manual', zonaRecord.nombre);
     const activos = store.getVendedoresActivos();
-    if (activos.length > 0) {
-      store.assignLeadToVendedor(lead.id, activos[0]);
+    const { elegirVendedor } = require('./services/zonas');
+    const { vendedor: elegido, fuente } = elegirVendedor(activos, { zona: zonaRecord ? zonaRecord.slug : null });
+    const vendedorAsignado = elegido || (activos.length > 0 ? activos[0] : null);
+    if (fuente === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
+    if (vendedorAsignado) {
+      store.assignLeadToVendedor(lead.id, vendedorAsignado);
     }
 
     // 3. Un número que nunca escribió antes tiene la ventana de 24h cerrada por
@@ -3395,7 +3481,7 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
     if (templateId) {
       const tpl = store.getWATemplateById(templateId);
       if (!tpl) return res.status(404).json({ error: 'template_no_existe' });
-      const vendedor = activos.length > 0 ? activos[0] : null;
+      const vendedor = vendedorAsignado;
       const { sendResolvedTemplate } = require('./services/wa-templates');
       await sendResolvedTemplate(cleanPhone, tpl, lead, vendedor, templateVars || {});
       tplSent = true;
@@ -3403,7 +3489,7 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
       const tplName = templateName || store.getConfig('reengagement_template');
       if (tplName) {
         const tplRecord = store.getWATemplateByName(tplName);
-        const vendedor = activos.length > 0 ? activos[0] : null;
+        const vendedor = vendedorAsignado;
         if (tplRecord) {
           const { sendResolvedTemplate: sendRT } = require('./services/wa-templates');
           await sendRT(cleanPhone, tplRecord, lead, vendedor, templateVars || {});
@@ -3431,8 +3517,8 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
     });
 
     // 5. Notificar
-    if (activos.length > 0) {
-      events.emitToVendedor(activos[0].id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'lead_proactivo', ts: Date.now() });
+    if (vendedorAsignado) {
+      events.emitToVendedor(vendedorAsignado.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'lead_proactivo', ts: Date.now() });
     }
     events.emitToAdmins('lead_actualizado', { leadId: lead.id, tipo: 'lead_proactivo', ts: Date.now() });
 
@@ -3665,34 +3751,59 @@ app.post('/api/config', auth.requireAdmin, (req, res) => {
 
 // ===================== PLANTILLAS WHATSAPP (Meta aprobadas) =====================
 
-app.get('/api/wa-templates', auth.requireAuth, (req, res) => res.json(store.getWATemplates()));
-
-// Detalle de una plantilla con variables/componentes ya parseados, para construir el
-// formulario de variables en el panel (evita repetir JSON.parse en cada cliente).
-app.get('/api/wa-templates/:id', auth.requireAuth, (req, res) => {
-  const t = store.getWATemplateById(req.params.id);
-  if (!t) return res.status(404).json({ error: 'no_existe' });
-  let variables = [], componentes = [], mapping = {};
-  try { variables = JSON.parse(t.variables || '[]'); } catch (e) {}
-  try { componentes = JSON.parse(t.componentes || '[]'); } catch (e) {}
-  try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
-  res.json({ ...t, variables, componentes, mapping });
+// Sin ?estado, solo las APROBADAS (las únicas enviables) — mantiene el contrato que ya
+// consumen inbox.html, campanas.html, configuracion.html y el panel vendedor, que no
+// filtran por estado en cliente y ahora sí podrían recibir PENDING/REJECTED si no se
+// defendiera aquí. ?estado=todos o un estado concreto para el gestor admin.
+app.get('/api/wa-templates', auth.requireAuth, (req, res) => {
+  const estado = req.query.estado;
+  if (!estado || estado === 'APPROVED') return res.json(store.getWATemplatesAprobadas());
+  if (estado === 'todos') return res.json(store.getWATemplates());
+  res.json(store.getWATemplates().filter(t => t.estado === estado));
 });
 
-app.post('/api/wa-templates', auth.requireAdmin, (req, res) => {
-  const { nombre, idioma, params } = req.body || {};
-  if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
-  store.addWATemplate(nombre.trim(), idioma || 'es', params || '');
-  res.json({ ok: true });
+// Diagnóstico rápido sin llamar a Meta — primer sitio donde mirar cuando "no se puede
+// enviar" (ej. reengagement_template ausente en `config`, causa raíz real del bug
+// reportado: el motor de envío ya sabe reactivar, solo le faltaba el nombre configurado).
+// Registrado ANTES de /:id para que Express no lo capture como un id.
+app.get('/api/wa-templates/salud', auth.requireAdmin, (req, res) => {
+  const todas = store.getWATemplates();
+  const porEstado = {};
+  todas.forEach(t => { porEstado[t.estado || 'desconocido'] = (porEstado[t.estado || 'desconocido'] || 0) + 1; });
+  let wabaIdPresente = false;
+  try { wabaIdPresente = !!require('./services/whatsapp').getAuth().wabaId; } catch (e) { /* sin canal configurado */ }
+  res.json({
+    reengagement_template: store.getConfig('reengagement_template') || '',
+    recordatorio_template: store.getConfig('recordatorio_template') || '',
+    total: todas.length,
+    aprobadas: porEstado.APPROVED || 0,
+    pendientes: (porEstado.PENDING || 0) + (porEstado.IN_APPEAL || 0),
+    rechazadas: porEstado.REJECTED || 0,
+    porEstado,
+    waba_id_presente: wabaIdPresente,
+    token_presente: !!(process.env.WHATSAPP_TOKEN || wabaIdPresente),
+  });
 });
 
-app.delete('/api/wa-templates/:id', auth.requireAdmin, (req, res) => {
-  store.deleteWATemplate(req.params.id);
-  res.json({ ok: true });
+// Valida un borrador del constructor SIN llamar a Meta — el constructor la usa con
+// debounce mientras el admin escribe, para no gastar round-trips por cada error tipeable.
+// Registrado ANTES de /:id por la misma razón que /salud.
+app.post('/api/wa-templates/validar', auth.requireAdmin, (req, res) => {
+  const { spec, excludeId } = req.body || {};
+  try {
+    const wa = require('./services/wa-templates');
+    const validacion = wa.validateTemplateSpec(spec || {}, { excludeId: excludeId ? Number(excludeId) : undefined });
+    let payload = null, variables = [];
+    if (validacion.ok) { const built = wa.buildMetaTemplatePayload(spec); payload = built.payload; variables = built.variables; }
+    res.json({ ...validacion, payload, variables });
+  } catch (e) {
+    res.status(400).json({ ok: false, errores: [{ campo: 'general', mensaje: e.message }], advertencias: [] });
+  }
 });
 
-// Sincroniza el catálogo real de plantillas aprobadas desde Meta (Graph API), en vez de
-// depender de que el admin escriba nombres/idiomas a mano y se equivoque.
+// Sincroniza el catálogo real de plantillas desde Meta (Graph API) — TODOS los estados,
+// no solo aprobadas, para que una plantilla en revisión sea visible en el gestor y no
+// desaparezca sin explicación.
 app.post('/api/wa-templates/sync', auth.requireAdmin, async (req, res) => {
   try {
     const { syncTemplatesFromMeta } = require('./services/wa-templates');
@@ -3704,6 +3815,160 @@ app.post('/api/wa-templates/sync', auth.requireAdmin, async (req, res) => {
   }
 });
 
+// Detalle de una plantilla con variables/componentes/spec ya parseados, para construir
+// el formulario de variables o reabrir el constructor (evita repetir JSON.parse en cada cliente).
+app.get('/api/wa-templates/:id', auth.requireAuth, (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  let variables = [], componentes = [], mapping = {}, spec = null;
+  try { variables = JSON.parse(t.variables || '[]'); } catch (e) {}
+  try { componentes = JSON.parse(t.componentes || '[]'); } catch (e) {}
+  try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+  try { spec = t.spec_json ? JSON.parse(t.spec_json) : null; } catch (e) {}
+  res.json({ ...t, variables, componentes, mapping, spec });
+});
+
+// Crea una plantilla real en Meta desde el constructor del admin. Reemplaza el alta
+// manual legacy (0 consumidores en public/ — solo escribía nombre/idioma sin componentes,
+// quedaba fuera del motor de variables y del filtro estado==='APPROVED' del envío).
+app.post('/api/wa-templates', auth.requireAdmin, async (req, res) => {
+  const { spec } = req.body || {};
+  if (!spec) return res.status(400).json({ error: 'spec_requerido' });
+  const wa = require('./services/wa-templates');
+  const validacion = wa.validateTemplateSpec(spec);
+  if (!validacion.ok) return res.status(400).json({ error: 'validacion', errores: validacion.errores });
+  try {
+    const { payload, variables } = wa.buildMetaTemplatePayload(spec);
+    const metaResult = await wa.createTemplateInMeta(spec);
+    // El CRM crea siempre en NAMED con las claves del catálogo como placeholders — el
+    // mapping sale identidad (cada {{clave}} ya ES la clave del catálogo), sin que el
+    // admin tenga que configurar nada después.
+    const mapping = {}; variables.forEach(v => { mapping[v] = v; });
+    const id = store.insertWATemplateBorrador({
+      nombre: validacion.nombreSlug, idioma: spec.idioma || 'es', categoria: spec.categoria,
+      componentes: JSON.stringify(payload.components), variables: JSON.stringify(variables),
+      specJson: JSON.stringify(spec), creadoPor: req.session.vendedorId || null,
+      metaTemplateId: metaResult.id, estado: metaResult.status || 'PENDING',
+    });
+    store.setWATemplateMapping(id, JSON.stringify(mapping));
+    res.status(201).json({ ok: true, id, metaId: metaResult.id, estado: metaResult.status || 'PENDING' });
+  } catch (e) {
+    if (e.validacion) return res.status(400).json({ error: 'validacion', errores: e.validacion.errores });
+    const norm = wa.normalizeMetaError(e);
+    console.error('[wa-templates] crear:', e.response ? JSON.stringify(e.response.data) : e.message);
+    res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia, codigo: norm.codigo, subcodigo: norm.subcodigo });
+  }
+});
+
+// Solo se puede cambiar `components`/`category` (Meta ignora name/language en edición).
+// Editar una APPROVED la devuelve a PENDING — límite de Meta: 10 ediciones/30 días, 1/24h en aprobadas.
+app.put('/api/wa-templates/:id', auth.requireAdmin, async (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (!t.meta_template_id) return res.status(409).json({ error: 'no_editable', detalle: 'Esta plantilla no tiene un id de Meta asociado — sincronízala primero.' });
+  const { spec } = req.body || {};
+  if (!spec) return res.status(400).json({ error: 'spec_requerido' });
+  const wa = require('./services/wa-templates');
+  const validacion = wa.validateTemplateSpec(spec, { excludeId: t.id });
+  if (!validacion.ok) return res.status(400).json({ error: 'validacion', errores: validacion.errores });
+  try {
+    const { payload, variables } = wa.buildMetaTemplatePayload(spec);
+    await wa.updateTemplateInMeta(t.meta_template_id, spec, t.id);
+    const mapping = {}; variables.forEach(v => { mapping[v] = v; });
+    store.updateWATemplateSpec(t.id, { componentes: JSON.stringify(payload.components), variables: JSON.stringify(variables), specJson: JSON.stringify(spec), estado: 'PENDING' });
+    store.setWATemplateMapping(t.id, JSON.stringify(mapping));
+    res.json({ ok: true, estado: 'PENDING' });
+  } catch (e) {
+    if (e.validacion) return res.status(400).json({ error: 'validacion', errores: e.validacion.errores });
+    const norm = wa.normalizeMetaError(e);
+    console.error('[wa-templates] editar:', e.response ? JSON.stringify(e.response.data) : e.message);
+    res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia, codigo: norm.codigo, subcodigo: norm.subcodigo });
+  }
+});
+
+// Clona el spec de una plantilla creada en el CRM bajo un nombre/idioma nuevo (ej. la
+// versión en inglés). No hay endpoint de "duplicar" en Meta — es crear de cero.
+app.post('/api/wa-templates/:id/duplicar', auth.requireAdmin, async (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (!t.spec_json) return res.status(409).json({ error: 'sin_spec', detalle: 'Esta plantilla no tiene un borrador guardado (no se creó desde el CRM) — no se puede duplicar.' });
+  const { nombre, idioma } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'nombre_requerido' });
+  const wa = require('./services/wa-templates');
+  let spec;
+  try { spec = { ...JSON.parse(t.spec_json), nombre, idioma: idioma || t.idioma }; } catch (e) { return res.status(500).json({ error: 'spec_corrupto' }); }
+  const validacion = wa.validateTemplateSpec(spec);
+  if (!validacion.ok) return res.status(400).json({ error: 'validacion', errores: validacion.errores });
+  try {
+    const { payload, variables } = wa.buildMetaTemplatePayload(spec);
+    const metaResult = await wa.createTemplateInMeta(spec);
+    const mapping = {}; variables.forEach(v => { mapping[v] = v; });
+    const id = store.insertWATemplateBorrador({
+      nombre: validacion.nombreSlug, idioma: spec.idioma, categoria: spec.categoria,
+      componentes: JSON.stringify(payload.components), variables: JSON.stringify(variables),
+      specJson: JSON.stringify(spec), creadoPor: req.session.vendedorId || null,
+      metaTemplateId: metaResult.id, estado: metaResult.status || 'PENDING',
+    });
+    store.setWATemplateMapping(id, JSON.stringify(mapping));
+    res.status(201).json({ ok: true, id, metaId: metaResult.id, estado: metaResult.status || 'PENDING' });
+  } catch (e) {
+    if (e.validacion) return res.status(400).json({ error: 'validacion', errores: e.validacion.errores });
+    const norm = wa.normalizeMetaError(e);
+    res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia, codigo: norm.codigo, subcodigo: norm.subcodigo });
+  }
+});
+
+// Borra en Meta (SIEMPRE con hsm_id — sin él se lleva todos los idiomas del mismo name
+// por delante) y localmente. ?soloLocal=1 para huérfanas que ya no existen en Meta.
+app.delete('/api/wa-templates/:id', auth.requireAdmin, async (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (store.getConfig('reengagement_template') === t.nombre) {
+    return res.status(409).json({ error: 'en_uso', detalle: 'Es la plantilla de reactivación configurada — cambia esa configuración antes de borrarla.' });
+  }
+  if (store.getConfig('recordatorio_template') === t.nombre) {
+    return res.status(409).json({ error: 'en_uso', detalle: 'Es la plantilla de recordatorio de citas configurada — cambia esa configuración antes de borrarla.' });
+  }
+  const enCampanaActiva = (store.getCampaignsByEstado('running') || []).some(c => Number(c.template_id) === t.id);
+  if (enCampanaActiva) return res.status(409).json({ error: 'en_uso', detalle: 'Una campaña activa está usando esta plantilla — pausa la campaña antes de borrarla.' });
+
+  const soloLocal = req.query.soloLocal === '1';
+  try {
+    if (!soloLocal && t.meta_template_id) {
+      await require('./services/wa-templates').deleteTemplateInMeta(t.nombre, t.meta_template_id);
+    }
+    store.deleteWATemplate(t.id);
+    res.json({ ok: true });
+  } catch (e) {
+    const norm = require('./services/wa-templates').normalizeMetaError(e);
+    console.error('[wa-templates] borrar:', e.response ? JSON.stringify(e.response.data) : e.message);
+    res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia, codigo: norm.codigo, subcodigo: norm.subcodigo });
+  }
+});
+
+// Refresco puntual contra Meta (botón "Comprobar estado") — no espera al webhook ni al poller de 15 min.
+app.post('/api/wa-templates/:id/refrescar', auth.requireAdmin, async (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (!t.meta_template_id) return res.status(409).json({ error: 'sin_meta_id', detalle: 'Esta plantilla no tiene un id de Meta asociado.' });
+  try {
+    const wa = require('./services/wa-templates');
+    const remoto = await wa.fetchTemplateFromMeta(t.meta_template_id);
+    store.setWATemplateEstado(t.id, {
+      estado: remoto.status,
+      motivo: remoto.rejected_reason && remoto.rejected_reason !== 'NONE' ? remoto.rejected_reason : null,
+      calidad: remoto.quality_score && remoto.quality_score.score || null,
+    });
+    if (remoto.components) {
+      store.updateWATemplateSpec(t.id, { componentes: JSON.stringify(remoto.components), variables: JSON.stringify(wa.extractVariables(remoto.components)) });
+    }
+    res.json({ ok: true, estado: remoto.status });
+  } catch (e) {
+    const norm = require('./services/wa-templates').normalizeMetaError(e);
+    res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia });
+  }
+});
+
 // Guarda qué variable del CRM (ver /api/template-vars) llena cada placeholder de la plantilla.
 app.put('/api/wa-templates/:id/mapping', auth.requireAdmin, (req, res) => {
   const { mapping } = req.body || {};
@@ -3712,9 +3977,58 @@ app.put('/api/wa-templates/:id/mapping', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Texto ya resuelto con los datos de un lead concreto (o sin lead, para el constructor)
+// — burbuja estilo WhatsApp lista para pintar en el cliente, sin reimplementar el
+// catálogo de variables ni el mapping en el frontend (ver public/m/index.html Fase 6).
+app.get('/api/wa-templates/:id/preview', auth.requireAuth, (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  const wa = require('./services/wa-templates');
+  const { CATALOG } = require('./services/template-vars');
+  const labelPorClave = {}; CATALOG.forEach(c => { labelPorClave[c.key] = c.label; });
+
+  const lead = req.query.leadId ? store.getLeadById(req.query.leadId) : null;
+  const vendedor = lead && lead.assigned_to_id
+    ? store.getVendedorById(lead.assigned_to_id)
+    : (req.session.vendedorId ? store.getVendedorById(req.session.vendedorId) : null);
+
+  let mapping = {}, componentes = [];
+  try { mapping = JSON.parse(t.var_mapping || '{}'); } catch (e) {}
+  try { componentes = JSON.parse(t.componentes || '[]'); } catch (e) {}
+  const placeholders = wa.extractVariables(componentes);
+  const values = wa.resolveTemplateValues(t, lead, vendedor, {});
+  const variables = placeholders.map(ph => ({ ph, label: labelPorClave[mapping[ph] || ph] || ph, valor: values[ph] || '' }));
+  const falta = variables.filter(v => !v.valor).map(v => v.ph);
+
+  const sustituir = (texto) => String(texto || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => (values[k] != null ? String(values[k]) : m));
+  const header = componentes.find(c => c.type === 'HEADER');
+  const body = componentes.find(c => c.type === 'BODY');
+  const footer = componentes.find(c => c.type === 'FOOTER');
+  const botonesComp = componentes.find(c => c.type === 'BUTTONS');
+
+  res.json({
+    nombre: t.nombre, idioma: t.idioma, categoria: t.categoria, estado: t.estado,
+    header: header ? (header.format === 'TEXT' ? { tipo: 'TEXT', texto: sustituir(header.text) } : { tipo: header.format }) : null,
+    body: sustituir(body && body.text),
+    footer: footer ? footer.text : null,
+    botones: botonesComp ? (botonesComp.buttons || []).map(b => ({ tipo: b.type, texto: b.text, url: b.url ? sustituir(b.url) : undefined, telefono: b.phone_number })) : [],
+    variables, falta,
+  });
+});
+
 // Catálogo de variables disponibles para mapear/editar en plantillas (1-a-1 y campañas).
 app.get('/api/template-vars', auth.requireAuth, (req, res) => {
   res.json(require('./services/template-vars').CATALOG);
+});
+
+// Variables ya resueltas del lead — reemplaza la reimplementación cliente en
+// public/m/index.html (le faltaban link_ubicacion/link_catalogo/fecha_cita/hora_cita y
+// tenía `empresa` hardcodeado, rompiendo Vid.a multiempresa).
+app.get('/api/leads/:id/template-vars', auth.requireAuth, (req, res) => {
+  const lead = store.getLeadById(req.params.id);
+  if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
+  const vendedor = lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+  res.json(require('./services/template-vars').resolveLeadVariables(lead, vendedor));
 });
 
 // Enviar template aprobado de Meta a un lead. Soporta dos formas:
@@ -4717,9 +5031,11 @@ async function checkEscalation() {
         if (esNuevo && !esAsentado) {
           console.log(`[ESCALADO] Reasignando lead ${lead.id} (${lead.customer_name}) — ${ESC_REASIGNAR_MIN} min sin respuesta`);
           const activos = getVendedoresActivos().filter(v => v.id !== lead.assigned_to_id);
-          // Prefiere un vendedor que ya atienda el mismo proyecto/ciudad/origen (si la
-          // carga está casi empatada) en vez de repartir estrictamente por menor carga.
-          const otroVendedor = require('./services/assigner').pickVendedorInteligente(activos, { proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
+          // Prefiere un vendedor que cubra la zona del lead (F-zonas); si nadie la cubre,
+          // cae en preferir al que ya atiende el mismo proyecto/ciudad/origen (si la carga
+          // está casi empatada) en vez de repartir estrictamente por menor carga.
+          const { vendedor: otroVendedor, fuente: fuenteReasig } = require('./services/zonas').elegirVendedor(activos, { zona: lead.zona, proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
+          if (fuenteReasig === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
           if (otroVendedor && lead.assigned_to_id) {
             const vendedorAnterior = lead.assigned_to_id;
             store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
@@ -4793,7 +5109,8 @@ async function checkEscalation() {
         // Si es nuevo y no se reasignó antes, intentar reasignar ahora
         if (esNuevo && !esAsentado) {
           const activos = getVendedoresActivos().filter(v => v.id !== lead.assigned_to_id);
-          const otroVendedor = require('./services/assigner').pickVendedorInteligente(activos, { proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
+          const { vendedor: otroVendedor, fuente: fuenteReasig } = require('./services/zonas').elegirVendedor(activos, { zona: lead.zona, proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
+          if (fuenteReasig === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
           if (otroVendedor && lead.assigned_to_id) {
             const vendedorAnterior = lead.assigned_to_id;
             store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
@@ -5375,6 +5692,9 @@ function ensurePlatformAdmin() {
   // 'lead:inactive'. Antes un delay solo podía vivir en memoria; con el proceso
   // reiniciándose en cada deploy, cualquier flujo con espera nunca llegaba a la acción.
   setInterval(() => { runForAllTenants(() => require('./services/workflow').tick()).catch(e => console.error('[SCHED] workflow tick:', e.message)); }, 30 * 1000);
+  // Respaldo del webhook message_template_status_update (app no suscrita, downtime de
+  // Meta): refresca las plantillas en revisión contra la Graph API. Coste bajo — normalmente 0-2 filas.
+  setInterval(() => { runForAllTenants(() => require('./services/wa-templates').refrescarEstadosPendientes()).catch(e => console.error('[SCHED] plantillas pendientes:', e.message)); }, 15 * 60 * 1000);
   // Mensajes programados en servidor (comparten la firma del asesor del envío manual)
   require('./services/scheduler').start(buildMensajeConFirma, runForAllTenants);
 })();
