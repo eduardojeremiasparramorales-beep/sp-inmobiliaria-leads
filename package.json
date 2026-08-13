@@ -11,7 +11,8 @@
     "reopen": "node scripts/reopen-lead.js",
     "release:apk": "node scripts/release-apk.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:mobile": "node scripts/build-mobile.js"
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -29,6 +30,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "sharp": "^0.35.3",
     "vitest": "^4.1.10"
   }

@@ -13,9 +13,22 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci --only=production
+# Instalación completa (incluye devDependencies) porque el build de abajo necesita
+# esbuild -- se recorta a solo producción después de construir (ver npm prune más abajo).
+RUN npm ci
 
 COPY . .
+
+# Fase 2 del plan de modernización: minifica public/m/app.js|css (panel móvil) y
+# sobreescribe esas dos copias DENTRO DE LA IMAGEN — el repo real en disco nunca se
+# toca, esto solo afecta lo que termina en el contenedor. Ver scripts/build-mobile.js
+# para por qué es minify-only (sin bundle ni renombrado de identificadores).
+RUN npm run build:mobile \
+  && cp dist/m/app.js public/m/app.js \
+  && cp dist/m/app.css public/m/app.css \
+  && rm -rf dist
+
+RUN npm prune --omit=dev
 
 RUN mkdir -p public logs
 
