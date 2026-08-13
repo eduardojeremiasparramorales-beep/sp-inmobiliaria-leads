@@ -611,7 +611,11 @@
     return data.suggestions;
   }
 
-  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // Fase 4 (unificación de frontend): igualada a la versión de m/app.js — antes no
+  // escapaba comillas simples (riesgo real si algún HTML usa atributos con comillas
+  // simples, p. ej. onclick='...') y usaba `s || ''` en vez de `s == null ? '' : s`,
+  // que borra por error valores falsy válidos como 0 o false.
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   /* --- Tabs helper: SPOS.tabs(rootEl) — alterna .active entre .tabs__item y .tabs__pane --- */
   function tabs(root) {
