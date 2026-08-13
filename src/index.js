@@ -49,12 +49,9 @@ const CFG = require('./config');
 const app = express();
 app.set('trust proxy', 1);
 
-// Envuelve un handler async: si la promesa rechaza, Express 4 la deja perdida (el
-// request se cuelga hasta el timeout del cliente, sin llegar nunca al middleware de
-// error). asyncH la reenvía a next(err) para que sí llegue.
-function asyncH(fn) {
-  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-}
+// Fase 4: movido a src/utils/async-handler.js (compartido con los routers extraídos
+// de este archivo, p. ej. routes/ai-agents.js) — mismo comportamiento, sin duplicar.
+const { asyncH } = require('./utils/async-handler');
 
 // Vid.a V1 — cada request corre dentro del contexto del tenant activo (hoy siempre
 // empresa #1 hardcodeada; V2 es quien resolverá el tenant real por dominio/canal).
@@ -5361,7 +5358,6 @@ app.post('/api/events/read-all', auth.requireAuth, (req, res) => {
 
 // ===================== FASE 2 — SP INTELLIGENCE, WORKFLOWS, FINANZAS =====================
 const intelligence = require('./services/intelligence');
-const finance = require('./services/finance');
 
 // --- SP Intelligence ---
 app.get('/api/intelligence/insights', auth.requireAdmin, async (req, res) => {
@@ -5383,91 +5379,14 @@ app.get('/api/intelligence/datos', auth.requireAdmin, (req, res) => {
 // /api/workflows/:id/executions se quitó — duplicaba exactamente /api/workflows/:id/logs
 // (misma tabla, misma query). El editor visual usa /logs.
 
-// --- Centro Financiero ---
-app.get('/api/finanzas/resumen', auth.requireAdmin, (req, res) => {
-  const { desde, hasta } = req.query;
-  res.json(finance.obtenerResumen({ desde, hasta }));
-});
-
-app.get('/api/finanzas/transacciones', auth.requireAdmin, (req, res) => {
-  const { tipo, categoria, proyectoId, vendedorId, desde, hasta, limite } = req.query;
-  res.json(finance.listarTransacciones({
-    tipo, categoria, proyectoId: Number(proyectoId), vendedorId: Number(vendedorId),
-    desde, hasta, limite: Number(limite),
-  }));
-});
-
-app.post('/api/finanzas/transacciones', auth.requireAdmin, (req, res) => {
-  const r = finance.crearTransaccion(req.body || {});
-  res.json(r);
-});
-
-app.delete('/api/finanzas/transacciones/:id', auth.requireAdmin, (req, res) => {
-  res.json(finance.eliminarTransaccion(Number(req.params.id)));
-});
-
-app.get('/api/finanzas/comisiones', auth.requireAdmin, (req, res) => {
-  const { vendedorId, estado, desde, limite } = req.query;
-  res.json(finance.listarComisiones({
-    vendedorId: Number(vendedorId), estado, desde, limite: Number(limite),
-  }));
-});
-
-app.post('/api/finanzas/comisiones/calcular', auth.requireAdmin, (req, res) => {
-  const { vendedorId, leadId, montoVenta, porcentaje } = req.body || {};
-  if (!vendedorId || !leadId || !montoVenta) return res.status(400).json({ error: 'faltan_datos' });
-  res.json(finance.calcularComision(vendedorId, leadId, montoVenta, porcentaje || 5));
-});
-
-app.post('/api/finanzas/comisiones/:id/pagar', auth.requireAdmin, (req, res) => {
-  res.json(finance.marcarComisionPagada(Number(req.params.id)));
-});
+// --- Centro Financiero --- (Fase 4: extraído a src/routes/finanzas.js, mismo patrón
+// que routes/meta-ads.js — sin cambiar comportamiento, solo mover y montar con app.use)
+app.use('/api/finanzas', auth.requireAdmin, require('./routes/finanzas'));
 
 // ===================== FASE 3 — DOCS, IA AGENTS =====================
-const documents = require('./services/documents');
-const aiAgents = require('./services/ai-agents');
-
-// --- Centro Documental ---
-app.get('/api/documentos', auth.requireAuth, (req, res) => {
-  const { tipo, categoria, proyectoId, leadId, busqueda, limite } = req.query;
-  res.json(documents.listarDocumentos({
-    tipo, categoria, proyectoId: Number(proyectoId), leadId: Number(leadId),
-    busqueda, limite: Number(limite),
-  }));
-});
-
-app.get('/api/documentos/:id', auth.requireAuth, (req, res) => {
-  const doc = documents.obtenerDocumento(Number(req.params.id));
-  res.json(doc || { error: 'no_encontrado' });
-});
-
-app.post('/api/documentos', auth.requireAuth, (req, res) => {
-  res.json(documents.crearDocumento(req.body || {}));
-});
-
-app.put('/api/documentos/:id', auth.requireAuth, (req, res) => {
-  res.json(documents.actualizarDocumento(Number(req.params.id), req.body || {}));
-});
-
-app.delete('/api/documentos/:id', auth.requireAuth, (req, res) => {
-  res.json(documents.eliminarDocumento(Number(req.params.id)));
-});
-
-app.get('/api/documentos/buscar/:query', auth.requireAuth, (req, res) => {
-  res.json(documents.buscarDocumentos(req.params.query));
-});
-
-// --- Motor IA Especializado ---
-app.get('/api/ai-agents', auth.requireAuth, (req, res) => {
-  res.json(aiAgents.listarAgentes());
-});
-
-app.post('/api/ai-agents/:id/chat', auth.requireAuth, asyncH(async (req, res) => {
-  const { mensaje, leadId, vendedorId } = req.body || {};
-  if (!mensaje) return res.status(400).json({ error: 'mensaje requerido' });
-  const r = await aiAgents.chatConAgente(req.params.id, mensaje, { leadId, vendedorId });
-  res.json(r);
-}));
+// (Fase 4: ambos extraídos a src/routes/ — mismo patrón que routes/meta-ads.js)
+app.use('/api/documentos', auth.requireAuth, require('./routes/documentos'));
+app.use('/api/ai-agents', auth.requireAuth, require('./routes/ai-agents'));
 
 // El Centro de Reputación (/api/reputacion/*) y el Dashboard Builder (/api/dashboard/*)
 // se quitaron — 0 referencias en el frontend, ninguna pantalla los llegó a consumir.
