@@ -2344,108 +2344,13 @@ app.post('/api/leads/:id/mute', auth.requireAuth, (req, res) => {
 // ===================== CITAS ===================== (Fase 4: extraído a src/routes/citas.js)
 app.use('/api/citas', auth.requireAuth, require('./routes/citas'));
 
-// ===================== PROPIEDADES =====================
-app.get('/api/propiedades', auth.requireAuth, (req, res) => {
-  res.json(store.getPropiedades());
-});
-app.get('/api/propiedades/:id', auth.requireAuth, (req, res) => {
-  const p = store.getPropiedadById(req.params.id);
-  if (!p) return res.status(404).json({ error: 'no_existe' });
-  res.json(p);
-});
-app.post('/api/propiedades', auth.requireAdmin, (req, res) => {
-  const { nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url } = req.body || {};
-  if (!nombre) return res.status(400).json({ error: 'nombre_requerido' });
-  const p = store.createPropiedad({ nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url });
-  res.json({ ok: true, propiedad: p });
-});
-app.put('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
-  const existente = store.getPropiedadById(req.params.id);
-  if (!existente) return res.status(404).json({ error: 'no_existe' });
-  const d = req.body || {};
-  store.updatePropiedad(req.params.id, {
-    nombre: d.nombre || existente.nombre,
-    descripcion: d.descripcion !== undefined ? d.descripcion : existente.descripcion,
-    ciudad: d.ciudad !== undefined ? d.ciudad : existente.ciudad,
-    precio: d.precio !== undefined ? d.precio : existente.precio,
-    m2: d.m2 !== undefined ? d.m2 : existente.m2,
-    tipo: d.tipo || existente.tipo,
-    estado: d.estado || existente.estado,
-    imagen_url: d.imagen_url !== undefined ? d.imagen_url : existente.imagen_url,
-  });
-  res.json({ ok: true });
-});
-app.delete('/api/propiedades/:id', auth.requireAdmin, (req, res) => {
-  store.deletePropiedad(req.params.id);
-  res.json({ ok: true });
-});
+// ===================== PROPIEDADES ===================== (Fase 4: extraído a
+// src/routes/propiedades.js, incluye POST /recomendar)
+app.use('/api/propiedades', require('./routes/propiedades'));
 
-// ===================== GALERIA DE MARCA =====================
-const GALERIA_PATH = path.join(__dirname, '..', 'public', 'galeria', 'assets');
-
-async function ensureDir(dir) {
-  try { await fs.promises.mkdir(dir, { recursive: true }); } catch (e) { /* ok */ }
-}
-
-// Upload de archivo a /public/galeria/assets/ — solo admin
-const uploadGaleria = multer({ storage: multer.diskStorage({
-  destination: async (req, file, cb) => { await ensureDir(GALERIA_PATH); cb(null, GALERIA_PATH); },
-  filename: (req, file, cb) => {
-    const orig = Buffer.from(file.originalname, 'latin1').toString('utf8');
-    const safe = orig.replace(/[^a-zA-Z0-9\u00C0-\u00FF () _ . -]/g, '').replace(/\s+/g, '_');
-    cb(null, Date.now() + '_' + safe);
-  }
-}), limits: { fileSize: 20 * 1024 * 1024 } }).single('file');
-
-app.post('/api/galeria/upload', auth.requireAdmin, (req, res) => {
-  uploadGaleria(req, res, (err) => {
-    if (err) return res.status(400).json({ error: 'upload_fallido', detail: err.message });
-    if (!req.file) return res.status(400).json({ error: 'sin_archivo' });
-    res.json({ ok: true, filename: req.file.filename, originalname: req.file.originalname });
-  });
-});
-
-app.get('/api/galeria', (req, res) => {
-  const cat = req.query.categoria || 'all';
-  res.json(store.getGaleria(cat === 'all' ? null : cat));
-});
-
-app.get('/api/galeria/admin', auth.requireAdmin, (req, res) => {
-  res.json(store.getGaleriaAll());
-});
-
-app.get('/api/galeria/:id', (req, res) => {
-  const item = store.getGaleriaById(Number(req.params.id));
-  if (!item) return res.status(404).json({ error: 'no_existe' });
-  res.json(item);
-});
-
-app.post('/api/galeria', auth.requireAdmin, (req, res) => {
-  const { nombre, categoria, filename, activa, orden } = req.body || {};
-  if (!nombre || !filename) return res.status(400).json({ error: 'nombre_y_filename_requeridos' });
-  const item = store.createGaleriaItem({ nombre, categoria: categoria || 'logos', filename, activa, orden });
-  res.json({ ok: true, item });
-});
-
-app.put('/api/galeria/:id', auth.requireAdmin, (req, res) => {
-  const existente = store.getGaleriaById(Number(req.params.id));
-  if (!existente) return res.status(404).json({ error: 'no_existe' });
-  store.updateGaleriaItem(Number(req.params.id), req.body || {});
-  res.json({ ok: true, item: store.getGaleriaById(Number(req.params.id)) });
-});
-
-app.delete('/api/galeria/:id', auth.requireAdmin, (req, res) => {
-  const item = store.getGaleriaById(Number(req.params.id));
-  if (!item) return res.status(404).json({ error: 'no_existe' });
-  if (item.filename) {
-    try {
-      const fp = path.join(GALERIA_PATH, item.filename);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
-    } catch (e) { /* archivo ya no existe o no se puede borrar */ }
-  }
-  store.deleteGaleriaItem(Number(req.params.id));
-  res.json({ ok: true });
-});
+// ===================== GALERIA DE MARCA ===================== (Fase 4: extraído a
+// src/routes/galeria.js, incluido GALERIA_PATH/ensureDir/uploadGaleria)
+app.use('/api/galeria', require('./routes/galeria'));
 
 // ===================== PROYECTOS / LOTES =====================
 function emitLote(proyectoId, loteId, tipo) {
@@ -2698,96 +2603,6 @@ app.delete('/api/lotes/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Recomendar propiedades para un lead (match scoring)
-app.post('/api/propiedades/recomendar', auth.requireAuth, async (req, res) => {
-  try {
-    const { leadId } = req.body || {};
-    if (!leadId) return res.status(400).json({ error: 'leadId requerido' });
-
-    const lead = store.getLeadById(leadId);
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
-
-    const mensajes = store.getMessagesByLead(leadId) || [];
-    const textoCompleto = mensajes.map(m => m.body).filter(Boolean).join(' ').toLowerCase();
-
-    // Extraer entidades: vía IA si está disponible, si no con regex local
-    let entidades = { locations: [], prices: [], propertyTypes: [] };
-    try {
-      const nlp = require('./services/nlp');
-      if (nlp.isAIEnabled()) {
-        entidades = await nlp.extractEntities(textoCompleto);
-      }
-    } catch (e) { /* fallback a regex */ }
-
-    if (!entidades.locations.length) {
-      const ciudades = ['tocaima', 'girardot', 'melgar', 'bogotá', 'bogota', 'cundinamarca', 'tolima', 'ica', 'huila', 'meta', 'anapoima', 'la mesa', 'villeta', 'facatativá', 'facatativa', 'mosquera', 'madrid', 'funza'];
-      entidades.locations = ciudades.filter(c => textoCompleto.includes(c));
-    }
-    if (!entidades.prices.length) {
-      const nums = textoCompleto.match(/\b(\d{5,})\b/g);
-      if (nums) entidades.prices = nums.map(Number);
-    }
-    if (!entidades.propertyTypes.length) {
-      if (/lote|terreno|parcela/i.test(textoCompleto)) entidades.propertyTypes.push('lote');
-      if (/casa|vivienda/i.test(textoCompleto)) entidades.propertyTypes.push('casa');
-      if (/apartamento|apto/i.test(textoCompleto)) entidades.propertyTypes.push('apartamento');
-    }
-
-    const propiedades = store.getPropiedades();
-    const precioRef = entidades.prices.length ? Math.min(...entidades.prices) : 0;
-    const ciudadRef = entidades.locations[0] || '';
-
-    const recomendadas = propiedades.filter(p => p.estado === 'disponible').map(p => {
-      let match = 50;
-
-      // Ciudad (50%)
-      const pCiudad = (p.ciudad || '').toLowerCase();
-      if (ciudadRef && pCiudad.includes(ciudadRef) || ciudadRef && entidades.locations.some(l => pCiudad.includes(l))) {
-        match += 30;
-      } else if (ciudadRef && entidades.locations.some(l => pCiudad.includes(l))) {
-        match += 25;
-      }
-
-      // Precio (25%)
-      if (precioRef > 0 && p.precio > 0) {
-        const diff = Math.abs(p.precio - precioRef) / Math.max(p.precio, precioRef);
-        match += Math.round(25 * Math.max(0, 1 - diff));
-      }
-
-      // Tipo (15%)
-      if (entidades.propertyTypes.length && entidades.propertyTypes.includes(p.tipo || 'lote')) {
-        match += 15;
-      } else if (entidades.propertyTypes.length) {
-        match += 5;
-      } else {
-        match += 8;
-      }
-
-      // m² (10%)
-      if (p.m2 > 0) {
-        const m2Ratio = Math.min(p.m2 / 500, 1);
-        match += Math.round(10 * m2Ratio);
-      }
-
-      return {
-        id: p.id,
-        nombre: p.nombre,
-        ciudad: p.ciudad || '',
-        precio: p.precio || 0,
-        m2: p.m2 || 0,
-        tipo: p.tipo || 'lote',
-        estado: p.estado || 'disponible',
-        imagen_url: p.imagen_url || '',
-        match: Math.min(99, match),
-      };
-    }).sort((a, b) => b.match - a.match);
-
-    res.json({ ok: true, propiedades: recomendadas, entidades });
-  } catch (e) {
-    console.error('[PROPS] recomendar error:', e.message);
-    res.json({ ok: false, propiedades: [], error: e.message });
-  }
-});
 
 // Marcar mensaje(s) como leídos
 app.post('/api/messages/:id/read-receipt', auth.requireAuth, (req, res) => {
@@ -3255,66 +3070,9 @@ app.get('/api/stream', auth.requireAuth, (req, res) => {
   res.on('close', () => { clearInterval(hb); events.removeClient(canal, res); });
 });
 
-// ===================== NOTIFICACIONES PUSH =====================
-
-app.get('/api/push/clave', auth.requireAuth, (req, res) => {
-  res.json({ publicKey: push.getPublicKey(), enabled: push.isEnabled(), fcmEnabled: push.isFcmEnabled() });
-});
-
-app.post('/api/push/suscribir', auth.requireAuth, (req, res) => {
-  const sub = req.body && req.body.subscription;
-  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'subscription requerida' });
-  const vendedorId = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
-  if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
-  store.savePushSubscription(vendedorId, sub);
-  res.json({ ok: true });
-});
-
-// Registro de token FCM desde la app nativa (Capacitor) — canal separado de Web Push.
-app.post('/api/push/suscribir-fcm', auth.requireAuth, (req, res) => {
-  const { token } = req.body || {};
-  if (!token) return res.status(400).json({ error: 'token requerido' });
-  const vendedorId = req.session.rol === 'admin' ? 0 : req.session.vendedorId;
-  if (!vendedorId && vendedorId !== 0) return res.status(400).json({ error: 'sin_vendedor' });
-  store.saveFcmToken(vendedorId, token);
-  res.json({ ok: true });
-});
-
-// Diagnóstico de push (admin) — muestra suscripciones FCM y Web Push
-app.get('/api/push/diagnostico', auth.requireAdmin, (req, res) => {
-  try {
-    const storeDb = require('./db/store');
-    const allSubs = storeDb.getAllPushSubscriptions();
-    const fcmCount = allSubs.filter(s => s.tipo === 'fcm').length;
-    const webpushCount = allSubs.filter(s => s.tipo !== 'fcm').length;
-    res.json({
-      fcmEnabled: push.isFcmEnabled(),
-      webpushEnabled: push.isEnabled(),
-      totalSubscriptions: allSubs.length,
-      fcmSubscriptions: fcmCount,
-      webpushSubscriptions: webpushCount,
-      subscriptions: allSubs,
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Enviar push de prueba al admin (admin)
-app.post('/api/push/test', auth.requireAdmin, async (req, res) => {
-  try {
-    const adminId = 0;
-    const r = await push.sendToVendedor(adminId, {
-      title: '🔔 Prueba Leons Group',
-      body: 'Si ves esta notificación, las push notifications están funcionando correctamente.',
-      tipo: 'test',
-      tag: 'test-push-' + Date.now(),
-    });
-    res.json({ ok: true, mensaje: 'Push de prueba enviado al admin (vendedorId=0)' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+// ===================== NOTIFICACIONES PUSH ===================== (Fase 4: extraído
+// a src/routes/push.js)
+app.use('/api/push', require('./routes/push'));
 
 // ===================== SALUD DEL SISTEMA (admin) =====================
 const logger = require('./services/logger');
