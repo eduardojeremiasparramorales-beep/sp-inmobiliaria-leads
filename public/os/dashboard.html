@@ -25,10 +25,12 @@
   let m = await api('/api/metricas');
   let stats = await api('/api/stats');
   let leadSources = await api('/api/reports/lead-sources'); // F1: atribución real de campaña
+  let calientes = await api('/api/leads/calientes?limite=6'); // lead scoring (recalculado cada 10 min)
 
   if (!m) m = { total: 0, vendidos: 0, conversionGlobal: 0, tiempoRespuestaPromedio: null, respondidos: 0, sinResponder: 0, totalMensajes: 0, mensajesEntrantes: 0, porEtiqueta: {}, porEstado: {}, porVendedor: [] };
   if (!stats) stats = { totalVendedores: 0, vendedoresActivos: 0 };
   if (!leadSources) leadSources = { campanas: [], organico: 0, pagado: 0 };
+  if (!Array.isArray(calientes)) calientes = [];
 
   const etq = m.porEtiqueta || {};
   const pipeline = [
@@ -165,6 +167,24 @@
           <div style="margin:var(--s2) 0 var(--s3)">${donutChart(donutSegs)}</div>
           <div class="u-col u-gap1">${donutLegend}</div>
         </div>
+        <!-- Leads calientes (lead scoring, se recalcula cada 10 min en el servidor) -->
+        <div class="card card--pad rise rise-2">
+          <div class="u-between" style="margin-bottom:var(--s2)">
+            <div class="t-label">🔥 Leads calientes</div>
+            <a class="btn btn--quiet btn--sm" href="/os/crm.html">Ver CRM</a>
+          </div>
+          <div class="u-col u-gap1">
+            ${calientes.length ? calientes.map(c => `
+              <a href="/os/inbox.html?lead=${c.lead_id}" class="u-between" style="text-decoration:none;color:inherit;padding:8px 0;border-bottom:1px solid var(--border-soft)">
+                <div class="u-row u-gap2" style="min-width:0">
+                  <div class="avatar avatar--sm" style="background:${avatarColor(c.customer_name)}">${initials(c.customer_name)}</div>
+                  <div style="min-width:0"><div style="font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.customer_name || 'Sin nombre'}</div></div>
+                </div>
+                <span class="badge badge--gold" style="flex-shrink:0">${c.score}</span>
+              </a>`).join('') : `<div class="t-dim3" style="font-size:13px">Sin leads calientes por ahora.</div>`}
+          </div>
+        </div>
+
         <!-- Estado del negocio -->
         <div class="card card--pad rise rise-2">
           <div class="t-label" style="margin-bottom:var(--s2)">Estado del negocio</div>

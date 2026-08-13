@@ -818,6 +818,7 @@ const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats', ordenPrioridad = false;
+let hotScores = new Map(); // lead_id -> score (lead scoring, solo visible para admin — ver /api/leads/calientes)
 let current = null, currentMsgs = [], metricas = null;
 let _templates = [];
 let showArchivados = false, archivadosCount = 0, archivedLeads = [], replyTo = null;
@@ -2105,6 +2106,9 @@ async function init(){
       meAv.title = me.nombre || ''; // el HTML estático nunca lo corregía — quedaba con el texto literal del template sin interpolar
     }
     metricas = await api('/api/me/metricas');
+    // Lead scoring (solo admin puede consultar /api/leads/calientes — para el resto
+    // de asesores no pasa nada, simplemente no se muestra el badge de score).
+    if(me.rol==='admin'){ const cal=await api('/api/leads/calientes?limite=100'); if(Array.isArray(cal)) cal.forEach(c=>hotScores.set(Number(c.lead_id),c.score)); }
     renderFilters();
     await cargar();
     await cargarArchivados();
@@ -2259,7 +2263,7 @@ function cardHTML(l,idx){
       ${l.muted_at?`<span class="m-card__mute"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/><path d="M14.5 6.5a2.5 2.5 0 0 0-3.26-1.12"/></svg> Silenciado</span>`:''}
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread&&!archived?greenDot:''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
-        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span>${(()=>{const ch=(l.customer_phone||'').startsWith('instagram_')?'\ud83d\udfe3 IG':(l.customer_phone||'').startsWith('messenger_')?'\ud83d\udd35 M':'\ud83d\udfe2 WA';return ch?`<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:rgba(255,255,255,.08);color:var(--text-3);margin-left:3px">${ch}</span>`:'';})()}${tempBadge(l.temperatura)}<span class="m-tag t-${e.cls}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
+        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span>${(()=>{const ch=(l.customer_phone||'').startsWith('instagram_')?'\ud83d\udfe3 IG':(l.customer_phone||'').startsWith('messenger_')?'\ud83d\udd35 M':'\ud83d\udfe2 WA';return ch?`<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:rgba(255,255,255,.08);color:var(--text-3);margin-left:3px">${ch}</span>`:'';})()}${tempBadge(l.temperatura)}${hotScores.has(Number(l.id))?`<span style="font-size:9px;padding:1px 5px;border-radius:999px;background:rgba(200,164,90,.16);color:var(--gold);margin-left:3px" title="Score de lead caliente">🔥 ${hotScores.get(Number(l.id))}</span>`:''}<span class="m-tag t-${e.cls}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
         <div class="m-card__l2"><span class="m-card__msg">${(()=>{ let dr=''; try{ dr=localStorage.getItem('sp_draft_'+l.id)||''; }catch(e){} return dr?`<span style="color:var(--gold);font-weight:600">Borrador:</span> ${esc(dr.slice(0,40))}`:esc(l.last_message||l.first_message||'—'); })()}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
         <div class="m-card__l3">
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>

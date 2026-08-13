@@ -27,11 +27,18 @@
 
   const ctx = await SPOS.mount({
     active: 'crm', title: 'CRM · Leads', crumb: 'Tarjetas inteligentes', padded: false, panel: true,
-    action: `<button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
+    action: `<a class="btn btn--ghost btn--sm" href="/api/leads/export.csv" download style="text-decoration:none">${ICONS.down}Exportar CSV</a>
+      <button class="btn btn--gold btn--sm" id="newLead">${ICONS.plus}Nuevo lead</button>`
   });
 
   let leads = await api('/api/leads');
   if (!Array.isArray(leads)) leads = [];
+
+  // Leads calientes (score de src/services/lead-scoring.js, se recalcula cada 10 min en
+  // el servidor) — un solo fetch para todos, no uno por tarjeta.
+  const calientes = await api('/api/leads/calientes?limite=50');
+  const scoreMap = new Map();
+  if (Array.isArray(calientes)) calientes.forEach(c => scoreMap.set(Number(c.lead_id), c.score));
 
   let filter = 'todos', query = '';
 
@@ -65,13 +72,17 @@
     if (!items.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1">${ICONS.leads}<div>Sin leads en esta vista</div></div>`; return; }
     grid.innerHTML = items.map((l, i) => {
       const e = ETQ[l.etiqueta || 'sin_clasificar'] || ETQ.sin_clasificar;
+      const score = scoreMap.get(Number(l.id));
       return `<div class="card card--pad card--float rise rise-${Math.min(4,(i%4)+1)}" data-id="${l.id}" style="cursor:pointer">
         <div class="u-between" style="margin-bottom:14px">
           <div class="u-row u-gap2">
             <div class="avatar avatar--md" style="background:${avatarColor(l.customer_name)}">${initials(l.customer_name)}</div>
             <div><div style="font-weight:600">${l.customer_name || 'Sin nombre'}</div><div class="t-dim3 t-num" style="font-size:12px">${fmtPhone(l.customer_phone)}</div></div>
           </div>
-          ${l.unread_count > 0 ? `<span class="os-nav__badge">${l.unread_count}</span>` : ''}
+          <div class="u-row u-gap1">
+            ${score != null ? `<span class="badge badge--gold" title="Lead caliente — score ${score}">🔥 ${score}</span>` : ''}
+            ${l.unread_count > 0 ? `<span class="os-nav__badge">${l.unread_count}</span>` : ''}
+          </div>
         </div>
         <div class="u-between">
           <span class="badge badge--${e.b}">${e.t}</span>

@@ -30,6 +30,7 @@
 
   let resumen = null;
   let transacciones = [];
+  let comisiones = [];
   let vista = 'resumen';
 
   ctx.content.innerHTML = `
@@ -42,6 +43,7 @@
       <div class="u-row u-gap2">
         <button class="btn btn--sm ${vista==='resumen'?'btn--gold':'btn--ghost'}" data-view="resumen">Resumen</button>
         <button class="btn btn--sm ${vista==='transacciones'?'btn--gold':'btn--ghost'}" data-view="transacciones">Transacciones</button>
+        <button class="btn btn--sm ${vista==='comisiones'?'btn--gold':'btn--ghost'}" data-view="comisiones">Comisiones</button>
         <button class="btn btn--gold btn--sm" id="btnNew">+ Nueva</button>
       </div>
     </div>
@@ -55,19 +57,22 @@
   }));
 
   async function cargar() {
-    const [r, t] = await Promise.all([
+    const [r, t, c] = await Promise.all([
       api('/api/finanzas/resumen'),
       api('/api/finanzas/transacciones?limite=100'),
+      api('/api/finanzas/comisiones?limite=100'),
     ]);
     resumen = r || {};
     transacciones = t || [];
+    comisiones = Array.isArray(c) ? c : [];
     render();
   }
 
   function render() {
     const el = document.getElementById('mainContent');
     if (vista === 'resumen') renderResumen(el);
-    else renderTransacciones(el);
+    else if (vista === 'transacciones') renderTransacciones(el);
+    else renderComisiones(el);
   }
 
   function renderResumen(el) {
@@ -126,6 +131,45 @@
         <div class="finance-bar__label">${d.mes?.slice(5) || ''}</div>
       </div>`;
     }).join('')}</div>`;
+  }
+
+  function renderComisiones(el) {
+    if (!comisiones.length) { el.innerHTML = '<div class="empty">Sin comisiones calculadas todavía. Se generan desde la ficha del lead al marcarlo vendido.</div>'; return; }
+    const ESTADO_BADGE = { pendiente: 'amber', pagada: 'green', cancelada: 'red' };
+    el.innerHTML = `<div class="card" style="overflow:hidden">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid var(--border-soft)">
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Fecha</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Asesor</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Lead</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Venta</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">%</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Comisión</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Estado</th>
+            <th style="padding:10px 12px"></th>
+          </tr></thead>
+          <tbody>${comisiones.map(c => `
+            <tr style="border-bottom:1px solid var(--border-soft)">
+              <td style="padding:10px 12px">${esc(c.fecha_calculo)}</td>
+              <td style="padding:10px 12px">${esc(c.vendedor_nombre || '—')}</td>
+              <td style="padding:10px 12px">${esc(c.lead_nombre || '—')}</td>
+              <td style="padding:10px 12px;text-align:right">${fmt(c.monto_venta)}</td>
+              <td style="padding:10px 12px;text-align:right">${c.porcentaje}%</td>
+              <td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gold)">${fmt(c.monto_comision)}</td>
+              <td style="padding:10px 12px"><span class="badge badge--${ESTADO_BADGE[c.estado] || 'mute'}">${c.estado}</span></td>
+              <td style="padding:10px 12px;text-align:right">${c.estado === 'pendiente' ? `<button class="btn btn--ghost btn--sm" data-pagar="${c.id}">Marcar pagada</button>` : ''}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+    el.querySelectorAll('[data-pagar]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = 'Guardando…';
+      const r = await api(`/api/finanzas/comisiones/${b.getAttribute('data-pagar')}/pagar`, { method: 'POST' });
+      if (r && r.ok) await cargar();
+      else { b.disabled = false; b.textContent = 'Marcar pagada'; }
+    }));
   }
 
   function renderTransacciones(el) {

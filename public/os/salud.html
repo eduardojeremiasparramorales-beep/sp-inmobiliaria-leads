@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>Leons Group · Salud del sistema</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<script src="/os/theme.js"></script>
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .salud-page { max-width: 900px; margin: 0 auto; }
+  .salud-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+  .salud-row:last-child { border-bottom: none; }
+  .salud-row__label { color: var(--text-3); }
+  .salud-row__value { font-weight: 600; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  'use strict';
+  const { ICONS, api, toast } = SPOS;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const ctx = await SPOS.mount({ active: 'salud', title: 'Salud del sistema', crumb: 'Diagnóstico sin entrar por SSH', padded: true, adminOnly: true });
+  if (!ctx) return;
+
+  // Umbrales simples para el semáforo — el contenedor corre con mem_limit:700m
+  // (docker-compose.yml), así que 500MB de RSS ya es una señal de alerta temprana.
+  function estadoMemoria(mb) { return mb > 500 ? 'red' : mb > 300 ? 'amber' : 'green'; }
+  function estadoErrores(n) { return n > 10 ? 'red' : n > 0 ? 'amber' : 'green'; }
+  function fmtUptime(seg) {
+    const d = Math.floor(seg / 86400), h = Math.floor((seg % 86400) / 3600), m = Math.floor((seg % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}min`;
+    return `${m}min`;
+  }
+
+  async function cargar() {
+    const [salud, push, mensajes] = await Promise.all([
+      api('/api/admin/salud'),
+      api('/api/push/diagnostico'),
+      api('/api/logs'),
+    ]);
+    render(salud, push, Array.isArray(mensajes) ? mensajes : []);
+  }
+
+  function tile(label, value, badge) {
+    return `<div class="metric card--float">
+      <div class="metric__top">${badge ? `<span class="dot dot--${badge}"></span>` : ''}</div>
+      <div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div>
+    </div>`;
+  }
+
+  function render(salud, push, mensajes) {
+    ctx.content.innerHTML = `<div class="salud-page">
+      ${!salud ? `<div class="empty">${ICONS.activity}<div>No se pudo cargar el estado del sistema</div></div>` : `
+        <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
+          ${tile('Tiempo activo', fmtUptime(salud.uptime_seg))}
+          ${tile('Memoria (RSS)', salud.memoria_mb + ' MB', estadoMemoria(salud.memoria_mb))}
+          ${tile('Heap usado', salud.heap_mb + ' MB')}
+          ${tile('Errores (última hora)', salud.errores_ultima_hora, estadoErrores(salud.errores_ultima_hora))}
+        </div>
+
+        <div class="grid grid--2" style="gap:var(--s3);align-items:start">
+          <div class="card card--pad rise rise-2">
+            <div class="t-h3" style="margin-bottom:var(--s2)">Servidor</div>
+            <div class="salud-row"><span class="salud-row__label">Versión de Node</span><span class="salud-row__value">${esc(salud.node)}</span></div>
+            <div class="salud-row"><span class="salud-row__label">Base de datos</span><span class="salud-row__value">${salud.db_mb} MB</span></div>
+            <div class="salud-row"><span class="salud-row__label">Errores última hora</span><span class="salud-row__value" style="color:${estadoErrores(salud.errores_ultima_hora)==='red'?'var(--red)':estadoErrores(salud.errores_ultima_hora)==='amber'?'var(--amber)':'var(--green)'}">${salud.errores_ultima_hora}</span></div>
+          </div>
+
+          <div class="card card--pad rise rise-2">
+            <div class="u-between" style="margin-bottom:var(--s2)">
+              <div class="t-h3">Notificaciones push</div>
+              <button class="btn btn--ghost btn--sm" id="btnTestPush">Enviar prueba</button>
+            </div>
+            ${!push ? '<div class="t-dim3" style="font-size:13px">No se pudo cargar</div>' : `
+              <div class="salud-row"><span class="salud-row__label">Web Push</span><span class="badge badge--${push.webpushEnabled?'green':'mute'}">${push.webpushEnabled?'Activo':'Apagado'}</span></div>
+              <div class="salud-row"><span class="salud-row__label">Firebase (FCM)</span><span class="badge badge--${push.fcmEnabled?'green':'mute'}">${push.fcmEnabled?'Activo':'Apagado'}</span></div>
+              <div class="salud-row"><span class="salud-row__label">Suscripciones totales</span><span class="salud-row__value">${push.totalSubscriptions}</span></div>
+              <div class="salud-row"><span class="salud-row__label">Web / FCM</span><span class="salud-row__value">${push.webpushSubscriptions} / ${push.fcmSubscriptions}</span></div>
+            `}
+          </div>
+
+          <div class="card rise rise-3" style="grid-column:1/-1">
+            <div class="card--pad" style="padding-bottom:var(--s2)">
+              <div class="t-h3">Últimos mensajes procesados</div>
+              <div class="t-dim3" style="font-size:12px;margin-top:2px">Los 50 más recientes — confirma que el servidor sigue recibiendo/enviando tráfico real</div>
+            </div>
+            ${mensajes.length ? `
+            <table class="table">
+              <thead><tr><th>Hora</th><th>Dirección</th><th>De</th><th>Estado</th></tr></thead>
+              <tbody>${mensajes.slice(0, 20).map(m => `
+                <tr>
+                  <td class="t-num" style="font-size:12px">${SPOS.fmtFechaHora(m.timestamp)}</td>
+                  <td><span class="badge badge--${m.direction==='incoming'?'blue':'mute'}">${m.direction==='incoming'?'Entrante':'Saliente'}</span></td>
+                  <td style="font-size:12px" class="t-num">${esc(m.from_number)}</td>
+                  <td style="font-size:12px">${esc(m.status||'—')}</td>
+                </tr>`).join('')}</tbody>
+            </table>` : `<div class="t-dim3" style="font-size:13px;padding:0 var(--s3) var(--s3)">Sin mensajes registrados todavía.</div>`}
+          </div>
+        </div>
+      `}
+    </div>`;
+
+    ctx.content.querySelector('#btnTestPush')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      const r = await api('/api/push/test', { method: 'POST' });
+      btn.disabled = false; btn.textContent = 'Enviar prueba';
+      toast(r && r.ok ? 'Push de prueba enviado' : 'Error enviando push', r && r.ok ? 'ok' : 'err');
+    });
+  }
+
+  await cargar();
+})();
+</script>
+</body>
+</html>

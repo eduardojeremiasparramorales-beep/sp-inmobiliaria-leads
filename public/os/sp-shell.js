@@ -96,6 +96,7 @@
       { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: '/os/configuracion.html', admin: true },
       { id: 'dedup', label: 'Depurar', icon: 'zap', href: '/os/deduplicar.html', admin: true },
+      { id: 'salud', label: 'Salud del sistema', icon: 'activity', href: '/os/salud.html', admin: true },
       { id: 'design', label: 'Design System', icon: 'spark', href: '/os/design-system.html' },
     ]},
   ];
