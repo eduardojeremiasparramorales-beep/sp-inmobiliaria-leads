@@ -112,6 +112,13 @@ class WorkflowEngine {
       case 'etiqueta': return conversation ? conversation.etiqueta : '';
       case 'status': return conversation ? conversation.status : '';
       case 'priority': return conversation ? conversation.priority : '';
+      // Zona geográfica resuelta del lead legacy espejado (F-zonas) — el motor trabaja
+      // sobre `conversation`, la zona vive en `leads`, por eso el salto vía lead_id.
+      case 'zona': {
+        if (!conversation || !conversation.lead_id) return '';
+        try { const lead = store.getLeadById(conversation.lead_id); return (lead && lead.zona) || ''; }
+        catch (e) { return ''; }
+      }
       default: return '';
     }
   }

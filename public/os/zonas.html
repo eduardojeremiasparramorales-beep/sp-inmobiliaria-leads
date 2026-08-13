@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>Leons Group · Zonas</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<script src="/os/theme.js"></script>
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { ICONS, api, fmt, toast } = SPOS;
+
+  const S = {
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
+  };
+
+  const ctx = await SPOS.mount({
+    active: 'zonas', title: 'Zonas', crumb: 'Asignación de leads por zona geográfica', padded: true, adminOnly: true,
+    action: `<button class="btn btn--gold btn--sm" id="add">${ICONS.plus}Nueva zona</button>`
+  });
+
+  const CAMPOS = { ad_id: 'ID de anuncio', ad_name: 'Nombre de anuncio', source_url: 'URL del anuncio' };
+  const OPERADORES = { equals: 'es exactamente', contains: 'contiene' };
+
+  let ZONAS = [], VENDS = [], REGLAS = [], ANUNCIOS = [];
+
+  async function cargar() {
+    const [zonas, vendedores] = await Promise.all([api('/api/zonas'), api('/api/vendedores')]);
+    ZONAS = Array.isArray(zonas) ? zonas : [];
+    VENDS = (Array.isArray(vendedores) ? vendedores : []).filter(v => v.estado !== 'pendiente');
+    const reglasPorZona = await Promise.all(ZONAS.map(z => api(`/api/zonas/${z.id}/reglas`)));
+    REGLAS = ZONAS.flatMap((z, i) => (Array.isArray(reglasPorZona[i]) ? reglasPorZona[i] : []).map(r => ({ ...r, zona_nombre: z.nombre, zona_slug: z.slug })));
+    const anuncios = await api('/api/zonas/anuncios-detectados');
+    const idsConRegla = new Set(REGLAS.filter(r => r.campo === 'ad_id').map(r => r.valor));
+    const nombresConRegla = new Set(REGLAS.filter(r => r.campo === 'ad_name').map(r => r.valor));
+    ANUNCIOS = (Array.isArray(anuncios) ? anuncios : []).filter(a =>
+      !(a.ad_id && idsConRegla.has(a.ad_id)) && !(a.ad_name && nombresConRegla.has(a.ad_name)));
+
+    render();
+  }
+
+  function render() {
+    const totalAsesoresConZona = VENDS.filter(v => v.zonas && String(v.zonas).trim()).length;
+    const totalLeadsEnZona = ZONAS.reduce((s, z) => s + (z.leads_activos || 0), 0);
+
+    ctx.content.innerHTML = `
+     <div class="os-content__max">
+      <div class="grid grid--3 rise rise-1" style="margin-bottom:var(--s3)">
+        ${metric('mapPin', 'Zonas activas', fmt.n(ZONAS.filter(z => z.activo).length))}
+        ${metric('team', 'Asesores con zona asignada', fmt.n(totalAsesoresConZona) + ' / ' + fmt.n(VENDS.length))}
+        ${metric('leads', 'Leads activos en zona', fmt.n(totalLeadsEnZona))}
+      </div>
+
+      <!-- Zonas -->
+      <div class="card rise rise-2" style="overflow:hidden;margin-bottom:var(--s3)">
+        <div class="card--pad" style="padding-bottom:var(--s2)">
+          <div class="t-h3">Zonas</div>
+          <div class="t-dim3" style="font-size:12px;margin-top:4px">Municipios o regiones con asesores dedicados</div>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="table">
+          <thead><tr><th>Zona</th><th>Asesores</th><th>Leads activos</th><th>Estado</th><th>Acción</th></tr></thead>
+          <tbody>${ZONAS.map(z => `
+            <tr>
+              <td><div style="font-weight:600">${esc(z.nombre)}</div><div class="t-dim3" style="font-size:11px">${esc(z.slug)}</div></td>
+              <td>${fmt.n(z.total_asesores || 0)}</td>
+              <td>${fmt.n(z.leads_activos || 0)}</td>
+              <td><span class="badge badge--${z.activo ? 'green' : 'mute'}">${z.activo ? 'activa' : 'inactiva'}</span></td>
+              <td>
+                <div class="u-row u-gap1">
+                  <button class="btn btn--ghost btn--xs" data-action="renombrar" data-id="${z.id}" data-nombre="${esc(z.nombre)}">${S.edit} Renombrar</button>
+                  <button class="btn btn--ghost btn--xs" data-action="toggle" data-id="${z.id}" data-activo="${z.activo}">${z.activo ? 'Desactivar' : 'Activar'}</button>
+                  <button class="btn btn--ghost btn--xs t-red" data-action="eliminar" data-id="${z.id}" data-nombre="${esc(z.nombre)}">${S.trash}</button>
+                </div>
+              </td>
+            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-3)">Aún no hay zonas — crea la primera con "Nueva zona"</td></tr>'}</tbody>
+        </table>
+        </div>
+      </div>
+
+      <!-- Reglas anuncio → zona -->
+      <div class="card rise rise-2" style="overflow:hidden;margin-bottom:var(--s3)">
+        <div class="card--pad" style="padding-bottom:var(--s2)">
+          <div class="t-h3">Reglas: anuncio → zona</div>
+          <div class="t-dim3" style="font-size:12px;margin-top:4px">Cuando un lead nuevo llega desde uno de estos anuncios de Meta, cae en la zona indicada</div>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="table">
+          <thead><tr><th>Zona</th><th>Condición</th><th>Prioridad</th><th></th></tr></thead>
+          <tbody>${REGLAS.slice().sort((a, b) => b.prioridad - a.prioridad).map(r => `
+            <tr>
+              <td>${esc(r.zona_nombre)}</td>
+              <td class="t-dim" style="font-size:13px">${CAMPOS[r.campo] || r.campo} ${OPERADORES[r.operador] || r.operador} <b style="color:var(--txt)">${esc(r.valor)}</b></td>
+              <td>${r.prioridad}</td>
+              <td><button class="btn btn--ghost btn--xs t-red" data-action="borrarRegla" data-id="${r.id}">${S.trash}</button></td>
+            </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-3)">Sin reglas todavía</td></tr>'}</tbody>
+        </table>
+        </div>
+        <div class="card--pad" style="padding-top:var(--s2);border-top:1px solid var(--border-soft)">
+          <div class="t-dim3" style="font-size:12px;margin-bottom:10px">Crear regla manual</div>
+          <form id="reglaForm" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select name="zona_id" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+              <option value="">Zona…</option>
+              ${ZONAS.map(z => `<option value="${z.id}">${esc(z.nombre)}</option>`).join('')}
+            </select>
+            <select name="campo" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+              ${Object.entries(CAMPOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+            </select>
+            <select name="operador" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+              ${Object.entries(OPERADORES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+            </select>
+            <input name="valor" placeholder="valor a comparar" required style="flex:1;min-width:160px;padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+            <button type="submit" class="btn btn--gold btn--sm">Agregar</button>
+          </form>
+          ${ANUNCIOS.length ? `
+          <div style="margin-top:16px">
+            <div class="t-dim3" style="font-size:12px;margin-bottom:8px">Anuncios que ya trajeron leads y aún no tienen zona</div>
+            ${ANUNCIOS.map((a, i) => `
+              <div class="u-row u-gap2" style="padding:8px 0;border-top:1px solid var(--border-soft);flex-wrap:wrap">
+                <div style="flex:1;min-width:180px">
+                  <div style="font-size:13px;font-weight:500">${esc(a.ad_name || '(sin nombre)')}</div>
+                  <div class="t-dim3" style="font-size:11px">${a.ad_id ? 'ID ' + esc(a.ad_id) + ' · ' : ''}${fmt.n(a.total_leads)} leads</div>
+                </div>
+                <select data-mapZona="${i}" style="padding:7px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:12.5px;font-family:inherit">
+                  <option value="">Mapear a zona…</option>
+                  ${ZONAS.map(z => `<option value="${z.id}">${esc(z.nombre)}</option>`).join('')}
+                </select>
+                <button class="btn btn--ghost btn--xs" data-action="mapear" data-idx="${i}">Mapear</button>
+              </div>`).join('')}
+          </div>` : ''}
+        </div>
+      </div>
+
+      <!-- Cobertura por asesor -->
+      <div class="card rise rise-3">
+        <div class="card--pad" style="padding-bottom:var(--s2)">
+          <div class="t-h3">Cobertura por asesor</div>
+          <div class="t-dim3" style="font-size:12px;margin-top:4px">Qué zonas cubre cada asesor — puede marcar varias. Sin ninguna marcada, el asesor solo entra al reparto de respaldo (menor carga) cuando nadie cubre la zona del lead.</div>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="table">
+          <thead><tr><th>Asesor</th>${ZONAS.map(z => `<th style="text-align:center">${esc(z.nombre)}</th>`).join('')}</tr></thead>
+          <tbody>${VENDS.map(v => {
+            const cubiertas = String(v.zonas || '').split(',').map(s => s.trim()).filter(Boolean);
+            return `<tr>
+              <td style="font-weight:500">${esc(v.nombre)}</td>
+              ${ZONAS.map(z => `<td style="text-align:center"><input type="checkbox" data-cov data-vid="${v.id}" data-slug="${z.slug}" ${cubiertas.includes(z.slug) ? 'checked' : ''}></td>`).join('')}
+            </tr>`;
+          }).join('') || `<tr><td colspan="${ZONAS.length + 1}" style="text-align:center;padding:20px;color:var(--text-3)">Sin asesores registrados</td></tr>`}
+          ${!ZONAS.length ? '' : ''}</tbody>
+        </table>
+        </div>
+      </div>
+     </div>`;
+
+    bind();
+  }
+
+  function bind() {
+    document.getElementById('add').onclick = () => {
+      abrirModal('Nueva zona', `
+        <form id="zonaForm" style="display:flex;flex-direction:column;gap:14px">
+          <input name="nombre" placeholder="Nombre (ej. Tocaima)" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <div style="display:flex;gap:10px;margin-top:6px">
+            <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
+            <button type="submit" class="btn btn--gold">Crear</button>
+          </div>
+        </form>`);
+      document.getElementById('modalCancel').onclick = cerrarModal;
+      document.getElementById('zonaForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const nombre = new FormData(e.target).get('nombre').trim();
+        if (!nombre) return;
+        const r = await api('/api/zonas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre }) });
+        if (r && r.ok) { toast('Zona creada'); cerrarModal(); cargar(); }
+        else toast(r?.error || 'Error al crear', 'err');
+      });
+    };
+
+    document.querySelectorAll('[data-action="renombrar"]').forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.id, actual = btn.dataset.nombre;
+      abrirModal('Renombrar zona', `
+        <form id="renForm" style="display:flex;flex-direction:column;gap:14px">
+          <input name="nombre" value="${esc(actual)}" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <div style="display:flex;gap:10px;margin-top:6px">
+            <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
+            <button type="submit" class="btn btn--gold">Guardar</button>
+          </div>
+        </form>`);
+      document.getElementById('modalCancel').onclick = cerrarModal;
+      document.getElementById('renForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const nombre = new FormData(e.target).get('nombre').trim();
+        if (!nombre) return;
+        const r = await api('/api/zonas/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre }) });
+        if (r && r.ok) { toast('Zona actualizada'); cerrarModal(); cargar(); }
+        else toast(r?.error || 'Error', 'err');
+      });
+    });
+
+    document.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.onclick = async () => {
+      const id = btn.dataset.id, activo = btn.dataset.activo === 'true';
+      const r = await api('/api/zonas/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activo: !activo }) });
+      if (r && r.ok) { toast(activo ? 'Zona desactivada' : 'Zona activada'); cargar(); }
+      else toast(r?.error || 'Error', 'err');
+    });
+
+    document.querySelectorAll('[data-action="eliminar"]').forEach(btn => btn.onclick = async () => {
+      if (!confirm(`¿Eliminar la zona "${btn.dataset.nombre}"?`)) return;
+      const r = await api('/api/zonas/' + btn.dataset.id, { method: 'DELETE' });
+      if (r && r.ok) { toast('Zona eliminada'); cargar(); }
+      else if (r && r.error === 'zona_en_uso') toast(`No se puede eliminar: ${r.asesores} asesor(es) todavía la cubren`, 'err');
+      else toast(r?.error || 'Error al eliminar', 'err');
+    });
+
+    document.querySelectorAll('[data-action="borrarRegla"]').forEach(btn => btn.onclick = async () => {
+      const r = await api('/api/zonas/reglas/' + btn.dataset.id, { method: 'DELETE' });
+      if (r && r.ok) { toast('Regla eliminada'); cargar(); }
+      else toast(r?.error || 'Error', 'err');
+    });
+
+    const reglaForm = document.getElementById('reglaForm');
+    if (reglaForm) reglaForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const zonaId = fd.get('zona_id');
+      if (!zonaId) { toast('Elige una zona', 'err'); return; }
+      const r = await api(`/api/zonas/${zonaId}/reglas`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campo: fd.get('campo'), operador: fd.get('operador'), valor: fd.get('valor').trim() }),
+      });
+      if (r && r.ok) { toast('Regla creada'); cargar(); }
+      else toast(r?.error || 'Error al crear la regla', 'err');
+    });
+
+    document.querySelectorAll('[data-action="mapear"]').forEach(btn => btn.onclick = async () => {
+      const idx = Number(btn.dataset.idx);
+      const anuncio = ANUNCIOS[idx];
+      const sel = document.querySelector(`[data-mapZona="${idx}"]`);
+      const zonaId = sel && sel.value;
+      if (!zonaId) { toast('Elige a qué zona mapear este anuncio', 'err'); return; }
+      const body = anuncio.ad_id
+        ? { campo: 'ad_id', operador: 'equals', valor: anuncio.ad_id, prioridad: 10 }
+        : { campo: 'ad_name', operador: 'contains', valor: anuncio.ad_name, prioridad: 5 };
+      const r = await api(`/api/zonas/${zonaId}/reglas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r && r.ok) { toast('Anuncio mapeado a la zona'); cargar(); }
+      else toast(r?.error || 'Error al mapear', 'err');
+    });
+
+    // Cobertura: cada checkbox reenvía la lista COMPLETA de zonas de ese asesor
+    // (el endpoint reemplaza el set entero, no hace toggle individual en el backend).
+    document.querySelectorAll('[data-cov]').forEach(chk => chk.addEventListener('change', async () => {
+      const vid = chk.dataset.vid;
+      const marcadas = Array.from(document.querySelectorAll(`[data-cov][data-vid="${vid}"]:checked`)).map(c => c.dataset.slug);
+      const r = await api(`/api/vendedores/${vid}/zonas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zonas: marcadas }) });
+      if (!(r && r.ok)) { toast(r?.error || 'Error al guardar cobertura', 'err'); chk.checked = !chk.checked; return; }
+      const v = VENDS.find(x => String(x.id) === String(vid));
+      if (v) v.zonas = marcadas.join(',');
+    }));
+  }
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function metric(icon, label, value) { return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon] || ''}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
+
+  // Modal helper (mismo patrón que equipo.html)
+  const modalBg = document.createElement('div');
+  modalBg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:999;display:grid;place-items:center;animation:fadeIn .2s ease';
+  let modalActive = null;
+  function abrirModal(titulo, html) {
+    if (modalActive) cerrarModal();
+    modalActive = document.createElement('div');
+    modalActive.style.cssText = 'background:var(--bg-1);border:1px solid var(--border-soft);border-radius:16px;padding:28px;width:90%;max-width:400px;animation:slideUp .25s var(--ease);max-height:90vh;overflow-y:auto';
+    modalActive.innerHTML = `<div style="font-size:16px;font-weight:600;margin-bottom:20px">${esc(titulo)}</div>${html}`;
+    modalBg.innerHTML = '';
+    modalBg.appendChild(modalActive);
+    document.body.appendChild(modalBg);
+  }
+  function cerrarModal() { modalBg.remove(); modalActive = null; }
+
+  cargar();
+})();
+</script>
+</body>
+</html>

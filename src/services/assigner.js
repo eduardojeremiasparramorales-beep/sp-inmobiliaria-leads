@@ -1,5 +1,6 @@
 const { getVendedoresActivos, assignLeadToVendedor, saveMessage, getLeadById, updateLeadStatus, setFirstResponse, getConfig, updateCustomerMessageTimestamp } = require('../db/store');
 const { emitToVendedor, emitToAdmins } = require('./events');
+const { resolverZonaDesdeReferral, elegirVendedor } = require('./zonas');
 
 const WELCOME_DEFAULT = 'Hola, somos *Sp Leons Group*. ¡Mucho gusto! *{{asesor}}* será tu asesor comercial.';
 
@@ -112,11 +113,15 @@ function assignLead(customerPhone, customerName, messageBody) {
   return { leadId: result.leadId, vendedor, isNew: result.isNew };
 }
 
-function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
-  // customerName y wamid son opcionales
-  if (typeof customerName === 'function') { callback = customerName; customerName = undefined; wamid = null; }
-  if (typeof wamid === 'function') { callback = wamid; wamid = null; }
-  const { getLeadByCustomerPhone, getVendedores, saveLead, assignLeadToVendedor, getLeadById } = require('../db/store');
+function routeReply(fromPhone, messageBody, customerName, wamid, referral, callback) {
+  // customerName, wamid y referral son opcionales
+  if (typeof customerName === 'function') { callback = customerName; customerName = undefined; wamid = null; referral = null; }
+  if (typeof wamid === 'function') { callback = wamid; wamid = null; referral = null; }
+  if (typeof referral === 'function') { callback = referral; referral = null; }
+  const {
+    getLeadByCustomerPhone, getVendedores, saveLead, assignLeadToVendedor, getLeadById,
+    setLeadOrigen, setLeadAdAttribution, setLeadZona, setLeadZonaFuente,
+  } = require('../db/store');
 
   const vendedores = getVendedores();
   const vendedor = vendedores.find(v => v.telefono === fromPhone);
@@ -155,11 +160,17 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
       callback(null, { message: 'cliente_espera' });
       return;
     }
-    // Verificar que el vendedor asignado siga activo; si no, reasignar al primero disponible
+    // Verificar que el vendedor asignado siga activo; si no, reasignar respetando la
+    // zona del lead cuando ya se conoce (F-zonas) — si nadie la cubre, degrada al de
+    // menor carga como antes.
     let v = lead.assigned_to_id
       ? vendedores.find(vd => vd.id === lead.assigned_to_id && vd.estado === 'activo')
       : null;
-    if (!v) v = activos[0];
+    if (!v) {
+      const { vendedor: elegido, fuente } = elegirVendedor(activos, { zona: lead.zona });
+      v = elegido || activos[0];
+      if (fuente === 'fallback') setLeadZonaFuente(lead.id, 'fallback');
+    }
 
     saveMessage(lead.id, fromPhone, v.telefono, messageBody, 'incoming', null, null, wamid || null);
     updateCustomerMessageTimestamp(lead.id);
@@ -185,7 +196,26 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
   const { sendMessageSmart, sendMessage } = require('./whatsapp');
 
   if (a.length > 0) {
-    const vendedorAsignado = a[0];
+    // Click-to-WhatsApp: si el primer mensaje trae el anuncio de origen, se guarda la
+    // atribución y se resuelve la zona ANTES de elegir asesor (F-zonas). Antes esto
+    // corría después de asignar (webhook/messages.js), así que para cuando se sabía
+    // de qué anuncio/zona venía el lead ya había caído en el asesor equivocado.
+    let hints = {};
+    if (referral) {
+      try {
+        const origenTexto = referral.headline || referral.body || referral.source_url || null;
+        if (origenTexto) setLeadOrigen(r.leadId, origenTexto);
+        setLeadAdAttribution(r.leadId, {
+          adId: referral.source_id, adName: referral.headline,
+          sourceUrl: referral.source_url, ctwaClid: referral.ctwa_clid,
+        });
+      } catch (e) { console.error('Error guardando atribución de referral:', e.message); }
+      const zona = resolverZonaDesdeReferral(referral);
+      if (zona) { setLeadZona(r.leadId, zona.slug, 'anuncio', zona.nombre); hints.zona = zona.slug; }
+    }
+    const { vendedor: elegido, fuente } = elegirVendedor(a, hints);
+    const vendedorAsignado = elegido || a[0];
+    if (fuente === 'fallback') setLeadZonaFuente(r.leadId, 'fallback');
     try {
       assignLeadToVendedor(r.leadId, vendedorAsignado);
       triggerWorkflow('conversation:assigned', r.leadId, messageBody);
@@ -216,8 +246,9 @@ function routeReply(fromPhone, messageBody, customerName, wamid, callback) {
 
 // Enruta un mensaje multimedia entrante de un cliente: guarda el lead/mensaje con
 // la referencia del archivo, avisa al panel y notifica al vendedor asignado.
-function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback) {
-  if (typeof wamid === 'function') { callback = wamid; wamid = null; }
+function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, referral, callback) {
+  if (typeof wamid === 'function') { callback = wamid; wamid = null; referral = null; }
+  if (typeof referral === 'function') { callback = referral; referral = null; }
   const store = require('../db/store');
   const { sendMessage } = require('./whatsapp');
 
@@ -237,7 +268,17 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
     const r = store.saveLead(fromPhone, customerName || 'Cliente', body);
     lead = store.getLeadById(r.leadId);
     if (activos.length === 0) { callback(null, { message: 'no_hay_vendedores' }); return; }
-    vendedor = activos[0];
+    // Un anuncio también puede traer un adjunto como primer mensaje (F-zonas).
+    let hints = {};
+    if (referral) {
+      try {
+        const zona = resolverZonaDesdeReferral(referral);
+        if (zona) { store.setLeadZona(lead.id, zona.slug, 'anuncio', zona.nombre); hints.zona = zona.slug; lead = store.getLeadById(lead.id); }
+      } catch (e) { console.error('Error resolviendo zona por referral (media):', e.message); }
+    }
+    const { vendedor: elegido, fuente } = elegirVendedor(activos, hints);
+    vendedor = elegido || activos[0];
+    if (fuente === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
     try { store.assignLeadToVendedor(lead.id, vendedor); } catch (e) { console.error('Error asignando lead media:', e.message); }
   }
 
@@ -257,8 +298,9 @@ function routeIncomingMedia(fromPhone, customerName, mediaData, wamid, callback)
   }
 }
 
-function routeIncomingLocation(fromPhone, customerName, locationData, wamid, callback) {
-  if (typeof wamid === 'function') { callback = wamid; wamid = null; }
+function routeIncomingLocation(fromPhone, customerName, locationData, wamid, referral, callback) {
+  if (typeof wamid === 'function') { callback = wamid; wamid = null; referral = null; }
+  if (typeof referral === 'function') { callback = referral; referral = null; }
   const store = require('../db/store');
   const { sendMessage } = require('./whatsapp');
 
@@ -276,7 +318,16 @@ function routeIncomingLocation(fromPhone, customerName, locationData, wamid, cal
     const r = store.saveLead(fromPhone, customerName || 'Cliente', displayBody);
     lead = store.getLeadById(r.leadId);
     if (activos.length === 0) { callback(null, { message: 'no_hay_vendedores' }); return; }
-    vendedor = activos[0];
+    let hints = {};
+    if (referral) {
+      try {
+        const zona = resolverZonaDesdeReferral(referral);
+        if (zona) { store.setLeadZona(lead.id, zona.slug, 'anuncio', zona.nombre); hints.zona = zona.slug; lead = store.getLeadById(lead.id); }
+      } catch (e) { console.error('Error resolviendo zona por referral (location):', e.message); }
+    }
+    const { vendedor: elegido, fuente } = elegirVendedor(activos, hints);
+    vendedor = elegido || activos[0];
+    if (fuente === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
     try { store.assignLeadToVendedor(lead.id, vendedor); } catch (e) { console.error('Error asignando lead location:', e.message); }
   }
 

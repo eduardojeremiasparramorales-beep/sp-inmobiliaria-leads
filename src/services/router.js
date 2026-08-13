@@ -275,7 +275,15 @@ class MessageRouter {
     const activos = store.getVendedoresActivos();
     if (activos.length === 0) return conversation;
 
-    const siguiente = activos[0];
+    // Si la conversación ya está espejada a un lead legacy con zona resuelta (WhatsApp,
+    // o un lead multicanal corregido a mano), se respeta esa zona en vez de asignar a
+    // ciegas por menor carga (F-zonas). Messenger/Instagram no traen hoy señal propia
+    // de zona (Meta no expone un `referral` equivalente al CTWA de WhatsApp en este
+    // punto), así que sin lead vinculado se degrada al comportamiento de siempre.
+    const { elegirVendedor } = require('./zonas');
+    const leadVinculado = conversation.lead_id ? store.getLeadById(conversation.lead_id) : null;
+    const { vendedor: elegido } = elegirVendedor(activos, { zona: leadVinculado && leadVinculado.zona });
+    const siguiente = elegido || activos[0];
     require('../db/adapter').run(
       'UPDATE conversations SET assigned_to_id = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?',
       [siguiente.id, 'asignado', conversation.id]
@@ -382,7 +390,7 @@ class MessageRouter {
     if (leadId) {
       const adapter = require('../db/adapter');
       adapter.run(
-        "UPDATE messages SET status = 'read', read_at = datetime('now','localtime') WHERE lead_id = ? AND direction = 'outgoing' AND (status IS NULL OR status != 'read')",
+        "UPDATE messages SET status = 'read', read_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE lead_id = ? AND direction = 'outgoing' AND (status IS NULL OR status != 'read')",
         [leadId]
       );
     }

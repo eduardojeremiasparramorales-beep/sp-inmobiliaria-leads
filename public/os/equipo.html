@@ -29,12 +29,14 @@
   });
 
   async function cargar(){
-    const [m, stats, vendedores, usuarios] = await Promise.all([
+    const [m, stats, vendedores, usuarios, zonasAll] = await Promise.all([
       api('/api/metricas'),
       api('/api/stats'),
       api('/api/vendedores'),
       api('/api/usuarios'),
+      api('/api/zonas'),
     ]);
+    const ZONAS = Array.isArray(zonasAll) ? zonasAll : [];
     const team = ((m && m.porVendedor) || []).sort((a, b) => {
       if (a.estado === 'activo' && b.estado !== 'activo') return -1;
       if (a.estado !== 'activo' && b.estado === 'activo') return 1;
@@ -151,10 +153,17 @@
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table class="table">
           <thead><tr>
-            <th>Asesor</th><th>Teléfono</th><th>Estado</th><th>Cuenta</th><th>PIN</th><th>Acción</th>
+            <th>Asesor</th><th>Teléfono</th><th>Estado</th><th>Cuenta</th><th>Zonas</th><th>PIN</th><th>Acción</th>
           </tr></thead>
           <tbody>${vends.map(v => {
             const tieneCuenta = vUserMap[v.id] ? true : false;
+            const zonasVendedor = String(v.zonas || '').split(',').map(s => s.trim()).filter(Boolean);
+            const zonasChips = zonasVendedor.length
+              ? zonasVendedor.map(slug => {
+                  const z = ZONAS.find(zz => zz.slug === slug);
+                  return `<span class="badge badge--mute" style="font-size:10px">${esc(z ? z.nombre : slug)}</span>`;
+                }).join(' ')
+              : '<span class="t-dim3" style="font-size:11px">—</span>';
             const esAdmin = adminVendedorIds.has(v.id);
             const esSupervisor = (vRolMap[v.id] || 'vendedor') === 'supervisor';
             const esJefe = (vRolMap[v.id] || 'vendedor') === 'jefe';
@@ -171,17 +180,19 @@
               <td class="t-dim" style="font-size:13px">${fmtPhone(v.telefono)}${v.telefono && !v.telefono.startsWith('+57') ? ` <button class="btn btn--ghost btn--xs" data-action="fixPhone" data-id="${v.id}" data-tel="${esc(v.telefono)}" title="Corregir teléfono (agregar +57)">${S.refresh}Fix</button>` : ''}</td>
               <td><span class="badge badge--${v.estado==='activo'?'green':'mute'}">${v.estado}</span></td>
               <td>${tieneCuenta ? '<span class="badge badge--green" style="font-size:10px">Sí</span>' : '<span class="t-dim3" style="font-size:11px">—</span>'}</td>
+              <td><div class="u-row u-gap1" style="flex-wrap:wrap;max-width:200px">${zonasChips}</div></td>
               <td><button class="btn btn--ghost btn--xs" data-action="resetPin" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.refresh} Reset</button></td>
               <td>
                 ${esAdmin ? `<span class="t-dim3" style="font-size:11px" title="Las cuentas admin no se pueden suspendir ni eliminar desde aquí">Protegida</span>` : `
                 <div class="u-row u-gap1">
+                  <button class="btn btn--ghost btn--xs" data-action="zonas" data-id="${v.id}" data-name="${esc(v.nombre)}" data-zonas="${esc(zonasVendedor.join(','))}">${ICONS.mapPin.replace('<svg ','<svg style="width:14px;height:14px" ')} Zonas</button>
                   <button class="btn btn--ghost btn--xs" data-action="rol" data-id="${v.id}" data-name="${esc(v.nombre)}" data-rol="${(vRolMap[v.id]||'vendedor')}">${S.user} Ascender</button>
                   <button class="btn btn--ghost btn--xs" data-action="estado" data-id="${v.id}" data-name="${esc(v.nombre)}" data-estado="${v.estado}">${S.activity} ${v.estado==='activo'?'Suspender':'Activar'}</button>
                   <button class="btn btn--ghost btn--xs t-red" data-action="delete" data-id="${v.id}" data-name="${esc(v.nombre)}">${S.trash} Eliminar</button>
                 </div>`}
               </td>
             </tr>`;
-          }).join('') || '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3)">Sin asesores registrados</td></tr>'}</tbody>
+          }).join('') || '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-3)">Sin asesores registrados</td></tr>'}</tbody>
         </table>
         </div>
       </div>
@@ -327,6 +338,41 @@
           const r = await api('/api/vendedores/'+id+'/pin', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin }) });
           if(r && r.ok){ toast('PIN actualizado a '+pin); cerrarModal(); }
           else toast('Error al actualizar PIN','err');
+        } catch(err){ toast('Error de conexión','err'); }
+      });
+    }));
+
+    document.querySelectorAll('[data-action="zonas"]').forEach(btn => btn.addEventListener('click', ()=>{
+      const id = btn.dataset.id;
+      const name = btn.dataset.name;
+      const actuales = new Set(String(btn.dataset.zonas || '').split(',').map(s => s.trim()).filter(Boolean));
+      if (!ZONAS.length) {
+        abrirModal(`Zonas · ${name}`, `
+          <div class="t-dim3" style="font-size:13px">Aún no hay zonas creadas. Crea la primera desde <a href="/os/zonas.html" style="color:var(--gold)">Zonas</a>.</div>
+          <button type="button" class="btn btn--ghost" id="modalCancel" style="margin-top:14px">Cerrar</button>`);
+        document.getElementById('modalCancel').addEventListener('click', cerrarModal);
+        return;
+      }
+      abrirModal(`Zonas · ${name}`, `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="t-dim3" style="font-size:13px;margin-bottom:2px">Qué zonas cubre este asesor — puede marcar varias</div>
+          ${ZONAS.map(z => `
+            <label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer">
+              <input type="checkbox" data-zchk value="${esc(z.slug)}" ${actuales.has(z.slug)?'checked':''}>
+              <span>${esc(z.nombre)}</span>
+            </label>`).join('')}
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
+            <button type="button" class="btn btn--gold" id="zonasGuardar">Guardar</button>
+          </div>
+        </div>`);
+      document.getElementById('modalCancel').addEventListener('click', cerrarModal);
+      document.getElementById('zonasGuardar').addEventListener('click', async ()=>{
+        const marcadas = Array.from(modalBg.querySelectorAll('[data-zchk]:checked')).map(c => c.value);
+        try {
+          const r = await api('/api/vendedores/'+id+'/zonas', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ zonas: marcadas }) });
+          if(r && r.ok){ toast('Zonas actualizadas'); cerrarModal(); cargar(); }
+          else toast(r?.error || 'Error al guardar','err');
         } catch(err){ toast('Error de conexión','err'); }
       });
     }));
