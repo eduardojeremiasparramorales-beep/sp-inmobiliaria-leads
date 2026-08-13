@@ -2472,157 +2472,8 @@ app.post('/api/leads/:id/mute', auth.requireAuth, (req, res) => {
   res.json({ ok: true, muted: !!muted });
 });
 
-// ===================== CITAS =====================
-
-// Listar citas: admin ve todas (o filtra por vendedor); vendedor solo las suyas
-app.get('/api/citas', auth.requireAuth, (req, res) => {
-  const { desde, hasta } = req.query;
-  const vendedorId = req.session.rol === 'admin' ? req.query.vendedorId : req.session.vendedorId;
-  res.json(store.getCitas({ vendedorId, desde, hasta }));
-});
-
-// Crear cita — vendedor solo puede agendarse a sí mismo
-app.post('/api/citas', auth.requireAuth, (req, res) => {
-  const { leadId, titulo, fecha, notas, vendedorId } = req.body || {};
-  if (!titulo || !String(titulo).trim()) return res.status(400).json({ error: 'titulo_requerido' });
-  if (!fecha) return res.status(400).json({ error: 'fecha_requerida' });
-  let vId = req.session.rol === 'admin' ? (vendedorId || null) : req.session.vendedorId;
-  if (leadId) {
-    const lead = store.getLeadById(leadId);
-    if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-    if (req.session.rol !== 'admin' && Number(lead.assigned_to_id) !== Number(req.session.vendedorId)) {
-      return res.status(403).json({ error: 'sin_permiso' });
-    }
-    if (!vId) vId = lead.assigned_to_id || null;
-  }
-  const cita = store.createCita({ leadId: leadId || null, vendedorId: vId, titulo: String(titulo).trim(), fecha, notas });
-  res.json({ ok: true, cita });
-});
-
-// Actualizar cita (estado, fecha, notas)
-app.put('/api/citas/:id', auth.requireAuth, (req, res) => {
-  const cita = store.getCitaById(req.params.id);
-  if (!cita) return res.status(404).json({ error: 'no_existe' });
-  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
-    return res.status(403).json({ error: 'sin_permiso' });
-  }
-  const { titulo, fecha, notas, estado, vendedorId } = req.body || {};
-  if (estado && !['pendiente', 'hecha', 'cancelada'].includes(estado)) return res.status(400).json({ error: 'estado_invalido' });
-  // Al cerrar la cita (hecha/cancelada) el recordatorio pendiente pierde sentido.
-  if (estado && estado !== 'pendiente') store.cancelarRecordatorioByCitaCierre(cita.id);
-  const actualizada = store.updateCita(cita.id, { titulo, fecha, notas, estado, vendedorId: req.session.rol === 'admin' ? vendedorId : undefined });
-  // Si se movió la fecha y hay recordatorio pendiente, se reprograma con la misma antelación.
-  if (fecha && fecha !== cita.fecha) {
-    const rec = store.getRecordatorioCita(cita.id);
-    if (rec) {
-      const citaNueva = store.getCitaById(cita.id);
-      const antelacionMs = new Date(cita.fecha.replace(' ', 'T')).getTime() - new Date(rec.send_at.replace(' ', 'T')).getTime();
-      if (antelacionMs > 0) {
-        const nuevoSendAt = new Date(new Date(citaNueva.fecha.replace(' ', 'T')).getTime() - antelacionMs);
-        store.updateScheduled(rec.id, { send_at: nuevoSendAt.toISOString().slice(0, 19).replace('T', ' ') });
-      }
-    }
-  }
-  res.json({ ok: true, cita: actualizada });
-});
-
-// Eliminar cita
-app.delete('/api/citas/:id', auth.requireAuth, (req, res) => {
-  const cita = store.getCitaById(req.params.id);
-  if (!cita) return res.status(404).json({ error: 'no_existe' });
-  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
-    return res.status(403).json({ error: 'sin_permiso' });
-  }
-  store.cancelarRecordatorioByCitaCierre(cita.id);
-  store.deleteCita(cita.id);
-  res.json({ ok: true });
-});
-
-// ===================== RECORDATORIO DE CITA =====================
-// El recordatorio es un mensaje programado tipo 'template': aunque la ventana de 24h
-// se cierre antes de la cita, la plantilla de Meta llega igual (ese es el punto).
-
-// Estado actual del recordatorio de la cita
-app.get('/api/citas/:id/recordatorio', auth.requireAuth, (req, res) => {
-  const cita = store.getCitaById(req.params.id);
-  if (!cita) return res.status(404).json({ error: 'no_existe' });
-  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
-    return res.status(403).json({ error: 'sin_permiso' });
-  }
-  const rec = store.getRecordatorioCita(cita.id);
-  res.json({
-    ok: true,
-    programado: !!rec,
-    recordatorio: rec ? {
-      id: rec.id,
-      send_at: rec.send_at,
-      template_nombre: rec.template_nombre,
-      vendedor_id: rec.vendedor_id,
-    } : null,
-    template_configurado: !!store.getConfig('recordatorio_template'),
-  });
-});
-
-// Crear / re-programar el recordatorio. body: { antelacionHoras: 1|3|6|24|48 }
-// Se envía `antelacionHoras` horas ANTES de la cita con la plantilla configurada.
-app.post('/api/citas/:id/recordatorio', auth.requireAuth, (req, res) => {
-  try {
-    const cita = store.getCitaById(req.params.id);
-    if (!cita) return res.status(404).json({ error: 'no_existe' });
-    if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
-      return res.status(403).json({ error: 'sin_permiso' });
-    }
-    if (!cita.lead_id) return res.status(400).json({ error: 'cita_sin_lead' });
-    const lead = store.getLeadById(cita.lead_id);
-    if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-    const antelacionHoras = Number((req.body || {}).antelacionHoras);
-    if (![1, 3, 6, 24, 48].includes(antelacionHoras)) return res.status(400).json({ error: 'antelacion_invalida', valido: [1, 3, 6, 24, 48] });
-
-    const templateName = store.getConfig('recordatorio_template');
-    if (!templateName) return res.status(400).json({ error: 'sin_template', detalle: 'Configura el template de recordatorio en Configuración.' });
-    const tpl = store.getWATemplateByName(templateName);
-    if (!tpl) return res.status(400).json({ error: 'template_no_sincronizado', detalle: `La plantilla "${templateName}" no está en el catálogo. Sincroniza desde Meta.` });
-
-    const vendedor = cita.vendedor_id ? store.getVendedorById(cita.vendedor_id) : null;
-    const wa = require('./services/wa-templates');
-    const values = wa.buildCitaRecordatorioValues(tpl, lead, vendedor, cita);
-    const components = wa.buildCitaRecordatorioComponents(tpl, values);
-    const textoPlano = wa.recordatorioTextoPlano(tpl, values);
-
-    const citaMs = new Date(cita.fecha.replace(' ', 'T')).getTime();
-    if (isNaN(citaMs)) return res.status(400).json({ error: 'fecha_cita_invalida' });
-    const sendAtMs = citaMs - antelacionHoras * 3600000;
-    const sendAt = new Date(sendAtMs).toISOString().slice(0, 19).replace('T', ' ');
-
-    // Reemplaza el recordatorio anterior si existía
-    store.cancelarRecordatorioCita(cita.id);
-    const id = store.createRecordatorioCita({
-      citaId: cita.id,
-      leadId: lead.id,
-      vendedorId: cita.vendedor_id || req.session.vendedorId || 0,
-      sendAt,
-      body: textoPlano || `Recordatorio: ${cita.titulo}`,
-      templateNombre: tpl.nombre,
-      templateIdioma: tpl.idioma || 'es',
-      templateParams: JSON.stringify(components),
-    });
-    res.json({ ok: true, id, send_at: sendAt, template_nombre: tpl.nombre, texto: textoPlano });
-  } catch (e) {
-    console.error('[CITAS] Error creando recordatorio:', e.message);
-    res.status(500).json({ error: 'error_interno', detalle: e.message });
-  }
-});
-
-// Cancelar el recordatorio de la cita
-app.delete('/api/citas/:id/recordatorio', auth.requireAuth, (req, res) => {
-  const cita = store.getCitaById(req.params.id);
-  if (!cita) return res.status(404).json({ error: 'no_existe' });
-  if (req.session.rol !== 'admin' && Number(cita.vendedor_id) !== Number(req.session.vendedorId)) {
-    return res.status(403).json({ error: 'sin_permiso' });
-  }
-  store.cancelarRecordatorioCita(cita.id);
-  res.json({ ok: true });
-});
+// ===================== CITAS ===================== (Fase 4: extraído a src/routes/citas.js)
+app.use('/api/citas', auth.requireAuth, require('./routes/citas'));
 
 // ===================== PROPIEDADES =====================
 app.get('/api/propiedades', auth.requireAuth, (req, res) => {
@@ -3633,33 +3484,9 @@ app.get('/api/admin/salud', auth.requireAdmin, (req, res) => {
   });
 });
 
-// ===================== TAREAS / RECORDATORIOS =====================
-// Cada usuario (vendedor o admin con vendedor asociado) gestiona SUS tareas.
-// Una tarea con vence_at es un recordatorio: el barrido de abajo manda push al vencer.
-
-app.get('/api/tareas', auth.requireAuth, (req, res) => {
-  if (!req.session.vendedorId) return res.json([]);
-  res.json(store.getTareasByVendedor(req.session.vendedorId));
-});
-
-app.post('/api/tareas', auth.requireAuth, (req, res) => {
-  const { texto, leadId, venceAt } = req.body || {};
-  if (!texto || !String(texto).trim()) return res.status(400).json({ error: 'texto_requerido' });
-  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
-  const t = store.createTarea({ vendedorId: req.session.vendedorId, texto: String(texto).trim().slice(0, 300), leadId, venceAt });
-  res.json({ ok: true, tarea: t });
-});
-
-app.put('/api/tareas/:id', auth.requireAuth, (req, res) => {
-  const t = store.updateTarea(req.params.id, req.session.vendedorId, req.body || {});
-  if (!t) return res.status(404).json({ error: 'no_existe' });
-  res.json({ ok: true, tarea: t });
-});
-
-app.delete('/api/tareas/:id', auth.requireAuth, (req, res) => {
-  store.deleteTarea(req.params.id, req.session.vendedorId);
-  res.json({ ok: true });
-});
+// ===================== TAREAS / RECORDATORIOS ===================== (Fase 4: extraído
+// a src/routes/tareas.js — el barrido de vencidos que manda push se queda en index.js)
+app.use('/api/tareas', auth.requireAuth, require('./routes/tareas'));
 
 // Guardar el "Acerca de" del perfil (persistido en el servidor, cross-device)
 app.post('/api/mi-about', auth.requireAuth, (req, res) => {
@@ -5281,40 +5108,9 @@ const reservas = require('./services/reservas');
 const leadScoring = require('./services/lead-scoring');
 const timeline = require('./services/timeline');
 
-// --- Reservas ---
-app.get('/api/reservas', auth.requireAuth, (req, res) => {
-  const { estado } = req.query;
-  res.json(reservas.listarReservas(estado));
-});
-
-app.get('/api/reservas/:leadId', auth.requireAuth, (req, res) => {
-  const r = reservas.obtenerReserva(Number(req.params.leadId));
-  res.json(r || { activa: false });
-});
-
-app.post('/api/reservas', auth.requireAuth, (req, res) => {
-  const { leadId, horas, loteId, proyectoId } = req.body || {};
-  if (!leadId) return res.status(400).json({ error: 'leadId requerido' });
-  const r = reservas.crearReserva(leadId, {
-    horas: horas || 48,
-    loteId, proyectoId,
-    vendedorId: req.session && req.session.vendedorId,
-  });
-  res.json(r);
-});
-
-app.post('/api/reservas/:id/confirmar', auth.requireAuth, (req, res) => {
-  res.json(reservas.confirmarVenta(Number(req.params.id)));
-});
-
-app.post('/api/reservas/:id/extender', auth.requireAuth, (req, res) => {
-  const { horas } = req.body || {};
-  res.json(reservas.extenderReserva(Number(req.params.id), horas || 24));
-});
-
-app.post('/api/reservas/:id/cancelar', auth.requireAuth, (req, res) => {
-  res.json(reservas.cancelarReserva(Number(req.params.id)));
-});
+// --- Reservas --- (Fase 4: rutas extraídas a src/routes/reservas.js; el require de
+// arriba se queda porque el scheduler de más abajo también usa reservas.verificarVencidas())
+app.use('/api/reservas', auth.requireAuth, require('./routes/reservas'));
 
 // --- Lead Scoring ---
 app.get('/api/leads/:id/score', auth.requireAuth, (req, res) => {
