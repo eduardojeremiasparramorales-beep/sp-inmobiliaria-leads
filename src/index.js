@@ -3107,28 +3107,9 @@ app.delete('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ===================== UBICACIONES GUARDADAS =====================
-
-app.get('/api/ubicaciones-guardadas', auth.requireAuth, (req, res) => {
-  const vId = req.session.vendedorId;
-  if (!vId) return res.status(401).json({ error: 'no_autenticado' });
-  const ubicaciones = store.getUbicacionesGuardadas(vId);
-  res.json(ubicaciones);
-});
-
-app.post('/api/ubicaciones-guardadas', auth.requireAuth, (req, res) => {
-  const vId = req.session.vendedorId;
-  if (!vId) return res.status(401).json({ error: 'no_autenticado' });
-  const { nombre, direccion, lat, lng } = req.body || {};
-  if (!nombre || lat == null || lng == null) return res.status(400).json({ error: 'nombre_lat_lng_requeridos' });
-  const ubicacion = store.saveUbicacionGuardada(vId, nombre, direccion, Number(lat), Number(lng));
-  res.json({ ok: true, ubicacion });
-});
-
-app.delete('/api/ubicaciones-guardadas/:id', auth.requireAuth, (req, res) => {
-  store.deleteUbicacionGuardada(req.params.id);
-  res.json({ ok: true });
-});
+// ===================== UBICACIONES GUARDADAS ===================== (Fase 4: extraído
+// a src/routes/ubicaciones-guardadas.js)
+app.use('/api/ubicaciones-guardadas', auth.requireAuth, require('./routes/ubicaciones-guardadas'));
 
 // Reasignar un lead a otro vendedor (solo admin)
 app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
@@ -3387,60 +3368,15 @@ function checkRecordatorios() {
 
 // ===================== CENTRO DE NOTIFICACIONES =====================
 // Admin usa el canal 0 (misma convención que SSE y push); vendedor su propio id.
-function canalNotif(req) { return (req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe') ? 0 : Number(req.session.vendedorId); }
-
-app.get('/api/notificaciones', auth.requireAuth, (req, res) => {
-  const canal = canalNotif(req);
-  res.json({
-    notificaciones: store.getNotifications(canal, req.query.limit || 30),
-    sin_leer: store.countUnreadNotifications(canal),
-  });
-});
-
-app.post('/api/notificaciones/leer-todas', auth.requireAuth, (req, res) => {
-  store.markAllNotificationsRead(canalNotif(req));
-  res.json({ ok: true });
-});
-
-app.post('/api/notificaciones/:id/leer', auth.requireAuth, (req, res) => {
-  store.markNotificationRead(req.params.id, canalNotif(req));
-  res.json({ ok: true });
-});
+// ===================== NOTIFICACIONES ===================== (Fase 4: extraído a
+// src/routes/notificaciones.js)
+app.use('/api/notificaciones', auth.requireAuth, require('./routes/notificaciones'));
 
 // ===================== CONFIGURACIÓN (admin) =====================
 
-const CONFIG_KEYS = [
-  'welcome_message',
-  'company_name',
-  'reengagement_template',
-  'recordatorio_template',
-  'twilio_account_sid', 'twilio_auth_token', 'twilio_numero',
-  'slack_webhook', 'gcal_client_id', 'mp_public_key', 'mp_access_token',
-  'openrouter_api_key', 'openrouter_model', 'openrouter_site_url', 'openrouter_app_name', 'ai_enabled',
-  'escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas',
-  'campaign_mps', 'campaign_daily_limit',
-  'meta_ads_cpl_objetivo',
-  // Parte 3B — General
-  'timezone', 'currency_format', 'default_theme', 'company_logo',
-  // Parte 3B — Privacidad
-  'media_retention_enabled', 'media_retention_days',
-  // Parte 3B — Facturación (estructura lista, cobro real desactivado — ver Parte 3B del plan)
-  'billing_razon_social', 'billing_nit', 'billing_direccion', 'billing_email',
-];
-
-app.get('/api/config', auth.requireAdmin, (req, res) => {
-  const cfg = {};
-  CONFIG_KEYS.forEach(key => { cfg[key] = store.getConfig(key) || ''; });
-  res.json(cfg);
-});
-
-app.post('/api/config', auth.requireAdmin, (req, res) => {
-  const body = req.body || {};
-  CONFIG_KEYS.forEach(key => {
-    if (body[key] !== undefined) store.setConfig(key, String(body[key]));
-  });
-  res.json({ ok: true });
-});
+// ===================== CONFIG ===================== (Fase 4: extraído a
+// src/routes/config.js, incluido CONFIG_KEYS)
+app.use('/api/config', auth.requireAdmin, require('./routes/config'));
 
 // ===================== PLANTILLAS WHATSAPP (Meta aprobadas) =====================
 
@@ -3949,14 +3885,8 @@ app.delete('/api/campaigns/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/optouts', auth.requireAdmin, (req, res) => {
-  res.json(store.getOptouts());
-});
-
-app.delete('/api/optouts/:phone', auth.requireAdmin, (req, res) => {
-  store.deleteOptout(req.params.phone);
-  res.json({ ok: true });
-});
+// Fase 4: extraído a src/routes/optouts.js
+app.use('/api/optouts', auth.requireAdmin, require('./routes/optouts'));
 
 // Exportar mis datos (Privacidad) — ZIP con leads (reutiliza reports.getExportCSV,
 // el más completo de los 3 export de leads que hay en el sistema), notas internas y
@@ -4436,43 +4366,9 @@ app.get('/api/me/stats-semanales', auth.requireAuth, (req, res) => {
   res.json(store.getStatsSemanales(vendedorId));
 });
 
-// ===================== USUARIOS (admin) =====================
-
-app.get('/api/usuarios', auth.requireAdmin, (req, res) => res.json(store.getUsuarios()));
-
-// Crea un usuario (vendedor o admin) + vendedor + PIN en un solo paso
-app.post('/api/usuarios', auth.requireAdmin, (req, res) => {
-  const { nombre, telefono, email, password, pin, rol } = req.body || {};
-  if (!nombre || !email || !password) {
-    return res.status(400).json({ error: 'nombre, email y password requeridos' });
-  }
-  if (telefono && !validarTelefono(telefono)) {
-    return res.status(400).json({ error: 'formato_telefono_invalido_debe_ser_57' });
-  }
-  const emailNorm = String(email).toLowerCase().trim();
-  if (store.getUsuarioByEmail(emailNorm)) {
-    return res.status(409).json({ error: 'email_ya_existe' });
-  }
-  const rolFinal = rol === 'admin' ? 'admin' : (rol === 'jefe' ? 'jefe' : 'vendedor');
-  let vendedorId = null;
-
-  // Para vendedores: teléfono es obligatorio
-  if (rolFinal === 'vendedor' && !telefono) {
-    return res.status(400).json({ error: 'telefono requerido para vendedores' });
-  }
-
-  // Crear registro en vendedores si se proporciona teléfono (vendedor o admin con PIN)
-  if (telefono) {
-    vendedorId = store.addVendedor(nombre, telefono);
-    const pinFinal = pin || (/^\d{4}$/.test(String(password)) ? String(password) : null);
-    if (pinFinal && /^\d{4}$/.test(String(pinFinal))) {
-      store.setVendedorPin(vendedorId, auth.hashPassword(String(pinFinal)));
-    }
-  }
-
-  store.createUsuario(emailNorm, auth.hashPassword(password), nombre, rolFinal, vendedorId);
-  res.json({ ok: true, vendedorId });
-});
+// ===================== USUARIOS (admin) ===================== (Fase 4: extraído a
+// src/routes/usuarios.js)
+app.use('/api/usuarios', auth.requireAdmin, require('./routes/usuarios'));
 
 // Seed vendedores de prueba (solo en desarrollo)
 app.post('/api/seed', auth.requireAdmin, (req, res) => {
