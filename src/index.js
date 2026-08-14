@@ -2930,6 +2930,19 @@ app.delete('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
 // a src/routes/ubicaciones-guardadas.js)
 app.use('/api/ubicaciones-guardadas', auth.requireAuth, require('./routes/ubicaciones-guardadas'));
 
+// Config del mapa para el panel del asesor. El token público de Mapbox (pk.*) está
+// pensado para viajar al navegador; conviene restringirlo por URL desde el panel de
+// Mapbox. Sin token configurado, el front sigue con OpenStreetMap + Nominatim, así que
+// buscar y enviar ubicaciones nunca queda caído por falta de credenciales.
+app.get('/api/mapa/config', auth.requireAuth, (req, res) => {
+  const token = process.env.MAPBOX_TOKEN || store.getConfig('mapbox_token') || '';
+  res.json({
+    proveedor: token ? 'mapbox' : 'osm',
+    token,
+    pais: 'co',
+  });
+});
+
 // Reasignar un lead a otro vendedor (admin, supervisor o jefe — quien tiene visión
 // global del equipo; el jefe reasigna igual que el admin, ver esAccesoGlobal)
 app.post('/api/leads/:id/reasignar', auth.requireSupervisorOrAdmin, (req, res) => {
@@ -3123,6 +3136,12 @@ function checkRecordatorios() {
         vendedorId: canal, tipo: 'recordatorio', leadId: t.lead_id || null, push: true,
         titulo: '🔔 Recordatorio', cuerpo: t.texto,
       }).catch(() => {});
+      // Una tarea vencida también puede encadenar automatizaciones (avisar al jefe si
+      // el asesor no la cerró, mover el lead, etc.).
+      if (t.lead_id) {
+        try { require('./services/assigner').triggerWorkflow('tarea:vencida', t.lead_id, t.texto, { tareaId: t.id }); }
+        catch (e) { console.error('trigger tarea:vencida:', e.message); }
+      }
     }
   } catch (e) {
     console.error('checkRecordatorios:', e.message);
@@ -3207,6 +3226,12 @@ app.post('/api/wa-templates/sync', auth.requireAdmin, async (req, res) => {
   }
 });
 
+// Bandeja de aprobación interna (admin y jefes). Va ANTES de /:id: si no, Express la
+// resolvería como una plantilla con id "revision".
+app.get('/api/wa-templates/revision', auth.requireSupervisorOrAdmin, (req, res) => {
+  res.json(store.getWATemplatesEnRevision());
+});
+
 // Detalle de una plantilla con variables/componentes/spec ya parseados, para construir
 // el formulario de variables o reabrir el constructor (evita repetir JSON.parse en cada cliente).
 app.get('/api/wa-templates/:id', auth.requireAuth, (req, res) => {
@@ -3250,6 +3275,121 @@ app.post('/api/wa-templates', auth.requireAdmin, async (req, res) => {
     console.error('[wa-templates] crear:', e.response ? JSON.stringify(e.response.data) : e.message);
     res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia, codigo: norm.codigo, subcodigo: norm.subcodigo });
   }
+});
+
+// ───────────── Plantillas propuestas por asesores (revisión interna) ─────────────
+// Un asesor puede redactar su plantilla, pero NO se manda a Meta hasta que el admin o
+// un jefe la aprueba: cada plantilla rechazada por Meta castiga la calidad del número
+// de toda la empresa, así que el filtro humano va antes.
+
+app.get('/api/mis-plantillas', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.json([]);
+  res.json(store.getWATemplatesByAutor(req.session.vendedorId));
+});
+
+app.post('/api/mis-plantillas', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor_asociado' });
+  const { spec } = req.body || {};
+  if (!spec) return res.status(400).json({ error: 'spec_requerido' });
+  const wa = require('./services/wa-templates');
+  const validacion = wa.validateTemplateSpec(spec);
+  if (!validacion.ok) return res.status(400).json({ error: 'validacion', errores: validacion.errores });
+  try {
+    const { payload, variables } = wa.buildMetaTemplatePayload(spec);
+    const id = store.insertWATemplatePropuesta({
+      nombre: validacion.nombreSlug, idioma: spec.idioma || 'es', categoria: spec.categoria,
+      componentes: JSON.stringify(payload.components), variables: JSON.stringify(variables),
+      specJson: JSON.stringify(spec), creadoPor: req.session.vendedorId,
+    });
+    // Aviso a quien puede aprobarla (canal 0 = admins/jefes).
+    notify({ vendedorId: 0, tipo: 'plantilla_revision', push: true,
+      titulo: '📋 Plantilla por revisar',
+      cuerpo: `${req.session.nombre || 'Un asesor'} propuso la plantilla "${validacion.nombreSlug}".` }).catch(() => {});
+    res.status(201).json({ ok: true, id, estado: 'EN_REVISION' });
+  } catch (e) {
+    if (e.validacion) return res.status(400).json({ error: 'validacion', errores: e.validacion.errores });
+    res.status(500).json({ error: 'error_guardando', detalle: e.message });
+  }
+});
+
+// Editar la propia propuesta mientras siga sin salir a Meta (en revisión o devuelta
+// con correcciones). Una vez enviada a Meta, la edición pasa por el flujo de admin.
+app.put('/api/mis-plantillas/:id', auth.requireAuth, (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (Number(t.creado_por) !== Number(req.session.vendedorId)) return res.status(403).json({ error: 'sin_permiso' });
+  if (!store.ESTADOS_INTERNOS.includes(String(t.estado))) {
+    return res.status(409).json({ error: 'ya_enviada', detalle: 'Esta plantilla ya salió a revisión de Meta; pídele el cambio a un administrador.' });
+  }
+  const { spec } = req.body || {};
+  if (!spec) return res.status(400).json({ error: 'spec_requerido' });
+  const wa = require('./services/wa-templates');
+  const validacion = wa.validateTemplateSpec(spec, { excludeId: t.id });
+  if (!validacion.ok) return res.status(400).json({ error: 'validacion', errores: validacion.errores });
+  const { payload, variables } = wa.buildMetaTemplatePayload(spec);
+  store.updateWATemplateSpec(t.id, {
+    componentes: JSON.stringify(payload.components), variables: JSON.stringify(variables),
+    specJson: JSON.stringify(spec), estado: 'EN_REVISION', // vuelve a la cola de revisión
+  });
+  res.json({ ok: true, estado: 'EN_REVISION' });
+});
+
+app.delete('/api/mis-plantillas/:id', auth.requireAuth, (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (Number(t.creado_por) !== Number(req.session.vendedorId)) return res.status(403).json({ error: 'sin_permiso' });
+  if (!store.ESTADOS_INTERNOS.includes(String(t.estado))) return res.status(409).json({ error: 'ya_enviada' });
+  store.deleteWATemplate(t.id);
+  res.json({ ok: true });
+});
+
+// Aprobar internamente = recién ahí se crea en Meta.
+app.post('/api/wa-templates/:id/aprobar', auth.requireSupervisorOrAdmin, async (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (!store.ESTADOS_INTERNOS.includes(String(t.estado))) return res.status(409).json({ error: 'estado_invalido', detalle: `La plantilla está en estado ${t.estado}.` });
+  const wa = require('./services/wa-templates');
+  let spec;
+  try { spec = JSON.parse(t.spec_json || '{}'); } catch (e) { spec = null; }
+  if (!spec) return res.status(409).json({ error: 'sin_spec' });
+  // El admin puede corregir el contenido antes de aprobar, sin devolvérsela al asesor.
+  if (req.body && req.body.spec) spec = req.body.spec;
+  const validacion = wa.validateTemplateSpec(spec, { excludeId: t.id });
+  if (!validacion.ok) return res.status(400).json({ error: 'validacion', errores: validacion.errores });
+  try {
+    const { payload, variables } = wa.buildMetaTemplatePayload(spec);
+    const metaResult = await wa.createTemplateInMeta(spec);
+    const mapping = {}; variables.forEach(v => { mapping[v] = v; });
+    store.updateWATemplateSpec(t.id, { componentes: JSON.stringify(payload.components), variables: JSON.stringify(variables), specJson: JSON.stringify(spec) });
+    store.setWATemplateMapping(t.id, JSON.stringify(mapping));
+    store.marcarWATemplateEnviadaAMeta(t.id, metaResult.id, metaResult.status || 'PENDING');
+    if (t.creado_por) {
+      notify({ vendedorId: t.creado_por, tipo: 'plantilla_aprobada', push: true,
+        titulo: '✅ Tu plantilla fue aprobada',
+        cuerpo: `"${t.nombre}" ya está en revisión de Meta. Te avisamos cuando la habiliten.` }).catch(() => {});
+    }
+    res.json({ ok: true, estado: metaResult.status || 'PENDING', metaId: metaResult.id });
+  } catch (e) {
+    const norm = wa.normalizeMetaError(e);
+    console.error('[wa-templates] aprobar:', e.response ? JSON.stringify(e.response.data) : e.message);
+    res.status(502).json({ error: 'error_meta', detalle: norm.mensaje, sugerencia: norm.sugerencia });
+  }
+});
+
+// Devolver al asesor con comentarios, sin gastar una revisión de Meta.
+app.post('/api/wa-templates/:id/devolver', auth.requireSupervisorOrAdmin, (req, res) => {
+  const t = store.getWATemplateById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'no_existe' });
+  if (!store.ESTADOS_INTERNOS.includes(String(t.estado))) return res.status(409).json({ error: 'estado_invalido' });
+  const motivo = String((req.body && req.body.motivo) || '').trim();
+  if (!motivo) return res.status(400).json({ error: 'motivo_requerido', detalle: 'Escribe qué debe corregir el asesor.' });
+  store.setWATemplateEstado(t.id, { estado: 'CORRECCION', motivo, detalle: `Devuelta por ${req.session.nombre || 'la administración'}` });
+  if (t.creado_por) {
+    notify({ vendedorId: t.creado_por, tipo: 'plantilla_correccion', push: true,
+      titulo: '✏️ Tu plantilla necesita cambios',
+      cuerpo: `"${t.nombre}": ${motivo}`.slice(0, 160) }).catch(() => {});
+  }
+  res.json({ ok: true, estado: 'CORRECCION' });
 });
 
 // Solo se puede cambiar `components`/`category` (Meta ignora name/language en edición).
@@ -4063,7 +4203,13 @@ app.get('/api/reports/lead-sources', auth.requireAdmin, (req, res) => {
 
 // ===================== WORKFLOWS (automatización IF/THEN) =====================
 
-app.get('/api/workflows', auth.requireAdmin, (req, res) => res.json(store.getAllWorkflows()));
+// Admin/jefe ven todos los flujos: los globales de la empresa y, como registro, los
+// privados de cada asesor (?vendedorId=N para filtrar por uno, ?soloGlobales=1 para
+// esconder los de asesores).
+app.get('/api/workflows', auth.requireSupervisorOrAdmin, (req, res) => res.json(store.getAllWorkflows({
+  vendedorId: req.query.vendedorId != null && req.query.vendedorId !== '' ? Number(req.query.vendedorId) : undefined,
+  soloGlobales: req.query.soloGlobales === '1',
+})));
 
 app.get('/api/workflows/:id', auth.requireAdmin, (req, res) => {
   const workflow = store.getWorkflowById(req.params.id);
@@ -4099,8 +4245,89 @@ app.delete('/api/workflows/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/workflows/:id/logs', auth.requireAdmin, (req, res) => {
+// Admin y jefe consultan el historial de cualquier flujo, incluidos los de los asesores
+// (es el registro que pidió el negocio); el asesor solo el de los suyos.
+app.get('/api/workflows/:id/logs', auth.requireAuth, (req, res) => {
+  const wf = store.getWorkflowById(req.params.id);
+  if (!wf) return res.status(404).json({ error: 'workflow_no_existe' });
+  if (!auth.esAccesoGlobal(req) && Number(wf.vendedor_id) !== Number(req.session.vendedorId)) {
+    return res.status(403).json({ error: 'sin_permiso' });
+  }
   res.json(store.getWorkflowLogs(req.params.id));
+});
+
+// ───────────── Automatizaciones PROPIAS del asesor ─────────────
+// Cada asesor arma sus reglas desde el celular. Solo corren sobre SUS leads (guard
+// aplicaAlDueno en el motor) y solo con acciones que no salen de su ámbito: nada de
+// webhooks, reasignar a terceros ni notificar a toda la empresa.
+const ACCIONES_ASESOR = [
+  'send_message', 'send_template', 'tag', 'set_etapa', 'crear_tarea', 'crear_cita',
+  'nota_interna', 'marcar_temperatura', 'posponer', 'iniciar_cadencia', 'detener_cadencia',
+  'notificar_asesor',
+];
+const TRIGGERS_ASESOR = [
+  'message:incoming', 'message:outgoing', 'conversation:assigned', 'conversation:closed',
+  'lead:tag_changed', 'lead:inactive', 'button:clicked', 'cita:creada', 'tarea:vencida',
+  'lead:caliente', 'campana:finalizada',
+];
+
+// Valida que un grafo de asesor no use acciones fuera de su ámbito. Devuelve el motivo
+// del rechazo, o null si está bien.
+function validarGrafoAsesor(graph, triggerEvent) {
+  if (triggerEvent && !TRIGGERS_ASESOR.includes(triggerEvent)) {
+    return `El disparador "${triggerEvent}" no está disponible para automatizaciones personales.`;
+  }
+  const nodos = (graph && Array.isArray(graph.nodes)) ? graph.nodes : [];
+  for (const n of nodos) {
+    if (n.type === 'trigger' && !TRIGGERS_ASESOR.includes(n.subtype)) {
+      return `El disparador "${n.subtype}" no está disponible para automatizaciones personales.`;
+    }
+    if (n.type === 'action' && !ACCIONES_ASESOR.includes(n.subtype)) {
+      return `La acción "${n.subtype}" solo la puede usar un administrador.`;
+    }
+    // Un asesor no puede dirigir acciones a otro asesor: se fuerza al dueño del lead.
+    if (n.type === 'action' && n.params) delete n.params.vendedorId;
+  }
+  return null;
+}
+
+app.get('/api/mis-automatizaciones', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.json([]);
+  res.json(store.getAllWorkflows({ vendedorId: req.session.vendedorId }));
+});
+
+app.post('/api/mis-automatizaciones', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor_asociado' });
+  const { nombre, activo, trigger_event, graph } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'nombre_requerido' });
+  const trigger = trigger_event || (graph && (graph.nodes || []).find(n => n.type === 'trigger') || {}).subtype;
+  if (!trigger) return res.status(400).json({ error: 'falta_disparador' });
+  const motivo = validarGrafoAsesor(graph, trigger);
+  if (motivo) return res.status(400).json({ error: 'accion_no_permitida', detalle: motivo });
+  const workflow = store.createWorkflow({ nombre, activo, trigger_event: trigger, graph, vendedorId: req.session.vendedorId });
+  require('./services/workflow').loadRules();
+  res.json(workflow);
+});
+
+app.put('/api/mis-automatizaciones/:id', auth.requireAuth, (req, res) => {
+  const wf = store.getWorkflowById(req.params.id);
+  if (!wf) return res.status(404).json({ error: 'workflow_no_existe' });
+  if (Number(wf.vendedor_id) !== Number(req.session.vendedorId)) return res.status(403).json({ error: 'sin_permiso' });
+  const { graph, trigger_event } = req.body || {};
+  const motivo = validarGrafoAsesor(graph, trigger_event);
+  if (motivo) return res.status(400).json({ error: 'accion_no_permitida', detalle: motivo });
+  const workflow = store.updateWorkflow(wf.id, req.body || {});
+  require('./services/workflow').loadRules();
+  res.json(workflow);
+});
+
+app.delete('/api/mis-automatizaciones/:id', auth.requireAuth, (req, res) => {
+  const wf = store.getWorkflowById(req.params.id);
+  if (!wf) return res.status(404).json({ error: 'workflow_no_existe' });
+  if (Number(wf.vendedor_id) !== Number(req.session.vendedorId)) return res.status(403).json({ error: 'sin_permiso' });
+  store.deleteWorkflow(wf.id);
+  require('./services/workflow').loadRules();
+  res.json({ ok: true });
 });
 
 // Dry-run: corre el grafo con un contexto de ejemplo (o el que mande el editor) SIN
@@ -4113,7 +4340,10 @@ app.post('/api/workflows/:id/test', auth.requireAdmin, asyncH(async (req, res) =
   const context = contextIn && contextIn.conversation ? contextIn : {
     conversation: { id: 0, channel: 'whatsapp', etiqueta: 'interesado', status: 'asignado', priority: 'normal', assigned_to_id: null, lead_id: null, customer_id: null },
     customer: { name: 'Cliente de prueba' },
-    message: { body: (contextIn && contextIn.body) || 'Mensaje de prueba' },
+    // Lead simulado: las acciones de CRM (etapa, tarea, cita, nota) exigen uno, y sin
+    // esto el dry-run de cualquier flujo nuevo fallaba con "necesita un lead".
+    lead: { id: 0, customer_name: 'Cliente de prueba', customer_phone: '+573000000000', etiqueta: 'interesado', proyecto: 'Proyecto de prueba', assigned_to_id: null, assigned_to_nombre: 'Asesor de prueba' },
+    message: { body: (contextIn && contextIn.body) || 'Mensaje de prueba', buttonPayload: (contextIn && contextIn.buttonPayload) || '' },
   };
   const result = await require('./services/workflow').dryRun(workflow, context);
   res.json(result);

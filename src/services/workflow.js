@@ -102,6 +102,17 @@ class WorkflowEngine {
     }
   }
 
+  // El motor trabaja sobre `conversation`, pero casi todo el CRM (etapas, notas,
+  // tareas, citas, temperatura, cadencia) vive en `leads` — este es el único salto.
+  leadDe(context) {
+    try {
+      if (context && context.lead) return context.lead;
+      const conv = context && context.conversation;
+      if (conv && conv.lead_id) return store.getLeadById(conv.lead_id);
+    } catch (e) { /* sin lead */ }
+    return null;
+  }
+
   // ─── Condiciones ──────────────────────────────────────────
   getFieldValue(field, context) {
     const { conversation, customer } = context;
@@ -112,15 +123,22 @@ class WorkflowEngine {
       case 'etiqueta': return conversation ? conversation.etiqueta : '';
       case 'status': return conversation ? conversation.status : '';
       case 'priority': return conversation ? conversation.priority : '';
-      // Zona geográfica resuelta del lead legacy espejado (F-zonas) — el motor trabaja
-      // sobre `conversation`, la zona vive en `leads`, por eso el salto vía lead_id.
-      case 'zona': {
-        if (!conversation || !conversation.lead_id) return '';
-        try { const lead = store.getLeadById(conversation.lead_id); return (lead && lead.zona) || ''; }
-        catch (e) { return ''; }
-      }
-      default: return '';
+      // Identificador del botón que pulsó el cliente — estable, a diferencia de la
+      // etiqueta visible que puede cambiar al editar la plantilla.
+      case 'button_payload': return (context.message && context.message.buttonPayload) || '';
+      default: break;
     }
+    // Campos que viven en el lead legacy (zona, proyecto, temperatura, etc.)
+    const CAMPOS_LEAD = {
+      zona: 'zona', proyecto: 'proyecto', ciudad: 'ciudad', origen: 'origen',
+      presupuesto: 'presupuesto', temperatura: 'temperatura', lead_status: 'status',
+      asesor: 'assigned_to_nombre',
+    };
+    if (CAMPOS_LEAD[field]) {
+      const lead = this.leadDe(context);
+      return (lead && lead[CAMPOS_LEAD[field]]) || '';
+    }
+    return '';
   }
 
   evaluateCondition(condition, context) {
@@ -186,6 +204,96 @@ class WorkflowEngine {
           } finally { clearTimeout(timer); }
           break;
         }
+        // ─── Acciones sobre el CRM (no solo mensajería) ────────────────────────
+        // Todas trabajan sobre el lead de la conversación; si no hay lead (p.ej. un
+        // flujo 'schedule' global), fallan explícitamente en vez de romper el grafo.
+        case 'set_etapa': {
+          const lead = this.exigirLead(context, type);
+          store.setLeadEtiqueta(lead.id, String(params.etiqueta || ''));
+          this.avisarPanel(lead, 'etapa_cambiada');
+          break;
+        }
+        case 'crear_tarea': {
+          const lead = this.exigirLead(context, type);
+          const destino = Number(params.vendedorId) || lead.assigned_to_id;
+          if (!destino) throw new Error('El lead no tiene asesor al que asignarle la tarea');
+          store.createTarea({
+            vendedorId: destino,
+            texto: this.interpolar(params.texto || 'Dar seguimiento', lead),
+            leadId: lead.id,
+            venceAt: this.fechaRelativa(params.enHoras),
+          });
+          break;
+        }
+        case 'crear_cita': {
+          const lead = this.exigirLead(context, type);
+          const destino = Number(params.vendedorId) || lead.assigned_to_id;
+          if (!destino) throw new Error('El lead no tiene asesor al que agendarle la cita');
+          store.createCita({
+            leadId: lead.id, vendedorId: destino,
+            titulo: this.interpolar(params.titulo || 'Cita con el cliente', lead),
+            fecha: this.fechaRelativa(params.enHoras || 24),
+            notas: this.interpolar(params.notas || '', lead),
+          });
+          break;
+        }
+        case 'nota_interna': {
+          const lead = this.exigirLead(context, type);
+          store.addNota(lead.id, 'automatización', this.interpolar(params.texto || '', lead));
+          break;
+        }
+        case 'reasignar': {
+          const lead = this.exigirLead(context, type);
+          const vendedor = (store.getVendedores() || []).find(v => Number(v.id) === Number(params.vendedorId));
+          if (!vendedor) throw new Error('El asesor configurado en la acción ya no existe');
+          store.reassignLead(lead.id, vendedor, lead.assigned_to_id);
+          this.avisarPanel(lead, 'reasignado', vendedor.id);
+          break;
+        }
+        case 'marcar_temperatura': {
+          const lead = this.exigirLead(context, type);
+          store.setLeadTemperatura(lead.id, String(params.temperatura || 'caliente'));
+          break;
+        }
+        case 'cerrar_lead': {
+          const lead = this.exigirLead(context, type);
+          store.updateLeadStatus(lead.id, 'cerrado');
+          this.avisarPanel(lead, 'cerrado');
+          break;
+        }
+        case 'reabrir_lead': {
+          const lead = this.exigirLead(context, type);
+          store.updateLeadStatus(lead.id, 'contactado');
+          this.avisarPanel(lead, 'reabierto');
+          break;
+        }
+        case 'posponer': {
+          const lead = this.exigirLead(context, type);
+          store.setLeadSnooze(lead.id, this.fechaRelativa(params.enHoras || 24));
+          break;
+        }
+        case 'iniciar_cadencia': {
+          const lead = this.exigirLead(context, type);
+          if (!store.enrollCadencia(lead.id)) throw new Error('No hay pasos de cadencia configurados');
+          break;
+        }
+        case 'detener_cadencia': {
+          const lead = this.exigirLead(context, type);
+          store.stopCadencia(lead.id);
+          break;
+        }
+        case 'notificar_asesor': {
+          const lead = this.exigirLead(context, type);
+          const destino = Number(params.vendedorId) || lead.assigned_to_id;
+          if (!destino) throw new Error('No hay asesor a quien notificar');
+          const { notify } = require('./notify');
+          await notify({
+            vendedorId: destino, tipo: 'workflow', leadId: lead.id, push: true,
+            titulo: '⚙️ ' + (params.titulo || 'Automatización'),
+            cuerpo: this.interpolar(params.message || params.texto || 'Revisa este chat.', lead).slice(0, 160),
+          });
+          break;
+        }
         default:
           if (this.customActions[type]) await this.customActions[type](action, context);
           break;
@@ -205,6 +313,43 @@ class WorkflowEngine {
       }
       return { ok: false, type, error: e.message };
     }
+  }
+
+  // Las acciones de CRM necesitan sí o sí un lead; sin él la acción no tiene sentido
+  // y es mejor un error legible en el log del flujo que un fallo silencioso.
+  exigirLead(context, tipoAccion) {
+    const lead = this.leadDe(context);
+    if (!lead) throw new Error(`La acción "${tipoAccion}" necesita un lead y el disparador no trajo ninguno`);
+    return lead;
+  }
+
+  // Fecha ISO a N horas de ahora, en el formato que usan tareas/citas del store.
+  fechaRelativa(horas) {
+    const h = Number(horas);
+    const ms = Date.now() + (Number.isFinite(h) && h > 0 ? h : 24) * 3600000;
+    return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  // Variables simples en los textos de las acciones, con los mismos nombres que ya usa
+  // el resto del CRM ({{cliente}}, {{asesor}}, {{proyecto}}).
+  interpolar(texto, lead) {
+    return String(texto || '')
+      .replace(/\{\{\s*cliente\s*\}\}/gi, (lead && lead.customer_name) || 'el cliente')
+      .replace(/\{\{\s*telefono\s*\}\}/gi, (lead && lead.customer_phone) || '')
+      .replace(/\{\{\s*asesor\s*\}\}/gi, (lead && lead.assigned_to_nombre) || '')
+      .replace(/\{\{\s*proyecto\s*\}\}/gi, (lead && lead.proyecto) || '');
+  }
+
+  // Refresca los paneles abiertos tras una acción que cambia el estado del lead —
+  // si no, el asesor no ve el movimiento hasta que recarga.
+  avisarPanel(lead, tipo, vendedorExtraId) {
+    try {
+      const events = require('./events');
+      const data = { leadId: lead.id, tipo, ts: Date.now() };
+      if (lead.assigned_to_id) events.emitToVendedor(lead.assigned_to_id, 'lead_actualizado', data);
+      if (vendedorExtraId) events.emitToVendedor(vendedorExtraId, 'nuevo_mensaje', data);
+      events.emitToAdmins('lead_actualizado', data);
+    } catch (e) { /* SSE opcional */ }
   }
 
   // ─── Duración de un nodo delay: {unit:'minutes'|'hours'|'days', amount:N} ──
@@ -290,12 +435,23 @@ class WorkflowEngine {
     catch (e) { return null; }
   }
 
+  // Un flujo con vendedor_id es privado de ese asesor: solo puede correr sobre leads
+  // asignados a él. Sin este guard, un asesor podría crear una regla que mueva o
+  // notifique chats de todo el equipo — justo lo que sus automatizaciones no deben tocar.
+  aplicaAlDueno(rule, context) {
+    if (!rule.vendedor_id) return true; // flujo global de la empresa
+    const lead = this.leadDe(context);
+    const asignado = lead ? lead.assigned_to_id : (context.conversation && context.conversation.assigned_to_id);
+    return Number(asignado) === Number(rule.vendedor_id);
+  }
+
   // ─── Evento en vivo (message:incoming, conversation:assigned, etc.) ────────
   async evaluate(triggerEvent, context) {
     const rules = this.getRules().filter(r => r.trigger_event === triggerEvent);
     if (!rules.length) return;
 
     for (const rule of rules) {
+      if (!this.aplicaAlDueno(rule, context)) continue;
       const graph = this.parseGraph(rule);
       if (!graph) continue; // sin grafo válido — nada que correr
 
@@ -403,6 +559,7 @@ class WorkflowEngine {
         this.markRan(key);
         const conversation = store.getConversationById(c.id);
         const customer = c.customer_id ? store.getCustomerById(c.customer_id) : null;
+        if (!this.aplicaAlDueno(rule, { conversation })) continue; // flujo de asesor: solo sus leads
         this.runGraph(rule, graph, { conversation, customer }, trigger.id).then(trace => {
           try { store.addWorkflowLog(rule.id, c.id, 'lead:inactive', { trace }); } catch (e) {}
         });

@@ -18,6 +18,9 @@ const CONFIG_KEYS = [
   'escalation_alerta_min', 'escalation_reasignar_min', 'escalation_admin_min', 'escalation_asentado_horas',
   'campaign_mps', 'campaign_daily_limit',
   'meta_ads_cpl_objetivo',
+  // Token público de Mapbox (pk.*) para el mapa y el buscador de lugares del panel
+  // del asesor. Vacío = el mapa cae a OpenStreetMap + Nominatim.
+  'mapbox_token',
   // Parte 3B — General
   'timezone', 'currency_format', 'default_theme', 'company_logo',
   // Parte 3B — Privacidad

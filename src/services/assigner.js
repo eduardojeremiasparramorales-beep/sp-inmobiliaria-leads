@@ -52,13 +52,14 @@ function syncMulticanal(leadId, data) {
 // Automatizaciones) ya existía y funcionaba, pero solo se conectaba desde el canal
 // multicanal (Messenger/Instagram) — el canal dominante, WhatsApp vía assigner.js,
 // nunca lo llamaba, así que ningún flujo IF/THEN se ejecutaba nunca en la práctica.
-function triggerWorkflow(triggerEvent, leadId, messageBody) {
+function triggerWorkflow(triggerEvent, leadId, messageBody, extra) {
   try {
     const store = require('../db/store');
     const conversation = store.getOrCreateConversationForLead(leadId);
     if (!conversation) return;
     const customer = conversation.customer_id ? store.getCustomerById(conversation.customer_id) : null;
-    require('./workflow').evaluate(triggerEvent, { conversation, message: { body: messageBody }, customer })
+    const message = Object.assign({ body: messageBody }, extra || {});
+    require('./workflow').evaluate(triggerEvent, { conversation, message, customer })
       .catch(e => console.error('WorkflowEngine.evaluate error:', e.message));
   } catch (e) { /* workflow engine opcional */ }
 }

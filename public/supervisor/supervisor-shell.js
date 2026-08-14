@@ -37,6 +37,10 @@
     menu: P('<path d="M3 6h18M3 12h18M3 18h18"/>'),
   };
 
+  // Roles con derecho a este panel: supervisor y jefe (el jefe manda igual que el admin
+  // sobre la operación del equipo, solo que su casa es esta, no /os/).
+  const ROLES_PANEL = ['supervisor', 'jefe'];
+
   /* --- API + redirect por auth (igual que sp-shell.js pero para supervisor) --- */
   async function api(path, opts) {
     try {
@@ -46,6 +50,7 @@
       if (res.status === 401) { location.replace('/login.html'); return null; }
       if (res.status === 403) { // sesión válida pero rol equivocado → a su panel correcto
         const me = await fetch('/api/me', { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (me && ROLES_PANEL.includes(me.rol)) return null; // ya está en su panel: un 403 puntual no lo expulsa
         if (me) location.replace(me.rol === 'admin' ? '/os/dashboard.html' : '/m/');
         else location.replace('/login.html');
         return null;
@@ -89,9 +94,11 @@
     ensureViewportFitCover();
     const active = opts.active || 'inicio';
 
-    // Sesión del supervisor (api() ya redirige si no es supervisor).
+    // Sesión con visión global del equipo. El jefe entra aquí igual que el supervisor:
+    // este es su panel de supervisión, no un tab apretado dentro del móvil (la API
+    // /api/supervisor/* ya lo autoriza vía esAccesoGlobal).
     const me = await api('/api/me');
-    if (!me || me.rol !== 'supervisor') {
+    if (!me || !ROLES_PANEL.includes(me.rol)) {
       // api() ya redirigió; si por algún edge case no, mandamos al login explícitamente.
       if (me) location.replace(me.rol === 'admin' ? '/os/dashboard.html' : me.rol === 'vendedor' ? '/m/' : '/login.html');
       return null;

@@ -245,7 +245,9 @@ async function apiDetailed(url, opts){
     if(r.status===401){ if(!location.pathname.startsWith('/login')) location.replace('/login.html'); return null; }
     const ct=r.headers.get('content-type')||'';
     const body=ct.includes('json')? await r.json() : await r.text();
-    if(!r.ok) return { _error:true, error:(body&&body.error)||'http_'+r.status, detalle:(body&&body.detalle)||'' };
+    // Se conserva el body completo (no solo error/detalle): las validaciones de
+    // plantillas vienen en `errores[]` y son lo único accionable para el asesor.
+    if(!r.ok) return Object.assign({}, body, { _error:true, error:(body&&body.error)||'http_'+r.status, detalle:(body&&body.detalle)||'' });
     return body;
   }
   catch(e){ return null; }
@@ -2703,10 +2705,64 @@ async function abrirDetallePlantilla(templateId, leadId, waTemplates){
 }
 // Reverse geocoding con manejo de error visible (antes se tragaba silenciosamente)
 async function reverseGeocodeUbic(lat,lng){
+  // Con token de Mapbox se usa su geocodificador inverso (direcciones mucho más
+  // precisas en Colombia); sin token, el Nominatim de siempre.
+  const cfg = await getMapaConfig();
+  if(cfg.proveedor === 'mapbox' && cfg.token){
+    const r=await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${encodeURIComponent(cfg.token)}&language=es&limit=1`);
+    if(!r.ok) throw new Error('mapbox_'+r.status);
+    const d=await r.json();
+    const f=(d.features||[])[0];
+    return { name:(f&&f.text)||'', address:(f&&f.place_name)||'' };
+  }
   const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=es`,{headers:{'Accept-Language':'es'}});
   if(!r.ok) throw new Error('nominatim_'+r.status);
   const d=await r.json();
   return { name:d.name||(d.display_name?d.display_name.split(',')[0]:'')||'', address:d.display_name||'' };
+}
+
+/* ════════ Proveedor de mapa (Mapbox si hay token, OSM si no) ════════
+   El asesor tiene que poder mandar la ubicación de otra ciudad sin estar allí
+   ("estoy en Tocaima y necesito mandar Mariquita"), así que el buscador importa tanto
+   como el mapa. Mapbox da mejor cobertura de lugares en Colombia; si no hay token
+   configurado, todo sigue funcionando con OpenStreetMap + Nominatim. */
+let _mapaCfg = null;
+async function getMapaConfig(){
+  if(_mapaCfg) return _mapaCfg;
+  _mapaCfg = (await api('/api/mapa/config')) || { proveedor:'osm', token:'', pais:'co' };
+  return _mapaCfg;
+}
+
+// Capa de teselas: Mapbox en modo oscuro (acorde a la marca) o el OSM de siempre.
+function capaTilesMapa(cfg){
+  if(cfg && cfg.proveedor === 'mapbox' && cfg.token){
+    return L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/512/{z}/{x}/{y}@2x?access_token=${encodeURIComponent(cfg.token)}`,
+      { maxZoom:19, tileSize:512, zoomOffset:-1, attribution:'© Mapbox © OpenStreetMap' });
+  }
+  return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OSM' });
+}
+
+// Buscador de lugares. Devuelve [{nombre, direccion, lat, lng}] con el mismo shape
+// venga de Mapbox o de Nominatim, para que la UI no tenga que distinguir.
+async function buscarLugares(q, cerca){
+  const cfg = await getMapaConfig();
+  if(cfg.proveedor === 'mapbox' && cfg.token){
+    const prox = cerca ? `&proximity=${cerca.lng},${cerca.lat}` : '';
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`
+      + `?access_token=${encodeURIComponent(cfg.token)}&country=${cfg.pais||'co'}&language=es&limit=6&autocomplete=true${prox}`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('mapbox_'+r.status);
+    const data = await r.json();
+    return (data.features||[]).map(f => ({
+      nombre: f.text || '',
+      direccion: f.place_name || '',
+      lat: f.center[1], lng: f.center[0],
+    }));
+  }
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&countrycodes=co&accept-language=es`);
+  if(!r.ok) throw new Error('nominatim_'+r.status);
+  const data = await r.json();
+  return (data||[]).map(res => ({ nombre: res.name||'', direccion: res.display_name||'', lat: parseFloat(res.lat), lng: parseFloat(res.lon) }));
 }
 
 // Hoja de envío de ubicación con minimapa interactivo (marcador arrastrable, tipo WhatsApp)
@@ -2721,12 +2777,14 @@ function abrirEnviarUbicacion(){
       `<div style="display:flex;align-items:center;gap:6px"><button class="loc-preset-btn loc-preset-saved" data-sid="${p.id}" style="flex:1"><span class="loc-preset-icon">📍</span><span><strong>${esc(p.nombre)}</strong>${p.direccion ? ' — '+esc(p.direccion) : ''}</span></button><button class="loc-del-saved" data-sid="${p.id}" style="background:none;border:none;color:var(--text-3);font-size:16px;cursor:pointer;padding:4px">✕</button></div>`
     ).join('') : '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:8px 0">Aún no tienes ubicaciones guardadas</div>';
 
+    // El buscador va ARRIBA del mapa: mandar la ubicación de otra ciudad (buscar
+    // "Mariquita" estando en Tocaima) es el caso normal, no el excepcional.
     const formHtml = `
+      <div class="loc-search-wrap"><input id="locSearch" placeholder="Buscar ciudad, barrio o lugar…" autocomplete="off"><div class="loc-results" id="locResults"></div></div>
       <div class="loc-picker-map" id="locPickerMap"><button class="loc-picker-locate" id="locLocateBtn" title="Mi ubicación">${I(SVG.target,18)}</button></div>
-      <div class="loc-picker-hint">Toca el mapa o arrastra el pin para ajustar el punto</div>
+      <div class="loc-picker-hint">Busca un lugar arriba, o toca el mapa y arrastra el pin para ajustarlo</div>
       <div class="loc-picker-info" id="locPickerInfo"><span class="loc-ic">📍</span><span class="loc-picker-addr" id="locPickerAddr">Ubicando…</span></div>
       <button class="loc-picker-send" id="locSendBtn">${I(SVG.send,15)} Enviar esta ubicación</button>
-      <div class="loc-search-wrap"><input id="locSearch" placeholder="Buscar lugar…" autocomplete="off"><div class="loc-results" id="locResults"></div></div>
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin:10px 0 6px">Guardadas</div>
       <div class="loc-preset" id="locSavedList">${savedList}</div>`;
     openSheet('Enviar ubicación', formHtml);
@@ -2756,7 +2814,7 @@ function abrirEnviarUbicacion(){
       try{ await cargarLeaflet(); }catch(e){ if(mapEl) mapEl.innerHTML='<div style="display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px">No se pudo cargar el mapa</div>'; return; }
       if(!$('#locPickerMap')) return; // la hoja pudo cerrarse mientras cargaba
       pMap=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([picker.lat,picker.lng],12);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(pMap);
+      capaTilesMapa(await getMapaConfig()).addTo(pMap);
       pMarker=L.marker([picker.lat,picker.lng],{draggable:true}).addTo(pMap);
       pMarker.on('dragend',()=>{ const p=pMarker.getLatLng(); movePicker(p.lat,p.lng); });
       pMap.on('click', e=>movePicker(e.latlng.lat,e.latlng.lng));
@@ -2820,18 +2878,17 @@ function abrirEnviarUbicacion(){
         if(q.length<3){ resultsEl.style.display='none'; return; }
         searchTimer=setTimeout(async()=>{
           try{
-            const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);
-            if(!r.ok) throw new Error('nominatim_'+r.status);
-            const data=await r.json();
+            // Los resultados se sesgan al punto donde está el pin: buscar "el centro"
+            // debe proponer primero el de la ciudad que el asesor está mirando.
+            const data=await buscarLugares(q, { lat:picker.lat, lng:picker.lng });
             if(!resultsEl) return;
             if(data&&data.length){
-              resultsEl.innerHTML=data.map((res,i)=>`<button class="loc-result" data-idx="${i}"><span class="loc-r-icon">📍</span><span>${esc(res.display_name)}</span></button>`).join('');
+              resultsEl.innerHTML=data.map((res,i)=>`<button class="loc-result" data-idx="${i}"><span class="loc-r-icon">📍</span><span>${esc(res.direccion||res.nombre)}</span></button>`).join('');
               resultsEl.style.display='block';
               resultsEl.querySelectorAll('.loc-result').forEach(btn=>btn.onclick=()=>{
                 const r2=data[parseInt(btn.dataset.idx)];
-                resultsEl.style.display='none'; searchInput.value=r2.display_name;
-                const n=r2.name||''; const a=r2.display_name||''; const lt=parseFloat(r2.lat); const ln=parseFloat(r2.lon);
-                movePicker(lt,ln,{name:n,address:a});
+                resultsEl.style.display='none'; searchInput.value=r2.direccion||r2.nombre;
+                movePicker(r2.lat,r2.lng,{name:r2.nombre,address:r2.direccion});
               });
             } else { resultsEl.innerHTML='<div class="loc-result" style="cursor:default">Sin resultados</div>'; resultsEl.style.display='block'; }
           }catch(e){ toast('Error al buscar: '+e.message,'err'); if(resultsEl) resultsEl.style.display='none'; }
@@ -3342,6 +3399,378 @@ function abrirCambiarPin(){
     else toast('No se pudo cambiar el PIN','err');
   });
 }
+/* ════════ Mis automatizaciones (reglas propias del asesor) ════════
+   El editor de grafo del admin no cabe en un celular: acá el asesor arma la regla en
+   lenguaje llano ("Cuando… si… entonces…") y el cliente la traduce al mismo grafo
+   {nodes,edges} que ejecuta el motor. Solo corren sobre SUS leads (el backend lo
+   fuerza con vendedor_id) y solo con acciones de su ámbito. */
+const AUTO_TRIGGERS = [
+  ['message:incoming', 'Un cliente me escribe'],
+  ['button:clicked', 'Un cliente pulsa un botón de plantilla'],
+  ['conversation:assigned', 'Me asignan un chat nuevo'],
+  ['lead:inactive', 'Un cliente lleva horas sin responder'],
+  ['lead:caliente', 'Un lead se califica como caliente'],
+  ['cita:creada', 'Agendo una cita'],
+  ['tarea:vencida', 'Se me vence una tarea'],
+  ['lead:tag_changed', 'Cambia la etapa de un lead'],
+  ['campana:finalizada', 'Termina una campaña masiva'],
+];
+const AUTO_ACCIONES = [
+  ['crear_tarea', 'Crearme una tarea', 'texto', 'Texto de la tarea', 'Dar seguimiento a {{cliente}}'],
+  ['nota_interna', 'Dejar una nota interna', 'texto', 'Nota', ''],
+  ['set_etapa', 'Mover el lead de etapa', 'etapa', 'Nueva etapa', 'interesado'],
+  ['tag', 'Ponerle una etiqueta', 'etapa', 'Etiqueta', 'interesado'],
+  ['marcar_temperatura', 'Marcar la temperatura', 'temp', 'Temperatura', 'caliente'],
+  ['send_message', 'Responderle al cliente', 'texto', 'Mensaje a enviar', ''],
+  ['crear_cita', 'Agendarme una cita', 'texto', 'Título de la cita', 'Cita con {{cliente}}'],
+  ['posponer', 'Posponer el chat', 'horas', 'Posponer (horas)', '24'],
+  ['iniciar_cadencia', 'Iniciar la cadencia de seguimiento', null, '', ''],
+  ['detener_cadencia', 'Detener la cadencia de seguimiento', null, '', ''],
+  ['notificar_asesor', 'Avisarme por notificación', 'texto', 'Aviso', 'Revisa el chat de {{cliente}}'],
+];
+const AUTO_ETAPAS = [['sin_clasificar','Sin clasificar'],['interesado','Interesado'],['cita','Cita'],['negociacion','Negociación'],['vendido','Vendido'],['perdido','Perdido']];
+
+function _autoOverlay(html){
+  const ov = document.createElement('div');
+  ov.id = 'autoOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:6000;overflow-y:auto;color:var(--text);padding:14px 14px 40px';
+  ov.innerHTML = html;
+  document.body.appendChild(ov);
+  return ov;
+}
+function _autoCerrar(){ const ov = document.getElementById('autoOverlay'); if(ov && ov.parentNode) ov.parentNode.removeChild(ov); }
+
+async function abrirMisAutomatizaciones(){
+  const ov = _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:12px">
+      <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
+      <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px">Mis automatizaciones</div>
+      <div style="font-size:11px;color:var(--text-3)">Solo se aplican a tus chats</div></div>
+      <button id="autoNueva" style="border:1px solid rgba(200,164,90,.4);background:rgba(200,164,90,.08);color:var(--gold);border-radius:10px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">+ Nueva</button>
+    </div>
+    <div id="autoLista">${skeletonCards(2)}</div>`);
+  document.getElementById('autoBack').onclick = _autoCerrar;
+  document.getElementById('autoNueva').onclick = () => abrirEditorAutomatizacion(null);
+  await _autoRenderLista();
+}
+
+async function _autoRenderLista(){
+  const box = document.getElementById('autoLista');
+  if(!box) return;
+  const reglas = await api('/api/mis-automatizaciones') || [];
+  if(!reglas.length){
+    box.innerHTML = `<div style="text-align:center;color:var(--text-3);padding:34px 16px;font-size:13px;line-height:1.6">
+      Todavía no tienes automatizaciones.<br>Crea una para que el CRM trabaje por ti:<br>
+      <span style="color:var(--text-2)">“Cuando un cliente pulsa <b>Sigo interesado</b> → créame una tarea”.</span></div>`;
+    return;
+  }
+  box.innerHTML = reglas.map(r => {
+    const g = _autoParse(r.graph);
+    const trg = (AUTO_TRIGGERS.find(t => t[0] === r.trigger_event) || [null, r.trigger_event])[1];
+    const acc = g.accion ? (AUTO_ACCIONES.find(a => a[0] === g.accion.subtype) || [null, g.accion.subtype])[1] : '—';
+    return `<div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <b style="flex:1;font-size:14px">${esc(r.nombre)}</b>
+        <button class="autoTog" data-id="${r.id}" data-a="${r.activo?0:1}" style="border:none;background:${r.activo?'rgba(78,123,70,.18)':'rgba(255,255,255,.06)'};color:${r.activo?'#4E7B46':'var(--text-3)'};border-radius:999px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit">${r.activo?'Activa':'Pausada'}</button>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:6px;line-height:1.5">Cuando <b>${esc(trg)}</b>${g.condicion?` y el mensaje contiene “${esc(g.condicion)}”`:''} → <b>${esc(acc)}</b></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="autoEdit" data-id="${r.id}" style="flex:1;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);border-radius:10px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit">Editar</button>
+        <button class="autoDel" data-id="${r.id}" style="border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);border-radius:10px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">Borrar</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.autoTog').forEach(b => b.onclick = async () => {
+    const r = await api('/api/mis-automatizaciones/' + b.dataset.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ activo: b.dataset.a === '1' }) });
+    if(r) _autoRenderLista(); else toast('No se pudo cambiar','err');
+  });
+  box.querySelectorAll('.autoEdit').forEach(b => b.onclick = () => {
+    abrirEditorAutomatizacion(reglas.find(x => String(x.id) === b.dataset.id));
+  });
+  box.querySelectorAll('.autoDel').forEach(b => b.onclick = async () => {
+    if(!confirm('¿Borrar esta automatización?')) return;
+    const r = await api('/api/mis-automatizaciones/' + b.dataset.id, { method:'DELETE' });
+    if(r) _autoRenderLista(); else toast('No se pudo borrar','err');
+  });
+}
+
+// Lee del grafo guardado los tres datos que maneja el editor móvil (trigger, condición
+// de texto y acción). Los grafos que el admin haya hecho más complejos se muestran igual,
+// pero editarlos desde aquí los simplifica — por eso el aviso al abrir el editor.
+function _autoParse(graphStr){
+  try{
+    const g = typeof graphStr === 'string' ? JSON.parse(graphStr) : graphStr;
+    const nodes = (g && g.nodes) || [];
+    const cond = nodes.find(n => n.type === 'condition');
+    const c0 = cond && cond.params && (cond.params.conditions||[])[0];
+    return {
+      trigger: nodes.find(n => n.type === 'trigger') || null,
+      condicion: c0 ? c0.value : '',
+      accion: nodes.find(n => n.type === 'action') || null,
+      complejo: nodes.filter(n => n.type === 'action').length > 1,
+    };
+  }catch(e){ return { trigger:null, condicion:'', accion:null, complejo:false }; }
+}
+
+function abrirEditorAutomatizacion(regla){
+  const g = regla ? _autoParse(regla.graph) : { trigger:null, condicion:'', accion:null, complejo:false };
+  const triggerActual = regla ? regla.trigger_event : 'button:clicked';
+  const accionActual = g.accion ? g.accion.subtype : 'crear_tarea';
+  const paramActual = g.accion ? (g.accion.params||{}) : {};
+
+  _autoCerrar();
+  _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
+      <div style="font-weight:600;font-size:15px">${regla?'Editar':'Nueva'} automatización</div>
+    </div>
+    ${g.complejo?`<div style="background:rgba(200,164,90,.1);border:1px solid rgba(200,164,90,.3);border-radius:12px;padding:10px;font-size:11.5px;color:var(--text-2);margin-bottom:12px">Esta regla tiene varias acciones. Si la guardas desde aquí, quedará solo con la primera.</div>`:''}
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Nombre</label>
+    <input id="autoNombre" value="${esc(regla?regla.nombre:'')}" placeholder="Ej: Avisarme cuando confirmen interés" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Cuando…</label>
+    <select id="autoTrigger" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0 14px">
+      ${AUTO_TRIGGERS.map(([v,l]) => `<option value="${v}" ${triggerActual===v?'selected':''}>${l}</option>`).join('')}
+    </select>
+    <div id="autoTriggerExtra"></div>
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Y si el mensaje contiene… (opcional)</label>
+    <input id="autoCond" value="${esc(g.condicion||'')}" placeholder="Ej: precio, visita, financiación" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Entonces…</label>
+    <select id="autoAccion" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0 10px">
+      ${AUTO_ACCIONES.map(([v,l]) => `<option value="${v}" ${accionActual===v?'selected':''}>${l}</option>`).join('')}
+    </select>
+    <div id="autoParam"></div>
+
+    <button id="autoGuardar" style="width:100%;height:48px;margin-top:18px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Guardar</button>`);
+
+  document.getElementById('autoBack').onclick = () => { _autoCerrar(); abrirMisAutomatizaciones(); };
+
+  const selTrigger = document.getElementById('autoTrigger');
+  const selAccion = document.getElementById('autoAccion');
+  function pintarExtraTrigger(){
+    const box = document.getElementById('autoTriggerExtra');
+    const horas = (g.trigger && g.trigger.params && g.trigger.params.hours) || 24;
+    box.innerHTML = selTrigger.value === 'lead:inactive'
+      ? `<label style="font-size:11px;color:var(--text-3)">Horas sin responder</label>
+         <input id="autoHoras" type="number" min="1" value="${horas}" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">`
+      : '';
+  }
+  function pintarParam(){
+    const def = AUTO_ACCIONES.find(a => a[0] === selAccion.value);
+    const box = document.getElementById('autoParam');
+    if(!def || !def[2]){ box.innerHTML = '<div style="font-size:11.5px;color:var(--text-3);padding-bottom:8px">Esta acción no necesita más datos.</div>'; return; }
+    const [, , tipo, label, ejemplo] = def;
+    const clave = _autoClaveParam(selAccion.value);
+    const val = paramActual[clave] != null ? paramActual[clave] : ejemplo;
+    if(tipo === 'etapa'){
+      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
+        <select id="autoParamInput" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0">${AUTO_ETAPAS.map(([v,l])=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`).join('')}</select>`;
+    } else if(tipo === 'temp'){
+      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
+        <select id="autoParamInput" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0">${[['caliente','Caliente'],['tibio','Tibio'],['frio','Frío']].map(([v,l])=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`).join('')}</select>`;
+    } else if(tipo === 'horas'){
+      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
+        <input id="autoParamInput" type="number" min="1" value="${esc(String(val||24))}" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0">`;
+    } else {
+      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
+        <textarea id="autoParamInput" rows="3" placeholder="Puedes usar {{cliente}} y {{proyecto}}" style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:10px 12px;font-size:14px;font-family:inherit;margin:6px 0;resize:vertical">${esc(String(val||''))}</textarea>`;
+    }
+  }
+  selTrigger.onchange = pintarExtraTrigger;
+  selAccion.onchange = pintarParam;
+  pintarExtraTrigger(); pintarParam();
+
+  document.getElementById('autoGuardar').onclick = async () => {
+    const nombre = document.getElementById('autoNombre').value.trim();
+    if(!nombre){ toast('Ponle un nombre a la regla','err'); return; }
+    const inp = document.getElementById('autoParamInput');
+    const horasInp = document.getElementById('autoHoras');
+    const cuerpo = {
+      nombre,
+      trigger_event: selTrigger.value,
+      graph: _autoConstruirGrafo({
+        trigger: selTrigger.value,
+        horas: horasInp ? Number(horasInp.value) : null,
+        condicion: document.getElementById('autoCond').value.trim(),
+        accion: selAccion.value,
+        valor: inp ? inp.value : null,
+      }),
+    };
+    const r = regla
+      ? await apiDetailed('/api/mis-automatizaciones/' + regla.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cuerpo) })
+      : await apiDetailed('/api/mis-automatizaciones', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cuerpo) });
+    if(r && !r._error){ toast('Automatización guardada'); _autoCerrar(); abrirMisAutomatizaciones(); }
+    else toast((r && (r.detalle || r.error)) || 'No se pudo guardar','err');
+  };
+}
+
+// Nombre del parámetro que espera el motor para cada acción (ver executeAction).
+function _autoClaveParam(accion){
+  return { crear_tarea:'texto', nota_interna:'texto', set_etapa:'etiqueta', tag:'value',
+    marcar_temperatura:'temperatura', send_message:'text', crear_cita:'titulo',
+    posponer:'enHoras', notificar_asesor:'message' }[accion] || 'texto';
+}
+
+// Traduce la regla del formulario al grafo {nodes,edges} del motor.
+function _autoConstruirGrafo({ trigger, horas, condicion, accion, valor }){
+  const nodes = [];
+  const edges = [];
+  const tParams = trigger === 'lead:inactive' ? { hours: Number(horas) || 24 } : {};
+  nodes.push({ id:'n_trigger', type:'trigger', subtype:trigger, params:tParams, x:60, y:60 });
+  let previo = 'n_trigger';
+  if(condicion){
+    nodes.push({ id:'n_cond', type:'condition', params:{ logic:'and', conditions:[{ field:'body', operator:'contains', value:condicion }] }, x:60, y:180 });
+    edges.push({ from:previo, to:'n_cond' });
+    previo = 'n_cond';
+  }
+  const clave = _autoClaveParam(accion);
+  const params = {};
+  if(valor !== null && valor !== undefined && String(valor) !== ''){
+    params[clave] = clave === 'enHoras' ? Number(valor) : valor;
+  }
+  nodes.push({ id:'n_accion', type:'action', subtype:accion, params, x:60, y:300 });
+  // Desde una condición, la acción cuelga de la rama verdadera.
+  edges.push(previo === 'n_cond' ? { from:'n_cond', to:'n_accion', branch:'true' } : { from:previo, to:'n_accion' });
+  return { nodes, edges };
+}
+
+/* ════════ Mis plantillas de WhatsApp (propuestas del asesor) ════════
+   El asesor redacta la plantilla y queda EN REVISIÓN: no viaja a Meta hasta que el
+   admin o un jefe la aprueba. Cada rechazo de Meta castiga la calidad del número de
+   toda la empresa, por eso el filtro humano va primero. */
+const TPL_ESTADOS = {
+  EN_REVISION: { t:'En revisión interna', c:'#C8A45A' },
+  CORRECCION:  { t:'Necesita cambios',    c:'#E5484D' },
+  PENDING:     { t:'En revisión de Meta', c:'#C8A45A' },
+  APPROVED:    { t:'Aprobada',            c:'#4E7B46' },
+  REJECTED:    { t:'Rechazada por Meta',  c:'#E5484D' },
+  PAUSED:      { t:'Pausada por Meta',    c:'#E5484D' },
+};
+
+async function abrirMisPlantillasWA(){
+  const ov = _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:12px">
+      <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
+      <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px">Mis plantillas</div>
+      <div style="font-size:11px;color:var(--text-3)">Las revisa un jefe antes de mandarlas a Meta</div></div>
+      <button id="tplNueva" style="border:1px solid rgba(200,164,90,.4);background:rgba(200,164,90,.08);color:var(--gold);border-radius:10px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">+ Nueva</button>
+    </div>
+    <div id="tplLista">${skeletonCards(2)}</div>`);
+  document.getElementById('autoBack').onclick = _autoCerrar;
+  document.getElementById('tplNueva').onclick = () => abrirEditorPlantillaWA(null);
+  await _tplRenderLista();
+}
+
+async function _tplRenderLista(){
+  const box = document.getElementById('tplLista');
+  if(!box) return;
+  const lista = await api('/api/mis-plantillas') || [];
+  if(!lista.length){
+    box.innerHTML = `<div style="text-align:center;color:var(--text-3);padding:34px 16px;font-size:13px;line-height:1.6">
+      Todavía no has propuesto ninguna plantilla.<br>Escribe la tuya y un jefe la revisa antes de enviarla a WhatsApp.</div>`;
+    return;
+  }
+  box.innerHTML = lista.map(t => {
+    const est = TPL_ESTADOS[String(t.estado)] || { t: t.estado || '—', c:'var(--text-3)' };
+    const editable = ['EN_REVISION','CORRECCION'].includes(String(t.estado));
+    let cuerpo = '';
+    try { const s = JSON.parse(t.spec_json||'{}'); cuerpo = (s.body && s.body.texto) || ''; } catch(e){}
+    return `<div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <b style="flex:1;font-size:14px">${esc(t.nombre)}</b>
+        <span style="font-size:11px;color:${est.c}">${esc(est.t)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:6px;line-height:1.5">${esc(cuerpo.slice(0,140))}</div>
+      ${t.motivo_rechazo?`<div style="margin-top:8px;background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.25);border-radius:10px;padding:8px;font-size:11.5px;color:var(--text-2)">✏️ ${esc(t.motivo_rechazo)}</div>`:''}
+      ${editable?`<div style="display:flex;gap:8px;margin-top:10px">
+        <button class="tplEdit" data-id="${t.id}" style="flex:1;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);border-radius:10px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit">Editar</button>
+        <button class="tplDel" data-id="${t.id}" style="border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);border-radius:10px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">Borrar</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.tplEdit').forEach(b => b.onclick = () => abrirEditorPlantillaWA(lista.find(x => String(x.id) === b.dataset.id)));
+  box.querySelectorAll('.tplDel').forEach(b => b.onclick = async () => {
+    if(!confirm('¿Borrar esta propuesta?')) return;
+    const r = await api('/api/mis-plantillas/' + b.dataset.id, { method:'DELETE' });
+    if(r) _tplRenderLista(); else toast('No se pudo borrar','err');
+  });
+}
+
+function abrirEditorPlantillaWA(tpl){
+  let spec = { categoria:'MARKETING', idioma:'es', body:{ texto:'', ejemplos:{} }, footer:{ texto:'' } };
+  try { if(tpl && tpl.spec_json) spec = Object.assign(spec, JSON.parse(tpl.spec_json)); } catch(e){}
+
+  _autoCerrar();
+  _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
+      <div style="font-weight:600;font-size:15px">${tpl?'Editar':'Nueva'} plantilla</div>
+    </div>
+    ${tpl && tpl.motivo_rechazo?`<div style="background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.25);border-radius:12px;padding:10px;font-size:12px;color:var(--text-2);margin-bottom:12px">✏️ Corrección pedida: ${esc(tpl.motivo_rechazo)}</div>`:''}
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Nombre interno</label>
+    <input id="tplNombre" value="${esc(tpl?tpl.nombre:'')}" ${tpl?'disabled':''} placeholder="ej: seguimiento_lote" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 4px">
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Solo minúsculas, números y guion bajo. No se puede cambiar después.</div>
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Tipo</label>
+    <select id="tplCategoria" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0 14px">
+      <option value="MARKETING" ${spec.categoria==='MARKETING'?'selected':''}>Marketing (promociones, reenganche)</option>
+      <option value="UTILITY" ${spec.categoria==='UTILITY'?'selected':''}>Utilidad (confirmaciones, recordatorios)</option>
+    </select>
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Mensaje</label>
+    <textarea id="tplCuerpo" rows="6" placeholder="Hola {{nombre_cliente}}, te escribo por el proyecto..." style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:10px 12px;font-size:14px;font-family:inherit;margin:6px 0 4px;resize:vertical">${esc((spec.body&&spec.body.texto)||'')}</textarea>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Puedes usar variables como <span style="color:var(--gold)">{{nombre_cliente}}</span> o <span style="color:var(--gold)">{{proyecto}}</span>. No empieces ni termines el mensaje con una variable.</div>
+
+    <div id="tplEjemplos"></div>
+
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Pie (opcional)</label>
+    <input id="tplPie" value="${esc((spec.footer&&spec.footer.texto)||'')}" maxlength="60" placeholder="Sp Leons Group" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">
+
+    <button id="tplGuardar" style="width:100%;height:48px;margin-top:8px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Enviar a revisión</button>
+    <div id="tplErrores" style="margin-top:12px"></div>`);
+
+  document.getElementById('autoBack').onclick = () => { _autoCerrar(); abrirMisPlantillasWA(); };
+
+  // Meta exige un valor de ejemplo por variable: se piden a medida que el asesor
+  // las escribe, en vez de rechazarle la plantilla al final sin explicación.
+  const cuerpoEl = document.getElementById('tplCuerpo');
+  function pintarEjemplos(){
+    const box = document.getElementById('tplEjemplos');
+    const vars = [...new Set((cuerpoEl.value.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)||[]).map(v => v.replace(/[{}\s]/g,'')))];
+    if(!vars.length){ box.innerHTML=''; return; }
+    const prev = (spec.body && spec.body.ejemplos) || {};
+    box.innerHTML = `<label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Ejemplos para WhatsApp</label>
+      <div style="font-size:11px;color:var(--text-3);margin:4px 0 8px">Meta pide un valor de muestra por cada variable.</div>` +
+      vars.map(v => `<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--gold);margin-bottom:4px">{{${esc(v)}}}</div>
+        <input class="tplEj" data-v="${esc(v)}" value="${esc(prev[v]||'')}" placeholder="ej: Jeremías" style="width:100%;height:40px;background:var(--bg-3);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13px;font-family:inherit"></div>`).join('');
+  }
+  cuerpoEl.addEventListener('input', pintarEjemplos);
+  pintarEjemplos();
+
+  document.getElementById('tplGuardar').onclick = async () => {
+    const ejemplos = {};
+    document.querySelectorAll('.tplEj').forEach(i => { ejemplos[i.dataset.v] = i.value.trim(); });
+    const nuevoSpec = {
+      nombre: tpl ? tpl.nombre : document.getElementById('tplNombre').value.trim(),
+      idioma: 'es',
+      categoria: document.getElementById('tplCategoria').value,
+      body: { texto: cuerpoEl.value, ejemplos },
+      footer: { texto: document.getElementById('tplPie').value.trim() },
+    };
+    const r = tpl
+      ? await apiDetailed('/api/mis-plantillas/' + tpl.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ spec:nuevoSpec }) })
+      : await apiDetailed('/api/mis-plantillas', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ spec:nuevoSpec }) });
+    const errBox = document.getElementById('tplErrores');
+    if(r && !r._error){ toast('Enviada a revisión'); _autoCerrar(); abrirMisPlantillasWA(); return; }
+    // Los errores de validación son la parte útil: se listan tal cual los devuelve el
+    // validador, que ya habla en términos de lo que Meta acepta.
+    const errores = (r && r.errores) || [];
+    errBox.innerHTML = `<div style="background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.25);border-radius:12px;padding:10px;font-size:12px;color:var(--text-2)">
+      ${errores.length ? errores.map(e => '• ' + esc(e.mensaje || String(e))).join('<br>') : esc((r && (r.detalle||r.error)) || 'No se pudo guardar')}</div>`;
+  };
+}
+
 function abrirSesiones(){
   openSheet('Sesiones activas', '<div id="sesList" style="max-height:340px;overflow-y:auto"><div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Cargando…</div></div>');
   (async()=>{
@@ -3457,6 +3886,14 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           <div class="sec-body"><div class="sec-row">
             <input id="inpAbout" placeholder="¿Qué haces ahora?" value="${esc((me&&me.about)||localStorage.getItem('sp_about_text')||'')}">
           </div></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Mi trabajo</div>
+          <div class="sec-body">
+            <div class="sec-row" id="rowAutomatizaciones"><label>⚙️ Mis automatizaciones</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
+            <div class="sec-row" id="rowMisPlantillas"><label>📋 Mis plantillas de WhatsApp</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
+          </div>
         </div>
 
         <div class="sec">
@@ -3679,6 +4116,10 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if (sesRow) sesRow.addEventListener('click', () => { haptic(8); abrirSesiones(); });
       const expRow = document.getElementById('rowExportar');
       if (expRow) expRow.addEventListener('click', () => { haptic(8); exportarPerfil(); });
+      const autoRow = document.getElementById('rowAutomatizaciones');
+      if (autoRow) autoRow.addEventListener('click', () => { haptic(8); abrirMisAutomatizaciones(); });
+      const tplRow = document.getElementById('rowMisPlantillas');
+      if (tplRow) tplRow.addEventListener('click', () => { haptic(8); abrirMisPlantillasWA(); });
       cargarVersionApp();
       // Mis respuestas
       cargarMisTpl();
@@ -3731,6 +4172,12 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
   } else if (t === 'supervision') {
     box.innerHTML = `<div style="padding:8px 12px;width:100%;max-width:450px;margin:0 auto">
       <div id="superKPIs" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"></div>
+      <a href="/supervisor/" style="display:flex;align-items:center;gap:10px;text-decoration:none;background:linear-gradient(135deg,rgba(200,164,90,.16),rgba(200,164,90,.05));border:1px solid rgba(200,164,90,.35);border-radius:14px;padding:14px;margin-bottom:14px">
+        <span style="font-size:20px">🛡️</span>
+        <span style="flex:1"><b style="display:block;color:#C8A45A;font-size:14px">Centro de Supervisión</b>
+        <span style="font-size:11px;color:var(--text-3)">Equipo, analítica, alertas y conversaciones — todo en una sola página</span></span>
+        <span style="color:#C8A45A;font-size:20px">›</span>
+      </a>
       <div style="margin-bottom:14px">
         <h3 style="font-size:13px;font-weight:600;color:#C8A45A;margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">📋 Inbox General</h3>
         <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;background:rgba(10,10,10,0.4);padding:8px;border-radius:10px">

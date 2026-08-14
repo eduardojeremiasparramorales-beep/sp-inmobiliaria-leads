@@ -517,6 +517,9 @@ function createSchema() {
   // verdad para el motor v2 una vez migrado — ver migrateWorkflowsToGraph().
   ensureColumn('workflows', 'graph', 'TEXT');
   ensureColumn('workflows', 'updated_at', 'DATETIME');
+  // Dueño del flujo: NULL = flujo global de la empresa (admin/jefe); con valor = flujo
+  // privado de ese asesor, que solo corre sobre los leads asignados a él.
+  ensureColumn('workflows', 'vendedor_id', 'INTEGER');
   execSQL(`
     CREATE TABLE IF NOT EXISTS workflow_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2071,6 +2074,41 @@ function insertWATemplateBorrador({ nombre, idioma, categoria, componentes, vari
   return getWATemplateByNameIdioma(nombre, idioma || 'es').id;
 }
 
+// ── Revisión interna de plantillas (antes de Meta) ──
+// Un asesor propone una plantilla y esta NO viaja a Meta hasta que el admin o un jefe
+// la aprueba: EN_REVISION → (aprobada) PENDING en Meta → APPROVED/REJECTED, o
+// EN_REVISION → CORRECCION (con comentario) → el asesor la corrige y la reenvía.
+const ESTADOS_INTERNOS = ['EN_REVISION', 'CORRECCION'];
+
+function getWATemplatesEnRevision() {
+  return all(`SELECT t.*, v.nombre AS autor_nombre FROM wa_templates t
+              LEFT JOIN vendedores v ON v.id = t.creado_por
+              WHERE t.estado IN ('EN_REVISION','CORRECCION') ORDER BY t.updated_at DESC`);
+}
+
+function getWATemplatesByAutor(vendedorId) {
+  return all('SELECT * FROM wa_templates WHERE creado_por = ? ORDER BY updated_at DESC', [Number(vendedorId)]);
+}
+
+// Propuesta del asesor: se guarda el spec crudo, sin id de Meta, en estado EN_REVISION.
+function insertWATemplatePropuesta({ nombre, idioma, categoria, componentes, variables, specJson, creadoPor }) {
+  const now = nowUTC();
+  run(`INSERT INTO wa_templates (nombre, idioma, categoria, estado, componentes, variables, spec_json,
+         creado_por, creado_en_crm, updated_at)
+       VALUES (?, ?, ?, 'EN_REVISION', ?, ?, ?, ?, 1, ?)`,
+    [nombre, idioma || 'es', categoria || '', componentes || '[]', variables || '[]', specJson || '{}', creadoPor || null, now]);
+  const t = getWATemplateByNameIdioma(nombre, idioma || 'es');
+  return t ? t.id : null;
+}
+
+// Tras aprobarla internamente y crearla en Meta: queda con su id real y el estado que
+// devolvió Meta (normalmente PENDING).
+function marcarWATemplateEnviadaAMeta(id, metaTemplateId, estado) {
+  run(`UPDATE wa_templates SET meta_template_id = ?, estado = ?, motivo_rechazo = NULL,
+         updated_at = ?, meta_sync_at = ? WHERE id = ?`,
+    [metaTemplateId || null, estado || 'PENDING', nowUTC(), nowUTC(), id]);
+}
+
 function updateWATemplateSpec(id, { componentes, variables, specJson, estado }) {
   run(`UPDATE wa_templates SET componentes = COALESCE(?, componentes), variables = COALESCE(?, variables),
          spec_json = COALESCE(?, spec_json), estado = COALESCE(?, estado), updated_at = ? WHERE id = ?`,
@@ -3026,10 +3064,19 @@ function migrateWorkflowsToGraph() {
 }
 
 // --- Workflows (automatización IF/THEN — editor visual de nodos) ---
-function getAllWorkflows({ activo } = {}) {
-  if (activo === true) return all('SELECT * FROM workflows WHERE activo = 1 ORDER BY id');
-  if (activo === false) return all('SELECT * FROM workflows WHERE activo = 0 ORDER BY id');
-  return all('SELECT * FROM workflows ORDER BY id');
+// vendedor_id = NULL → flujo global de la empresa (lo crea el admin/jefe).
+// vendedor_id = N    → flujo privado de ese asesor: solo corre sobre SUS leads.
+// `vendedorId` filtra a los de un asesor; `soloGlobales` a los de la empresa.
+function getAllWorkflows({ activo, vendedorId, soloGlobales } = {}) {
+  const cond = [];
+  const args = [];
+  if (activo === true) cond.push('w.activo = 1');
+  if (activo === false) cond.push('w.activo = 0');
+  if (vendedorId != null) { cond.push('w.vendedor_id = ?'); args.push(Number(vendedorId)); }
+  else if (soloGlobales) cond.push('w.vendedor_id IS NULL');
+  const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '';
+  return all(`SELECT w.*, v.nombre AS vendedor_nombre FROM workflows w
+              LEFT JOIN vendedores v ON v.id = w.vendedor_id${where} ORDER BY w.id`, args);
 }
 
 function getWorkflowById(id) {
@@ -3040,10 +3087,11 @@ function getWorkflowById(id) {
 // viene (creación vieja vía trigger_event/conditions/actions), migrateWorkflowsToGraph()
 // lo completa en el próximo arranque; no hace falta duplicar esa lógica aquí.
 function createWorkflow(data) {
-  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions, graph, updated_at) VALUES (?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [
+  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions, graph, vendedor_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [
     data.nombre, data.activo === false ? 0 : 1, data.trigger_event || (data.graph && inferTriggerFromGraph(data.graph)) || '',
     JSON.stringify(data.conditions || []), JSON.stringify(data.actions || []),
     data.graph ? JSON.stringify(data.graph) : null,
+    data.vendedorId != null ? Number(data.vendedorId) : null,
   ]);
   return one('SELECT * FROM workflows WHERE id = (SELECT last_insert_rowid())');
 }
@@ -3702,6 +3750,8 @@ module.exports = {
   getWATemplates, getWATemplatesAprobadas, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName,
   getWATemplateByNameIdioma, getWATemplateByMetaId, upsertWATemplateFull, upsertWATemplateByMetaId, setWATemplateMapping,
   setWATemplateEstado, insertWATemplateBorrador, updateWATemplateSpec,
+  ESTADOS_INTERNOS, getWATemplatesEnRevision, getWATemplatesByAutor,
+  insertWATemplatePropuesta, marcarWATemplateEnviadaAMeta,
   createCampaign, getCampaigns, getCampaignById, updateCampaignEstado, deleteCampaign,
   getCampaignsByEstado, getCampaignsPausadasAutomaticas,
   addCampaignRecipients, getCampaignRecipients, updateCampaignRecipient, getCampaignRecipientByWamid, recalcCampaignStats,

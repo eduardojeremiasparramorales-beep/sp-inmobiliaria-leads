@@ -724,7 +724,22 @@
         <p>El CPL objetivo alimenta las recomendaciones automáticas (CPL alto, gasto sin resultados) en la vista "Recomendaciones" del panel de Meta Ads.</p>
         <div class="cfg-field"><label>CPL objetivo (COP)</label><input id="ma_cpl_objetivo" type="number" min="0" step="1000" placeholder="Ej: 15000" value="${esc(generalCfg.meta_ads_cpl_objetivo || '')}"></div>
         <button type="submit" class="cfg-save">Guardar</button>
+      </form>
+
+      <form class="cfg-sec" id="fMapbox">
+        <h3>Mapa y búsqueda de lugares</h3>
+        <p>Token público de Mapbox (empieza por <code>pk.</code>) para el mapa y el buscador de ciudades del panel del asesor. Restríngelo por URL desde el panel de Mapbox. Si lo dejas vacío, el mapa funciona igual con OpenStreetMap, con menos precisión en los nombres de lugares.</p>
+        <div class="cfg-field"><label>Mapbox token público</label><input id="cfg_mapbox_token" type="text" placeholder="pk.eyJ1Ijoi…" value="${esc(generalCfg.mapbox_token || '')}"></div>
+        <button type="submit" class="cfg-save">Guardar</button>
       </form>`;
+
+    document.getElementById('fMapbox').addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const btn = ev.target.querySelector('button'); btn.disabled = true;
+      const r = await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mapbox_token: document.getElementById('cfg_mapbox_token').value.trim() }) });
+      btn.disabled = false;
+      toast(r ? 'Token de Mapbox guardado' : 'Error al guardar', r ? 'ok' : 'err');
+    });
 
     document.getElementById('fMetaAds').addEventListener('submit', async ev => {
       ev.preventDefault();

@@ -141,7 +141,16 @@ function autoScoreLead(fromPhone, entryCtx) {
     nlp.analyzeLead(history, lead.nombre, lead.etiqueta).then(a => {
       const p = Number(a && a.closeProbability) || 0;
       // El .then corre fuera del run del entry — re-entrar al tenant del negocio.
-      const save = () => store.setLeadTemperatura(lead.id, p >= 66 ? 'caliente' : p >= 33 ? 'tibio' : 'frio');
+      const temp = p >= 66 ? 'caliente' : p >= 33 ? 'tibio' : 'frio';
+      const save = () => {
+        store.setLeadTemperatura(lead.id, temp);
+        // Un lead que la IA califica como caliente merece reacción inmediata: este
+        // disparador permite avisar al asesor, subir prioridad o crear la tarea sola.
+        if (temp === 'caliente') {
+          try { require('../services/assigner').triggerWorkflow('lead:caliente', lead.id, lead.last_message || '', { probabilidad: p }); }
+          catch (e) { console.error('[AUTOSCORE] trigger lead:caliente:', e.message); }
+        }
+      };
       if (entryCtx) adapter.tenantContext.run(entryCtx, save); else save();
     }).catch(e => console.error('[AUTOSCORE]', e.message));
   } catch (e) { console.error('[AUTOSCORE]', e.message); }
@@ -324,6 +333,14 @@ function processEntry(entry, entryCtx) {
           if (msg.id && btn.payload) {
             try { store.setMessageButtonPayload(msg.id, btn.payload); } catch (e) { console.error('[Webhook] setMessageButtonPayload:', e.message); }
           }
+          // Disparador propio: permite automatizar por BOTÓN exacto ("Sigo interesado"
+          // → marcar caliente y crear tarea), sin depender del texto libre del mensaje.
+          try {
+            const leadBtn = store.getLeadByCustomerPhone(fromPhone);
+            if (leadBtn) {
+              require('../services/assigner').triggerWorkflow('button:clicked', leadBtn.id, btn.texto, { buttonPayload: btn.payload || '' });
+            }
+          } catch (e) { console.error('[Webhook] trigger button:clicked:', e.message); }
         }));
         // Pulsar un botón es responder: corta la cadencia y cuenta para la calificación.
         try { const lcb = store.getLeadByCustomerPhone(fromPhone); if (lcb && lcb.cadencia_activa) store.stopCadencia(lcb.id); } catch (e) {}

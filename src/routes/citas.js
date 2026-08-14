@@ -31,6 +31,12 @@ router.post('/', (req, res) => {
     if (!vId) vId = lead.assigned_to_id || null;
   }
   const cita = store.createCita({ leadId: leadId || null, vendedorId: vId, titulo: String(titulo).trim(), fecha, notas });
+  // Disparador de automatizaciones: agendar una cita es uno de los momentos clave del
+  // pipeline (confirmar por WhatsApp, mover la etapa, avisar al jefe).
+  if (leadId) {
+    try { require('../services/assigner').triggerWorkflow('cita:creada', leadId, String(titulo).trim(), { citaId: cita && cita.id, fecha }); }
+    catch (e) { console.error('[CITAS] trigger cita:creada:', e.message); }
+  }
   res.json({ ok: true, cita });
 });
 

@@ -103,20 +103,58 @@
     ['lead:tag_changed', '🏷️ Cambia la etiqueta de un lead'],
     ['schedule', '⏰ Hora programada'],
     ['lead:inactive', '😴 Lead inactivo (sin responder X horas)'],
+    ['button:clicked', '👆 El cliente pulsa un botón de plantilla'],
+    ['cita:creada', '📅 Se agenda una cita'],
+    ['tarea:vencida', '⏳ Una tarea se vence'],
+    ['lead:caliente', '🔥 Un lead se califica como caliente'],
+    ['campana:finalizada', '📢 Termina una campaña masiva'],
   ];
   const ACTIONS = [
     ['notify_admin', '🔔 Notificar al admin'],
+    ['notificar_asesor', '📲 Notificar al asesor del lead'],
     ['send_message', '💬 Responder al cliente'],
     ['tag', '🏷️ Poner etiqueta'],
     ['send_template', '📋 Enviar plantilla'],
     ['assign', '👤 Asignar asesor (round-robin)'],
+    ['reasignar', '🔄 Reasignar a un asesor concreto'],
+    ['set_etapa', '📊 Mover de etapa del pipeline'],
+    ['crear_tarea', '✅ Crear tarea para el asesor'],
+    ['crear_cita', '📅 Agendar una cita'],
+    ['nota_interna', '📝 Agregar nota interna'],
+    ['marcar_temperatura', '🔥 Marcar temperatura del lead'],
+    ['iniciar_cadencia', '🔁 Iniciar cadencia de seguimiento'],
+    ['detener_cadencia', '⏹️ Detener cadencia de seguimiento'],
+    ['posponer', '😴 Posponer el chat'],
+    ['cerrar_lead', '📦 Archivar el lead'],
+    ['reabrir_lead', '♻️ Reabrir el lead'],
     ['webhook', '🔗 Llamar webhook externo'],
   ];
-  const CAMPOS = [['body','Texto del mensaje'],['channel','Canal'],['customer_name','Nombre del cliente'],['etiqueta','Etiqueta'],['status','Estado'],['priority','Prioridad'],['zona','Zona del lead']];
+  const CAMPOS = [['body','Texto del mensaje'],['button_payload','Botón pulsado (id)'],['channel','Canal'],['customer_name','Nombre del cliente'],['etiqueta','Etiqueta'],['status','Estado'],['priority','Prioridad'],['zona','Zona del lead'],['proyecto','Proyecto'],['ciudad','Ciudad'],['origen','Origen del lead'],['presupuesto','Presupuesto'],['temperatura','Temperatura'],['asesor','Asesor asignado']];
   const OPERADORES = [['contains','contiene'],['equals','es igual a'],['not_equals','es distinto de'],['in','está en (lista)'],['regex','coincide (regex)']];
   function labelFor(list, v) { const f = list.find(x => x[0] === v); return f ? f[1] : v; }
 
+  // Parámetros que pide cada acción, declarativo: tipo 'texto' | 'num' | 'select'.
+  // Todo lo que no aparezca aquí es una acción sin parámetros.
+  const ETAPAS = [['sin_clasificar','Sin clasificar'],['interesado','Interesado'],['cita','Cita'],['negociacion','Negociación'],['vendido','Vendido'],['perdido','Perdido']];
+  const PARAMS_ACCION = {
+    notify_admin: [{ k:'message', label:'Mensaje de la notificación', tipo:'texto' }],
+    notificar_asesor: [{ k:'message', label:'Mensaje (admite {{cliente}}, {{proyecto}})', tipo:'texto' }, { k:'vendedorId', label:'Asesor (vacío = el del lead)', tipo:'asesor' }],
+    send_message: [{ k:'text', label:'Texto a enviar', tipo:'texto' }],
+    tag: [{ k:'value', label:'Etiqueta', tipo:'select', opciones:ETAPAS }],
+    send_template: [{ k:'name', label:'Nombre de la plantilla', tipo:'texto' }],
+    webhook: [{ k:'url', label:'URL del webhook', tipo:'texto' }],
+    reasignar: [{ k:'vendedorId', label:'Asesor destino', tipo:'asesor' }],
+    set_etapa: [{ k:'etiqueta', label:'Nueva etapa', tipo:'select', opciones:ETAPAS }],
+    crear_tarea: [{ k:'texto', label:'Texto de la tarea (admite {{cliente}})', tipo:'texto' }, { k:'enHoras', label:'Vence en (horas)', tipo:'num', def:24 }, { k:'vendedorId', label:'Asesor (vacío = el del lead)', tipo:'asesor' }],
+    crear_cita: [{ k:'titulo', label:'Título de la cita', tipo:'texto' }, { k:'enHoras', label:'Dentro de (horas)', tipo:'num', def:24 }, { k:'notas', label:'Notas', tipo:'texto' }],
+    nota_interna: [{ k:'texto', label:'Nota (admite {{cliente}})', tipo:'texto' }],
+    marcar_temperatura: [{ k:'temperatura', label:'Temperatura', tipo:'select', opciones:[['caliente','Caliente'],['tibio','Tibio'],['frio','Frío']] }],
+    posponer: [{ k:'enHoras', label:'Posponer (horas)', tipo:'num', def:24 }],
+  };
+
   // ═══════════════════ Estado ═══════════════════
+  let equipo = [];
+  let filtroDueno = '';
   let flujos = [];
   let cadencia = [], cadenciaAuto = false;
   let route = 'list';
@@ -129,6 +167,10 @@
   async function cargar() {
     const r = await api('/api/workflows');
     flujos = Array.isArray(r) ? r : [];
+    // Las acciones nuevas (reasignar, crear tarea/cita, notificar) eligen un asesor
+    // concreto: se listan por nombre en vez de pedir el id a mano.
+    const vs = await api('/api/vendedores');
+    equipo = Array.isArray(vs) ? vs : [];
     const c = await api('/api/cadencia/pasos');
     cadencia = Array.isArray(c) ? c : [];
     const cc = await api('/api/cadencia/config');
@@ -142,6 +184,14 @@
   }
 
   // ═══════════════════ Vista: lista de flujos ═══════════════════
+  // El filtro por dueño separa los flujos globales de la empresa de los que cada asesor
+  // creó para sí mismo — el registro por asesor que necesita la administración.
+  function flujosVisibles() {
+    if (!filtroDueno) return flujos;
+    if (filtroDueno === 'empresa') return flujos.filter(f => !f.vendedor_id);
+    return flujos.filter(f => String(f.vendedor_id) === String(filtroDueno));
+  }
+
   function renderList() {
     const activos = flujos.filter(f => f.activo).length;
     ctx.content.innerHTML = `<div class="os-content__max">
@@ -152,14 +202,23 @@
       </div>
 
       <div class="card rise rise-2" style="overflow:hidden">
-        <div class="card--pad" style="padding-bottom:var(--s2)"><div class="t-h3">Todos los flujos</div></div>
+        <div class="u-between card--pad" style="padding-bottom:var(--s2);flex-wrap:wrap;gap:8px">
+          <div><div class="t-h3">Todos los flujos</div>
+          <div class="t-dim3" style="font-size:12px">Incluye las automatizaciones que cada asesor crea desde su panel — solo corren sobre sus propios chats.</div></div>
+          <select class="input" id="filtroDueno" style="width:auto">
+            <option value="">Todos los dueños</option>
+            <option value="empresa">Solo de la empresa</option>
+            ${equipo.map(v => `<option value="${v.id}">${esc(v.nombre)}</option>`).join('')}
+          </select>
+        </div>
         <div class="card--pad" style="padding-top:0">
-          ${flujos.length ? flujos.map(f => `
+          ${flujosVisibles().length ? flujosVisibles().map(f => `
             <div class="wf-card" data-open="${f.id}">
               <div class="wf-card__top">
                 <div>
                   <div class="wf-card__name">${esc(f.nombre)}</div>
-                  <div class="wf-card__meta">${esc(labelFor(TRIGGERS, f.trigger_event) || f.trigger_event || '—')}</div>
+                  <div class="wf-card__meta">${esc(labelFor(TRIGGERS, f.trigger_event) || f.trigger_event || '—')}
+                    · ${f.vendedor_id ? '👤 ' + esc(f.vendedor_nombre || 'asesor #' + f.vendedor_id) : '🏢 Empresa'}</div>
                 </div>
                 <span class="badge badge--${f.activo ? 'green' : 'mute'}">${f.activo ? 'Activo' : 'Pausado'}</span>
               </div>
@@ -169,7 +228,7 @@
                 <button class="btn btn--quiet btn--sm" data-logs="${f.id}">Ejecuciones</button>
                 <button class="btn btn--quiet btn--sm" data-del="${f.id}" style="color:var(--red)">Borrar</button>
               </div>
-            </div>`).join('') : `<div class="t-dim3" style="font-size:13px">Aún no hay flujos. Crea el primero con "Nuevo flujo" — por ejemplo: si un lead lleva 30 minutos sin respuesta, avisar al admin.</div>`}
+            </div>`).join('') : `<div class="t-dim3" style="font-size:13px">${filtroDueno ? 'Nadie tiene flujos con ese filtro.' : 'Aún no hay flujos. Crea el primero con "Nuevo flujo" — por ejemplo: si un lead lleva 30 minutos sin respuesta, avisar al admin.'}</div>`}
         </div>
       </div>
 
@@ -191,6 +250,11 @@
     </div>`;
 
     document.getElementById('new').onclick = () => openEditor(null);
+    const selDueno = document.getElementById('filtroDueno');
+    if (selDueno) {
+      selDueno.value = filtroDueno;
+      selDueno.addEventListener('change', () => { filtroDueno = selDueno.value; renderList(); });
+    }
     ctx.content.querySelectorAll('[data-open], [data-edit]').forEach(el => el.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = el.dataset.open || el.dataset.edit;
@@ -450,11 +514,21 @@
     if (node.type === 'delay') return `${node.params.amount || 0} ${{minutes:'minuto(s)',hours:'hora(s)',days:'día(s)'}[node.params.unit] || node.params.unit}`;
     if (node.type === 'trigger' && node.subtype === 'schedule') return node.params.at ? `Todos los días a las ${node.params.at}` : 'Sin hora configurada';
     if (node.type === 'trigger' && node.subtype === 'lead:inactive') return `${node.params.hours || 24} horas sin responder`;
-    if (node.subtype === 'notify_admin') return esc(node.params.message || '');
-    if (node.subtype === 'send_message') return esc(node.params.text || '');
-    if (node.subtype === 'tag') return esc(node.params.value || '');
-    if (node.subtype === 'send_template') return esc(node.params.name || '');
-    if (node.subtype === 'webhook') return esc(node.params.url || '');
+    // Resumen genérico: el primer parámetro configurado de la acción, resolviendo el
+    // id del asesor a su nombre para que la tarjeta se lea sin decodificar números.
+    const campos = PARAMS_ACCION[node.subtype];
+    if (campos) {
+      for (const c of campos) {
+        const v = node.params[c.k];
+        if (v === undefined || v === '' || v === null) continue;
+        if (c.tipo === 'asesor') {
+          const asesor = equipo.find(x => String(x.id) === String(v));
+          return esc(asesor ? '→ ' + asesor.nombre : '');
+        }
+        if (c.tipo === 'num') return esc(`${v} h`);
+        return esc(String(v).slice(0, 60));
+      }
+    }
     return '';
   }
 
@@ -548,9 +622,17 @@
       fields += `<div class="wf-field"><label>Unidad</label><select id="wfP_unit"><option value="minutes" ${node.params.unit==='minutes'?'selected':''}>Minutos</option><option value="hours" ${node.params.unit==='hours'?'selected':''}>Horas</option><option value="days" ${node.params.unit==='days'?'selected':''}>Días</option></select></div>`;
     } else if (node.type === 'action') {
       fields += `<div class="wf-field"><label>Acción</label><select id="wfNodeSubtype">${ACTIONS.map(([v,l]) => `<option value="${v}" ${node.subtype===v?'selected':''}>${l}</option>`).join('')}</select></div>`;
-      const paramField = { notify_admin: ['message','Mensaje de la notificación'], send_message: ['text','Texto a enviar'], tag: ['value','Etiqueta (ej: interesado)'], send_template: ['name','Nombre de la plantilla'], webhook: ['url','URL del webhook'] }[node.subtype];
-      if (paramField) fields += `<div class="wf-field"><label>${paramField[1]}</label><textarea id="wfP_param" rows="3">${esc(node.params[paramField[0]] || '')}</textarea></div>`;
-      else if (node.subtype === 'assign') fields += `<div class="t-dim3" style="font-size:11.5px">Asigna al siguiente asesor disponible por round-robin. Sin parámetros.</div>`;
+      const campos = PARAMS_ACCION[node.subtype];
+      if (campos) {
+        fields += campos.map(c => {
+          const val = node.params[c.k] != null ? node.params[c.k] : (c.def != null ? c.def : '');
+          if (c.tipo === 'num') return `<div class="wf-field"><label>${c.label}</label><input type="number" min="1" class="wfP_campo" data-k="${c.k}" data-tipo="num" value="${esc(String(val))}"></div>`;
+          if (c.tipo === 'asesor') return `<div class="wf-field"><label>${c.label}</label><select class="wfP_campo" data-k="${c.k}" data-tipo="num"><option value="">— el asesor del lead —</option>${equipo.map(v => `<option value="${v.id}" ${String(val)===String(v.id)?'selected':''}>${esc(v.nombre)}</option>`).join('')}</select></div>`;
+          if (c.tipo === 'select') return `<div class="wf-field"><label>${c.label}</label><select class="wfP_campo" data-k="${c.k}">${c.opciones.map(([ov,ol]) => `<option value="${ov}" ${String(val)===ov?'selected':''}>${ol}</option>`).join('')}</select></div>`;
+          return `<div class="wf-field"><label>${c.label}</label><textarea class="wfP_campo" data-k="${c.k}" rows="3">${esc(String(val))}</textarea></div>`;
+        }).join('');
+      } else if (node.subtype === 'assign') fields += `<div class="t-dim3" style="font-size:11.5px">Asigna al siguiente asesor disponible por round-robin. Sin parámetros.</div>`;
+      else fields += `<div class="t-dim3" style="font-size:11.5px">Esta acción no necesita parámetros: trabaja sobre el lead del disparador.</div>`;
     }
 
     box.innerHTML = `<h4>${node.type === 'trigger' ? 'Disparador' : node.type === 'condition' ? 'Condición' : node.type === 'delay' ? 'Espera' : 'Acción'}</h4>
@@ -564,10 +646,13 @@
     const amount = document.getElementById('wfP_amount'); if (amount) amount.addEventListener('input', () => { node.params.amount = Number(amount.value); renderCanvas(); });
     const unit = document.getElementById('wfP_unit'); if (unit) unit.addEventListener('change', () => { node.params.unit = unit.value; renderCanvas(); });
     const logic = document.getElementById('wfP_logic'); if (logic) logic.addEventListener('change', () => { node.params.logic = logic.value; renderCanvas(); });
-    const param = document.getElementById('wfP_param');
-    if (param) param.addEventListener('input', () => {
-      const key = { notify_admin:'message', send_message:'text', tag:'value', send_template:'name', webhook:'url' }[node.subtype];
-      if (key) { node.params[key] = param.value; renderCanvas(); }
+    box.querySelectorAll('.wfP_campo').forEach(el => {
+      const evento = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(evento, () => {
+        const v = el.value;
+        node.params[el.dataset.k] = el.dataset.tipo === 'num' ? (v === '' ? undefined : Number(v)) : v;
+        renderCanvas();
+      });
     });
     const addCond = document.getElementById('wfAddCond');
     if (addCond) addCond.addEventListener('click', () => { node.params.conditions = node.params.conditions || []; node.params.conditions.push({ field:'body', operator:'contains', value:'' }); renderInspector(); renderCanvas(); });

@@ -218,6 +218,7 @@
           <div class="u-row u-gap1 u-align-center">
             <span class="badge badge--${et.cls}">${et.label}</span>
             <span class="badge badge--${c.status === 'cerrado' ? 'mute' : 'green'}">${esc(c.status || 'nuevo')}</span>
+            <button class="btn btn--ghost btn--sm" id="btnReasignar">Reasignar ↻</button>
             ${c.status !== 'cerrado' ? `<button class="btn btn--danger btn--sm" id="btnCerrar">Archivar</button>` : ''}
           </div>
         </div>
@@ -249,6 +250,26 @@
         btn.disabled = false; btn.textContent = 'Archivar';
         SPS.toast('No se pudo archivar', 'err');
       }
+    });
+
+    // Reasignar: el jefe mueve el chat a quien quiera, sin restricción de rol ni de
+    // estado del asesor (el backend acepta cualquiera y reabre el lead si estaba cerrado).
+    document.getElementById('btnReasignar')?.addEventListener('click', async () => {
+      const leadId = c._type === 'lead' ? c.id : c.lead_id;
+      if (!leadId) { SPS.toast('Esta conversación no tiene lead asociado', 'err'); return; }
+      const equipo = (await SPS.api('/api/vendedores')) || [];
+      const candidatos = equipo.filter(v => Number(v.id) !== Number(c.assigned_to_id));
+      if (!candidatos.length) { SPS.toast('No hay nadie más a quien asignar', 'err'); return; }
+      const listado = candidatos.map((v, i) => `${i + 1}. ${v.nombre}${String(v.estado) !== 'activo' ? ' (suspendido)' : ''}`).join('\n');
+      const eleccion = prompt(`Reasignar "${c.customer_name || 'Cliente'}" a:\n\n${listado}\n\nEscribe el número:`);
+      if (!eleccion) return;
+      const elegido = candidatos[parseInt(eleccion, 10) - 1];
+      if (!elegido) { SPS.toast('Opción inválida', 'err'); return; }
+      const r = await SPS.api(`/api/supervisor/reasignar/${leadId}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vendedorId: elegido.id }),
+      });
+      if (r && r.ok) { SPS.toast(`Reasignado a ${elegido.nombre}`, 'ok'); actual = null; await cargar(); }
+      else SPS.toast((r && (r.detalle || r.error)) || 'No se pudo reasignar', 'err');
     });
 
     // Botón volver (móvil)

@@ -208,7 +208,8 @@
     // entero ya expulsa a cualquiera que no sea admin, sin excepciones).
     const isAdmin = me.rol === 'admin';
     if (!isAdmin) {
-      const destino = me.rol === 'supervisor' ? '/supervisor/' : '/m/';
+      // El jefe también tiene casa propia: el Supervisor Center, no el panel del asesor.
+      const destino = (me.rol === 'supervisor' || me.rol === 'jefe') ? '/supervisor/' : '/m/';
       location.replace(destino);
       return new Promise(() => {});
     }

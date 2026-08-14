@@ -199,6 +199,23 @@ async function sendOneWithRetry(to, tpl, lead, vendedor, overrides) {
   throw lastErr;
 }
 
+// Dispara 'campana:finalizada' una vez por cada lead al que sí se le entregó el mensaje.
+// Los que fallaron quedan fuera a propósito: encadenar seguimiento sobre un envío que
+// nunca llegó produciría tareas y etiquetas basadas en algo que el cliente no vio.
+function dispararCampanaFinalizada(campaignId, nombreCampana) {
+  try {
+    const { triggerWorkflow } = require('./assigner');
+    const alcanzados = store.getCampaignRecipients(campaignId)
+      .filter(r => ['sent', 'delivered', 'read'].includes(String(r.estado)) && r.lead_id);
+    for (const rec of alcanzados) {
+      triggerWorkflow('campana:finalizada', rec.lead_id, nombreCampana || '', { campaignId, estadoEnvio: rec.estado });
+    }
+    if (alcanzados.length) console.log(`[Campaign ${campaignId}] Disparado campana:finalizada para ${alcanzados.length} lead(s).`);
+  } catch (e) {
+    console.error(`[Campaign ${campaignId}] error disparando campana:finalizada:`, e.message);
+  }
+}
+
 // Procesa la cola de una campaña. Se lanza en segundo plano (no se espera desde el
 // endpoint HTTP) — puede tardar minutos/horas según el tamaño y el rate limit.
 async function runCampaign(campaignId) {
@@ -280,7 +297,11 @@ async function runCampaign(campaignId) {
     const finalState = store.getCampaignById(campaignId);
     if (finalState && finalState.estado === 'running') {
       const remaining = store.getCampaignRecipients(campaignId, 'queued');
-      store.updateCampaignEstado(campaignId, remaining.length ? 'paused' : 'done');
+      const terminada = !remaining.length;
+      store.updateCampaignEstado(campaignId, terminada ? 'done' : 'paused');
+      // Al cerrar la campaña, cada lead alcanzado puede encadenar seguimiento automático
+      // (etiquetar, crear tarea al asesor, iniciar cadencia) sin trabajo manual.
+      if (terminada) dispararCampanaFinalizada(campaignId, campaign.nombre);
     }
     store.recalcCampaignStats(campaignId);
   } catch (e) {

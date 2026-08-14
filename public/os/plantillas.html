@@ -92,7 +92,7 @@
   if (!ctx) return;
 
   // ===== Estado =====
-  let templates = [], catalog = [], cfg = {};
+  let templates = [], catalog = [], cfg = {}, enRevision = [];
   let filtro = { q: '', estado: 'todos', categoria: '', idioma: '' };
 
   const DEFAULT_EJEMPLOS = {
@@ -109,8 +109,14 @@
 
   // ===== Carga =====
   async function cargar() {
-    const [t, c, config] = await Promise.all([api('/api/wa-templates?estado=todos'), api('/api/template-vars'), api('/api/config')]);
+    const [t, c, config, rev] = await Promise.all([
+      api('/api/wa-templates?estado=todos'), api('/api/template-vars'), api('/api/config'),
+      api('/api/wa-templates/revision'),
+    ]);
     templates = t || []; catalog = c || []; cfg = config || {};
+    // Propuestas de los asesores esperando el visto bueno interno — todavía no salieron
+    // a Meta, así que no cuentan como plantillas del catálogo.
+    enRevision = Array.isArray(rev) ? rev : [];
   }
 
   function renderPage() {
@@ -123,10 +129,12 @@
           <button class="pl-btn" id="btnNueva">+ Nueva plantilla</button>
           <button class="pl-btn pl-btn--ghost" id="btnSync">Sincronizar desde Meta</button>
         </div>
+        <div id="plRevision"></div>
         <div class="pl-chips" id="plChips" style="margin-bottom:16px"></div>
         <div id="plList"></div>
       </div>
       ${modalHtml()}`;
+    renderRevision();
     wireToolbar();
     wireModalStatic();
     renderChips();
@@ -142,6 +150,51 @@
     let componentes = []; try { componentes = JSON.parse(t.componentes || '[]'); } catch (e) {}
     const body = (componentes || []).find(c => c.type === 'BODY');
     return body && body.text ? body.text : '(sin cuerpo)';
+  }
+
+  // Bandeja de aprobación interna: lo que un asesor propuso y todavía no se manda a
+  // Meta. Aprobar la crea en Meta de verdad; devolver la regresa al asesor con el
+  // comentario, sin gastar una revisión de Meta ni tocar la calidad del número.
+  function renderRevision() {
+    const box = document.getElementById('plRevision');
+    if (!box) return;
+    if (!enRevision.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="card" style="margin-bottom:16px;border-color:rgba(200,164,90,.4)">
+      <div class="card--pad" style="padding-bottom:8px">
+        <div class="t-h3">Propuestas de asesores (${enRevision.length})</div>
+        <div class="t-dim3" style="font-size:12px">Se envían a Meta solo cuando las apruebas aquí.</div>
+      </div>
+      <div class="card--pad" style="padding-top:0">
+        ${enRevision.map(t => {
+          let cuerpo = ''; try { const s = JSON.parse(t.spec_json || '{}'); cuerpo = (s.body && s.body.texto) || ''; } catch (e) {}
+          return `<div style="border:1px solid var(--border-soft);border-radius:12px;padding:12px;margin-bottom:10px">
+            <div class="u-between" style="gap:8px;flex-wrap:wrap">
+              <div><b>${esc(t.nombre)}</b> <span class="t-dim3" style="font-size:12px">· ${esc(t.autor_nombre || 'asesor')} · ${esc(categoriaLabel(t.categoria))}</span></div>
+              <span class="badge badge--${t.estado === 'CORRECCION' ? 'mute' : 'gold'}">${t.estado === 'CORRECCION' ? 'Devuelta, esperando cambios' : 'Por revisar'}</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-2);margin-top:8px;white-space:pre-wrap">${esc(cuerpo)}</div>
+            <div class="u-row u-gap2" style="margin-top:10px">
+              <button class="pl-btn pl-btn--sm" data-aprobar="${t.id}">Aprobar y enviar a Meta</button>
+              <button class="pl-btn pl-btn--ghost pl-btn--sm" data-devolver="${t.id}">Pedir cambios</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div></div>`;
+
+    box.querySelectorAll('[data-aprobar]').forEach(b => b.onclick = async () => {
+      if (!confirm('¿Aprobar y enviar esta plantilla a Meta? Después solo Meta decide.')) return;
+      b.disabled = true;
+      const r = await api('/api/wa-templates/' + b.dataset.aprobar + '/aprobar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (r && r.ok) { toast('Enviada a Meta', 'ok'); await cargar(); renderPage(); }
+      else { b.disabled = false; toast('No se pudo: ' + ((r && (r.detalle || r.error)) || 'error'), 'err'); }
+    });
+    box.querySelectorAll('[data-devolver]').forEach(b => b.onclick = async () => {
+      const motivo = prompt('¿Qué debe corregir el asesor?');
+      if (!motivo) return;
+      const r = await api('/api/wa-templates/' + b.dataset.devolver + '/devolver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo }) });
+      if (r && r.ok) { toast('Devuelta al asesor', 'ok'); await cargar(); renderPage(); }
+      else toast('No se pudo devolver', 'err');
+    });
   }
 
   function renderChips() {
