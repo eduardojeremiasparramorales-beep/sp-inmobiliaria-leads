@@ -133,6 +133,14 @@
     campaigns = c || []; templates = t || []; segmentOptions = so || { proyectos: [], ciudades: [] }; vendedores = v || [];
   }
 
+  // Por qué se detuvo sola una campaña — antes solo se veía "Pausada" sin explicación.
+  const PAUSA_MOTIVO = {
+    manual: 'pausa manual',
+    daily_limit: 'se alcanzó el límite diario de mensajería de Meta (se reanuda sola mañana)',
+    window: 'fuera de la ventana horaria de envío (se reanuda sola dentro del horario)',
+    error: 'un error inesperado del sistema',
+  };
+
   function badgeClass(estado) { return 'cp-badge cp-badge--' + (estado || 'draft'); }
   function estadoLabel(estado) {
     return { draft: 'Borrador', running: 'Enviando', paused: 'Pausada', done: 'Completada', failed: 'Falló' }[estado] || estado;
@@ -151,10 +159,12 @@
             ${c.estado === 'draft' || c.estado === 'paused' ? `<button class="cp-btn" style="height:30px;padding:0 14px;font-size:12px" data-start="${c.id}">${c.estado === 'paused' ? 'Reanudar' : 'Iniciar'}</button>` : ''}
             ${c.estado === 'running' ? `<button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-pause="${c.id}">Pausar</button>` : ''}
             ${c.estado === 'draft' ? `<button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-del="${c.id}">Eliminar</button>` : ''}
+            ${c.estado !== 'done' ? `<button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-test="${c.id}">Probar</button>` : ''}
             <button class="cp-btn cp-btn--ghost" style="height:30px;padding:0 14px;font-size:12px" data-view="${c.id}">Ver</button>
           </div>
         </div>
         <div style="font-size:12px;color:var(--text-3)">Plantilla: ${esc(tpl ? tpl.nombre : '?')}</div>
+        ${c.estado === 'paused' && c.pause_reason ? `<div style="font-size:12px;color:#e0a02a;margin-top:2px">⏸ Pausada por: ${esc(PAUSA_MOTIVO[c.pause_reason] || c.pause_reason)}</div>` : ''}
         <div class="cp-stats">
           <span>Destinatarios: <b>${c.total_destinatarios}</b></span>
           <span>Enviados: <b>${c.total_enviados}</b></span>
@@ -167,9 +177,28 @@
     }).join('');
 
     box.querySelectorAll('[data-start]').forEach(b => b.addEventListener('click', async () => {
-      const r = await api('/api/campaigns/' + b.dataset.start + '/start', { method: 'POST' });
+      const id = b.dataset.start;
+      // Chequeo previo: plantilla no aprobada o variables vacías hacen que Meta rechace
+      // TODO el lote con un 400. Se avisa antes de quemar destinatarios.
+      const pf = await api('/api/campaigns/' + id + '/preflight');
+      if (pf && !pf.ok) {
+        const detalle = (pf.errores || []).map(e => '• ' + e).join('\n');
+        if (!confirm('Esta campaña tiene problemas que Meta va a rechazar:\n\n' + detalle + '\n\n¿Enviar de todas formas?')) return;
+      } else if (pf && pf.avisos && pf.avisos.length) {
+        if (!confirm('Antes de enviar:\n\n' + pf.avisos.map(a => '• ' + a).join('\n') + '\n\n¿Continuar?')) return;
+      }
+      const r = await api('/api/campaigns/' + id + '/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ forzar: true }) });
       if (r && r.ok) { toast('Campaña iniciada', 'ok'); await cargarWhatsAppData(); renderCampaignList(); }
-      else toast('Error: ' + ((r && r.detalle) || 'no se pudo iniciar'), 'err');
+      else toast('Error: ' + ((r && (r.detalle || (r.errores || []).join(' '))) || 'no se pudo iniciar'), 'err');
+    }));
+    box.querySelectorAll('[data-test]').forEach(b => b.addEventListener('click', async () => {
+      const tel = prompt('Número de prueba (con o sin +57):');
+      if (!tel) return;
+      const r = await api('/api/campaigns/' + b.dataset.test + '/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telefono: tel }),
+      });
+      if (r && r.ok) toast('Prueba enviada a ' + tel, 'ok');
+      else toast('No se envió: ' + ((r && r.detalle) || 'error desconocido'), 'err');
     }));
     box.querySelectorAll('[data-pause]').forEach(b => b.addEventListener('click', async () => {
       const r = await api('/api/campaigns/' + b.dataset.pause + '/pause', { method: 'POST' });

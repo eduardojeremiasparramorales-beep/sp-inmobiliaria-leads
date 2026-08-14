@@ -156,6 +156,15 @@ class WhatsAppAdapter extends ChannelAdapter {
           type = 'location';
           const loc = msg.location || {};
           text = JSON.stringify({ latitude: loc.latitude, longitude: loc.longitude, name: loc.name || '', address: loc.address || '' });
+        } else if (msg.type === 'button' && msg.button) {
+          // Quick-reply de plantilla: sin esta rama caía al default con text=null y la
+          // respuesta del cliente se perdía (mismo hueco que ya se cerró en webhook/messages.js).
+          type = 'text';
+          text = msg.button.text || msg.button.payload || null;
+        } else if (msg.type === 'interactive' && msg.interactive) {
+          type = 'text';
+          const r = msg.interactive.button_reply || msg.interactive.list_reply || {};
+          text = r.title || r.id || null;
         } else if (MEDIA_TYPES.includes(msg.type)) {
           type = msg.type;
           const mediaObj = msg[msg.type] || {};

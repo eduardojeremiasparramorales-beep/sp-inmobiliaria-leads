@@ -1501,6 +1501,7 @@ function cardHTML(l,idx){
         <div class="m-card__l3">
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
           <span class="m-meta">${I(SVG.facebook,11)} ${l.origen||'—'}</span>
+          ${Number(l.visto_sin_responder||0)&&!unread?`<span class="m-meta" style="color:var(--gold)" title="El cliente leyó tu último mensaje y no ha contestado">👀 Te dejó en visto</span>`:''}
         </div>
         <div class="m-card__progress">
           <span class="sp-pbar"><i style="width:${pct}%"></i></span>
@@ -4341,13 +4342,16 @@ function _superRenderKPIs(){
 }
 
 function _superInbConversacion(a){ var n=a.customer_name||'Cliente'; var ini=initials(n);
-  var col=avatarColor(n); var ms = (a.last_message||'').slice(0,60); var as=a.assigned_to_name||'Sin asesor';
+  // El backend emite assigned_to_nombre (ver store.getUnifiedConversations); leer
+  // assigned_to_name dejaba TODAS las filas en "Sin asesor" aunque el chat sí lo mostrara.
+  var col=avatarColor(n); var ms = (a.last_message||'').slice(0,60); var as=a.assigned_to_nombre||a.assigned_to_name||'Sin asesor';
   return `<div class="super-card" data-cid="${a.id}" data-lid="${a.lead_id||''}" style="display:flex;align-items:center;gap:8px;padding:12px;border-bottom:0.5px solid var(--border);cursor:pointer">
     <div style="width:42px;height:42px;border-radius:13px;display:grid;place-items:center;color:#fff;font-weight:600;font-size:13px;position:relative;overflow:hidden;background:${col};min-width:42px"><span>${ini}</span></div>
     <div style="flex:1;min-width:0">
       <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">${esc(n)}</b><span style="font-size:11px;color:#6D6D6D">${soloHora(a.updated_at||a.created_at)}</span></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px"><span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-2)">${esc(ms)}</span><span style="font-size:10px;color:#C8A45A">${esc(as)}</span></div>
       ${a.etiqueta?`<span style="display:inline-block;margin-top:3px;font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(200,164,90,.13);color:#C8A45A;text-transform:uppercase;letter-spacing:.04em">${(ETQ[a.etiqueta]||{t:a.etiqueta}).t}</span>`:''}
+      ${Number(a.visto_sin_responder||0)&&!Number(a.unread_count||0)?`<span style="display:inline-block;margin-top:3px;margin-left:4px;font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(200,164,90,.13);color:#C8A45A">👀 EN VISTO</span>`:''}
     </div>
   </div>`;
 }
@@ -4497,21 +4501,54 @@ function abSuperChat(conv){
     // Load available asesores and show selector
     try{
     const vend = await api('/api/vendedores');
-    var opts = (vend||[]).filter(v=>Number(v.id)!==Number(conv.assigned_to_id)).map(v=>`<button class="reasign-opt" data-vid="${v.id}">${esc(v.nombre)}</button>`).join('');
+    // El jefe puede mover el chat a CUALQUIERA: se muestran todos (incluidos suspendidos
+    // y otros jefes) con su estado a la vista, en vez de listar opciones que el backend
+    // rechazaba con un error genérico.
+    var candidatos = (vend||[]).filter(v=>Number(v.id)!==Number(conv.assigned_to_id));
+    function _reasignFila(v){
+      var suspendido = String(v.estado||'') !== 'activo';
+      return `<button class="reasign-opt" data-vid="${v.id}" data-nombre="${esc(String(v.nombre||'').toLowerCase())}"
+        style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;color:var(--text);cursor:pointer;font-family:inherit;font-size:14px">
+        <span style="width:34px;height:34px;border-radius:11px;display:grid;place-items:center;color:#fff;font-weight:600;font-size:12px;background:${avatarColor(v.nombre||'')}">${initials(v.nombre||'')}</span>
+        <span style="flex:1;min-width:0"><b style="display:block">${esc(v.nombre||'Sin nombre')}</b>
+        <span style="font-size:11px;color:${suspendido?'#E5484D':'#6D6D6D'}">${suspendido?'Suspendido':'Activo'}${v.rol&&v.rol!=='vendedor'&&v.rol!=='asesor'?' · '+esc(v.rol):''}</span></span>
+      </button>`;
+    }
+    var opts = candidatos.map(_reasignFila).join('');
     var modal = document.createElement('div');
     modal.id = 'reasignModal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:10001;background:#0A0A0A;padding:8px';
-    modal.innerHTML = `<div style="margin-top:40px"><h3 style="color:#C8A45A;margin-bottom:12px">Reasignar a</h3>${opts||'<p style="color:#6D6D6D">Sin otros asesores</p>'}</div><button id="reasignCancel" style="margin-top:20px;background:var(--bg-3);border:1px solid var(--border);border-radius:10px;padding:10px 20px;color:var(--text-2);cursor:pointer;font-family:inherit">Cancelar</button>`;
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10001;background:#0A0A0A;padding:8px;overflow-y:auto';
+    modal.innerHTML = `<div style="margin-top:40px">
+      <h3 style="color:#C8A45A;margin-bottom:4px">Reasignar a</h3>
+      <p style="color:#6D6D6D;font-size:11px;margin-bottom:12px">${esc(conv.customer_name||'Cliente')} · hoy: ${esc(conv.assigned_to_nombre||'sin asesor')}</p>
+      ${candidatos.length>6?`<input id="reasignBuscar" placeholder="Buscar asesor..." style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;margin-bottom:10px">`:''}
+      <div id="reasignLista">${opts||'<p style="color:#6D6D6D">No hay nadie más a quien asignar</p>'}</div>
+      </div><button id="reasignCancel" style="margin:10px 0 30px;background:var(--bg-3);border:1px solid var(--border);border-radius:10px;padding:10px 20px;color:var(--text-2);cursor:pointer;font-family:inherit">Cancelar</button>`;
     document.body.appendChild(modal);
+    var buscador = document.getElementById('reasignBuscar');
+    if(buscador) buscador.addEventListener('input', function(){
+      var q = this.value.trim().toLowerCase();
+      modal.querySelectorAll('.reasign-opt').forEach(function(b){ b.style.display = (!q || b.dataset.nombre.indexOf(q)>=0) ? 'flex' : 'none'; });
+    });
+    var ERRORES_REASIGNAR = {
+      lead_no_existe: 'Ese chat ya no existe.',
+      vendedor_no_existe: 'Ese asesor ya no existe en el equipo.',
+      mismo_asesor: 'Ese chat ya está asignado a esa persona.',
+    };
     modal.querySelectorAll('.reasign-opt').forEach(br=>br.onclick = async()=>{
       var vid = br.dataset.vid;
+      br.disabled = true; br.style.opacity = '.5';
       var reasignLeadId = isLead ? conv.id : conv.lead_id;
-      var r = await api('/api/supervisor/reasignar/'+reasignLeadId, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendedorId: parseInt(vid)})});
-      if(r&&r.ok){ toast('Lead reasignado'); document.body.removeChild(modal); _superChatAbierto=null; document.body.removeChild(loading); cargarSuperConversaciones(false); }
-      else toast('No se pudo reasignar','err');
+      var r = await apiDetailed('/api/supervisor/reasignar/'+reasignLeadId, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendedorId: parseInt(vid)})});
+      if(r&&r.ok){ toast('Chat reasignado a '+(r.vendedor&&r.vendedor.nombre||'')); document.body.removeChild(modal); _superChatAbierto=null; document.body.removeChild(loading); cargarSuperConversaciones(false); }
+      else {
+        br.disabled = false; br.style.opacity = '1';
+        // Mostrar el motivo real del backend en vez de un "no se pudo" a ciegas.
+        toast((r&&(ERRORES_REASIGNAR[r.error]||r.detalle||r.error))||'No se pudo reasignar','err');
+      }
     });
     document.getElementById('reasignCancel').onclick = ()=> modal.parentNode && modal.parentNode.removeChild(modal);
-    }catch(e){ toast('No se pudo cargar asesores','err'); }
+    }catch(e){ toast('No se pudo cargar el equipo','err'); }
   });
   _superCargarTimeline();
 }

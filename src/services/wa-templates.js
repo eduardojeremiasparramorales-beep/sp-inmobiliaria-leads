@@ -521,7 +521,27 @@ function normalizeMetaError(err) {
   if (codigo === 190) return { ...base, sugerencia: 'El token de WhatsApp expiró o fue revocado. Renueva el token del canal.' };
   if (codigo === 200 && subcodigo === 10) return { ...base, sugerencia: 'El token no tiene el permiso whatsapp_business_management. Genera uno nuevo con ese scope en Meta.' };
   if (codigo === 4 || subcodigo === 80007) return { ...base, sugerencia: 'Meta está limitando las peticiones. Reintenta en unos minutos.' };
+  // Errores de ENVÍO (los que rompen las campañas masivas con un 400 opaco)
+  if (codigo === 132000) return { ...base, sugerencia: 'La cantidad de variables enviadas no coincide con la plantilla aprobada. Revisa el mapeo de variables de la campaña.' };
+  if (codigo === 132001) return { ...base, sugerencia: 'La plantilla no existe con ese nombre/idioma. Sincroniza las plantillas desde Meta.' };
+  if (codigo === 132005) return { ...base, sugerencia: 'Un parámetro excede el largo permitido por la plantilla.' };
+  if (codigo === 132007) return { ...base, sugerencia: 'Una variable va vacía o con formato inválido (Meta rechaza parámetros en blanco). Llena el valor por defecto de esa variable.' };
+  if (codigo === 132012) return { ...base, sugerencia: 'El formato de los parámetros no coincide con la plantilla (posicionales vs nombrados). Refresca la plantilla desde Meta.' };
+  if (codigo === 132015) return { ...base, sugerencia: 'La plantilla está pausada por baja calidad. Espera o crea una nueva.' };
+  if (codigo === 132016) return { ...base, sugerencia: 'La plantilla fue deshabilitada por Meta por calidad. Hay que reemplazarla.' };
+  if (codigo === 131026) return { ...base, sugerencia: 'Ese número no puede recibir el mensaje (no tiene WhatsApp o el número está mal).' };
+  if (codigo === 131047) return { ...base, sugerencia: 'Ventana de 24h cerrada: a ese contacto solo se le puede escribir con plantilla aprobada.' };
+  if (codigo === 131049 || codigo === 131050) return { ...base, sugerencia: 'Meta limitó la entrega de mensajes de marketing a ese usuario. No es un error de configuración.' };
+  if (codigo === 131056) return { ...base, sugerencia: 'Demasiados mensajes al mismo número en poco tiempo. Espacia los envíos.' };
   return base;
+}
+
+// Versión en una línea del error de Meta, para guardar en columnas de detalle
+// (campaign_recipients.error_detail) y mostrarla tal cual en el panel.
+function describeMetaError(err) {
+  const n = normalizeMetaError(err);
+  const cod = n.codigo ? `[${n.codigo}${n.subcodigo ? '/' + n.subcodigo : ''}] ` : '';
+  return `${cod}${n.mensaje}${n.sugerencia ? ' — ' + n.sugerencia : ''}`.slice(0, 400);
 }
 
 // ═══════════════════════ Ciclo de vida (webhook de estado) ═══════════════════════
@@ -631,5 +651,5 @@ module.exports = {
   buildCitaRecordatorioValues, buildCitaRecordatorioComponents, recordatorioTextoPlano,
   slugificarNombre, validateTemplateSpec, buildMetaTemplatePayload,
   createTemplateInMeta, updateTemplateInMeta, deleteTemplateInMeta, fetchTemplateFromMeta,
-  normalizeMetaError, handleTemplateWebhook, refrescarEstadosPendientes,
+  normalizeMetaError, describeMetaError, handleTemplateWebhook, refrescarEstadosPendientes,
 };

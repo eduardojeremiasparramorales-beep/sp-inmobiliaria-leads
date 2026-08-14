@@ -116,7 +116,7 @@ function onLeadNuevo(lead) {
     entidadId: lead.id,
     actorId: lead.assigned_to_id,
     titulo: `Nuevo lead: ${lead.customer_name || lead.customer_phone}`,
-    descripcion: `Lead #${lead.id} asignado a ${lead.assigned_to_name || 'sin asesor'}`,
+    descripcion: `Lead #${lead.id} asignado a ${lead.assigned_to_nombre || lead.assigned_to_name || 'sin asesor'}`,
   });
 }
 
@@ -139,7 +139,7 @@ function onAsesorTardó(lead, minutosEspera) {
     entidad: 'lead',
     entidadId: lead.id,
     actorId: lead.assigned_to_id,
-    actorNombre: lead.assigned_to_name || '',
+    actorNombre: lead.assigned_to_nombre || lead.assigned_to_name || '',
     titulo: `Asesor sin responder — ${minutosEspera} min`,
     descripcion: `${lead.customer_name || 'Cliente'} esperando respuesta hace ${minutosEspera} minutos`,
     datos: { minutos: minutosEspera },

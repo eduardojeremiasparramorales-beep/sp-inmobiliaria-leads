@@ -81,6 +81,105 @@ function telefonoValido(phone) {
   return /^\d{10,15}$/.test(digits);
 }
 
+// Chequeo previo al envío masivo. Meta responde 400 (y el destinatario queda 'failed')
+// cuando la plantilla no está aprobada o cuando alguna variable va en blanco — dos cosas
+// que se pueden detectar ANTES de quemar destinatarios y de dejar la campaña en rojo.
+// Devuelve { ok, errores[], avisos[] }: los errores bloquean el arranque, los avisos no.
+function preflightCampaign(campaignId) {
+  const { resolveTemplateValues } = require('./wa-templates');
+  const errores = [];
+  const avisos = [];
+
+  const campaign = store.getCampaignById(campaignId);
+  if (!campaign) return { ok: false, errores: ['La campaña no existe.'], avisos };
+  const tpl = store.getWATemplateById(campaign.template_id);
+  if (!tpl) return { ok: false, errores: ['La plantilla de la campaña ya no existe. Sincroniza las plantillas desde Meta.'], avisos };
+
+  const estado = String(tpl.estado || '').toUpperCase();
+  if (estado !== 'APPROVED') {
+    errores.push(`La plantilla "${tpl.nombre}" está en estado ${estado || 'desconocido'}, no APPROVED. Meta rechaza cualquier envío con ella.`);
+  }
+  if (String(tpl.calidad || '').toUpperCase() === 'RED') {
+    avisos.push(`La plantilla "${tpl.nombre}" tiene calidad RED: Meta puede pausarla en cualquier momento.`);
+  }
+
+  let baseOverrides = {};
+  try { baseOverrides = JSON.parse(campaign.overrides || '{}'); } catch (e) {}
+
+  const destinatarios = store.getCampaignRecipients(campaignId, 'queued');
+  if (!destinatarios.length) {
+    errores.push('La campaña no tiene destinatarios pendientes.');
+    return { ok: errores.length === 0, errores, avisos };
+  }
+
+  // Se revisan TODOS los destinatarios: una variable que se resuelve bien para el
+  // primero puede quedar vacía para el resto (p. ej. "proyecto" solo en algunos leads).
+  const vaciasPorVar = new Map();
+  let sinTelefono = 0;
+  let optOut = 0;
+  for (const rec of destinatarios) {
+    if (!telefonoValido(rec.phone)) sinTelefono++;
+    if (store.isOptedOut(rec.phone)) optOut++;
+    const lead = rec.lead_id ? store.getLeadById(rec.lead_id) : null;
+    const vendedor = lead && lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+    let recipientVars = {};
+    try { recipientVars = JSON.parse(rec.variables || '{}'); } catch (e) {}
+    const values = resolveTemplateValues(tpl, lead, vendedor, { ...baseOverrides, ...recipientVars });
+    for (const [k, v] of Object.entries(values)) {
+      if (['headerMediaUrl', 'buttonUrlSuffix'].includes(k)) continue;
+      if (String(v ?? '').trim() === '') vaciasPorVar.set(k, (vaciasPorVar.get(k) || 0) + 1);
+    }
+  }
+
+  for (const [variable, cuantos] of vaciasPorVar) {
+    errores.push(`La variable "${variable}" queda vacía en ${cuantos} de ${destinatarios.length} destinatarios. Meta rechaza los parámetros en blanco: dale un valor fijo en la campaña o mapéala a un dato que todos los leads tengan.`);
+  }
+  if (sinTelefono) avisos.push(`${sinTelefono} destinatario(s) tienen un teléfono con formato inválido y se marcarán como fallidos.`);
+  if (optOut) avisos.push(`${optOut} destinatario(s) pidieron baja y serán omitidos.`);
+  if (!dentroDeVentana()) {
+    const { start, end } = getWindow();
+    avisos.push(`Estás fuera de la ventana de envío (${start}h-${end}h): la campaña se pausará y el sistema la reanudará sola dentro del horario.`);
+  }
+
+  return { ok: errores.length === 0, errores, avisos };
+}
+
+// Envía UN mensaje de prueba de la campaña a un número concreto, por el mismo camino
+// exacto que usa el envío masivo (misma plantilla, mismos overrides, misma resolución
+// de variables) — para validar antes de disparar el lote completo.
+async function sendCampaignTest(campaignId, phone) {
+  const campaign = store.getCampaignById(campaignId);
+  if (!campaign) throw new Error('La campaña no existe.');
+  const tpl = store.getWATemplateById(campaign.template_id);
+  if (!tpl) throw new Error('La plantilla de la campaña ya no existe.');
+  if (!telefonoValido(phone)) throw new Error('El número de prueba no tiene un formato válido.');
+
+  let baseOverrides = {};
+  try { baseOverrides = JSON.parse(campaign.overrides || '{}'); } catch (e) {}
+
+  // Se usa el lead real del número si existe, para que la prueba resuelva las mismas
+  // variables que resolvería en el envío de verdad.
+  const lead = store.getLeadByCustomerPhone(phone) || null;
+  const vendedor = lead && lead.assigned_to_id ? store.getVendedorById(lead.assigned_to_id) : null;
+  const { sendResolvedTemplate } = require('./wa-templates');
+  const result = await sendResolvedTemplate(phone, tpl, lead, vendedor, baseOverrides);
+  const wamid = result && result.messages && result.messages[0] && result.messages[0].id;
+  return { wamid: wamid || null, template: tpl.nombre };
+}
+
+// Texto tal como lo ve el cliente (BODY de la plantilla con las variables ya resueltas),
+// para dejarlo en el chat del lead. Si la plantilla no tiene BODY legible, degrada al
+// nombre entre corchetes, que es lo que se guardaba antes.
+function textoCampana(tpl, lead, vendedor, overrides) {
+  try {
+    const { resolveTemplateValues, recordatorioTextoPlano } = require('./wa-templates');
+    const values = resolveTemplateValues(tpl, lead, vendedor, overrides);
+    const texto = recordatorioTextoPlano(tpl, values);
+    if (texto && texto.trim()) return texto;
+  } catch (e) { /* degrada al fallback */ }
+  return `[Campaña: ${tpl.nombre}]`;
+}
+
 async function sendOneWithRetry(to, tpl, lead, vendedor, overrides) {
   const { sendResolvedTemplate } = require('./wa-templates');
   let lastErr;
@@ -160,9 +259,18 @@ async function runCampaign(campaignId) {
         // Se guarda con el mismo wamid que en campaign_recipients: así el status que
         // llegue por webhook (delivered/read/failed) actualiza AMBOS lugares —la
         // conversación del lead en el CRM y el dashboard de la campaña— con un solo evento.
-        if (lead) store.saveMessage(lead.id, 'sistema', rec.phone, `[Campaña: ${tpl.nombre}]`, 'outgoing', null, null, wamid || null, 'sent');
+        // Se guarda el texto REAL que recibió el cliente (variables ya resueltas), no
+        // solo el nombre de la plantilla: si no, el asesor abre el chat y no sabe qué
+        // le dijimos, y no puede darle continuidad a la respuesta.
+        if (lead) store.saveMessage(lead.id, 'sistema', rec.phone, textoCampana(tpl, lead, vendedor, overrides), 'outgoing', null, null, wamid || null, 'sent');
       } catch (err) {
-        store.updateCampaignRecipient(rec.id, { estado: 'failed', errorDetail: err.message });
+        // err.message de axios es siempre "Request failed with status code 400", inútil
+        // para diagnosticar: el motivo real de Meta viaja en err.response.data.error.
+        // describeMetaError lo traduce a código + mensaje + sugerencia accionable.
+        const { describeMetaError } = require('./wa-templates');
+        const detalle = describeMetaError(err);
+        console.error(`[Campaign ${campaignId}] Falló ${rec.phone}: ${detalle}`);
+        store.updateCampaignRecipient(rec.id, { estado: 'failed', errorDetail: detalle });
       }
       sentTracker.bump();
       store.recalcCampaignStats(campaignId);
@@ -220,4 +328,5 @@ function isCampaignRunning(campaignId) { return runningCampaigns.has(campaignId)
 module.exports = {
   runCampaign, isCampaignRunning, sentToday, getDailyLimit, getMps,
   resumePendingCampaigns, reanudarCampanasAutomaticas, getWindow,
+  preflightCampaign, sendCampaignTest,
 };

@@ -2930,8 +2930,9 @@ app.delete('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
 // a src/routes/ubicaciones-guardadas.js)
 app.use('/api/ubicaciones-guardadas', auth.requireAuth, require('./routes/ubicaciones-guardadas'));
 
-// Reasignar un lead a otro vendedor (solo admin)
-app.post('/api/leads/:id/reasignar', auth.requireAdmin, (req, res) => {
+// Reasignar un lead a otro vendedor (admin, supervisor o jefe — quien tiene visión
+// global del equipo; el jefe reasigna igual que el admin, ver esAccesoGlobal)
+app.post('/api/leads/:id/reasignar', auth.requireSupervisorOrAdmin, (req, res) => {
   const { vendedorId } = req.body || {};
   const lead = store.getLeadById(req.params.id);
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
@@ -3621,10 +3622,42 @@ app.get('/api/campaigns/:id/preview', auth.requireAdmin, (req, res) => {
   res.json({ template: tpl.nombre, sample });
 });
 
+// Diagnóstico previo al envío: plantilla aprobada, variables sin valor, teléfonos
+// inválidos, opt-outs y horario. Se puede consultar solo, y /start lo aplica.
+app.get('/api/campaigns/:id/preflight', auth.requireAdmin, (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  const { preflightCampaign } = require('./services/campaign-runner');
+  res.json(preflightCampaign(c.id));
+});
+
+// Enviar UNA prueba a un número antes de disparar el lote.
+app.post('/api/campaigns/:id/test', auth.requireAdmin, async (req, res) => {
+  const c = store.getCampaignById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'no_existe' });
+  const telefono = store.normalizePhone(String((req.body && req.body.telefono) || '').trim());
+  if (!telefono) return res.status(400).json({ error: 'telefono_requerido' });
+  try {
+    const { sendCampaignTest } = require('./services/campaign-runner');
+    const r = await sendCampaignTest(c.id, telefono);
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    const { describeMetaError } = require('./services/wa-templates');
+    res.status(400).json({ error: 'envio_fallido', detalle: e.response ? describeMetaError(e) : e.message });
+  }
+});
+
 app.post('/api/campaigns/:id/start', auth.requireAdmin, (req, res) => {
   const c = store.getCampaignById(req.params.id);
   if (!c) return res.status(404).json({ error: 'no_existe' });
   if (!['draft', 'paused'].includes(c.estado)) return res.status(400).json({ error: 'estado_invalido', detalle: `La campaña está en estado "${c.estado}"` });
+  // Sin esto, una plantilla no aprobada o una variable vacía se descubría solo después
+  // de quemar la lista entera con 400s opacos (ver preflightCampaign).
+  const { preflightCampaign } = require('./services/campaign-runner');
+  const chequeo = preflightCampaign(c.id);
+  if (!chequeo.ok && !req.body?.forzar) {
+    return res.status(400).json({ error: 'preflight_fallido', errores: chequeo.errores, avisos: chequeo.avisos });
+  }
   const { runCampaign } = require('./services/campaign-runner');
   runCampaign(c.id).catch(e => console.error(`[Campaign ${c.id}] error:`, e.message));
   res.json({ ok: true, estado: 'running' });

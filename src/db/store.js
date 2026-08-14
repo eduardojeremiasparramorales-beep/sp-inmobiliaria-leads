@@ -135,6 +135,10 @@ function createSchema() {
   ensureColumn('messages', 'wamid', 'TEXT');
   try { execSQL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wamid ON messages(wamid) WHERE wamid IS NOT NULL`); } catch (e) { console.error('[DB] No se pudo crear UNIQUE INDEX en messages.wamid (puede haber duplicados):', e.message); }
   ensureColumn('messages', 'status', 'TEXT DEFAULT \'sent\'');
+  // Payload/id del botón que pulsó el cliente en una plantilla (quick-reply o interactive).
+  // Se guarda aparte del texto visible para que las automatizaciones puedan condicionar
+  // sobre el botón exacto y no sobre la etiqueta traducible que ve el cliente.
+  ensureColumn('messages', 'button_payload', 'TEXT');
   ensureColumn('vendedores', 'pin', 'TEXT');
   ensureColumn('vendedores', 'foto', 'TEXT');
   ensureColumn('leads', 'etiqueta', 'TEXT');
@@ -796,6 +800,14 @@ function updateMessageStatus(wamid, status) {
 
 function setMessageError(wamid, detail) {
   run('UPDATE messages SET error_detail = ? WHERE wamid = ?', [detail, wamid]);
+}
+
+// Marca un mensaje entrante como "el cliente pulsó este botón de la plantilla".
+// El texto visible ya lo guardó saveMessage vía routeReply; esto solo anota el
+// payload/id, que es el identificador estable con el que trabajan los workflows.
+function setMessageButtonPayload(wamid, payload) {
+  if (!wamid || !payload) return;
+  run('UPDATE messages SET button_payload = ? WHERE wamid = ?', [String(payload), wamid]);
 }
 
 function markMessageAsRead(messageId) {
@@ -1547,9 +1559,15 @@ function updateUsuarioRol(id, rol) {
   run('UPDATE usuarios SET rol = ? WHERE id = ?', [rol, id]);
 }
 
+// "Nos dejó en visto": el último mensaje del chat es nuestro y Meta confirmó que el
+// cliente lo leyó, pero no contestó. Se calcula como subconsulta para que la lista de
+// chats lo pueda marcar sin pedir el historial de cada lead.
+const SQL_VISTO_SIN_RESPONDER = `(SELECT CASE WHEN m.direction = 'outgoing' AND m.status = 'read' THEN 1 ELSE 0 END
+    FROM messages m WHERE m.lead_id = l.id ORDER BY m.id DESC LIMIT 1) AS visto_sin_responder`;
+
 // --- Leads y mensajes por vendedor ---
 function getLeadsByVendedorId(vendedorId) {
-  return withLeadScore(all("SELECT l.*, v.nombre AS assigned_to_nombre FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.pinned_at DESC, l.updated_at DESC", [vendedorId, 'cerrado']));
+  return withLeadScore(all(`SELECT l.*, v.nombre AS assigned_to_nombre, ${SQL_VISTO_SIN_RESPONDER} FROM leads l LEFT JOIN vendedores v ON l.assigned_to_id = v.id WHERE l.assigned_to_id = ? AND l.status != ? ORDER BY l.pinned_at DESC, l.updated_at DESC`, [vendedorId, 'cerrado']));
 }
 
 function getArchivedLeadsByVendedorId(vendedorId) {
@@ -2879,7 +2897,7 @@ function getLastMessageByConversation(conversationId) {
 // --- Inbox unificado: legacy leads + nuevo schema ---
 function getUnlinkedLeads() {
   return all(`
-    SELECT l.*, v.nombre AS assigned_to_nombre, v.foto AS assigned_to_foto
+    SELECT l.*, v.nombre AS assigned_to_nombre, v.foto AS assigned_to_foto, ${SQL_VISTO_SIN_RESPONDER}
     FROM leads l
     LEFT JOIN vendedores v ON v.id = l.assigned_to_id
     WHERE l.id NOT IN (SELECT lead_id FROM conversations WHERE lead_id IS NOT NULL)
@@ -2961,6 +2979,7 @@ unified.push({
         status: l.status, unread_count: l.unread_count || 0,
         last_message: l.last_message, last_message_at: l.updated_at || l.created_at,
         etiqueta: l.etiqueta, lead_id: l.id,
+        visto_sin_responder: l.visto_sin_responder || 0,
         updated_at: l.updated_at || l.created_at, created_at: l.created_at,
       });
   });
@@ -3669,7 +3688,7 @@ module.exports = {
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin, setVendedor2FA,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,
-  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError,
+  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError, setMessageButtonPayload,
   getTemplates, addTemplate, deleteTemplate,
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
@@ -3679,7 +3698,7 @@ module.exports = {
   createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,
   getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout,
   countMessagesByLead, getLeadAggregates, getLeadCountsByAdIds,
-  getConfig, setConfig,
+  getConfig, setConfig, normalizePhone,
   getWATemplates, getWATemplatesAprobadas, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName,
   getWATemplateByNameIdioma, getWATemplateByMetaId, upsertWATemplateFull, upsertWATemplateByMetaId, setWATemplateMapping,
   setWATemplateEstado, insertWATemplateBorrador, updateWATemplateSpec,

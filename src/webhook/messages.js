@@ -7,7 +7,30 @@ const adapter = require('../db/adapter');
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 // Tipos de mensaje entrante que crean una fila nueva en `messages` (dedup aplica solo a estos).
-const CREATES_MESSAGE_TYPES = ['text', 'location', 'contacts', ...MEDIA_TYPES];
+// 'button' = quick-reply de una plantilla; 'interactive' = button_reply/list_reply.
+// Ambos son respuestas REALES del cliente y crean fila en `messages` igual que un texto.
+const CREATES_MESSAGE_TYPES = ['text', 'location', 'contacts', 'button', 'interactive', ...MEDIA_TYPES];
+
+// Normaliza a { texto, payload } la respuesta del cliente a un botón, venga como
+// quick-reply de plantilla ('button') o como mensaje interactivo ('interactive').
+// Devuelve null si el payload de Meta no trae nada usable.
+function parseBotonRespuesta(msg) {
+  if (msg.type === 'button' && msg.button) {
+    const texto = msg.button.text || msg.button.payload;
+    if (!texto) return null;
+    return { texto: String(texto), payload: msg.button.payload || null };
+  }
+  if (msg.type === 'interactive' && msg.interactive) {
+    const it = msg.interactive;
+    const r = it.button_reply || it.list_reply;
+    if (!r) return null;
+    const texto = r.title || r.id;
+    if (!texto) return null;
+    const desc = it.list_reply && it.list_reply.description ? ` — ${it.list_reply.description}` : '';
+    return { texto: String(texto) + desc, payload: r.id || null };
+  }
+  return null;
+}
 
 // Vid.a V3 — resolver el negocio dueño de un webhook de WhatsApp por su
 // phone_number_id (registrado en el control plane como canal). Si el número no está
@@ -272,6 +295,42 @@ function processEntry(entry, entryCtx) {
         continue;
       }
 
+      // --- El cliente PULSÓ UN BOTÓN (quick-reply de plantilla o mensaje interactivo) ---
+      // Antes estos dos tipos caían fuera de todos los handlers y se descartaban en
+      // silencio: el cliente tocaba "Sigo interesado" y ni el asesor ni el admin se
+      // enteraban, pese a que la ventana de 24h sí quedaba abierta del lado de Meta.
+      // Se normalizan a texto y se rutean como un mensaje normal, así heredan dedup,
+      // asignación, SSE, push y disparo de automatizaciones.
+      if (msg.type === 'button' || msg.type === 'interactive') {
+        const btn = parseBotonRespuesta(msg);
+        if (!btn) {
+          console.log(`[Webhook] Mensaje ${msg.type} de ${fromPhone} sin contenido reconocible — ignorado`);
+          continue;
+        }
+        if (isOptoutMessage(btn.texto)) {
+          store.addOptout(fromPhone, 'whatsapp', btn.texto);
+          console.log(`[Webhook] Opt-out registrado desde botón: ${fromPhone} ("${btn.texto}")`);
+          sendMessage(fromPhone, 'Listo, no volverás a recibir mensajes promocionales de nuestra parte. Si necesitas algo, escríbenos cuando quieras.')
+            .catch(e => console.error('Error confirmando opt-out:', e.message));
+          continue;
+        }
+        if (tryCaptureCsat(fromPhone, btn.texto)) continue;
+
+        console.log(`[Webhook] ${fromPhone} pulsó el botón "${btn.texto}"${btn.payload ? ` (payload: ${btn.payload})` : ''}`);
+        routeReply(fromPhone, btn.texto, customerName, msg.id || null, msg.referral || null, (err, result) => re(() => {
+          if (err) { console.error('Error routing button reply:', err.message); return; }
+          if (result && result.forwarded) console.log(`Respuesta de botón reenviada a ${result.to}`);
+          // El payload se anota DESPUÉS porque el mensaje lo crea routeReply.
+          if (msg.id && btn.payload) {
+            try { store.setMessageButtonPayload(msg.id, btn.payload); } catch (e) { console.error('[Webhook] setMessageButtonPayload:', e.message); }
+          }
+        }));
+        // Pulsar un botón es responder: corta la cadencia y cuenta para la calificación.
+        try { const lcb = store.getLeadByCustomerPhone(fromPhone); if (lcb && lcb.cadencia_activa) store.stopCadencia(lcb.id); } catch (e) {}
+        autoScoreLead(fromPhone, entryCtx);
+        continue;
+      }
+
       // --- Ubicación entrante ---
       if (msg.type === 'location') {
         const loc = msg.location;
@@ -371,6 +430,15 @@ function processEntry(entry, entryCtx) {
           events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
           if (isFailed) {
             events.emitToVendedor(lead.assigned_to_id, 'sistema_alerta', { tipo: 'mensaje_fallido', leadId: lead.id, messageId: m.id, mensaje: `No se pudo entregar un mensaje a ${lead.customer_name || lead.customer_phone}: ${errDetail}`, ts: Date.now() });
+            // El SSE solo llega si el panel está abierto: un mensaje que no se entregó
+            // tiene que alcanzar al asesor aunque tenga la app cerrada.
+            try {
+              require('../services/notify').notify({
+                vendedorId: lead.assigned_to_id, tipo: 'mensaje_fallido', leadId: lead.id, push: true,
+                titulo: '⚠️ Mensaje no entregado',
+                cuerpo: `${lead.customer_name || lead.customer_phone}: ${errDetail || 'Meta rechazó el envío'}`.slice(0, 120),
+              }).catch(e => console.error('Error notify mensaje_fallido:', e.message));
+            } catch (e) { /* notify opcional */ }
           }
           if (wasRead && m.direction === 'outgoing') {
             try { require('../services/progress').evaluateRead(lead.id).catch(()=>{}); } catch(e){}
@@ -427,4 +495,6 @@ async function handleMediaMessage(msg, fromPhone, customerName, entryCtx) {
   });
 }
 
-module.exports = { handleMessage };
+// parseBotonRespuesta se exporta para poder testear el parseo de los payloads de Meta
+// sin levantar el webhook entero.
+module.exports = { handleMessage, parseBotonRespuesta };

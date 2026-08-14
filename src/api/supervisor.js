@@ -240,22 +240,27 @@ router.get('/equipo/leads', (req, res) => {
   }
 });
 
-// --- S3: Reasignar un lead entre asesores ---
-// Espejo del endpoint admin /api/leads/:id/reasignar pero restringido a asesores
-// reales (excluye admin/supervisor) y con los mismos efectos secundarios:
-// reassignLead() en store + SSE a ambos vendedores y admins + notificación push.
+// --- S3: Reasignar un lead a cualquier miembro del equipo ---
+// El jefe manda: puede mover cualquier chat a quien quiera, incluidos otros jefes, el
+// admin o un asesor suspendido, y reabrir un lead cerrado al reasignarlo. Antes esto
+// filtraba por "asesor real y activo" mientras el modal listaba a todos, así que la
+// mitad de las opciones fallaba con un error genérico. Solo se conserva la validación
+// de que el destino exista y no sea el mismo asesor que ya lo tiene.
 router.post('/reasignar/:leadId', (req, res) => {
   try {
     const lead = store.getLeadById(req.params.leadId);
     if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
-    if (String(lead.status || '') === 'cerrado') return res.status(400).json({ error: 'lead_cerrado' });
 
-    const excl = idsNoAsesores();
     const vendedorId = Number((req.body || {}).vendedorId);
-    const vendedor = (store.getVendedores() || []).find(v => Number(v.id) === vendedorId && !excl.has(Number(v.id)));
+    const vendedor = (store.getVendedores() || []).find(v => Number(v.id) === vendedorId);
     if (!vendedor) return res.status(400).json({ error: 'vendedor_no_existe' });
-    if (String(vendedor.estado) !== 'activo') return res.status(400).json({ error: 'vendedor_inactivo' });
     if (Number(lead.assigned_to_id) === Number(vendedor.id)) return res.status(400).json({ error: 'mismo_asesor' });
+
+    // Reasignar un lead archivado lo devuelve a la operación: si no, el asesor nuevo lo
+    // recibiría cerrado y no lo vería en su lista.
+    if (String(lead.status || '') === 'cerrado') {
+      try { store.updateLeadStatus(lead.id, 'contactado'); } catch (e) { console.error('[SUPERVISOR] reabrir lead:', e.message); }
+    }
 
     const anteriorId = lead.assigned_to_id;
     const vendedorAnterior = anteriorId ? (store.getVendedores() || []).find(v => Number(v.id) === Number(anteriorId)) : null;
