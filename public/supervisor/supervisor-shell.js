@@ -17,6 +17,7 @@
       { id: 'dashboard', label: 'Dashboard', icon: 'analytics', href: '/supervisor/dashboard.html' },
       { id: 'equipo', label: 'Equipo', icon: 'team', href: '/supervisor/equipo.html' },
       { id: 'conversaciones', label: 'Conversaciones', icon: 'inbox', href: '/supervisor/conversaciones.html' },
+      { id: 'mapa', label: 'Mapa del equipo', icon: 'mapPin', href: '/supervisor/mapa.html' },
       { id: 'alertas', label: 'Alertas', icon: 'activity', badge: 'live' },
     ]},
     { title: 'Inteligencia & Cultura', items: [

@@ -70,6 +70,7 @@
       { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', href: '/os/pipeline.html' },
       { id: 'reservas', label: 'Reservas', icon: 'clock', href: '/os/reservas.html' },
       { id: 'clients', label: 'Clientes', icon: 'clients', href: '/os/clientes.html' },
+    { id: 'mapa', label: 'Mapa del equipo', icon: 'mapPin', href: '/os/mapa.html' },
     ]},
     { title: 'Negocio', items: [
       { id: 'proyectos', label: 'Proyectos', icon: 'properties', href: '/os/proyectos.html' },
@@ -398,8 +399,11 @@
     if (_es) return;
     try {
       _es = new EventSource('/api/stream');
-      ['nuevo_mensaje', 'lead_actualizado', 'message:new', 'conversation:assigned', 'conversation:closed', 'status_update', 'notificacion'].forEach(ev => {
-        (_listeners[ev] || []).forEach(fn => _es.addEventListener(ev, fn));
+      // Se recablea TODO lo que se haya registrado con on() antes de abrir el stream.
+      // Antes esto era una lista fija de nombres de evento: cualquier evento nuevo
+      // (p. ej. 'ubicacion_asesor') quedaba mudo si su página se suscribía temprano.
+      Object.keys(_listeners).forEach(ev => {
+        _listeners[ev].forEach(fn => _es.addEventListener(ev, fn));
       });
       _es.addEventListener('notificacion', (e) => {
         try {

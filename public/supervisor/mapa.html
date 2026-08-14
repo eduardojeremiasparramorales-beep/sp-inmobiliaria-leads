@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>Leons Group · Mapa · Supervisor</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<script src="/os/theme.js"></script>
+<link rel="stylesheet" href="/os/sp-os.css">
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script src="/supervisor/supervisor-shell.js"></script>
+<script src="/os/mapa-core.js"></script>
+<script>
+(async function () {
+  const ctx = await SPS.mount({ active: 'mapa', title: 'Mapa del equipo', crumb: 'Supervisor Center · Ubicación en vivo' });
+  if (!ctx || !ctx.content) return;
+  // El shell del supervisor no multiplexa SSE (cada página abre el suyo, igual que
+  // conversaciones.html y alertas.html), así que aquí se abre uno propio.
+  let es = null;
+  const conectar = (fn) => {
+    try { es = new EventSource('/api/stream'); } catch (e) { return; }
+    es.addEventListener('ubicacion_asesor', fn);
+    es.onerror = () => { try { es.close(); } catch (e) {} es = null; setTimeout(() => conectar(fn), 5000); };
+  };
+  await MapaEquipo.montar({
+    content: ctx.content,
+    api: SPS.api,
+    toast: SPS.toast,
+    esc: ctx.esc,
+    onStream: conectar,
+  });
+})();
+</script>
+</body>
+</html>

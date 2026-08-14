@@ -589,6 +589,24 @@ function createSchema() {
 
   // Texto libre "Acerca de" del perfil del vendedor (antes vivía solo en localStorage)
   ensureColumn('vendedores', 'about', 'TEXT');
+  // Última posición conocida del asesor (espejo del último punto de
+  // vendedor_posiciones) y sello del consentimiento de rastreo: sin ese sello el
+  // backend rechaza cualquier posición, para que el permiso no dependa solo de la UI.
+  // Coordenadas para el mapa del equipo. Los leads las obtienen geocodificando su
+  // ciudad/dirección (services/geocode.js); proyectos y zonas se marcan a mano desde
+  // sus fichas. `geocode_at` distingue "sin geocodificar todavía" de "no se pudo".
+  ensureColumn('leads', 'lat', 'REAL');
+  ensureColumn('leads', 'lng', 'REAL');
+  ensureColumn('leads', 'geocode_at', 'DATETIME');
+  ensureColumn('proyectos', 'lat', 'REAL');
+  ensureColumn('proyectos', 'lng', 'REAL');
+  ensureColumn('zonas', 'centro_lat', 'REAL');
+  ensureColumn('zonas', 'centro_lng', 'REAL');
+  ensureColumn('zonas', 'radio_km', 'REAL');
+  ensureColumn('vendedores', 'last_lat', 'REAL');
+  ensureColumn('vendedores', 'last_lng', 'REAL');
+  ensureColumn('vendedores', 'last_pos_at', 'DATETIME');
+  ensureColumn('vendedores', 'ubicacion_consentida_at', 'DATETIME');
   ensureColumn('vendedores', 'two_fa', 'INTEGER DEFAULT 0');
 
   // Centro de notificaciones persistente (vendedor_id = 0 → admins)
@@ -662,6 +680,24 @@ function createSchema() {
       last_heartbeat DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
+
+  // Rastro de ubicación del asesor durante su jornada. Cada fila es un punto; la
+  // ÚLTIMA posición se duplica en `vendedores` (last_lat/last_lng/last_pos_at) para
+  // que el mapa cargue sin recorrer el histórico. Se purga a los 30 días: un rastro
+  // GPS es dato personal y conservarlo sin límite no aporta nada a la operación.
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS vendedor_posiciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      lat REAL NOT NULL,
+      lng REAL NOT NULL,
+      precision REAL,
+      bateria INTEGER,
+      ts DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_vpos_vendedor_ts ON vendedor_posiciones(vendedor_id, ts)`);
 
   // Insignias del asesor (gamificación con datos reales; otorgadas por job diario)
   execSQL(`
@@ -1166,6 +1202,107 @@ function getPresenceMap() {
     map[r.vendedor_id] = { last_heartbeat: r.last_heartbeat, online: (now - hb) < 60000 };
   }
   return map;
+}
+
+// --- Ubicación del asesor (rastreo de jornada) ---
+
+// Sella el consentimiento de rastreo. Sin esta marca, guardarPosicionVendedor() se
+// niega a registrar nada: el permiso vive en la BD, no en la UI del celular.
+function setConsentimientoUbicacion(vendedorId) {
+  run("UPDATE vendedores SET ubicacion_consentida_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND ubicacion_consentida_at IS NULL", [vendedorId]);
+  return one('SELECT ubicacion_consentida_at FROM vendedores WHERE id = ?', [vendedorId]);
+}
+
+function tieneConsentimientoUbicacion(vendedorId) {
+  const v = one('SELECT ubicacion_consentida_at FROM vendedores WHERE id = ?', [vendedorId]);
+  return !!(v && v.ubicacion_consentida_at);
+}
+
+// Revocar borra además el rastro: si el asesor retira el consentimiento, conservar sus
+// posiciones anteriores sería seguir tratando un dato sin permiso.
+function revocarConsentimientoUbicacion(vendedorId) {
+  run('UPDATE vendedores SET ubicacion_consentida_at = NULL, last_lat = NULL, last_lng = NULL, last_pos_at = NULL WHERE id = ?', [vendedorId]);
+  run('DELETE FROM vendedor_posiciones WHERE vendedor_id = ?', [vendedorId]);
+}
+
+function guardarPosicionVendedor(vendedorId, { lat, lng, precision, bateria }) {
+  if (!tieneConsentimientoUbicacion(vendedorId)) return { ok: false, error: 'sin_consentimiento' };
+  run('INSERT INTO vendedor_posiciones (vendedor_id, lat, lng, precision, bateria) VALUES (?, ?, ?, ?, ?)',
+    [vendedorId, lat, lng, precision != null ? Number(precision) : null, bateria != null ? Number(bateria) : null]);
+  run("UPDATE vendedores SET last_lat = ?, last_lng = ?, last_pos_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+    [lat, lng, vendedorId]);
+  return { ok: true };
+}
+
+// Últimas posiciones conocidas del equipo, para pintar el mapa de un solo golpe.
+function getUltimasPosiciones() {
+  return all(`SELECT id, nombre, telefono, estado, foto, rol, last_lat, last_lng, last_pos_at
+              FROM vendedores WHERE last_lat IS NOT NULL AND last_lng IS NOT NULL`);
+}
+
+// Rastro de un asesor en un día concreto (fecha 'YYYY-MM-DD' en hora de Bogotá, que es
+// la zona del servidor — ver Dockerfile). Se ordena por hora para dibujar la polilínea.
+function getRecorridoVendedor(vendedorId, fecha) {
+  return all(`SELECT lat, lng, precision, bateria, ts FROM vendedor_posiciones
+              WHERE vendedor_id = ? AND date(ts) = date(?) ORDER BY ts ASC`,
+    [vendedorId, fecha]);
+}
+
+// Purga del histórico. Se llama desde el cron de limpieza diaria.
+function purgarPosicionesAntiguas(dias) {
+  const d = Number(dias) > 0 ? Number(dias) : 30;
+  const r = run(`DELETE FROM vendedor_posiciones WHERE ts < strftime('%Y-%m-%dT%H:%M:%fZ','now',?)`, [`-${d} days`]);
+  return (r && r.changes) || 0;
+}
+
+// --- Coordenadas de leads, proyectos y zonas (capas del mapa) ---
+
+function setLeadCoords(leadId, lat, lng) {
+  run("UPDATE leads SET lat = ?, lng = ?, geocode_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+    [lat != null ? Number(lat) : null, lng != null ? Number(lng) : null, leadId]);
+}
+
+// Marca el intento fallido para no reintentar el mismo lead en cada pasada: sin esto,
+// un lead con dirección imposible se geocodificaría una y otra vez contra Mapbox.
+function marcarLeadSinGeocodificar(leadId) {
+  run("UPDATE leads SET geocode_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [leadId]);
+}
+
+// Leads pendientes de geocodificar: los que nunca se intentaron y tienen algún dato de
+// ubicación con el que trabajar.
+function getLeadsSinCoordenadas(limite) {
+  return all(`SELECT id, customer_name, ciudad, zona, proyecto FROM leads
+              WHERE lat IS NULL AND geocode_at IS NULL
+                AND (COALESCE(ciudad,'') != '' OR COALESCE(zona,'') != '' OR COALESCE(proyecto,'') != '')
+              ORDER BY updated_at DESC LIMIT ?`, [Number(limite) > 0 ? Number(limite) : 50]);
+}
+
+function getLeadsConCoordenadas({ etiqueta, vendedorId } = {}) {
+  const cond = ["l.lat IS NOT NULL", "l.status != 'cerrado'"];
+  const args = [];
+  if (etiqueta) { cond.push('l.etiqueta = ?'); args.push(etiqueta); }
+  if (vendedorId) { cond.push('l.assigned_to_id = ?'); args.push(Number(vendedorId)); }
+  return all(`SELECT l.id, l.customer_name, l.customer_phone, l.etiqueta, l.status, l.lat, l.lng,
+                     l.assigned_to_id, v.nombre AS assigned_to_nombre, l.ciudad, l.proyecto
+              FROM leads l LEFT JOIN vendedores v ON v.id = l.assigned_to_id
+              WHERE ${cond.join(' AND ')}`, args);
+}
+
+function setProyectoCoords(proyectoId, lat, lng) {
+  run("UPDATE proyectos SET lat = ?, lng = ? WHERE id = ?", [lat, lng, proyectoId]);
+}
+
+function getProyectosConCoordenadas() {
+  return all("SELECT id, nombre, ciudad, departamento, estado, lat, lng FROM proyectos WHERE lat IS NOT NULL");
+}
+
+function setZonaCoords(zonaId, { lat, lng, radioKm }) {
+  run('UPDATE zonas SET centro_lat = ?, centro_lng = ?, radio_km = ? WHERE id = ?',
+    [lat, lng, radioKm != null ? Number(radioKm) : null, zonaId]);
+}
+
+function getZonasConCoordenadas() {
+  return all("SELECT id, nombre, slug, centro_lat, centro_lng, radio_km FROM zonas WHERE centro_lat IS NOT NULL AND activo = 1");
 }
 
 // --- Borrar para mí ---
@@ -3799,6 +3936,10 @@ module.exports = {
   createScheduled, getScheduledByVendedor, getScheduledById, getScheduledDue, updateScheduled,
   saveTeamMessage, getTeamMessages, getTeamDirectMessages, getTeamDirectThreads, markTeamDirectRead, markTeamGeneralRead, getTeamGeneralLastRead, countTeamUnread, getAllTeamMessagesForAdmin, getAdminTeamConversations,
   saveTeamReaction, removeTeamReaction, getTeamReactionsForMessages, deleteTeamMessage, updatePresence, getPresenceMap,
+  setConsentimientoUbicacion, tieneConsentimientoUbicacion, revocarConsentimientoUbicacion,
+  guardarPosicionVendedor, getUltimasPosiciones, getRecorridoVendedor, purgarPosicionesAntiguas,
+  setLeadCoords, marcarLeadSinGeocodificar, getLeadsSinCoordenadas, getLeadsConCoordenadas,
+  setProyectoCoords, getProyectosConCoordenadas, setZonaCoords, getZonasConCoordenadas,
   pinTeamMessage, getPinnedTeamMessage, editTeamMessage, searchTeamMessages, forwardTeamMessage,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,
   getInsignias, getInsigniasAll, getInsigniaStats, awardInsignia, revokeInsignia,

@@ -129,13 +129,25 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'microphone=(self), camera=(), geolocation=()');
+  // geolocation=(self): el CRM sí necesita GPS propio — enviar la ubicación a un
+  // cliente y compartir la posición del asesor durante la jornada. Estaba en `()`, que
+  // lo bloquea incluso para el propio sitio, así que el navegador negaba el permiso
+  // aunque el usuario lo hubiera concedido. Sigue vedado para iframes de terceros.
+  res.setHeader('Permissions-Policy', 'microphone=(self), camera=(), geolocation=(self)');
   // Fuentes auto-hospedadas en /fonts/ (Fase 1.3, docs/AUDITORIA_2026-08.md) — ya no se
   // depende de Google Fonts en tiempo de ejecución, así que font-src/style-src vuelven
   // a 'self'.
+  // Mapas: las teselas y los geocodificadores son los ÚNICOS orígenes externos que se
+  // permiten, y solo por nombre exacto (nada de comodines). Sin esto, `img-src 'self'`
+  // bloqueaba en silencio todas las teselas —el picker de ubicación del asesor, los
+  // mini-mapas del inbox y el mapa del equipo se veían en gris— y `connect-src 'self'`
+  // tumbaba la búsqueda de lugares por Nominatim/Mapbox.
+  const ORIGENES_MAPA_IMG = 'https://*.tile.openstreetmap.org https://api.mapbox.com';
+  const ORIGENES_MAPA_API = 'https://nominatim.openstreetmap.org https://api.mapbox.com';
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
-    "font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");
+    `font-src 'self'; img-src 'self' data: blob: ${ORIGENES_MAPA_IMG}; media-src 'self' blob:; ` +
+    `connect-src 'self' ${ORIGENES_MAPA_API}`);
   if (req.headers['x-forwarded-proto'] === 'https' || req.secure) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -2930,6 +2942,141 @@ app.delete('/api/leads/:id/tareas/:taskId', auth.requireAuth, (req, res) => {
 // a src/routes/ubicaciones-guardadas.js)
 app.use('/api/ubicaciones-guardadas', auth.requireAuth, require('./routes/ubicaciones-guardadas'));
 
+// ═══════════════════ UBICACIÓN DE ASESORES (rastreo de jornada) ═══════════════════
+//
+// El asesor comparte su posición mientras trabaja con la app abierta; admin y jefe la
+// ven en el mapa. Dos reglas que no se negocian y por eso viven en el servidor:
+//   1. Sin consentimiento sellado en BD, no se guarda ni un punto.
+//   2. El histórico se purga a los 30 días (job de limpieza más abajo).
+
+// Máximo un punto cada 20s por sesión: un cliente en bucle no puede inundar la tabla.
+const ubicacionLimiter = rateLimit({
+  windowMs: 20 * 1000, max: 2, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'demasiadas_posiciones' },
+});
+
+// El asesor acepta el aviso de rastreo. Devuelve la fecha del sello para que la UI
+// pueda mostrar desde cuándo comparte.
+app.post('/api/me/consentimiento-ubicacion', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor_asociado' });
+  const r = store.setConsentimientoUbicacion(req.session.vendedorId);
+  console.log(`[UBICACION] Consentimiento aceptado por vendedor ${req.session.vendedorId} (${req.session.nombre || '—'})`);
+  res.json({ ok: true, desde: r ? r.ubicacion_consentida_at : null });
+});
+
+// Retirar el consentimiento borra también el rastro guardado.
+app.delete('/api/me/consentimiento-ubicacion', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor_asociado' });
+  store.revocarConsentimientoUbicacion(req.session.vendedorId);
+  console.log(`[UBICACION] Consentimiento revocado por vendedor ${req.session.vendedorId}`);
+  res.json({ ok: true });
+});
+
+app.get('/api/me/consentimiento-ubicacion', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.json({ consentido: false });
+  res.json({ consentido: store.tieneConsentimientoUbicacion(req.session.vendedorId) });
+});
+
+app.post('/api/mi-ubicacion', auth.requireAuth, ubicacionLimiter, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor_asociado' });
+  const { lat, lng, precision, bateria } = req.body || {};
+  const latN = Number(lat), lngN = Number(lng);
+  if (!Number.isFinite(latN) || !Number.isFinite(lngN) || Math.abs(latN) > 90 || Math.abs(lngN) > 180) {
+    return res.status(400).json({ error: 'coordenadas_invalidas' });
+  }
+  const r = store.guardarPosicionVendedor(req.session.vendedorId, { lat: latN, lng: lngN, precision, bateria });
+  if (!r.ok) return res.status(403).json({ error: r.error });
+
+  // El mapa del admin/jefe se mueve solo: sin esto habría que recargar la página.
+  events.emitToAdmins('ubicacion_asesor', {
+    vendedorId: req.session.vendedorId, nombre: req.session.nombre || '',
+    lat: latN, lng: lngN, precision: precision != null ? Number(precision) : null,
+    bateria: bateria != null ? Number(bateria) : null, ts: Date.now(),
+  });
+  res.json({ ok: true });
+});
+
+// Mapa del equipo: última posición conocida de cada asesor + su carga de trabajo.
+app.get('/api/mapa/asesores', auth.requireSupervisorOrAdmin, (req, res) => {
+  const presencia = store.getPresenceMap();
+  const asesores = store.getUltimasPosiciones().map(v => {
+    const m = store.getVendedorMetricas(v.id) || {};
+    const p = presencia[v.id] || {};
+    return {
+      id: v.id, nombre: v.nombre, telefono: v.telefono, estado: v.estado, foto: v.foto || null,
+      lat: v.last_lat, lng: v.last_lng, ts: v.last_pos_at,
+      online: !!p.online,
+      leadsActivos: m.leadsActivos, leadsHoy: m.leadsHoy, tasaRespuesta: m.tasaRespuesta,
+      ultimaActividad: m.ultimaActividad,
+    };
+  });
+  res.json({ asesores, generadoEn: new Date().toISOString() });
+});
+
+// Rastro de un asesor en un día concreto, para dibujar su recorrido.
+app.get('/api/mapa/asesores/:id/recorrido', auth.requireSupervisorOrAdmin, (req, res) => {
+  const fecha = String(req.query.fecha || '').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? req.query.fecha
+    : new Date().toISOString().slice(0, 10);
+  res.json({ fecha, puntos: store.getRecorridoVendedor(req.params.id, fecha) });
+});
+
+// ── Capas del mapa: clientes, proyectos y zonas ──
+// Los clientes se pintan solo si están geocodificados (services/geocode.js). Un lead
+// sin dirección utilizable NO aparece: mejor ausente que en el sitio equivocado.
+app.get('/api/mapa/leads', auth.requireSupervisorOrAdmin, (req, res) => {
+  const { etiqueta, vendedorId, cerca, radio, limit } = req.query;
+  let leads = store.getLeadsConCoordenadas({ etiqueta, vendedorId });
+
+  // ?cerca=lat,lng&radio=km → los más próximos a un punto, ordenados por distancia.
+  if (cerca) {
+    const [la, ln] = String(cerca).split(',').map(Number);
+    if (Number.isFinite(la) && Number.isFinite(ln)) {
+      const { distanciaMetros } = require('./services/geocode');
+      const radioM = (Number(radio) > 0 ? Number(radio) : 5) * 1000;
+      leads = leads
+        .map(l => ({ ...l, distancia_m: distanciaMetros({ lat: la, lng: ln }, { lat: l.lat, lng: l.lng }) }))
+        .filter(l => l.distancia_m <= radioM)
+        .sort((a, b) => a.distancia_m - b.distancia_m);
+    }
+  }
+  const tope = Number(limit) > 0 ? Number(limit) : 500;
+  res.json({ leads: leads.slice(0, tope), total: leads.length });
+});
+
+app.get('/api/mapa/proyectos', auth.requireAuth, (req, res) => res.json({ proyectos: store.getProyectosConCoordenadas() }));
+app.get('/api/mapa/zonas', auth.requireAuth, (req, res) => res.json({ zonas: store.getZonasConCoordenadas() }));
+
+// Marcar en el mapa un proyecto o una zona (se hace una vez, a mano, desde su ficha).
+app.post('/api/mapa/proyectos/:id/coords', auth.requireAdmin, (req, res) => {
+  const { lat, lng } = req.body || {};
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return res.status(400).json({ error: 'coordenadas_invalidas' });
+  store.setProyectoCoords(req.params.id, Number(lat), Number(lng));
+  res.json({ ok: true });
+});
+
+app.post('/api/mapa/zonas/:id/coords', auth.requireAdmin, (req, res) => {
+  const { lat, lng, radioKm } = req.body || {};
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return res.status(400).json({ error: 'coordenadas_invalidas' });
+  store.setZonaCoords(req.params.id, { lat: Number(lat), lng: Number(lng), radioKm });
+  res.json({ ok: true });
+});
+
+// Fuerza una pasada de geocodificación (el cron ya la hace sola cada hora).
+app.post('/api/mapa/geocodificar', auth.requireAdmin, asyncH(async (req, res) => {
+  const r = await require('./services/geocode').geocodificarPendientes(Number(req.body && req.body.limite) || 25);
+  res.json({ ok: true, ...r });
+}));
+
+// El propio asesor consulta su recorrido (no el de sus compañeros).
+app.get('/api/mi-recorrido', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.json({ puntos: [] });
+  const fecha = String(req.query.fecha || '').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? req.query.fecha
+    : new Date().toISOString().slice(0, 10);
+  res.json({ fecha, puntos: store.getRecorridoVendedor(req.session.vendedorId, fecha) });
+});
+
 // Config del mapa para el panel del asesor. El token público de Mapbox (pk.*) está
 // pensado para viajar al navegador; conviene restringirlo por URL desde el panel de
 // Mapbox. Sin token configurado, el front sigue con OpenStreetMap + Nominatim, así que
@@ -5166,6 +5313,11 @@ function ensurePlatformAdmin() {
   setInterval(() => { runForAllTenants(() => checkRecordatorios()).catch(e => console.error('[SCHED] checkRecordatorios:', e.message)); }, 60000);
   setInterval(() => { runForAllTenants(() => store.cleanExpiredSessions(CFG.SESSION_TTL_MS)).catch(e => console.error('[SCHED] cleanExpiredSessions:', e.message)); }, CFG.SESSION_CLEANUP_INTERVAL);
   setInterval(() => { runForAllTenants(() => store.purgeOldFeedEvents(90)).catch(e => console.error('[SCHED] purgeOldFeedEvents:', e.message)); }, 6 * 60 * 60 * 1000);
+  // Rastro GPS de los asesores: se conserva 30 días y se purga solo. Es dato personal;
+  // guardarlo indefinidamente sería un pasivo sin ningún uso operativo.
+  setInterval(() => { runForAllTenants(() => store.purgarPosicionesAntiguas(30)).catch(e => console.error('[SCHED] purgarPosiciones:', e.message)); }, 12 * 60 * 60 * 1000);
+  // Geocodificación de los leads nuevos, en lotes pequeños para no golpear al proveedor.
+  setInterval(() => { runForAllTenants(() => require('./services/geocode').geocodificarPendientes(25)).catch(e => console.error('[SCHED] geocode:', e.message)); }, 60 * 60 * 1000);
   // Reservas: verificar vencimientos cada 5 min
   setInterval(() => { runForAllTenants(() => reservas.verificarVencidas()).catch(e => console.error('[SCHED] reservas:', e.message)); }, 5 * 60 * 1000);
   // Lead scoring: recalcular scores cada 10 min

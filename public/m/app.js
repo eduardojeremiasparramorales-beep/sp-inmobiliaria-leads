@@ -1375,6 +1375,7 @@ async function init(){
     }catch(e){}
   }
   if(!DEMO) initTemplates();
+  if(!DEMO) initUbicacionJornada();
   const openLead = new URLSearchParams(location.search).get('lead');
   if(openLead && leads.find(l=>l.id===Number(openLead))) abrirChat(Number(openLead));
   window.addEventListener('popstate', (e) => {
@@ -2721,6 +2722,216 @@ async function reverseGeocodeUbic(lat,lng){
   return { name:d.name||(d.display_name?d.display_name.split(',')[0]:'')||'', address:d.display_name||'' };
 }
 
+/* ════════ Compartir ubicación durante la jornada ════════
+   El asesor acepta UNA vez un aviso que explica qué se comparte y con quién; a partir
+   de ahí, mientras tenga la app abierta, el panel manda su posición cada 90 s y solo
+   si se movió más de 40 m (batería, datos y una tabla que no se llena de puntos
+   idénticos). Al pasar a segundo plano se detiene: el WebView pierde el GPS de todos
+   modos, así que es mejor pararlo explícitamente que fingir que sigue vivo.
+
+   Importante: el aviso NO reemplaza al permiso del sistema. Son dos cosas — el aviso
+   es el consentimiento que queda registrado en el servidor (sin él, el backend rechaza
+   las posiciones); el permiso del sistema es lo que deja al navegador leer el GPS. */
+const UBIC_INTERVALO_MS = 90 * 1000;
+const UBIC_DISTANCIA_MIN_M = 40;
+const UBIC_AVISO_KEY = 'sp_ubicacion_aviso_v1';
+let _ubicTimer = null, _ubicUltima = null, _ubicUltimoEnvio = null, _ubicActiva = false;
+
+// Distancia en metros entre dos puntos (Haversine). Se usa para decidir si vale la
+// pena mandar una posición nueva o el asesor sigue prácticamente donde estaba.
+function distanciaMetros(a, b){
+  if(!a || !b) return Infinity;
+  const R = 6371000, rad = x => x * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const s = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+async function nivelBateria(){
+  try{
+    if(navigator.getBattery){ const b = await navigator.getBattery(); return Math.round(b.level * 100); }
+  }catch(e){}
+  return null;
+}
+
+async function initUbicacionJornada(){
+  const estado = await api('/api/me/consentimiento-ubicacion');
+  if(estado && estado.consentido){ arrancarRastreo(); return; }
+  // Aviso una sola vez por dispositivo: si el asesor lo cerró sin aceptar, no se le
+  // vuelve a insistir en cada arranque.
+  try{ if(localStorage.getItem(UBIC_AVISO_KEY)) return; }catch(e){}
+  setTimeout(mostrarAvisoUbicacion, 4000); // que no compita con el splash ni con el push
+}
+
+function mostrarAvisoUbicacion(){
+  openSheet('Compartir tu ubicación', `
+    <div style="font-size:13.5px;line-height:1.65;color:var(--text-2)">
+      <p style="margin:0 0 10px">Para coordinar visitas y repartir los clientes por cercanía, Leons Group necesita ver tu ubicación <b>mientras trabajas con la app abierta</b>.</p>
+      <ul style="margin:0 0 10px;padding-left:18px">
+        <li>Se comparte tu posición aproximada cada pocos minutos.</li>
+        <li>La ven solo la administración y los jefes, nunca los clientes.</li>
+        <li>Al cerrar o minimizar la app, deja de compartirse.</li>
+        <li>El recorrido se guarda 30 días y luego se borra solo.</li>
+      </ul>
+      <p style="margin:0 0 14px">Puedes retirar el permiso cuando quieras desde <b>Perfil → Compartir ubicación</b>.</p>
+      <button id="ubicAceptar" style="width:100%;height:48px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Aceptar y compartir</button>
+      <button id="ubicAhoraNo" style="width:100%;height:44px;margin-top:8px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);font-size:14px;cursor:pointer;font-family:inherit">Ahora no</button>
+    </div>`);
+  const ac = document.getElementById('ubicAceptar');
+  if(ac) ac.onclick = async () => {
+    try{ localStorage.setItem(UBIC_AVISO_KEY, '1'); }catch(e){}
+    const r = await api('/api/me/consentimiento-ubicacion', { method:'POST' });
+    closeSheet();
+    if(!r){ toast('No se pudo guardar tu respuesta','err'); return; }
+    toast('Gracias — ya estás compartiendo tu ubicación');
+    arrancarRastreo();
+  };
+  const no = document.getElementById('ubicAhoraNo');
+  if(no) no.onclick = () => { try{ localStorage.setItem(UBIC_AVISO_KEY, '1'); }catch(e){} closeSheet(); };
+}
+
+async function enviarPosicionActual(){
+  try{
+    const pos = await obtenerPosicionActual();
+    const punto = { lat: pos.latitude, lng: pos.longitude };
+    // Filtro de movimiento: si sigue donde estaba, no se manda nada (salvo el primer
+    // envío, que sí interesa para que aparezca en el mapa apenas abre la app).
+    if(_ubicUltimoEnvio && distanciaMetros(_ubicUltimoEnvio, punto) < UBIC_DISTANCIA_MIN_M) return;
+    const r = await api('/api/mi-ubicacion', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ...punto, precision: pos.accuracy || null, bateria: await nivelBateria() }),
+    });
+    if(r){ _ubicUltimoEnvio = punto; _ubicUltima = Date.now(); actualizarIndicadorUbicacion(); }
+    else if(api.lastStatus === 403){ detenerRastreo(); } // consentimiento revocado en el servidor
+  }catch(e){
+    // Permiso del sistema denegado o GPS sin señal: se reintenta en el próximo ciclo,
+    // sin molestar al asesor con un toast cada 90 segundos.
+    console.warn('[UBICACION]', e.message);
+  }
+}
+
+function arrancarRastreo(){
+  if(_ubicTimer) return;
+  _ubicActiva = true;
+  enviarPosicionActual();
+  _ubicTimer = setInterval(enviarPosicionActual, UBIC_INTERVALO_MS);
+  // En segundo plano el WebView pierde el GPS: se para el ciclo y se retoma al volver.
+  document.addEventListener('visibilitychange', onVisibilidadUbicacion);
+  if(esNativo()){
+    try{
+      const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+      if(App && typeof App.addListener === 'function'){
+        App.addListener('appStateChange', ({ isActive }) => { if(isActive) reanudarRastreo(); else pausarRastreo(); });
+      }
+    }catch(e){}
+  }
+  actualizarIndicadorUbicacion();
+}
+
+function onVisibilidadUbicacion(){ document.hidden ? pausarRastreo() : reanudarRastreo(); }
+function pausarRastreo(){ if(_ubicTimer){ clearInterval(_ubicTimer); _ubicTimer = null; } actualizarIndicadorUbicacion(); }
+function reanudarRastreo(){ if(!_ubicActiva || _ubicTimer) return; enviarPosicionActual(); _ubicTimer = setInterval(enviarPosicionActual, UBIC_INTERVALO_MS); actualizarIndicadorUbicacion(); }
+function detenerRastreo(){
+  _ubicActiva = false;
+  if(_ubicTimer){ clearInterval(_ubicTimer); _ubicTimer = null; }
+  document.removeEventListener('visibilitychange', onVisibilidadUbicacion);
+  actualizarIndicadorUbicacion();
+}
+
+// El asesor tiene que ver siempre que está compartiendo, no descubrirlo.
+function actualizarIndicadorUbicacion(){
+  const el = document.getElementById('ubicEstado');
+  if(!el) return;
+  if(!_ubicActiva){ el.textContent = 'Desactivado'; el.style.color = 'var(--text-3)'; return; }
+  if(!_ubicTimer){ el.textContent = 'En pausa (app en segundo plano)'; el.style.color = 'var(--text-3)'; return; }
+  el.textContent = _ubicUltima ? 'Compartiendo · ' + horaCorta(new Date(_ubicUltima).toISOString()) : 'Compartiendo';
+  el.style.color = '#4E7B46';
+}
+
+/* ════════ Mi mapa (vista del propio asesor) ════════
+   El asesor ve SU posición, SU recorrido del día y sus ubicaciones guardadas. Nunca a
+   sus compañeros: el backend ni siquiera le deja consultarlos (403 en /api/mapa/*). */
+async function abrirMiMapa(){
+  const hoy = new Date().toISOString().slice(0,10);
+  _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:12px">
+      <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
+      <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px">Mi mapa</div>
+      <div style="font-size:11px;color:var(--text-3)" id="miMapaSub">Tu recorrido de hoy</div></div>
+      <input type="date" id="miMapaFecha" value="${hoy}" max="${hoy}" style="background:var(--bg-3);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:6px 8px;font-size:12px;font-family:inherit">
+    </div>
+    <div id="miMapaLienzo" style="height:52vh;border-radius:14px;overflow:hidden;background:var(--bg-3)"></div>
+    <div id="miMapaInfo" style="font-size:12px;color:var(--text-3);margin-top:10px;line-height:1.6">Cargando…</div>`);
+  document.getElementById('autoBack').onclick = _autoCerrar;
+
+  try{ await cargarLeaflet(); }catch(e){ document.getElementById('miMapaInfo').textContent = 'No se pudo cargar el mapa.'; return; }
+  const el = document.getElementById('miMapaLienzo');
+  if(!el) return;
+  const mapa = L.map(el, { zoomControl:true, attributionControl:false }).setView([4.7110,-74.0721], 6);
+  capaTilesMapa(await getMapaConfig()).addTo(mapa);
+  setTimeout(()=>mapa.invalidateSize(), 150);
+
+  let capa = null;
+  async function pintar(fecha){
+    if(capa){ mapa.removeLayer(capa); capa = null; }
+    const info = document.getElementById('miMapaInfo');
+    const r = await api('/api/mi-recorrido?fecha=' + encodeURIComponent(fecha));
+    const puntos = (r && r.puntos) || [];
+    const capas = [];
+    if(puntos.length){
+      const coords = puntos.map(p => [p.lat, p.lng]);
+      if(coords.length > 1) capas.push(L.polyline(coords, { color:'#C8A45A', weight:3, opacity:.8 }));
+      capas.push(L.circleMarker(coords[coords.length-1], { radius:7, color:'#4E7B46', fillColor:'#4E7B46', fillOpacity:1 }).bindTooltip('Tu última posición'));
+      coords.slice(0,-1).forEach((c,i) => capas.push(L.circleMarker(c, { radius:3, color:'#C8A45A', fillOpacity:1 }).bindTooltip(horaCorta(puntos[i].ts))));
+    }
+    // Las ubicaciones guardadas del asesor le sirven de referencia en el mapa.
+    const guardadas = await api('/api/ubicaciones-guardadas') || [];
+    guardadas.forEach(g => capas.push(L.marker([g.lat, g.lng]).bindTooltip('📍 ' + (g.nombre||''))));
+
+    if(capas.length){
+      capa = L.layerGroup(capas).addTo(mapa);
+      const bounds = L.latLngBounds([...puntos.map(p=>[p.lat,p.lng]), ...guardadas.map(g=>[g.lat,g.lng])]);
+      if(bounds.isValid()) mapa.fitBounds(bounds.pad(0.25), { maxZoom:16 });
+    }
+    info.innerHTML = puntos.length
+      ? `${puntos.length} posiciones registradas · de ${horaCorta(puntos[0].ts)} a ${horaCorta(puntos[puntos.length-1].ts)}`
+      : (_ubicActiva
+          ? 'Todavía no hay posiciones de ese día. Se registran mientras usas la app.'
+          : 'No estás compartiendo tu ubicación. Actívala en Perfil → Compartir ubicación.');
+  }
+  document.getElementById('miMapaFecha').onchange = (e) => pintar(e.target.value);
+  pintar(hoy);
+}
+
+// Control del asesor sobre su propio rastreo: activar si lo rechazó antes, o retirarlo
+// (que borra además el recorrido guardado en el servidor).
+function abrirAjusteUbicacion(){
+  const activo = _ubicActiva;
+  openSheet('Compartir ubicación', `
+    <div style="font-size:13.5px;line-height:1.6;color:var(--text-2)">
+      <p style="margin:0 0 12px">${activo
+        ? 'Estás compartiendo tu ubicación mientras usas la app. La administración y los jefes la ven en el mapa del equipo.'
+        : 'No estás compartiendo tu ubicación. Actívala para que el equipo pueda coordinar visitas y repartir clientes por cercanía.'}</p>
+      ${activo
+        ? `<button id="ubicQuitar" style="width:100%;height:48px;border-radius:14px;border:1px solid rgba(229,72,77,.35);background:rgba(229,72,77,.08);color:var(--red);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Dejar de compartir y borrar mi recorrido</button>`
+        : `<button id="ubicActivar" style="width:100%;height:48px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Activar</button>`}
+    </div>`);
+  const q = document.getElementById('ubicQuitar');
+  if(q) q.onclick = async () => {
+    if(!confirm('¿Dejar de compartir tu ubicación? También se borrará el recorrido guardado.')) return;
+    const r = await api('/api/me/consentimiento-ubicacion', { method:'DELETE' });
+    closeSheet();
+    if(r){ detenerRastreo(); toast('Ya no compartes tu ubicación'); }
+    else toast('No se pudo desactivar','err');
+  };
+  const a = document.getElementById('ubicActivar');
+  if(a) a.onclick = async () => {
+    const r = await api('/api/me/consentimiento-ubicacion', { method:'POST' });
+    closeSheet();
+    if(r){ arrancarRastreo(); toast('Ubicación activada'); }
+    else toast('No se pudo activar','err');
+  };
+}
+
 /* ════════ Proveedor de mapa (Mapbox si hay token, OSM si no) ════════
    El asesor tiene que poder mandar la ubicación de otra ciudad sin estar allí
    ("estoy en Tocaima y necesito mandar Mariquita"), así que el buscador importa tanto
@@ -3062,17 +3273,17 @@ async function obtenerPosicionActual(){
     // Alta precisión primero; si expira, reintento con baja precisión (red/celda).
     try{
       const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy:true, timeout:10000 });
-      return { latitude:pos.coords.latitude, longitude:pos.coords.longitude };
+      return { latitude:pos.coords.latitude, longitude:pos.coords.longitude, accuracy:pos.coords.accuracy };
     }catch(e){
       const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy:false, timeout:15000 });
-      return { latitude:pos.coords.latitude, longitude:pos.coords.longitude };
+      return { latitude:pos.coords.latitude, longitude:pos.coords.longitude, accuracy:pos.coords.accuracy };
     }
   }
   // Navegador: alta precisión y, si falla por timeout, reintento con baja precisión.
   const pedir=(opts)=>new Promise((resolve,reject)=>{
     if(!navigator.geolocation){ reject(new Error('GPS no disponible')); return; }
     navigator.geolocation.getCurrentPosition(
-      pos=>resolve({ latitude:pos.coords.latitude, longitude:pos.coords.longitude }),
+      pos=>resolve({ latitude:pos.coords.latitude, longitude:pos.coords.longitude, accuracy:pos.coords.accuracy }),
       reject, opts);
   });
   try{ return await pedir({ enableHighAccuracy:true, timeout:10000 }); }
@@ -3893,6 +4104,9 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           <div class="sec-body">
             <div class="sec-row" id="rowAutomatizaciones"><label>⚙️ Mis automatizaciones</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
             <div class="sec-row" id="rowMisPlantillas"><label>📋 Mis plantillas de WhatsApp</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
+            <div class="sec-row" id="rowMiMapa"><label>🗺️ Mi mapa y recorrido</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
+            <div class="sec-row" id="rowUbicacion"><label>📍 Compartir ubicación</label><span id="ubicEstado" style="font-size:12.5px;color:var(--text-3)">—</span></div>
+            <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Solo mientras tienes la app abierta. La ven la administración y los jefes, nunca los clientes.</div>
           </div>
         </div>
 
@@ -4120,6 +4334,11 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if (autoRow) autoRow.addEventListener('click', () => { haptic(8); abrirMisAutomatizaciones(); });
       const tplRow = document.getElementById('rowMisPlantillas');
       if (tplRow) tplRow.addEventListener('click', () => { haptic(8); abrirMisPlantillasWA(); });
+      actualizarIndicadorUbicacion();
+      const ubicRow = document.getElementById('rowUbicacion');
+      if (ubicRow) ubicRow.addEventListener('click', () => { haptic(8); abrirAjusteUbicacion(); });
+      const miMapaRow = document.getElementById('rowMiMapa');
+      if (miMapaRow) miMapaRow.addEventListener('click', () => { haptic(8); abrirMiMapa(); });
       cargarVersionApp();
       // Mis respuestas
       cargarMisTpl();
