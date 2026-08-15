@@ -335,6 +335,11 @@ function routeIncomingLocation(fromPhone, customerName, locationData, wamid, ref
   store.saveMessage(lead.id, fromPhone, vendedor ? vendedor.telefono : '', locBody, 'incoming', {
     media_type: 'location', media_id: null, media_mime: null, media_filename: null,
   }, null, wamid || null);
+  // El cliente acaba de decir exactamente dónde está: es la mejor coordenada que vamos a
+  // tener de él, mucho mejor que el centroide de su ciudad. Se guarda en el lead para que
+  // aparezca en el mapa del asesor con pin sólido (ubicación exacta).
+  try { store.setLeadCoordsDesdeUbicacion(lead.id, locationData.latitude, locationData.longitude); }
+  catch (e) { console.error('[ASSIGNER] coords desde ubicación:', e.message); }
   updateCustomerMessageTimestamp(lead.id);
   syncMulticanal(lead.id, {
     direction: 'incoming', body: displayBody, fromNumber: fromPhone, toNumber: vendedor ? vendedor.telefono : '',

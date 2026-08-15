@@ -17,48 +17,19 @@
 (function () {
   'use strict';
 
-  const MINUTOS_FRESCO = 5;   // menos de esto = posición en vivo
-  const MINUTOS_TIBIO = 30;   // entre esto y lo anterior = reciente; más = vieja
-
   let map = null;
   let cfgMapa = null;
+  let capaBase = null;
   let asesores = [];
   let marcadores = new Map();   // vendedorId -> L.marker
   let capaRecorrido = null;
   let seleccionado = null;
   let api = null, toast = null, esc = null;
 
-  /* ── Carga perezosa de Leaflet (mismo patrón que equipo-interno.html) ── */
-  async function cargarLeaflet() {
-    if (window.L) return;
-    const css = document.createElement('link');
-    css.rel = 'stylesheet'; css.href = '/vendor/leaflet/leaflet.css';
-    document.head.appendChild(css);
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = '/vendor/leaflet/leaflet.js'; s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-  }
-
-  // Teselas: Mapbox oscuro si hay token (acorde a la marca), OSM si no.
-  function capaTiles() {
-    if (cfgMapa && cfgMapa.proveedor === 'mapbox' && cfgMapa.token) {
-      return L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/512/{z}/{x}/{y}@2x?access_token=${encodeURIComponent(cfgMapa.token)}`,
-        { maxZoom: 19, tileSize: 512, zoomOffset: -1, attribution: '© Mapbox © OpenStreetMap' });
-    }
-    return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' });
-  }
-
-  /* ── Frescura de la posición: es la diferencia entre informar y engañar ── */
-  function frescura(ts) {
-    if (!ts) return { clase: 'fria', label: 'sin datos', color: '#6D6D6D' };
-    const min = (Date.now() - new Date(String(ts).replace(' ', 'T')).getTime()) / 60000;
-    if (min < MINUTOS_FRESCO) return { clase: 'viva', label: 'en vivo', color: '#4E7B46' };
-    if (min < MINUTOS_TIBIO) return { clase: 'tibia', label: `hace ${Math.round(min)} min`, color: '#C8A45A' };
-    if (min < 60 * 24) return { clase: 'fria', label: `hace ${Math.round(min / 60)} h`, color: '#6D6D6D' };
-    return { clase: 'fria', label: 'hace más de un día', color: '#6D6D6D' };
-  }
+  // Carga de Leaflet, teselas, frescura y hora vienen del núcleo compartido
+  // (/shared/mapa-base.js) — antes estaban duplicadas aquí, en el panel móvil, en el
+  // inbox y en el chat interno, con derivas entre copias.
+  const { cargarLeaflet, frescura, horaCorta: hora, token: tk } = window.SPMapa;
 
   function iniciales(n) {
     return String(n || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase();
@@ -68,12 +39,13 @@
     const f = frescura(a.ts);
     const cuerpo = a.foto
       ? `<img src="${a.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
-      : `<span style="font-size:12px;font-weight:700;color:#0A0A0A">${iniciales(a.nombre)}</span>`;
+      : `<span style="font-size:12px;font-weight:700;color:var(--bg-0)">${iniciales(a.nombre)}</span>`;
+    // Dentro de un divIcon sí se puede usar var(): es DOM real, no un atributo SVG.
     return L.divIcon({
       className: 'mapa-asesor',
-      html: `<div style="width:38px;height:38px;border-radius:50%;background:#C8A45A;display:grid;place-items:center;
+      html: `<div style="width:38px;height:38px;border-radius:50%;background:var(--gold);display:grid;place-items:center;
              border:3px solid ${f.color};box-shadow:0 2px 10px rgba(0,0,0,.5);overflow:hidden">${cuerpo}</div>
-             ${f.clase === 'viva' ? '<span style="position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;background:#4E7B46;border:2px solid #0A0A0A"></span>' : ''}`,
+             ${f.clase === 'viva' ? '<span style="position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;background:var(--green);border:2px solid var(--bg-0)"></span>' : ''}`,
       iconSize: [38, 38], iconAnchor: [19, 19],
     });
   }
@@ -165,7 +137,7 @@
   async function dibujarRecorrido(a) {
     limpiarRecorrido();
     const info = document.getElementById('mapaRecorridoInfo');
-    const fecha = (document.getElementById('mapaFecha') || {}).value || new Date().toISOString().slice(0, 10);
+    const fecha = (document.getElementById('mapaFecha') || {}).value || window.SPMapa.hoyBogota();
     info.textContent = 'Cargando recorrido…';
     const r = await api(`/api/mapa/asesores/${a.id}/recorrido?fecha=${encodeURIComponent(fecha)}`);
     const puntos = (r && r.puntos) || [];
@@ -176,19 +148,16 @@
       return;
     }
     const coords = puntos.map(p => [p.lat, p.lng]);
+    // Aquí sí hace falta el literal: Leaflet pinta la polilínea y los circleMarker sobre
+    // SVG mediante atributos de color, donde var(--gold) no se resuelve.
+    const oro = tk('--gold');
     capaRecorrido = L.layerGroup([
-      L.polyline(coords, { color: '#C8A45A', weight: 3, opacity: .8 }),
-      ...puntos.map(p => L.circleMarker([p.lat, p.lng], { radius: 3, color: '#C8A45A', fillOpacity: 1 })
+      L.polyline(coords, { color: oro, weight: 3, opacity: .8 }),
+      ...puntos.map(p => L.circleMarker([p.lat, p.lng], { radius: 3, color: oro, fillOpacity: 1 })
         .bindTooltip(hora(p.ts), { direction: 'top' })),
     ]).addTo(map);
     map.fitBounds(L.latLngBounds(coords).pad(0.2));
     info.textContent = `${puntos.length} posiciones · de ${hora(puntos[0].ts)} a ${hora(puntos[puntos.length - 1].ts)}`;
-  }
-
-  function hora(ts) {
-    if (!ts) return '';
-    return new Date(String(ts).replace(' ', 'T')).toLocaleTimeString('es-CO',
-      { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
   }
 
   /* ── Leads cercanos + reasignación en un toque ──
@@ -226,29 +195,24 @@
   /* ── Capas: clientes por etapa, proyectos y zonas ──
      Se cargan una vez y se muestran/ocultan con las casillas de la barra. Los clientes
      dependen de la geocodificación: los que no tengan dirección utilizable no salen. */
-  const COLOR_ETAPA = {
-    sin_clasificar: '#6D6D6D', nuevo: '#6D6D6D', interesado: '#C8A45A',
-    cita: '#7B61FF', negociacion: '#2F80ED', vendido: '#4E7B46', perdido: '#E5484D',
-  };
   const capas = { leads: null, proyectos: null, zonas: null };
-
-  function pinCirculo(color) {
-    return L.divIcon({
-      className: 'mapa-pin',
-      html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0A0A0A;box-shadow:0 1px 5px rgba(0,0,0,.6)"></span>`,
-      iconSize: [14, 14], iconAnchor: [7, 7],
-    });
-  }
+  const { etapa, pinPunto } = window.SPMapa;
 
   async function cargarCapa(nombre) {
     if (capas[nombre]) return capas[nombre];
     if (nombre === 'leads') {
       const r = await api('/api/mapa/leads?limit=500');
       const items = (r && r.leads) || [];
-      capas.leads = L.layerGroup(items.map(l =>
-        L.marker([l.lat, l.lng], { icon: pinCirculo(COLOR_ETAPA[l.etiqueta] || COLOR_ETAPA.sin_clasificar) })
-          .bindPopup(`<b>${esc(l.customer_name || 'Cliente')}</b><br>${esc(l.etiqueta || 'sin etapa')}<br>
-                      <span style="color:#6D6D6D">${esc(l.assigned_to_nombre || 'sin asesor')}</span>`)));
+      capas.leads = L.layerGroup(items.map(l => {
+        const e = etapa(l.etiqueta);
+        // Punteado = coordenada deducida de la ciudad, no compartida por el cliente. El
+        // asesor que se desplaza a un pin necesita saber cuál de las dos está mirando.
+        const aprox = l.coord_fuente !== 'ubicacion';
+        return L.marker([l.lat, l.lng], { icon: pinPunto(e.color, { punteado: aprox }) })
+          .bindPopup(`<b>${esc(l.customer_name || 'Cliente')}</b><br>${esc(e.label)}<br>
+                      <span style="color:var(--text-3)">${esc(l.assigned_to_nombre || 'sin asesor')}</span>
+                      ${aprox ? '<br><span style="color:var(--text-3);font-size:11px">Ubicación aproximada (ciudad)</span>' : ''}`);
+      }));
       const aviso = document.getElementById('mapaAvisoLeads');
       if (aviso) aviso.textContent = items.length
         ? `${items.length} ${items.length === 1 ? 'cliente ubicado' : 'clientes ubicados'}`
@@ -256,14 +220,15 @@
     } else if (nombre === 'proyectos') {
       const r = await api('/api/mapa/proyectos');
       capas.proyectos = L.layerGroup(((r && r.proyectos) || []).map(p =>
-        L.marker([p.lat, p.lng], { icon: pinCirculo('#F5F2EB') })
+        L.marker([p.lat, p.lng], { icon: pinPunto(tk('--text'), { tam: 16 }) })
           .bindPopup(`<b>${esc(p.nombre)}</b><br>${esc(p.ciudad || '')} ${esc(p.departamento || '')}`)));
     } else if (nombre === 'zonas') {
       const r = await api('/api/mapa/zonas');
+      const oro = tk('--gold');
       capas.zonas = L.layerGroup(((r && r.zonas) || []).map(z =>
         L.circle([z.centro_lat, z.centro_lng], {
           radius: (Number(z.radio_km) > 0 ? Number(z.radio_km) : 10) * 1000,
-          color: '#C8A45A', weight: 1, fillColor: '#C8A45A', fillOpacity: .07,
+          color: oro, weight: 1, fillColor: oro, fillOpacity: .07,
         }).bindTooltip(esc(z.nombre))));
     }
     return capas[nombre];
@@ -299,7 +264,7 @@
         const f = frescura(a.ts);
         return `<button class="mapa-item" data-ver="${a.id}" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
                 background:transparent;border:none;border-bottom:1px solid var(--border-soft);padding:10px 4px;cursor:pointer;color:var(--text)">
-          <span style="width:30px;height:30px;border-radius:50%;background:#C8A45A;color:#0A0A0A;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none">${iniciales(a.nombre)}</span>
+          <span style="width:30px;height:30px;border-radius:50%;background:var(--gold);color:var(--bg-0);display:grid;place-items:center;font-size:11px;font-weight:700;flex:none">${iniciales(a.nombre)}</span>
           <span style="flex:1;min-width:0">
             <span style="display:block;font-size:13px;font-weight:500">${esc(a.nombre)}</span>
             <span style="font-size:11px;color:${f.color}">● ${f.label}</span>
@@ -331,7 +296,7 @@
      porque /os/ y /supervisor/ tienen APIs distintas para lo mismo. */
   async function montar(opts) {
     api = opts.api; toast = opts.toast; esc = opts.esc;
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = window.SPMapa.hoyBogota();
 
     opts.content.innerHTML = `
       <div class="os-content__max">
@@ -378,11 +343,20 @@
     aplicarResponsive();
     window.addEventListener('resize', aplicarResponsive);
 
-    cfgMapa = (await api('/api/mapa/config')) || { proveedor: 'osm' };
     await cargarLeaflet();
-    map = L.map('mapaLienzo', { zoomControl: true, attributionControl: false }).setView([4.7110, -74.0721], 6);
-    capaTiles().addTo(map);
+    cfgMapa = await window.SPMapa.getConfig();
+    // attributionControl SÍ: las teselas de CARTO/OSM exigen crédito visible por licencia.
+    // mapa.css lo integra al tema en vez de dejarlo como una etiqueta blanca pegada.
+    map = L.map('mapaLienzo', { zoomControl: true, attributionControl: true }).setView([4.7110, -74.0721], 6);
+    capaBase = window.SPMapa.capaTiles(cfgMapa);
+    capaBase.addTo(map);
     setTimeout(() => map.invalidateSize(), 150);
+
+    // Si el usuario alterna claro/oscuro, la capa base tiene que seguirlo: con teselas
+    // oscuras sobre una interfaz clara (o al revés) el mapa se lee mal.
+    document.addEventListener('vida:theme-changed', () => {
+      capaBase = window.SPMapa.aplicarTema(map, capaBase, cfgMapa);
+    });
 
     document.getElementById('mapaRefrescar').onclick = refrescar;
     document.getElementById('mapaEncuadrar').onclick = () => { limpiarRecorrido(); encuadrar(); };

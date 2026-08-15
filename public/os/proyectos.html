@@ -112,6 +112,7 @@
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
+<script src="/shared/mapa-base.js"></script>
 <script>
 (async function () {
   const { api, toast, esc, ICONS } = SPOS;
@@ -178,9 +179,14 @@
               <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M2 21v-1a6 6 0 0 1 12 0v1M16 3.1a4 4 0 0 1 0 7.8M22 21v-1a6 6 0 0 0-4-5.6"/></svg>${p.asesores_activos || 0} asesores</div>
             </div>
           </div>
-          <button class="pj-enter" data-open="${p.id}">Entrar
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          </button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn--ghost btn--xs" data-ubicar="${p.id}" data-nombre="${esc(p.nombre)}"
+              data-lat="${p.lat != null ? p.lat : ''}" data-lng="${p.lng != null ? p.lng : ''}"
+              title="${p.lat != null ? 'Marcado en el mapa' : 'Sin marcar en el mapa'}">${p.lat != null ? '📍' : '📍 Marcar'}</button>
+            <button class="pj-enter" data-open="${p.id}">Entrar
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -207,6 +213,48 @@
       e.stopPropagation();
       location.href = '/os/proyecto.html?id=' + el.dataset.open;
     }));
+    ctx.content.querySelectorAll('[data-ubicar]').forEach(el => el.addEventListener('click', (e) => {
+      e.stopPropagation();   // la tarjeta entera navega al proyecto; este botón no debe
+      ubicarProyecto(el.dataset.ubicar, el.dataset.nombre, el.dataset.lat, el.dataset.lng);
+    }));
+  }
+
+  // Marcar el proyecto en el mapa geográfico. Ojo: no tiene nada que ver con el plano de
+  // lotes de proyecto.html, que es un sistema de coordenadas en píxeles sobre la imagen.
+  // Esto es la coordenada real, la que le sirve al asesor para saber cómo llegar.
+  function ubicarProyecto(id, nombre, latAttr, lngAttr) {
+    const lat = latAttr ? Number(latAttr) : null;
+    const lng = lngAttr ? Number(lngAttr) : null;
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9000;display:grid;place-items:center;padding:16px';
+    ov.innerHTML = `<div class="card card--pad" style="width:min(560px,100%);max-height:92vh;overflow-y:auto">
+      <div class="t-h3" style="margin-bottom:4px">Ubicar "${esc(nombre)}" en el mapa</div>
+      <div class="t-dim3" style="font-size:12px;margin-bottom:12px">Busca el lugar o toca el mapa para poner el pin donde queda el proyecto.</div>
+      <div id="pjPicker"></div>
+      <div id="pjDir" class="t-dim3" style="font-size:11.5px;margin:10px 0;min-height:16px"></div>
+      <div style="display:flex;gap:10px">
+        <button type="button" class="btn btn--ghost" id="pjCancel">Cancelar</button>
+        <button type="button" class="btn btn--gold" id="pjGuardar">Guardar ubicación</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+
+    const picker = SPMapa.pickerUbicacion(ov.querySelector('#pjPicker'), {
+      lat: lat != null ? lat : 4.7110, lng: lng != null ? lng : -74.0721,
+      zoom: lat != null ? 14 : 6,
+      onCambio: (s) => { const d = ov.querySelector('#pjDir'); if (d) d.textContent = s.direccion || `${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`; },
+    });
+    const cerrar = () => { picker.destruir(); ov.remove(); };
+    ov.querySelector('#pjCancel').onclick = cerrar;
+    ov.addEventListener('click', (e) => { if (e.target === ov) cerrar(); });
+    ov.querySelector('#pjGuardar').onclick = async () => {
+      const r = await api(`/api/mapa/proyectos/${id}/coords`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: picker.estado.lat, lng: picker.estado.lng }),
+      });
+      if (r && r.ok) { toast('Proyecto ubicado en el mapa'); cerrar(); cargar(); }
+      else toast((r && r.error) || 'No se pudo guardar', 'err');
+    };
   }
 
   function abrirModal() {

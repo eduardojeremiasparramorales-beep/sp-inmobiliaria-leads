@@ -7,7 +7,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const store = require('./db/store');
-const { parseLocalDbTime } = require('./utils/tiempo');
+const { parseLocalDbTime, hoyBogota } = require('./utils/tiempo');
 const { initDB, getLeads, getLeadCount, addVendedor, getVendedores, getVendedoresActivos, setVendedorEstado, getLeadsSinRespuesta, incrementEscalation, getDB, deleteVendedor, getAdminInbox, getAdminInboxStats } = store;
 const { handleVerification } = require('./webhook/verify');
 const { handleMessage } = require('./webhook/messages');
@@ -138,12 +138,14 @@ app.use((req, res, next) => {
   // depende de Google Fonts en tiempo de ejecución, así que font-src/style-src vuelven
   // a 'self'.
   // Mapas: las teselas y los geocodificadores son los ÚNICOS orígenes externos que se
-  // permiten, y solo por nombre exacto (nada de comodines). Sin esto, `img-src 'self'`
-  // bloqueaba en silencio todas las teselas —el picker de ubicación del asesor, los
-  // mini-mapas del inbox y el mapa del equipo se veían en gris— y `connect-src 'self'`
-  // tumbaba la búsqueda de lugares por Nominatim/Mapbox.
-  const ORIGENES_MAPA_IMG = 'https://*.tile.openstreetmap.org https://api.mapbox.com';
-  const ORIGENES_MAPA_API = 'https://nominatim.openstreetmap.org https://api.mapbox.com';
+  // permiten. Sin esto, `img-src 'self'` bloqueaba en silencio todas las teselas —el
+  // picker de ubicación del asesor, los mini-mapas del inbox y el mapa del equipo se
+  // veían en gris— y `connect-src 'self'` tumbaba la búsqueda de lugares.
+  // cartocdn es el proveedor de teselas oscuras por defecto (no necesita token); va
+  // también en connect-src porque la descarga de mapas para uso sin señal las pide por
+  // fetch, no por <img>.
+  const ORIGENES_MAPA_IMG = 'https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org https://api.mapbox.com';
+  const ORIGENES_MAPA_API = 'https://*.basemaps.cartocdn.com https://nominatim.openstreetmap.org https://api.mapbox.com';
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
     `font-src 'self'; img-src 'self' data: blob: ${ORIGENES_MAPA_IMG}; media-src 'self' blob:; ` +
@@ -3013,36 +3015,82 @@ app.get('/api/mapa/asesores', auth.requireSupervisorOrAdmin, (req, res) => {
   res.json({ asesores, generadoEn: new Date().toISOString() });
 });
 
-// Rastro de un asesor en un día concreto, para dibujar su recorrido.
+// Rastro de un asesor en un día concreto, para dibujar su recorrido. Sin ?fecha se asume
+// HOY en el calendario de Bogotá — no el día UTC, que desde las 19:00 hora local ya es el
+// siguiente y devolvería un recorrido vacío en plena jornada.
 app.get('/api/mapa/asesores/:id/recorrido', auth.requireSupervisorOrAdmin, (req, res) => {
   const fecha = String(req.query.fecha || '').match(/^\d{4}-\d{2}-\d{2}$/)
     ? req.query.fecha
-    : new Date().toISOString().slice(0, 10);
+    : hoyBogota();
   res.json({ fecha, puntos: store.getRecorridoVendedor(req.params.id, fecha) });
 });
 
 // ── Capas del mapa: clientes, proyectos y zonas ──
-// Los clientes se pintan solo si están geocodificados (services/geocode.js). Un lead
-// sin dirección utilizable NO aparece: mejor ausente que en el sitio equivocado.
-app.get('/api/mapa/leads', auth.requireSupervisorOrAdmin, (req, res) => {
-  const { etiqueta, vendedorId, cerca, radio, limit } = req.query;
-  let leads = store.getLeadsConCoordenadas({ etiqueta, vendedorId });
+// Los clientes se pintan con la ubicación que compartieron por WhatsApp si la hay, y si
+// no con la geocodificación de su ciudad (services/geocode.js). Un lead sin ninguna de
+// las dos NO aparece: mejor ausente que en el sitio equivocado.
+//
+// requireAuth, no requireSupervisorOrAdmin: el asesor necesita ver SUS clientes en su
+// propio mapa. El aislamiento se hace aquí abajo, no en el middleware.
+app.get('/api/mapa/leads', auth.requireAuth, (req, res) => {
+  const { etiqueta, cerca, radio, limit } = req.query;
+  const esMando = auth.esAccesoGlobal(req);
+
+  // Regla de aislamiento: solo admin/supervisor/jefe pueden pedir los leads de otro. Al
+  // asesor se le IGNORA el parámetro y se le fuerza el suyo — pasar ?vendedorId=<otro>
+  // no puede ser una forma de leer la cartera del compañero.
+  let filtroVendedor;
+  if (esMando) {
+    filtroVendedor = req.query.vendedorId || null;
+  } else {
+    if (!req.session.vendedorId) return res.json({ leads: [], total: 0 });
+    filtroVendedor = req.session.vendedorId;
+  }
 
   // ?cerca=lat,lng&radio=km → los más próximos a un punto, ordenados por distancia.
+  // El prefiltro por caja se resuelve en SQL (con índice); el círculo exacto, en JS con
+  // Haversine. La caja siempre contiene al círculo, así que el filtro fino no pierde
+  // nada. No se usa trigonometría en SQL a propósito: las funciones matemáticas de
+  // SQLite son opcionales en compilación y aquí conviven better-sqlite3 y sql.js.
+  let punto = null;
+  const radioKm = Number(radio) > 0 ? Number(radio) : 5;
   if (cerca) {
     const [la, ln] = String(cerca).split(',').map(Number);
-    if (Number.isFinite(la) && Number.isFinite(ln)) {
-      const { distanciaMetros } = require('./services/geocode');
-      const radioM = (Number(radio) > 0 ? Number(radio) : 5) * 1000;
-      leads = leads
-        .map(l => ({ ...l, distancia_m: distanciaMetros({ lat: la, lng: ln }, { lat: l.lat, lng: l.lng }) }))
-        .filter(l => l.distancia_m <= radioM)
-        .sort((a, b) => a.distancia_m - b.distancia_m);
+    if (Number.isFinite(la) && Number.isFinite(ln) && Math.abs(la) <= 90 && Math.abs(ln) <= 180) {
+      punto = { lat: la, lng: ln };
     }
   }
-  const tope = Number(limit) > 0 ? Number(limit) : 500;
-  res.json({ leads: leads.slice(0, tope), total: leads.length });
+
+  let leads = store.getLeadsConCoordenadas({
+    etiqueta, vendedorId: filtroVendedor,
+    caja: punto ? cajaAlrededor(punto, radioKm) : null,
+  });
+
+  if (punto) {
+    const { distanciaMetros } = require('./services/geocode');
+    const radioM = radioKm * 1000;
+    leads = leads
+      .map(l => ({ ...l, distancia_m: distanciaMetros(punto, { lat: l.lat, lng: l.lng }) }))
+      .filter(l => l.distancia_m <= radioM)
+      .sort((a, b) => a.distancia_m - b.distancia_m);
+  }
+
+  // Tope duro: un `limit` desmedido no puede convertir esto en una descarga de toda la BD.
+  const tope = Math.min(Number(limit) > 0 ? Number(limit) : 500, 1000);
+  res.json({ leads: leads.slice(0, tope), total: leads.length, truncado: leads.length > tope });
 });
+
+// Caja geográfica que contiene un círculo de `radioKm` alrededor de un punto. A las
+// latitudes de Colombia la aproximación equirectangular es más que suficiente para un
+// prefiltro (el filtro exacto va después, con Haversine).
+function cajaAlrededor({ lat, lng }, radioKm) {
+  const dLat = radioKm / 111.32;
+  const cos = Math.cos(lat * Math.PI / 180);
+  // Cerca de los polos cos→0 y el margen se dispararía; se acota para no generar una
+  // caja que dé la vuelta al mundo. En Colombia nunca se llega a este caso.
+  const dLng = radioKm / (111.32 * Math.max(Math.abs(cos), 0.01));
+  return { minLat: lat - dLat, maxLat: lat + dLat, minLng: lng - dLng, maxLng: lng + dLng };
+}
 
 app.get('/api/mapa/proyectos', auth.requireAuth, (req, res) => res.json({ proyectos: store.getProyectosConCoordenadas() }));
 app.get('/api/mapa/zonas', auth.requireAuth, (req, res) => res.json({ zonas: store.getZonasConCoordenadas() }));
@@ -3068,23 +3116,30 @@ app.post('/api/mapa/geocodificar', auth.requireAdmin, asyncH(async (req, res) =>
   res.json({ ok: true, ...r });
 }));
 
+// Recupera coordenadas exactas del histórico: clientes que ya habían compartido su
+// ubicación por WhatsApp antes de que el CRM la guardara en el lead.
+app.post('/api/mapa/coords-desde-ubicaciones', auth.requireAdmin, (req, res) => {
+  res.json({ ok: true, ...store.backfillCoordsDesdeUbicaciones(Number(req.body && req.body.limite) || 1000) });
+});
+
 // El propio asesor consulta su recorrido (no el de sus compañeros).
 app.get('/api/mi-recorrido', auth.requireAuth, (req, res) => {
   if (!req.session.vendedorId) return res.json({ puntos: [] });
   const fecha = String(req.query.fecha || '').match(/^\d{4}-\d{2}-\d{2}$/)
     ? req.query.fecha
-    : new Date().toISOString().slice(0, 10);
+    : hoyBogota();
   res.json({ fecha, puntos: store.getRecorridoVendedor(req.session.vendedorId, fecha) });
 });
 
-// Config del mapa para el panel del asesor. El token público de Mapbox (pk.*) está
-// pensado para viajar al navegador; conviene restringirlo por URL desde el panel de
-// Mapbox. Sin token configurado, el front sigue con OpenStreetMap + Nominatim, así que
-// buscar y enviar ubicaciones nunca queda caído por falta de credenciales.
+// Config del mapa. El token público de Mapbox (pk.*) está pensado para viajar al
+// navegador; conviene restringirlo por URL desde el panel de Mapbox.
+// Sin token el front usa CARTO Dark Matter para las teselas (oscuro, gratuito y sin
+// credenciales, acorde a la marca) y Nominatim para buscar lugares — o sea, el mapa
+// nunca queda ni claro ni caído por falta de credenciales.
 app.get('/api/mapa/config', auth.requireAuth, (req, res) => {
   const token = process.env.MAPBOX_TOKEN || store.getConfig('mapbox_token') || '';
   res.json({
-    proveedor: token ? 'mapbox' : 'osm',
+    proveedor: token ? 'mapbox' : 'carto',
     token,
     pais: 'co',
   });

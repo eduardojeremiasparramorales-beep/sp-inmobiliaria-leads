@@ -1,6 +1,6 @@
 const adapter = require('./adapter');
 const { createNewTables } = require('./schema');
-const { parseLocalDbTime, SQL_NOW_UTC, nowUTC } = require('../utils/tiempo');
+const { parseLocalDbTime, SQL_NOW_UTC, nowUTC, rangoUTCDeDiaLocal } = require('../utils/tiempo');
 
 // Obtener funciones del adapter
 let all = (sql, params) => adapter.all(sql, params);
@@ -598,6 +598,12 @@ function createSchema() {
   ensureColumn('leads', 'lat', 'REAL');
   ensureColumn('leads', 'lng', 'REAL');
   ensureColumn('leads', 'geocode_at', 'DATETIME');
+  // 'ubicacion' = el cliente compartió su pin por WhatsApp (exacta) · 'geocodificado' =
+  // deducida de su ciudad (aproximada, sirve para agrupar pero no para ir a tocar timbre).
+  // La distinción se muestra en el mapa: no es lo mismo para un asesor que va a moverse.
+  ensureColumn('leads', 'coord_fuente', 'TEXT');
+  // Prefiltro geográfico del mapa (caja antes de calcular distancias).
+  execSQL('CREATE INDEX IF NOT EXISTS idx_leads_coords ON leads(lat, lng)');
   ensureColumn('proyectos', 'lat', 'REAL');
   ensureColumn('proyectos', 'lng', 'REAL');
   ensureColumn('zonas', 'centro_lat', 'REAL');
@@ -1240,12 +1246,19 @@ function getUltimasPosiciones() {
               FROM vendedores WHERE last_lat IS NOT NULL AND last_lng IS NOT NULL`);
 }
 
-// Rastro de un asesor en un día concreto (fecha 'YYYY-MM-DD' en hora de Bogotá, que es
-// la zona del servidor — ver Dockerfile). Se ordena por hora para dibujar la polilínea.
+// Rastro de un asesor en un día concreto del calendario de Bogotá ('YYYY-MM-DD'), que es
+// el día que el asesor entiende por "hoy". Se ordena por hora para dibujar la polilínea.
+//
+// Filtrar con `date(ts) = date(?)` era incorrecto: `ts` se guarda en UTC (SQL_NOW_UTC) y
+// `date()` devuelve la fecha UTC, así que toda posición registrada entre las 19:00 y la
+// medianoche hora local caía en el día siguiente y desaparecía del recorrido — justo el
+// tramo final de la jornada. Se compara contra el rango UTC del día local.
 function getRecorridoVendedor(vendedorId, fecha) {
+  const rango = rangoUTCDeDiaLocal(fecha);
+  if (!rango) return [];
   return all(`SELECT lat, lng, precision, bateria, ts FROM vendedor_posiciones
-              WHERE vendedor_id = ? AND date(ts) = date(?) ORDER BY ts ASC`,
-    [vendedorId, fecha]);
+              WHERE vendedor_id = ? AND ts >= ? AND ts < ? ORDER BY ts ASC`,
+    [vendedorId, rango[0], rango[1]]);
 }
 
 // Purga del histórico. Se llama desde el cron de limpieza diaria.
@@ -1257,9 +1270,47 @@ function purgarPosicionesAntiguas(dias) {
 
 // --- Coordenadas de leads, proyectos y zonas (capas del mapa) ---
 
-function setLeadCoords(leadId, lat, lng) {
-  run("UPDATE leads SET lat = ?, lng = ?, geocode_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-    [lat != null ? Number(lat) : null, lng != null ? Number(lng) : null, leadId]);
+// `fuente`: 'ubicacion' (pin compartido por el cliente) o 'geocodificado' (deducido de
+// la ciudad). REGLA: la geocodificación NUNCA pisa una ubicación compartida. Es la única
+// coordenada en la que se puede confiar para desplazarse, y perderla porque una pasada
+// del cron resolvió "Tocaima" al centro del pueblo sería un retroceso silencioso.
+function setLeadCoords(leadId, lat, lng, fuente) {
+  const f = fuente === 'ubicacion' ? 'ubicacion' : 'geocodificado';
+  const guarda = f === 'geocodificado' ? " AND COALESCE(coord_fuente,'') != 'ubicacion'" : '';
+  run(`UPDATE leads SET lat = ?, lng = ?, coord_fuente = ?,
+       geocode_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?${guarda}`,
+    [lat != null ? Number(lat) : null, lng != null ? Number(lng) : null, f, leadId]);
+}
+
+// Un cliente compartió su ubicación por WhatsApp. Se valida el rango antes de escribir:
+// el body llega de un webhook externo y un valor absurdo mandaría el pin a otro planeta.
+function setLeadCoordsDesdeUbicacion(leadId, lat, lng) {
+  const la = Number(lat), ln = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return false;
+  setLeadCoords(leadId, la, ln, 'ubicacion');
+  return true;
+}
+
+// Rellena coordenadas exactas a partir del histórico de mensajes de ubicación ya
+// recibidos (antes de que existiera coord_fuente nadie los aprovechaba).
+// MAX(id) y no MAX(timestamp): el id es monotónico e inequívoco ante empates, mientras
+// que timestamp convive con formatos mixtos heredados.
+function backfillCoordsDesdeUbicaciones(limite) {
+  const filas = all(`SELECT m.lead_id AS leadId, m.body AS body
+                     FROM messages m
+                     JOIN (SELECT lead_id, MAX(id) AS mid FROM messages
+                           WHERE media_type = 'location' AND lead_id IS NOT NULL
+                           GROUP BY lead_id) u ON u.mid = m.id
+                     LIMIT ?`, [Number(limite) > 0 ? Number(limite) : 1000]);
+  let aplicados = 0;
+  for (const f of filas) {
+    let loc = null;
+    // Un body corrupto no puede tumbar la pasada completa.
+    try { loc = JSON.parse(f.body); } catch (e) { continue; }
+    if (!loc) continue;
+    if (setLeadCoordsDesdeUbicacion(f.leadId, loc.latitude, loc.longitude)) aplicados++;
+  }
+  return { revisados: filas.length, aplicados };
 }
 
 // Marca el intento fallido para no reintentar el mismo lead en cada pasada: sin esto,
@@ -1277,13 +1328,27 @@ function getLeadsSinCoordenadas(limite) {
               ORDER BY updated_at DESC LIMIT ?`, [Number(limite) > 0 ? Number(limite) : 50]);
 }
 
-function getLeadsConCoordenadas({ etiqueta, vendedorId } = {}) {
-  const cond = ["l.lat IS NOT NULL", "l.status != 'cerrado'"];
+// `etiqueta` acepta una o varias separadas por coma (filtro por etapa del pipeline).
+// `caja` es el prefiltro geográfico: acota en SQL antes de calcular distancias en JS, en
+// vez de traer todos los leads geocodificados a memoria en cada consulta.
+function getLeadsConCoordenadas({ etiqueta, vendedorId, caja } = {}) {
+  const cond = ['l.lat IS NOT NULL', "l.status != 'cerrado'"];
   const args = [];
-  if (etiqueta) { cond.push('l.etiqueta = ?'); args.push(etiqueta); }
+  if (etiqueta) {
+    const etqs = String(etiqueta).split(',').map(s => s.trim()).filter(Boolean);
+    if (etqs.length) {
+      cond.push(`l.etiqueta IN (${etqs.map(() => '?').join(',')})`);
+      args.push(...etqs);
+    }
+  }
   if (vendedorId) { cond.push('l.assigned_to_id = ?'); args.push(Number(vendedorId)); }
+  if (caja) {
+    cond.push('l.lat BETWEEN ? AND ?', 'l.lng BETWEEN ? AND ?');
+    args.push(caja.minLat, caja.maxLat, caja.minLng, caja.maxLng);
+  }
   return all(`SELECT l.id, l.customer_name, l.customer_phone, l.etiqueta, l.status, l.lat, l.lng,
-                     l.assigned_to_id, v.nombre AS assigned_to_nombre, l.ciudad, l.proyecto
+                     l.coord_fuente, l.assigned_to_id, v.nombre AS assigned_to_nombre,
+                     l.ciudad, l.proyecto, l.last_customer_message_at
               FROM leads l LEFT JOIN vendedores v ON v.id = l.assigned_to_id
               WHERE ${cond.join(' AND ')}`, args);
 }
@@ -3938,7 +4003,8 @@ module.exports = {
   saveTeamReaction, removeTeamReaction, getTeamReactionsForMessages, deleteTeamMessage, updatePresence, getPresenceMap,
   setConsentimientoUbicacion, tieneConsentimientoUbicacion, revocarConsentimientoUbicacion,
   guardarPosicionVendedor, getUltimasPosiciones, getRecorridoVendedor, purgarPosicionesAntiguas,
-  setLeadCoords, marcarLeadSinGeocodificar, getLeadsSinCoordenadas, getLeadsConCoordenadas,
+  setLeadCoords, setLeadCoordsDesdeUbicacion, backfillCoordsDesdeUbicaciones,
+  marcarLeadSinGeocodificar, getLeadsSinCoordenadas, getLeadsConCoordenadas,
   setProyectoCoords, getProyectosConCoordenadas, setZonaCoords, getZonasConCoordenadas,
   pinTeamMessage, getPinnedTeamMessage, editTeamMessage, searchTeamMessages, forwardTeamMessage,
   getMiDia, getLeadsNecesitanSeguimiento, setFollowupCreated,

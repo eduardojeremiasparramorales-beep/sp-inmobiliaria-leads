@@ -3,6 +3,9 @@
 //   1. Sin consentimiento sellado en BD no se guarda NADA, aunque el cliente lo mande.
 //   2. Revocar el consentimiento borra el rastro anterior, no solo apaga la captura.
 const store = require('../../src/db/store');
+// El "hoy" del recorrido es el del calendario de Bogotá. Usar toISOString() aquí hacía que
+// estos tests pasaran solo antes de las 19:00 hora local — ver recorrido-timezone.test.js.
+const { hoyBogota } = require('../../src/utils/tiempo');
 
 let vendedorId;
 
@@ -22,7 +25,7 @@ describe('consentimiento de ubicación', () => {
     expect(store.tieneConsentimientoUbicacion(vendedorId)).toBe(false);
     const r = store.guardarPosicionVendedor(vendedorId, { lat: 4.71, lng: -74.07 });
     expect(r).toEqual({ ok: false, error: 'sin_consentimiento' });
-    expect(store.getRecorridoVendedor(vendedorId, new Date().toISOString().slice(0, 10))).toHaveLength(0);
+    expect(store.getRecorridoVendedor(vendedorId, hoyBogota())).toHaveLength(0);
   });
 
   it('guarda posiciones una vez aceptado y las expone como recorrido del día', () => {
@@ -31,7 +34,7 @@ describe('consentimiento de ubicación', () => {
     expect(store.guardarPosicionVendedor(vendedorId, { lat: 4.1420, lng: -73.7580, precision: 12, bateria: 80 }).ok).toBe(true);
     expect(store.guardarPosicionVendedor(vendedorId, { lat: 4.1451, lng: -73.7549 }).ok).toBe(true);
 
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = hoyBogota();
     const puntos = store.getRecorridoVendedor(vendedorId, hoy);
     expect(puntos).toHaveLength(2);
     expect(puntos[0].lat).toBeCloseTo(4.1420, 4); // orden cronológico, no de inserción inversa
@@ -52,7 +55,7 @@ describe('consentimiento de ubicación', () => {
   it('revocar borra el rastro completo, no solo apaga la captura', () => {
     store.revocarConsentimientoUbicacion(vendedorId);
     expect(store.tieneConsentimientoUbicacion(vendedorId)).toBe(false);
-    expect(store.getRecorridoVendedor(vendedorId, new Date().toISOString().slice(0, 10))).toHaveLength(0);
+    expect(store.getRecorridoVendedor(vendedorId, hoyBogota())).toHaveLength(0);
     expect(store.getUltimasPosiciones().find(v => Number(v.id) === Number(vendedorId))).toBeFalsy();
     // Y vuelve a rechazar posiciones nuevas
     expect(store.guardarPosicionVendedor(vendedorId, { lat: 1, lng: 1 }).ok).toBe(false);
@@ -70,6 +73,6 @@ describe('purga del histórico', () => {
     const borrados = store.purgarPosicionesAntiguas(30);
     expect(borrados).toBeGreaterThanOrEqual(1);
     // El punto de hoy sobrevive
-    expect(store.getRecorridoVendedor(vendedorId, new Date().toISOString().slice(0, 10)).length).toBeGreaterThan(0);
+    expect(store.getRecorridoVendedor(vendedorId, hoyBogota()).length).toBeGreaterThan(0);
   });
 });

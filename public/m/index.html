@@ -124,6 +124,10 @@
 </div>
 
 <script src="/sw-reg.js"></script>
+<!-- window.SPMapa: núcleo de mapas compartido con el panel admin. Va antes de app.js,
+     que lo usa desde el tab Mapa, el picker de ubicación y los mensajes de ubicación.
+     Leaflet en sí sigue siendo perezoso: lo trae SPMapa cuando hace falta. -->
+<script src="/shared/mapa-base.js"></script>
 <script src="/m/app.js"></script>
 </body>
 </html>

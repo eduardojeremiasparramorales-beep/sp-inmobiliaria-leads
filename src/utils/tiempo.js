@@ -63,4 +63,30 @@ function formatBogota(fechaUTC, opciones = {}) {
   return d.toLocaleString('es-CO', { ...base, ...opts }); // modo === 'completo'
 }
 
-module.exports = { parseLocalDbTime, nowUTC, parseDbTimeUTC, formatBogota, SQL_NOW_UTC };
+// Colombia no aplica horario de verano: el offset es fijo desde 1993, así que no hace
+// falta una librería de zonas horarias para convertir un día local a su rango UTC.
+const OFFSET_CO = '-05:00';
+
+// Traduce un día del calendario de Bogotá ('YYYY-MM-DD') al rango [desde, hasta) en UTC
+// que lo contiene. Es lo que hay que usar para filtrar columnas escritas con SQL_NOW_UTC:
+// `date(ts)` en SQLite devuelve la fecha UTC, así que comparar contra un día local pierde
+// todo lo ocurrido entre las 19:00 y la medianoche (cae ya en el día UTC siguiente).
+// Devolver un rango en vez de una fecha tiene además la ventaja de que la comparación es
+// sobre texto ISO —lexicográficamente ordenable— y puede usar el índice, mientras que
+// `date(ts) = ?` obliga a evaluar una función por fila.
+function rangoUTCDeDiaLocal(fecha) {
+  const desde = new Date(`${String(fecha).slice(0, 10)}T00:00:00.000${OFFSET_CO}`);
+  if (isNaN(desde.getTime())) return null;
+  return [desde.toISOString(), new Date(desde.getTime() + 86400000).toISOString()];
+}
+
+// El día de hoy según el calendario de Bogotá, no según UTC. `new Date().toISOString()`
+// devuelve el día equivocado entre las 19:00 y la medianoche hora local.
+function hoyBogota() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }); // en-CA → YYYY-MM-DD
+}
+
+module.exports = {
+  parseLocalDbTime, nowUTC, parseDbTimeUTC, formatBogota, SQL_NOW_UTC,
+  rangoUTCDeDiaLocal, hoyBogota, OFFSET_CO,
+};

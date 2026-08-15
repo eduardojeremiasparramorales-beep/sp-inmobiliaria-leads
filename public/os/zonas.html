@@ -11,6 +11,7 @@
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
+<script src="/shared/mapa-base.js"></script>
 <script>
 (async function () {
   const { ICONS, api, fmt, toast } = SPOS;
@@ -75,6 +76,9 @@
               <td>
                 <div class="u-row u-gap1">
                   <button class="btn btn--ghost btn--xs" data-action="renombrar" data-id="${z.id}" data-nombre="${esc(z.nombre)}">${S.edit} Renombrar</button>
+                  <button class="btn btn--ghost btn--xs" data-action="ubicar" data-id="${z.id}" data-nombre="${esc(z.nombre)}"
+                    data-lat="${z.centro_lat != null ? z.centro_lat : ''}" data-lng="${z.centro_lng != null ? z.centro_lng : ''}" data-radio="${z.radio_km != null ? z.radio_km : ''}"
+                    title="${z.centro_lat != null ? 'Marcada en el mapa' : 'Sin marcar en el mapa'}">${z.centro_lat != null ? '📍' : '📍 Marcar'}</button>
                   <button class="btn btn--ghost btn--xs" data-action="toggle" data-id="${z.id}" data-activo="${z.activo}">${z.activo ? 'Desactivar' : 'Activar'}</button>
                   <button class="btn btn--ghost btn--xs t-red" data-action="eliminar" data-id="${z.id}" data-nombre="${esc(z.nombre)}">${S.trash}</button>
                 </div>
@@ -202,6 +206,50 @@
         if (r && r.ok) { toast('Zona actualizada'); cerrarModal(); cargar(); }
         else toast(r?.error || 'Error', 'err');
       });
+    });
+
+    // Marcar la zona en el mapa. Sin esto, la capa "Zonas" del mapa del equipo estaba
+    // condenada a salir vacía: el endpoint de coordenadas existía y no lo llamaba nadie.
+    document.querySelectorAll('[data-action="ubicar"]').forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.id;
+      const lat = btn.dataset.lat ? Number(btn.dataset.lat) : null;
+      const lng = btn.dataset.lng ? Number(btn.dataset.lng) : null;
+      let radio = btn.dataset.radio ? Number(btn.dataset.radio) : 10;
+
+      abrirModal(`Ubicar "${btn.dataset.nombre}" en el mapa`, `
+        <div id="zonaPicker"></div>
+        <div style="margin:12px 0 6px;display:flex;align-items:center;gap:10px">
+          <label style="font-size:12.5px;color:var(--text-2);flex:none">Radio</label>
+          <input type="range" id="zonaRadio" min="1" max="80" step="1" value="${radio}" style="flex:1;accent-color:var(--gold)">
+          <span id="zonaRadioTxt" style="font-size:13px;font-weight:600;width:52px;text-align:right">${radio} km</span>
+        </div>
+        <div class="t-dim3" style="font-size:11.5px;line-height:1.5;margin-bottom:10px">
+          Busca el municipio arriba o toca el mapa. El círculo es el área que cubre la zona.
+        </div>
+        <div style="display:flex;gap:10px">
+          <button type="button" class="btn btn--ghost" id="zonaCancel">Cancelar</button>
+          <button type="button" class="btn btn--gold" id="zonaGuardar">Guardar ubicación</button>
+        </div>`);
+
+      const picker = SPMapa.pickerUbicacion(document.getElementById('zonaPicker'), {
+        lat: lat != null ? lat : 4.7110, lng: lng != null ? lng : -74.0721,
+        zoom: lat != null ? 11 : 6, radioKm: radio,
+      });
+      const slider = document.getElementById('zonaRadio');
+      slider.oninput = () => {
+        radio = Number(slider.value);
+        document.getElementById('zonaRadioTxt').textContent = radio + ' km';
+        picker.setRadio(radio);
+      };
+      document.getElementById('zonaCancel').onclick = () => { picker.destruir(); cerrarModal(); };
+      document.getElementById('zonaGuardar').onclick = async () => {
+        const r = await api(`/api/mapa/zonas/${id}/coords`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat: picker.estado.lat, lng: picker.estado.lng, radioKm: radio }),
+        });
+        if (r && r.ok) { toast('Zona ubicada en el mapa'); picker.destruir(); cerrarModal(); cargar(); }
+        else toast((r && r.error) || 'No se pudo guardar', 'err');
+      };
     });
 
     document.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.onclick = async () => {

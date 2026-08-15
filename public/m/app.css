@@ -643,3 +643,19 @@
   [hidden]{ display:none !important; }
   @media (min-width:900px){ #app{ max-width:440px; margin:0 auto; box-shadow:0 0 0 1px var(--border-soft); } }
   .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
+
+  /* ── Tab Mapa ── */
+  /* Botones de la ficha inferior (chat / llamar / cómo llegar). Se usa el mismo bloque
+     para <button> y <a> porque "Llamar" es un enlace tel: — así no hay dos estilos que
+     mantener sincronizados. */
+  .mapa-accion{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+    height:56px; border-radius:14px; border:1px solid var(--border); background:var(--bg-3);
+    color:var(--text); font-size:11px; font-family:inherit; cursor:pointer; text-decoration:none; }
+  .mapa-accion:active{ background:var(--bg-4); }
+  .mapa-accion svg{ color:var(--gold); }
+  .mapa-nav-btn{ height:48px; border-radius:14px; border:1px solid var(--border); background:var(--bg-3);
+    color:var(--text); font-size:15px; font-family:inherit; cursor:pointer; }
+  .mapa-nav-btn:active{ background:var(--bg-4); }
+  /* La barra de chips no muestra su scrollbar: en móvil ocupa sin aportar. */
+  #mapaChips::-webkit-scrollbar{ display:none; }
+  #mapaChips{ scrollbar-width:none; }

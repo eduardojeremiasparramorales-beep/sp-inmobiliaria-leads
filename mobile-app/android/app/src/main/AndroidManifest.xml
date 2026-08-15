@@ -53,4 +53,22 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Visibilidad de paquetes (Android 11+ / API 30).
+         Sin este bloque, resolveActivity() devuelve null para cualquier app no declarada,
+         y como Capacitor consulta resolveActivity antes de lanzar el Intent, el botón
+         "Cómo llegar" del mapa fallaría EN SILENCIO en cualquier celular moderno: el
+         asesor toca y no pasa absolutamente nada. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <package android:name="com.waze" />
+        <package android:name="com.google.android.apps.maps" />
+    </queries>
 </manifest>

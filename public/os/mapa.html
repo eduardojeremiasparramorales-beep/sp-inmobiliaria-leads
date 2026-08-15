@@ -11,6 +11,8 @@
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
+<!-- mapa-base.js define window.SPMapa; mapa-core.js lo consume, así que va antes. -->
+<script src="/shared/mapa-base.js"></script>
 <script src="/os/mapa-core.js"></script>
 <script>
 (async function () {

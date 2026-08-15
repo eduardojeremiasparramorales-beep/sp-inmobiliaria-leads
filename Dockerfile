@@ -26,6 +26,8 @@ COPY . .
 RUN npm run build:mobile \
   && cp dist/m/app.js public/m/app.js \
   && cp dist/m/app.css public/m/app.css \
+  && cp dist/shared/mapa-base.js public/shared/mapa-base.js \
+  && cp dist/shared/mapa.css public/shared/mapa.css \
   && rm -rf dist
 
 RUN npm prune --omit=dev

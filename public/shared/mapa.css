@@ -1,0 +1,158 @@
+/* ============================================================================
+   SP Mapa — tema de Leaflet sobre los tokens de SP OS
+   ----------------------------------------------------------------------------
+   Leaflet trae su propia piel: controles blancos, popups blancos, tooltips
+   blancos y un contenedor gris claro. Sobre una interfaz negra eso se ve como un
+   error, no como un mapa.
+
+   Vive en su propio archivo, y NO dentro de sp-os.css, por una razón de cascada:
+   sp-os.css se carga estático en el <head>, mientras que leaflet.css se inyecta en
+   runtime desde SPMapa.cargarLeaflet() — o sea, siempre después. A igualdad de
+   especificidad ganaría Leaflet y habría que llenar todo de !important. Este
+   archivo se inyecta INMEDIATAMENTE DESPUÉS de leaflet.css, así que el orden
+   natural basta. Ver public/shared/mapa-base.js → cargarLeaflet().
+
+   Se apoya en los tokens de sp-os.css con valores de respaldo, para que un mapa
+   incrustado en una página que no cargue el sistema de diseño siga siendo oscuro.
+   ============================================================================ */
+
+/* ── Lienzo ── */
+.leaflet-container {
+  background: var(--bg-3, #1B1B1B);
+  font-family: var(--f-ui, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  outline: none;
+}
+.leaflet-container a { color: var(--gold, #FFD76A); }
+
+/* Los divIcon traen fondo blanco y borde por defecto — se ven como un recuadro
+   alrededor de cada marcador personalizado. */
+.leaflet-div-icon { background: transparent; border: none; }
+
+/* ── Controles (zoom, capas, escala) ── */
+.leaflet-bar,
+.leaflet-touch .leaflet-bar,
+.leaflet-touch .leaflet-control-layers {
+  border: 1px solid var(--border, #252525);
+  border-radius: var(--r-sm, 14px);
+  box-shadow: var(--sh-2, 0 4px 18px rgba(0, 0, 0, .36));
+  overflow: hidden;
+}
+.leaflet-bar a,
+.leaflet-bar a:link,
+.leaflet-bar a:visited {
+  background: var(--bg-2, #161616);
+  color: var(--text, #F8F8F8);
+  border-bottom: 1px solid var(--border-soft, #1E1E1E);
+  font-family: var(--f-ui, Inter, sans-serif);
+}
+.leaflet-bar a:hover,
+.leaflet-bar a:focus {
+  background: var(--bg-3, #1B1B1B);
+  color: var(--gold, #FFD76A);
+  border-bottom-color: var(--border-soft, #1E1E1E);
+}
+.leaflet-bar a.leaflet-disabled,
+.leaflet-bar a.leaflet-disabled:hover {
+  background: var(--bg-1, #101010);
+  color: var(--text-4, rgba(248, 248, 248, .20));
+}
+
+.leaflet-control-layers {
+  background: var(--bg-2, #161616);
+  color: var(--text, #F8F8F8);
+  border: 1px solid var(--border, #252525);
+  border-radius: var(--r-sm, 14px);
+}
+.leaflet-control-layers-expanded { background: var(--bg-2, #161616); color: var(--text, #F8F8F8); }
+.leaflet-control-layers-separator { border-top-color: var(--border, #252525); }
+
+.leaflet-control-scale-line {
+  background: rgba(6, 6, 6, .55);
+  border: 1px solid var(--border, #252525);
+  border-top: none;
+  color: var(--text-2, rgba(248, 248, 248, .62));
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Atribución ──
+   Obligatoria por licencia (OSM/CARTO/Mapbox), así que no se oculta: se integra.
+
+   El selector lleva `.leaflet-container` a propósito, y no por adorno: leaflet.css
+   declara `.leaflet-container .leaflet-control-attribution { background: rgba(255,255,255,.8) }`
+   —dos clases—, así que una regla de una sola clase pierde por ESPECIFICIDAD y cargar
+   este archivo después no la salva. Sin esto la atribución queda como una barra blanca
+   con texto casi blanco encima (ilegible) sobre el mapa oscuro. */
+.leaflet-container .leaflet-control-attribution {
+  background: rgba(6, 6, 6, .55);
+  color: var(--text-3, rgba(248, 248, 248, .38));
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm, 14px) 0 0 0;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.leaflet-control-attribution a { color: var(--text-2, rgba(248, 248, 248, .62)); }
+.leaflet-control-attribution a:hover { color: var(--gold, #FFD76A); }
+
+/* ── Popups ── */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-2, #161616);
+  color: var(--text, #F8F8F8);
+  border: 1px solid var(--gold-line, rgba(255, 215, 106, .38));
+  border-radius: var(--r, 20px);
+  box-shadow: var(--sh-3, 0 12px 44px rgba(0, 0, 0, .52));
+}
+.leaflet-popup-content { margin: 10px 13px; font-size: 12.5px; line-height: 1.5; }
+.leaflet-popup-content b, .leaflet-popup-content strong { color: var(--text, #F8F8F8); }
+/* La "puntita" del bocadillo es un div rotado, no hereda del wrapper. */
+.leaflet-popup-tip {
+  background: var(--bg-2, #161616);
+  border-right: 1px solid var(--gold-line, rgba(255, 215, 106, .38));
+  border-bottom: 1px solid var(--gold-line, rgba(255, 215, 106, .38));
+  box-shadow: none;
+}
+.leaflet-container a.leaflet-popup-close-button { color: var(--text-3, rgba(248, 248, 248, .38)); }
+.leaflet-container a.leaflet-popup-close-button:hover { color: var(--text, #F8F8F8); background: transparent; }
+
+/* ── Tooltips ── */
+.leaflet-tooltip {
+  background: var(--bg-2, #161616);
+  color: var(--text, #F8F8F8);
+  border: 1px solid var(--border, #252525);
+  border-radius: 10px;
+  box-shadow: var(--sh-2, 0 4px 18px rgba(0, 0, 0, .36));
+  font-size: 11.5px;
+  padding: 4px 8px;
+}
+/* La flecha del tooltip es un ::before con border-color propio: si se olvida, queda un
+   triangulito blanco colgando de una caja oscura. Es el detalle que delata un tema a
+   medio hacer. */
+.leaflet-tooltip-top::before { border-top-color: var(--bg-2, #161616); }
+.leaflet-tooltip-bottom::before { border-bottom-color: var(--bg-2, #161616); }
+.leaflet-tooltip-left::before { border-left-color: var(--bg-2, #161616); }
+.leaflet-tooltip-right::before { border-right-color: var(--bg-2, #161616); }
+
+/* ── Tema claro ──
+   Solo se pisa lo que lleva negro literal. El oro de marca no alcanza contraste AA
+   sobre marfil, por eso los enlaces usan --gold-ink (definido en sp-os.css). */
+:root[data-theme="light"] .leaflet-control-attribution,
+:root[data-theme="light"] .leaflet-control-scale-line {
+  background: rgba(255, 255, 255, .72);
+}
+:root[data-theme="light"] .leaflet-container a,
+:root[data-theme="light"] .leaflet-control-attribution a:hover,
+:root[data-theme="light"] .leaflet-bar a:hover {
+  color: var(--gold-ink, #7D5F24);
+}
+
+/* ── Red de seguridad ──
+   Si alguna vez hay que volver a teselas claras (caída de CARTO, red corporativa que
+   bloquee el dominio), esta clase las invierte para que no queden blancas sobre negro.
+   No se aplica por defecto: con CARTO Dark Matter no hace falta. */
+.mapa--invertir .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9);
+}
+
+/* ── Marcadores propios ── */
+.sp-cluster, .mapa-asesor, .mapa-pin { background: transparent; border: none; }

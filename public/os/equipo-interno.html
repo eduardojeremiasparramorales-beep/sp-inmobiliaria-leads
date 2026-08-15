@@ -100,6 +100,7 @@
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
+<script src="/shared/mapa-base.js"></script>
 <script>
 (async function(){
 'use strict';
@@ -321,16 +322,14 @@ function renderMensajes(){
     const mapEls=box.querySelectorAll('.leaflet-map:not(.leaflet-container)');
     if(!mapEls.length)return;
     try{
-      if(!window.L){
-        const css=document.createElement('link');css.rel='stylesheet';css.href='/vendor/leaflet/leaflet.css';document.head.appendChild(css);
-        await new Promise((res,rej)=>{const s=document.createElement('script');s.src='/vendor/leaflet/leaflet.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-      }
+      await SPMapa.cargarLeaflet();
+      const cfg=await SPMapa.getConfig();
       mapEls.forEach(el=>{
         const lat=parseFloat(el.dataset.lat);const lng=parseFloat(el.dataset.lng);
         if(isNaN(lat)||isNaN(lng))return;
         try{
           const map=L.map(el,{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false,touchZoom:false,doubleClickZoom:false}).setView([lat,lng],15);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(map);
+          SPMapa.capaTiles(cfg).addTo(map);
           L.marker([lat,lng]).addTo(map);
           setTimeout(()=>map.invalidateSize(),100);
         }catch(e){}
@@ -547,18 +546,16 @@ function eqAbrirUbicacion(){
     if(address){setAddr(name?`${name} — ${address}`:address);return;}
     if(skipGeocode)return;
     setAddr('Buscando dirección…');
-    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=es`);const d=await r.json();const n=d.name||(d.display_name?d.display_name.split(',')[0]:'');const a=d.display_name||'';picker.name=n;picker.address=a;setAddr(a||`${lat.toFixed(5)}, ${lng.toFixed(5)}`);}
+    try{const g=await SPMapa.geocodInverso(lat,lng);const n=g.nombre||(g.direccion?g.direccion.split(',')[0]:'');const a=g.direccion||'';picker.name=n;picker.address=a;setAddr(a||`${lat.toFixed(5)}, ${lng.toFixed(5)}`);}
     catch(e){setAddr(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);}
   };
   (async()=>{
     const mapEl=ov.querySelector('#eqAdmLocMap');if(!mapEl)return;
-    try{
-      const css=document.createElement('link');css.rel='stylesheet';css.href='/vendor/leaflet/leaflet.css';document.head.appendChild(css);
-      if(!window.L){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='/vendor/leaflet/leaflet.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
-    }catch(e){return;}
+    let cfg;
+    try{ await SPMapa.cargarLeaflet(); cfg=await SPMapa.getConfig(); }catch(e){return;}
     if(!ov.parentNode)return;
     pMap=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([picker.lat,picker.lng],12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(pMap);
+    SPMapa.capaTiles(cfg).addTo(pMap);
     pMarker=L.marker([picker.lat,picker.lng],{draggable:true}).addTo(pMap);
     pMarker.on('dragend',()=>{const p=pMarker.getLatLng();movePicker(p.lat,p.lng);});
     pMap.on('click',e=>movePicker(e.latlng.lat,e.latlng.lng));
@@ -590,9 +587,9 @@ function eqAbrirUbicacion(){
       clearTimeout(searchTimer);const q=searchInput.value.trim();
       if(q.length<3){resultsEl.style.display='none';return;}
       searchTimer=setTimeout(async()=>{
-        try{const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&accept-language=es`);const data=await r.json();
-          if(data&&data.length){resultsEl.innerHTML=data.map((res,i)=>`<button data-idx="${i}" style="display:flex;align-items:center;gap:6px;width:100%;padding:8px;background:none;border:none;border-bottom:1px solid var(--border-soft);color:var(--text);cursor:pointer;font-size:12px;text-align:left"><span>📍</span><span>${esc(res.display_name)}</span></button>`).join('');resultsEl.style.display='block';
-            resultsEl.querySelectorAll('[data-idx]').forEach(btn=>btn.onclick=()=>{const r2=data[parseInt(btn.dataset.idx)];resultsEl.style.display='none';searchInput.value=r2.display_name;movePicker(parseFloat(r2.lat),parseFloat(r2.lon),{name:r2.name||'',address:r2.display_name||''});});
+        try{const data=await SPMapa.buscarLugares(q,{lat:picker.lat,lng:picker.lng});
+          if(data&&data.length){resultsEl.innerHTML=data.map((res,i)=>`<button data-idx="${i}" style="display:flex;align-items:center;gap:6px;width:100%;padding:8px;background:none;border:none;border-bottom:1px solid var(--border-soft);color:var(--text);cursor:pointer;font-size:12px;text-align:left"><span>📍</span><span>${esc(res.direccion||res.nombre)}</span></button>`).join('');resultsEl.style.display='block';
+            resultsEl.querySelectorAll('[data-idx]').forEach(btn=>btn.onclick=()=>{const r2=data[parseInt(btn.dataset.idx)];resultsEl.style.display='none';searchInput.value=r2.direccion||r2.nombre;movePicker(r2.lat,r2.lng,{name:r2.nombre||'',address:r2.direccion||''});});
           }else{resultsEl.innerHTML='<div style="padding:8px;color:var(--text-3);font-size:12px">Sin resultados</div>';resultsEl.style.display='block';}
         }catch(e){}
       },400);

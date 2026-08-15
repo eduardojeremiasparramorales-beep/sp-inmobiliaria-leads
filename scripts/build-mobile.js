@@ -18,9 +18,11 @@ const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'dist', 'm');
+const OUT_SHARED = path.join(ROOT, 'dist', 'shared');
 
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.mkdirSync(OUT_SHARED, { recursive: true });
 
   const jsResult = await esbuild.build({
     entryPoints: [path.join(ROOT, 'public', 'm', 'app.js')],
@@ -38,6 +40,21 @@ async function main() {
     minify: true, // CSS no tiene el problema de scope global — minificado completo es seguro
     bundle: false,
     metafile: true,
+  });
+
+  // Núcleo de mapas: lo cargan tanto /m/ como las páginas de /os/, así que se minifica
+  // aquí para que no viaje en claro. Mismo minifyIdentifiers:false por coherencia — es un
+  // único global (window.SPMapa), pero la regla del archivo se mantiene sin excepciones.
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, 'public', 'shared', 'mapa-base.js')],
+    outfile: path.join(OUT_SHARED, 'mapa-base.js'),
+    minifyWhitespace: true, minifySyntax: true, minifyIdentifiers: false,
+    bundle: false,
+  });
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, 'public', 'shared', 'mapa.css')],
+    outfile: path.join(OUT_SHARED, 'mapa.css'),
+    minify: true, bundle: false,
   });
 
   const jsBefore = fs.statSync(path.join(ROOT, 'public', 'm', 'app.js')).size;

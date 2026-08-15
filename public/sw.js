@@ -5,6 +5,14 @@
 */
 // El servidor reemplaza __SW_VERSION__ en cada reinicio → invalida caché en cada deploy
 const CACHE = '__SW_VERSION__';
+
+// Teselas del mapa: caché APARTE y con versión propia, deliberadamente desligada del
+// deploy. Si vivieran en CACHE, cada despliegue borraría cientos de piezas que el asesor
+// ya descargó — incluidas las que guardó a propósito para trabajar sin señal.
+const CACHE_TILES = 'sp-tiles-v1';
+const HOSTS_TILES = ['basemaps.cartocdn.com', 'api.mapbox.com', 'tile.openstreetmap.org'];
+const MAX_TILES = 1200;   // ~40 MB con teselas @2x; por encima se recorta lo más viejo
+const esTesela = (url) => HOSTS_TILES.some((h) => url.hostname.endsWith(h));
 const SHELL = [
   '/login.html',
   '/index.html',
@@ -25,18 +33,51 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k !== CACHE && k !== CACHE_TILES).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
 });
 
+// Recorte LRU: las claves salen en orden de inserción, así que las primeras son las más
+// viejas. Sin esto, la caché de teselas crecería sin techo hasta que el navegador la
+// desalojara entera de golpe — y el asesor perdería justo el mapa que había guardado.
+async function recortarTeselas(cache) {
+  const claves = await cache.keys();
+  if (claves.length <= MAX_TILES) return;
+  await Promise.all(claves.slice(0, claves.length - MAX_TILES).map((k) => cache.delete(k)));
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Solo manejamos GET del mismo origen
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (req.method !== 'GET') return;
+
+  // Teselas del mapa (cross-origin): caché primero y revalidación en segundo plano. Una
+  // tesela ya descargada no cambia casi nunca, y servirla del disco es lo que hace que el
+  // mapa siga funcionando en una vereda sin señal.
+  if (esTesela(url)) {
+    event.respondWith(
+      caches.open(CACHE_TILES).then((cache) =>
+        cache.match(req).then((cached) => {
+          const red = fetch(req).then((res) => {
+            // Una respuesta opaca (type 'opaque') no se puede validar y engorda la cuota;
+            // se sirve pero no se guarda.
+            if (res && res.ok && res.type !== 'opaque') {
+              cache.put(req, res.clone()).then(() => recortarTeselas(cache)).catch(() => {});
+            }
+            return res;
+          }).catch(() => cached);
+          return cached || red;
+        })
+      )
+    );
+    return;
+  }
+
+  // El resto: solo mismo origen
+  if (url.origin !== self.location.origin) return;
 
   // API y streams: siempre red, nunca caché
   if (url.pathname.startsWith('/api/')) return;

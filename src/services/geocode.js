@@ -40,7 +40,17 @@ function textoDeLead(lead) {
   return partes.join(', ') + ', Colombia';
 }
 
-/** Resuelve un texto a { lat, lng }, o null si no hay resultado utilizable. */
+// Distingue "el proveedor contestó y no conoce este sitio" de "no pude preguntarle".
+// El primero es definitivo; el segundo es transitorio y NO debe quemar el lead.
+class ErrorRedGeocode extends Error {
+  constructor(causa) { super(causa); this.name = 'ErrorRedGeocode'; }
+}
+
+/**
+ * Resuelve un texto a { lat, lng }, o null si el proveedor respondió sin resultados.
+ * Lanza ErrorRedGeocode si no se pudo consultar (timeout, DNS, 5xx): quien llame debe
+ * poder reintentar más tarde en vez de dar el sitio por imposible.
+ */
 async function geocodificar(texto) {
   const clave = normalizar(texto);
   if (!clave) return null;
@@ -65,8 +75,11 @@ async function geocodificar(texto) {
       if (f) punto = { lat: parseFloat(f.lat), lng: parseFloat(f.lon) };
     }
   } catch (e) {
-    console.error('[GEOCODE] error resolviendo', texto, '—', e.message);
-    return null; // no se cachea el fallo de red: puede ser transitorio
+    // No se cachea NI se devuelve null: un null aquí es indistinguible de "no existe" y
+    // haría que el llamador sellara geocode_at, dejando el lead fuera del mapa para
+    // siempre por un timeout de ocho segundos.
+    console.error('[GEOCODE] no se pudo consultar', texto, '—', e.message);
+    throw new ErrorRedGeocode(e.message);
   }
 
   if (CACHE.size >= MAX_CACHE) CACHE.delete(CACHE.keys().next().value);
@@ -74,12 +87,19 @@ async function geocodificar(texto) {
   return punto;
 }
 
-/** Geocodifica un lead concreto. Devuelve el punto o null. */
+/**
+ * Geocodifica un lead concreto. Devuelve el punto, o null si no se pudo ubicar.
+ * Relanza ErrorRedGeocode para que el lote sepa que fue red y no queme el lead: sellar
+ * geocode_at es una decisión definitiva ("este sitio no existe"), y un timeout no
+ * autoriza a tomarla.
+ */
 async function geocodificarLead(lead) {
   const texto = textoDeLead(lead);
   if (!texto) { store.marcarLeadSinGeocodificar(lead.id); return null; }
-  const punto = await geocodificar(texto);
-  if (punto) store.setLeadCoords(lead.id, punto.lat, punto.lng);
+  const punto = await geocodificar(texto);   // lanza si fue fallo de red
+  // 'geocodificado': el store se encarga de NO pisar una ubicación que el cliente haya
+  // compartido por WhatsApp — el centroide de la ciudad es peor dato que su pin real.
+  if (punto) store.setLeadCoords(lead.id, punto.lat, punto.lng, 'geocodificado');
   else store.marcarLeadSinGeocodificar(lead.id);
   return punto;
 }
@@ -91,17 +111,28 @@ async function geocodificarLead(lead) {
  */
 async function geocodificarPendientes(limite = 25) {
   const pendientes = store.getLeadsSinCoordenadas(limite);
-  if (!pendientes.length) return { procesados: 0, resueltos: 0 };
+  if (!pendientes.length) return { procesados: 0, resueltos: 0, fallosRed: 0 };
   const conToken = !!tokenMapbox();
-  let resueltos = 0;
+  let resueltos = 0, fallosRed = 0, seguidos = 0;
   for (const lead of pendientes) {
-    const p = await geocodificarLead(lead);
-    if (p) resueltos++;
+    try {
+      if (await geocodificarLead(lead)) resueltos++;
+      seguidos = 0;
+    } catch (e) {
+      if (!(e instanceof ErrorRedGeocode)) throw e;
+      // El lead queda pendiente a propósito: la próxima pasada lo reintenta.
+      fallosRed++; seguidos++;
+      // Si el proveedor está caído, seguir castigándolo lead a lead no ayuda a nadie.
+      if (seguidos >= 3) {
+        console.error(`[GEOCODE] ${seguidos} fallos de red seguidos — se aborta la pasada, se reintenta en la siguiente`);
+        break;
+      }
+    }
     // Nominatim exige como máximo 1 petición por segundo; Mapbox aguanta mucho más.
     await new Promise(r => setTimeout(r, conToken ? 120 : 1100));
   }
-  console.log(`[GEOCODE] ${resueltos}/${pendientes.length} leads geocodificados`);
-  return { procesados: pendientes.length, resueltos };
+  console.log(`[GEOCODE] ${resueltos}/${pendientes.length} leads geocodificados${fallosRed ? ` · ${fallosRed} pendientes por fallo de red` : ''}`);
+  return { procesados: pendientes.length, resueltos, fallosRed };
 }
 
 /** Distancia en metros entre dos puntos (Haversine) — la usa el filtro "leads cerca". */
@@ -113,4 +144,7 @@ function distanciaMetros(a, b) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-module.exports = { geocodificar, geocodificarLead, geocodificarPendientes, distanciaMetros, textoDeLead };
+module.exports = {
+  geocodificar, geocodificarLead, geocodificarPendientes, distanciaMetros, textoDeLead,
+  ErrorRedGeocode,
+};

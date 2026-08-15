@@ -19,5 +19,12 @@ process.env.FACEBOOK_PAGE_TOKEN = '';
 process.env.INSTAGRAM_TOKEN = '';
 process.env.META_ADS_TOKEN = '';
 
+// El .env de producción trae SECURE_COOKIES=true, que marca sp_session como `Secure`.
+// En local se sirve por http://localhost, así que el navegador DESCARTA esa cookie y el
+// login no prende nunca: se entra, el servidor responde ok y la siguiente petición vuelve
+// a ser anónima. Aquí se apaga para que la sesión funcione en desarrollo; en la VM manda
+// el .env real, que sigue con Secure sobre HTTPS.
+process.env.SECURE_COOKIES = 'false';
+
 console.log('[DEV-LOCAL] Arrancando con credenciales de envío anuladas — no se enviará ningún mensaje real.');
 require('../src/index.js');

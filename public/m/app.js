@@ -861,7 +861,7 @@ function eqAbrirUbicacion(){
     try{ await cargarLeaflet(); }catch(e){ if(mapEl) mapEl.innerHTML='<div style="display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px">No se pudo cargar el mapa</div>'; return; }
     if(!$('#eqLocMap'))return;
     pMap=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([picker.lat,picker.lng],12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(pMap);
+    capaTilesMapa(await getMapaConfig()).addTo(pMap);
     pMarker=L.marker([picker.lat,picker.lng],{draggable:true}).addTo(pMap);
     pMarker.on('dragend',()=>{const p=pMarker.getLatLng();movePicker(p.lat,p.lng);});
     pMap.on('click',e=>movePicker(e.latlng.lat,e.latlng.lng));
@@ -2379,29 +2379,22 @@ function renderMedia(m){
   if(m.media_type==='audio') return src?renderAudioPlayer(m.id,src):'🎙️ Audio';
   return `<a class="file" href="${src}" target="_blank">📄 ${esc(m.media_filename||'archivo')}</a>`;
 }
-// Leaflet lazy: solo se descarga (local, /vendor) la primera vez que hay un mapa en pantalla
-let _leafletP=null;
-function cargarLeaflet(){
-  if(window.L) return Promise.resolve();
-  if(_leafletP) return _leafletP;
-  _leafletP=new Promise((resolve,reject)=>{
-    const css=document.createElement('link'); css.rel='stylesheet'; css.href='/vendor/leaflet/leaflet.css'; document.head.appendChild(css);
-    const s=document.createElement('script'); s.src='/vendor/leaflet/leaflet.js';
-    s.onload=resolve; s.onerror=()=>{ _leafletP=null; reject(new Error('leaflet')); };
-    document.head.appendChild(s);
-  });
-  return _leafletP;
-}
+// Leaflet lazy: solo se descarga (local, /vendor) la primera vez que hay un mapa en
+// pantalla. La carga, el proveedor de teselas y los geocodificadores viven en
+// /shared/mapa-base.js (window.SPMapa), compartidos con el panel admin — antes cada
+// superficie tenía su propia copia y se fueron desincronizando.
+const cargarLeaflet = (...a) => SPMapa.cargarLeaflet(...a);
 async function initLocationMaps(){
   const els=document.querySelectorAll('.leaflet-map:not(.leaflet-container)');
   if(!els.length) return;
-  try{ await cargarLeaflet(); }catch(e){ return; }
+  let cfg;
+  try{ await cargarLeaflet(); cfg=await SPMapa.getConfig(); }catch(e){ return; }
   els.forEach(el=>{
     const lat=parseFloat(el.dataset.lat); const lng=parseFloat(el.dataset.lng);
     if(isNaN(lat)||isNaN(lng)) return;
     try{
       const map=L.map(el,{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false,touchZoom:false,doubleClickZoom:false,boxZoom:false,keyboard:false}).setView([lat,lng],15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(map);
+      SPMapa.capaTiles(cfg).addTo(map);
       L.marker([lat,lng]).addTo(map);
       setTimeout(()=>map.invalidateSize(),100);
     }catch(e){ console.error('Leaflet error:',e.message); }
@@ -2704,22 +2697,12 @@ async function abrirDetallePlantilla(templateId, leadId, waTemplates){
     finally{ window._sending=false; }
   };
 }
-// Reverse geocoding con manejo de error visible (antes se tragaba silenciosamente)
+// Reverse geocoding con manejo de error visible (antes se tragaba silenciosamente).
+// La implementación (Mapbox si hay token, Nominatim si no) vive en SPMapa; aquí solo se
+// adapta el nombre de los campos al que ya usaba el picker de este archivo.
 async function reverseGeocodeUbic(lat,lng){
-  // Con token de Mapbox se usa su geocodificador inverso (direcciones mucho más
-  // precisas en Colombia); sin token, el Nominatim de siempre.
-  const cfg = await getMapaConfig();
-  if(cfg.proveedor === 'mapbox' && cfg.token){
-    const r=await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${encodeURIComponent(cfg.token)}&language=es&limit=1`);
-    if(!r.ok) throw new Error('mapbox_'+r.status);
-    const d=await r.json();
-    const f=(d.features||[])[0];
-    return { name:(f&&f.text)||'', address:(f&&f.place_name)||'' };
-  }
-  const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=es`,{headers:{'Accept-Language':'es'}});
-  if(!r.ok) throw new Error('nominatim_'+r.status);
-  const d=await r.json();
-  return { name:d.name||(d.display_name?d.display_name.split(',')[0]:'')||'', address:d.display_name||'' };
+  const g = await SPMapa.geocodInverso(lat,lng);
+  return { name: g.nombre || (g.direccion ? g.direccion.split(',')[0] : ''), address: g.direccion || '' };
 }
 
 /* ════════ Compartir ubicación durante la jornada ════════
@@ -2736,6 +2719,7 @@ const UBIC_INTERVALO_MS = 90 * 1000;
 const UBIC_DISTANCIA_MIN_M = 40;
 const UBIC_AVISO_KEY = 'sp_ubicacion_aviso_v1';
 let _ubicTimer = null, _ubicUltima = null, _ubicUltimoEnvio = null, _ubicActiva = false;
+let _ubicAppListener = null;   // handle del listener de Capacitor, para poder quitarlo
 
 // Distancia en metros entre dos puntos (Haversine). Se usa para decidir si vale la
 // pena mandar una posición nueva o el asesor sigue prácticamente donde estaba.
@@ -2801,7 +2785,12 @@ async function enviarPosicionActual(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ ...punto, precision: pos.accuracy || null, bateria: await nivelBateria() }),
     });
-    if(r){ _ubicUltimoEnvio = punto; _ubicUltima = Date.now(); actualizarIndicadorUbicacion(); }
+    if(r){
+      _ubicUltimoEnvio = punto; _ubicUltima = Date.now(); actualizarIndicadorUbicacion();
+      // Si el asesor está mirando el mapa, su punto se mueve solo: enterarse de que hay
+      // que salir y volver al tab para verse actualizado sería una mala sorpresa.
+      if(tab === 'mapa' && _mapaTab) pintarMiRecorrido(fechaMapaSeleccionada());
+    }
     else if(api.lastStatus === 403){ detenerRastreo(); } // consentimiento revocado en el servidor
   }catch(e){
     // Permiso del sistema denegado o GPS sin señal: se reintenta en el próximo ciclo,
@@ -2817,11 +2806,13 @@ function arrancarRastreo(){
   _ubicTimer = setInterval(enviarPosicionActual, UBIC_INTERVALO_MS);
   // En segundo plano el WebView pierde el GPS: se para el ciclo y se retoma al volver.
   document.addEventListener('visibilitychange', onVisibilidadUbicacion);
-  if(esNativo()){
+  if(esNativo() && !_ubicAppListener){
     try{
       const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
       if(App && typeof App.addListener === 'function'){
-        App.addListener('appStateChange', ({ isActive }) => { if(isActive) reanudarRastreo(); else pausarRastreo(); });
+        // Se guarda el handle: sin esto, cada ciclo activar→desactivar→activar dejaba un
+        // listener más colgando, y todos seguían llamando a pausar/reanudarRastreo.
+        _ubicAppListener = App.addListener('appStateChange', ({ isActive }) => { if(isActive) reanudarRastreo(); else pausarRastreo(); });
       }
     }catch(e){}
   }
@@ -2835,6 +2826,11 @@ function detenerRastreo(){
   _ubicActiva = false;
   if(_ubicTimer){ clearInterval(_ubicTimer); _ubicTimer = null; }
   document.removeEventListener('visibilitychange', onVisibilidadUbicacion);
+  if(_ubicAppListener){
+    // El handle de Capacitor puede llegar como promesa según versión del plugin.
+    try{ Promise.resolve(_ubicAppListener).then(h => h && h.remove && h.remove()).catch(()=>{}); }catch(e){}
+    _ubicAppListener = null;
+  }
   actualizarIndicadorUbicacion();
 }
 
@@ -2848,58 +2844,493 @@ function actualizarIndicadorUbicacion(){
   el.style.color = '#4E7B46';
 }
 
-/* ════════ Mi mapa (vista del propio asesor) ════════
-   El asesor ve SU posición, SU recorrido del día y sus ubicaciones guardadas. Nunca a
-   sus compañeros: el backend ni siquiera le deja consultarlos (403 en /api/mapa/*). */
-async function abrirMiMapa(){
-  const hoy = new Date().toISOString().slice(0,10);
-  _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:12px">
-      <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
-      <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px">Mi mapa</div>
-      <div style="font-size:11px;color:var(--text-3)" id="miMapaSub">Tu recorrido de hoy</div></div>
-      <input type="date" id="miMapaFecha" value="${hoy}" max="${hoy}" style="background:var(--bg-3);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:6px 8px;font-size:12px;font-family:inherit">
+/* ════════════════════════ MAPA DEL ASESOR (tab) ════════════════════════
+   El mapa de trabajo del asesor: dónde está él, por dónde anduvo hoy, dónde están sus
+   clientes, los proyectos de la empresa y sus puntos guardados. Tocar un cliente abre su
+   chat, lo llama o lanza la navegación — que es la razón de tener un mapa y no una lista.
+
+   Reemplaza a la vieja pantalla "Mi mapa" (solo lectura, escondida en Perfil), que además
+   nunca destruía su instancia de Leaflet al cerrarse.
+
+   Ciclo de vida: mostrarLista() destruye #tabScreen en CADA cambio de tab, así que el
+   mapa se recrea al entrar (cuesta ~10 ms; las teselas ya están en caché) y lo que se
+   conserva entre visitas es el ESTADO, que es lo que el asesor percibe: encuadre, capas
+   activas y filtro de etapas. */
+
+const MAPA_CAPAS_KEY = 'sp_mapa_capas_v1';
+let _mapaTab = null, _mapaTabRO = null, _mapaTabBase = null, _mapaTabCluster = null;
+let _mapaTabVista = null;              // {center, zoom} — sobrevive al cambio de tab
+let _mapaTabYo = null;                 // capa de "mi posición + recorrido"
+let _mapaTabCapasG = {};               // nombre -> L.layerGroup
+let _mapaTabDatos = { clientes: [], guardadas: [], proyectos: [], zonas: [] };
+let _mapaTabSel = null;                // pin seleccionado (para la ficha inferior)
+let _mapaTabEtapas = null;             // Set de etapas visibles; null = todas
+let _mapaTabCapas = { clientes: true, guardadas: true, proyectos: true, zonas: false };
+try { Object.assign(_mapaTabCapas, JSON.parse(localStorage.getItem(MAPA_CAPAS_KEY) || '{}')); } catch (e) {}
+
+function guardarCapasMapa(){ try{ localStorage.setItem(MAPA_CAPAS_KEY, JSON.stringify(_mapaTabCapas)); }catch(e){} }
+
+function plantillaMapaTab(){
+  const hoy = SPMapa.hoyBogota();
+  return `
+    <div id="mapaLienzoM" style="position:absolute;inset:0;background:var(--bg-3)"></div>
+
+    <div style="position:absolute;top:10px;left:10px;right:10px;z-index:500;display:flex;flex-direction:column;gap:8px;pointer-events:none">
+      <div style="position:relative;pointer-events:auto">
+        <input id="mapaBuscar" placeholder="Buscar cliente, lugar o ciudad…" autocomplete="off"
+          style="width:100%;height:42px;border-radius:14px;border:1px solid var(--glass-border);background:var(--bg-2);color:var(--text);padding:0 14px;font-size:14px;font-family:inherit;box-shadow:0 4px 18px rgba(0,0,0,.4)">
+        <div id="mapaResultados" style="display:none;position:absolute;top:46px;left:0;right:0;background:var(--bg-2);border:1px solid var(--border);border-radius:14px;overflow:hidden;max-height:46vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.6)"></div>
+      </div>
+      <div id="mapaChips" style="display:flex;gap:6px;overflow-x:auto;pointer-events:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch"></div>
     </div>
-    <div id="miMapaLienzo" style="height:52vh;border-radius:14px;overflow:hidden;background:var(--bg-3)"></div>
-    <div id="miMapaInfo" style="font-size:12px;color:var(--text-3);margin-top:10px;line-height:1.6">Cargando…</div>`);
-  document.getElementById('autoBack').onclick = _autoCerrar;
 
-  try{ await cargarLeaflet(); }catch(e){ document.getElementById('miMapaInfo').textContent = 'No se pudo cargar el mapa.'; return; }
-  const el = document.getElementById('miMapaLienzo');
+    <div style="position:absolute;right:10px;bottom:96px;z-index:500;display:flex;flex-direction:column;gap:8px">
+      <button id="mapaCentrar" title="Centrar en mí" style="width:44px;height:44px;border-radius:50%;border:1px solid var(--glass-border);background:var(--bg-2);color:var(--gold);display:grid;place-items:center;box-shadow:0 4px 18px rgba(0,0,0,.45);cursor:pointer">${I(SVG.target,20)}</button>
+      <button id="mapaOpciones" title="Capas y filtros" style="width:44px;height:44px;border-radius:50%;border:1px solid var(--glass-border);background:var(--bg-2);color:var(--text-2);display:grid;place-items:center;box-shadow:0 4px 18px rgba(0,0,0,.45);cursor:pointer">${I(SVG.filter,19)}</button>
+    </div>
+
+    <div id="mapaFechaWrap" style="position:absolute;left:10px;bottom:96px;z-index:500;display:none">
+      <input type="date" id="mapaFecha" value="${hoy}" max="${hoy}"
+        style="background:var(--bg-2);border:1px solid var(--glass-border);border-radius:12px;color:var(--text);padding:8px 10px;font-size:12px;font-family:inherit;box-shadow:0 4px 18px rgba(0,0,0,.45)">
+    </div>
+
+    <div id="mapaFicha" style="position:absolute;left:10px;right:10px;bottom:12px;z-index:600;display:none;
+      background:var(--bg-2);border:1px solid var(--gold-line);border-radius:18px;padding:14px;box-shadow:0 -4px 40px rgba(0,0,0,.6)"></div>
+
+    <div id="mapaEstado" style="position:absolute;left:0;right:0;bottom:12px;z-index:400;text-align:center;font-size:12px;color:var(--text-3);pointer-events:none"></div>`;
+}
+
+function estadoMapa(txt){ const e=document.getElementById('mapaEstado'); if(e) e.textContent=txt||''; }
+
+async function montarMapaTab(){
+  const el = document.getElementById('mapaLienzoM');
   if(!el) return;
-  const mapa = L.map(el, { zoomControl:true, attributionControl:false }).setView([4.7110,-74.0721], 6);
-  capaTilesMapa(await getMapaConfig()).addTo(mapa);
-  setTimeout(()=>mapa.invalidateSize(), 150);
+  estadoMapa('Cargando mapa…');
+  let cfg;
+  try{ await cargarLeaflet(); cfg = await SPMapa.getConfig(); }
+  catch(e){ estadoMapa('No se pudo cargar el mapa.'); return; }
+  if(!document.getElementById('mapaLienzoM')) return;  // se cambió de tab mientras cargaba
 
-  let capa = null;
-  async function pintar(fecha){
-    if(capa){ mapa.removeLayer(capa); capa = null; }
-    const info = document.getElementById('miMapaInfo');
-    const r = await api('/api/mi-recorrido?fecha=' + encodeURIComponent(fecha));
-    const puntos = (r && r.puntos) || [];
-    const capas = [];
-    if(puntos.length){
-      const coords = puntos.map(p => [p.lat, p.lng]);
-      if(coords.length > 1) capas.push(L.polyline(coords, { color:'#C8A45A', weight:3, opacity:.8 }));
-      capas.push(L.circleMarker(coords[coords.length-1], { radius:7, color:'#4E7B46', fillColor:'#4E7B46', fillOpacity:1 }).bindTooltip('Tu última posición'));
-      coords.slice(0,-1).forEach((c,i) => capas.push(L.circleMarker(c, { radius:3, color:'#C8A45A', fillOpacity:1 }).bindTooltip(horaCorta(puntos[i].ts))));
-    }
-    // Las ubicaciones guardadas del asesor le sirven de referencia en el mapa.
-    const guardadas = await api('/api/ubicaciones-guardadas') || [];
-    guardadas.forEach(g => capas.push(L.marker([g.lat, g.lng]).bindTooltip('📍 ' + (g.nombre||''))));
+  const vista = _mapaTabVista || { center: [4.7110,-74.0721], zoom: 6 };
+  _mapaTab = L.map(el, { zoomControl:false, attributionControl:true }).setView(vista.center, vista.zoom);
+  _mapaTabBase = SPMapa.capaTiles(cfg);
+  _mapaTabBase.addTo(_mapaTab);
+  _mapaTabCapasG = {};
+  _mapaTabSel = null;
 
-    if(capas.length){
-      capa = L.layerGroup(capas).addTo(mapa);
-      const bounds = L.latLngBounds([...puntos.map(p=>[p.lat,p.lng]), ...guardadas.map(g=>[g.lat,g.lng])]);
-      if(bounds.isValid()) mapa.fitBounds(bounds.pad(0.25), { maxZoom:16 });
-    }
-    info.innerHTML = puntos.length
-      ? `${puntos.length} posiciones registradas · de ${horaCorta(puntos[0].ts)} a ${horaCorta(puntos[puntos.length-1].ts)}`
-      : (_ubicActiva
-          ? 'Todavía no hay posiciones de ese día. Se registran mientras usas la app.'
-          : 'No estás compartiendo tu ubicación. Actívala en Perfil → Compartir ubicación.');
+  // El contenedor mide 0 en el primer frame (el layout flex aún no resolvió), y Leaflet
+  // pintaría un mapa de 0x0 —la tesela suelta en la esquina—. Doble rAF + observador de
+  // tamaño, que además cubre el teclado, el giro y el cambio de safe-area.
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ if(_mapaTab) _mapaTab.invalidateSize(); }));
+  if(window.ResizeObserver){
+    let t=null;
+    _mapaTabRO = new ResizeObserver(()=>{ clearTimeout(t); t=setTimeout(()=>{ if(_mapaTab) _mapaTab.invalidateSize(); },80); });
+    _mapaTabRO.observe(el);
   }
-  document.getElementById('miMapaFecha').onchange = (e) => pintar(e.target.value);
-  pintar(hoy);
+
+  _tabTeardown = destruirMapaTab;
+
+  document.getElementById('mapaCentrar').onclick = centrarEnMi;
+  document.getElementById('mapaOpciones').onclick = abrirOpcionesMapa;
+  document.getElementById('mapaFecha').onchange = (e)=>pintarMiRecorrido(e.target.value);
+  cablearBuscadorMapa();
+  renderChipsMapa();
+
+  await Promise.all([cargarCapaClientes(), cargarCapaGuardadas(), cargarCapaProyectos(), cargarCapaZonas()]);
+  await pintarMiRecorrido(SPMapa.hoyBogota());
+
+  // Solo se encuadra la primera vez: si el asesor ya movió el mapa, volver a encuadrar en
+  // cada entrada al tab le quitaría el sitio que estaba mirando.
+  if(!_mapaTabVista) encuadrarMapaTab();
+  actualizarEstadoMapa();
+}
+
+function destruirMapaTab(){
+  if(_mapaTabRO){ try{ _mapaTabRO.disconnect(); }catch(e){} _mapaTabRO=null; }
+  if(_mapaTabCluster){ try{ _mapaTabCluster.destruir(); }catch(e){} _mapaTabCluster=null; }
+  if(_mapaTab){
+    try{ _mapaTabVista = { center:_mapaTab.getCenter(), zoom:_mapaTab.getZoom() }; }catch(e){}
+    SPMapa.destruir(_mapaTab);
+    _mapaTab=null;
+  }
+  _mapaTabCapasG={}; _mapaTabYo=null; _mapaTabBase=null; _mapaTabSel=null;
+}
+
+/* ── Capas ── */
+function capaVisible(nombre){ return _mapaTabCapas[nombre] !== false; }
+
+function ponerCapa(nombre, capa){
+  if(_mapaTabCapasG[nombre]){ try{ _mapaTab.removeLayer(_mapaTabCapasG[nombre]); }catch(e){} }
+  _mapaTabCapasG[nombre] = capa;
+  if(capa && capaVisible(nombre)) capa.addTo(_mapaTab);
+}
+
+// Clientes del asesor. El backend ya fuerza que sean los suyos: aunque este panel pidiera
+// los de otro, no se los daría.
+async function cargarCapaClientes(){
+  const r = await api('/api/mapa/leads?limit=500');
+  _mapaTabDatos.clientes = (r && r.leads) || [];
+  redibujarClientes();
+}
+
+function clientesVisibles(){
+  return _mapaTabDatos.clientes.filter(l =>
+    l.lat != null && (!_mapaTabEtapas || _mapaTabEtapas.has(l.etiqueta || 'sin_clasificar')));
+}
+
+function redibujarClientes(){
+  if(!_mapaTab) return;
+  if(_mapaTabCluster){ _mapaTabCluster.destruir(); _mapaTabCluster=null; }
+  if(!capaVisible('clientes')) return;
+  // Agrupación por rejilla: en una ciudad los clientes se apilan y el mapa se vuelve una
+  // mancha de pines. Al acercar, los grupos se abren solos.
+  _mapaTabCluster = SPMapa.agrupar(_mapaTab, clientesVisibles(), {
+    crearPin: (l) => {
+      const e = SPMapa.etapa(l.etiqueta);
+      const aprox = l.coord_fuente !== 'ubicacion';
+      return L.marker([l.lat,l.lng], { icon: SPMapa.pinPunto(e.color, { tam:16, punteado:aprox }) })
+        .on('click', ()=>mostrarFichaCliente(l));
+    },
+  });
+}
+
+async function cargarCapaGuardadas(){
+  const g = await api('/api/ubicaciones-guardadas') || [];
+  _mapaTabDatos.guardadas = g;
+  ponerCapa('guardadas', L.layerGroup(g.map(p =>
+    L.marker([p.lat,p.lng], { icon: SPMapa.pinPunto(SPMapa.token('--gold2'), { tam:12 }) })
+      .bindTooltip('📍 ' + esc(p.nombre||''), { direction:'top' }))));
+}
+
+async function cargarCapaProyectos(){
+  const r = await api('/api/mapa/proyectos');
+  const ps = (r && r.proyectos) || [];
+  _mapaTabDatos.proyectos = ps;
+  ponerCapa('proyectos', L.layerGroup(ps.map(p =>
+    L.marker([p.lat,p.lng], { icon: SPMapa.pinPunto(SPMapa.token('--text'), { tam:18 }) })
+      .on('click', ()=>mostrarFichaProyecto(p)))));
+}
+
+async function cargarCapaZonas(){
+  const r = await api('/api/mapa/zonas');
+  const zs = (r && r.zonas) || [];
+  _mapaTabDatos.zonas = zs;
+  const oro = SPMapa.token('--gold');
+  ponerCapa('zonas', L.layerGroup(zs.map(z =>
+    L.circle([z.centro_lat,z.centro_lng], {
+      radius:(Number(z.radio_km)>0?Number(z.radio_km):10)*1000,
+      color:oro, weight:1, fillColor:oro, fillOpacity:.06,
+    }).bindTooltip(esc(z.nombre)))));
+}
+
+/* ── Mi posición y mi recorrido ── */
+async function pintarMiRecorrido(fecha){
+  if(!_mapaTab) return;
+  if(_mapaTabYo){ try{ _mapaTab.removeLayer(_mapaTabYo); }catch(e){} _mapaTabYo=null; }
+  const r = await api('/api/mi-recorrido?fecha=' + encodeURIComponent(fecha||SPMapa.hoyBogota()));
+  const puntos = (r && r.puntos) || [];
+  const capas = [];
+  const oro = SPMapa.token('--gold'), verde = SPMapa.token('--green');
+  if(puntos.length){
+    const coords = puntos.map(p=>[p.lat,p.lng]);
+    if(coords.length>1) capas.push(L.polyline(coords, { color:oro, weight:3, opacity:.75 }));
+    coords.slice(0,-1).forEach((c,i)=>capas.push(
+      L.circleMarker(c, { radius:3, color:oro, fillOpacity:1 }).bindTooltip(SPMapa.horaCorta(puntos[i].ts))));
+    const ult = puntos[puntos.length-1];
+    if(ult.precision) capas.push(L.circle([ult.lat,ult.lng], { radius:Number(ult.precision), color:verde, weight:1, fillColor:verde, fillOpacity:.10 }));
+    capas.push(L.circleMarker([ult.lat,ult.lng], { radius:8, color:verde, fillColor:verde, fillOpacity:1, weight:2 })
+      .bindTooltip('Tu última posición · ' + SPMapa.horaCorta(ult.ts), { direction:'top' }));
+  }
+  _mapaTabYo = L.layerGroup(capas).addTo(_mapaTab);
+  actualizarEstadoMapa(puntos);
+}
+
+function actualizarEstadoMapa(puntos){
+  const n = clientesVisibles().length;
+  if(!_ubicActiva){
+    estadoMapa(n ? `${n} ${n===1?'cliente':'clientes'} · tu ubicación está desactivada` : 'Tu ubicación está desactivada — actívala en Perfil');
+    return;
+  }
+  if(puntos && !puntos.length){ estadoMapa(`${n} ${n===1?'cliente':'clientes'} · sin recorrido ese día`); return; }
+  estadoMapa(n ? `${n} ${n===1?'cliente ubicado':'clientes ubicados'}` : 'Todavía ningún cliente tiene ubicación');
+}
+
+async function centrarEnMi(){
+  haptic(8);
+  estadoMapa('Buscando tu ubicación…');
+  try{
+    const pos = await obtenerPosicionActual();
+    if(_mapaTab) _mapaTab.setView([pos.latitude,pos.longitude], 16);
+    // Se aprovecha el GPS recién obtenido para refrescar el punto en el servidor, en vez
+    // de esperar al siguiente ciclo de 90 s del rastreo.
+    if(_ubicActiva) enviarPosicionActual().then(()=>pintarMiRecorrido(fechaMapaSeleccionada()));
+    else actualizarEstadoMapa();
+  }catch(e){
+    toast(/denegado|denied/i.test(e && e.message || '') ? 'Activa el permiso de ubicación en Ajustes' : 'No se pudo obtener el GPS','err');
+    actualizarEstadoMapa();
+  }
+}
+
+function fechaMapaSeleccionada(){
+  const f = document.getElementById('mapaFecha');
+  return (f && f.value) || SPMapa.hoyBogota();
+}
+
+function encuadrarMapaTab(){
+  if(!_mapaTab) return;
+  const pts = [
+    ...clientesVisibles().map(l=>[l.lat,l.lng]),
+    ..._mapaTabDatos.guardadas.map(g=>[g.lat,g.lng]),
+  ];
+  if(!pts.length) return;
+  const b = L.latLngBounds(pts);
+  if(b.isValid()) _mapaTab.fitBounds(b.pad(0.25), { maxZoom:15 });
+}
+
+/* ── Fichas (tarjeta inferior, no popup: en móvil el popup tapa el mapa) ── */
+function cerrarFichaMapa(){
+  const f = document.getElementById('mapaFicha');
+  if(f){ f.style.display='none'; f.innerHTML=''; }
+  _mapaTabSel = null;
+}
+
+function distanciaAMi(lat,lng){
+  if(!_ubicUltimoEnvio) return '';
+  return SPMapa.distanciaLegible(SPMapa.distanciaMetros(_ubicUltimoEnvio, { lat, lng }));
+}
+
+function mostrarFichaCliente(l){
+  haptic(8);
+  _mapaTabSel = l;
+  const f = document.getElementById('mapaFicha');
+  if(!f) return;
+  const e = SPMapa.etapa(l.etiqueta);
+  const dist = distanciaAMi(l.lat,l.lng);
+  const aprox = l.coord_fuente !== 'ubicacion';
+  const tel = String(l.customer_phone||'').replace(/[^\d+]/g,'');
+  f.style.display='block';
+  f.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.customer_name||'Cliente')}</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:2px">
+          <span style="color:${e.color}">● ${esc(e.label)}</span>${l.ciudad?' · '+esc(l.ciudad):''}${dist?' · a '+dist:''}
+        </div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:3px">${aprox?'Ubicación aproximada (su ciudad)':'Ubicación exacta que compartió'}</div>
+      </div>
+      <button id="fichaX" style="background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px">${I(SVG.x,18)}</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <button id="fichaChat" class="mapa-accion">${I(SVG.chat,17)}<span>Chat</span></button>
+      ${tel?`<a href="tel:${esc(tel)}" class="mapa-accion">${I(SVG.phone,17)}<span>Llamar</span></a>`:''}
+      <button id="fichaIr" class="mapa-accion">${I(SVG.mapPin,17)}<span>Cómo llegar</span></button>
+    </div>`;
+  document.getElementById('fichaX').onclick = cerrarFichaMapa;
+  document.getElementById('fichaChat').onclick = ()=>abrirChat(l.id);
+  document.getElementById('fichaIr').onclick = ()=>menuNavegacion(l.lat,l.lng,l.customer_name||'Cliente');
+}
+
+function mostrarFichaProyecto(p){
+  haptic(8);
+  const f = document.getElementById('mapaFicha');
+  if(!f) return;
+  const dist = distanciaAMi(p.lat,p.lng);
+  f.style.display='block';
+  f.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:600">${esc(p.nombre)}</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(p.ciudad||'')}${p.departamento?', '+esc(p.departamento):''}${dist?' · a '+dist:''}</div>
+      </div>
+      <button id="fichaX" style="background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px">${I(SVG.x,18)}</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:8px">
+      <button id="fichaIr" class="mapa-accion">${I(SVG.mapPin,17)}<span>Cómo llegar</span></button>
+    </div>`;
+  document.getElementById('fichaX').onclick = cerrarFichaMapa;
+  document.getElementById('fichaIr').onclick = ()=>menuNavegacion(p.lat,p.lng,p.nombre);
+}
+
+// Waze o Google Maps: se pregunta en vez de imponer, porque en Colombia el reparto entre
+// las dos apps está muy repartido y adivinar mal cuesta un toque extra cada vez.
+function menuNavegacion(lat,lng,label){
+  openSheet('Cómo llegar', `<div style="display:grid;gap:8px;padding:4px 0">
+    <button data-nav="google" class="mapa-nav-btn">Google Maps</button>
+    <button data-nav="waze" class="mapa-nav-btn">Waze</button>
+  </div>`);
+  $('#sheetBody').querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{
+    closeSheet();
+    SPMapa.abrirNavegacion(lat,lng,label,b.dataset.nav);
+  });
+}
+
+/* ── Chips de capa y hoja de opciones ── */
+const CAPAS_MAPA = [['clientes','Clientes'],['guardadas','Guardados'],['proyectos','Proyectos'],['zonas','Zonas']];
+
+function renderChipsMapa(){
+  const c = document.getElementById('mapaChips');
+  if(!c) return;
+  c.innerHTML = CAPAS_MAPA.map(([k,l])=>{
+    const on = capaVisible(k);
+    return `<button data-capa="${k}" style="flex:none;height:30px;padding:0 12px;border-radius:999px;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;
+      border:1px solid ${on?'var(--gold-line)':'var(--border)'};background:${on?'var(--gold-soft)':'var(--bg-2)'};color:${on?'var(--gold)':'var(--text-3)'}">${l}</button>`;
+  }).join('');
+  c.querySelectorAll('[data-capa]').forEach(b=>b.onclick=()=>alternarCapaMapa(b.dataset.capa));
+}
+
+function alternarCapaMapa(nombre){
+  haptic(6);
+  _mapaTabCapas[nombre] = !capaVisible(nombre);
+  guardarCapasMapa();
+  if(nombre==='clientes'){ redibujarClientes(); }
+  else {
+    const capa=_mapaTabCapasG[nombre];
+    if(capa){ if(capaVisible(nombre)) capa.addTo(_mapaTab); else _mapaTab.removeLayer(capa); }
+  }
+  renderChipsMapa();
+  actualizarEstadoMapa();
+}
+
+function abrirOpcionesMapa(){
+  haptic(8);
+  const etapas = SPMapa.etapasDisponibles();
+  openSheet('Capas y filtros', `
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px">Etapa del cliente</div>
+    <div id="mapaEtapas" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">
+      ${etapas.map(e=>{
+        const on = !_mapaTabEtapas || _mapaTabEtapas.has(e.clave);
+        return `<button data-etapa="${e.clave}" style="height:32px;padding:0 12px;border-radius:999px;font-size:12px;font-family:inherit;cursor:pointer;
+          border:1px solid ${on?e.color:'var(--border)'};background:${on?'var(--bg-3)':'var(--bg-2)'};color:${on?e.color:'var(--text-3)'}">${e.label}</button>`;
+      }).join('')}
+    </div>
+    <button id="mapaEtapasTodas" style="width:100%;height:38px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);font-size:13px;font-family:inherit;cursor:pointer;margin-bottom:16px">Ver todas las etapas</button>
+
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px">Recorrido</div>
+    <button id="mapaVerRecorrido" style="width:100%;height:42px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;margin-bottom:16px">Elegir día del recorrido</button>
+
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px">Sin señal</div>
+    <button id="mapaDescargar" style="width:100%;height:42px;border-radius:12px;border:1px solid var(--gold-line);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">Descargar esta zona del mapa</button>
+    <div style="font-size:11.5px;color:var(--text-3);margin-top:8px;line-height:1.5">Guarda en el celular lo que estás viendo, para que el mapa siga funcionando donde no hay datos.</div>`);
+
+  $('#sheetBody').querySelectorAll('[data-etapa]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.etapa;
+    if(!_mapaTabEtapas) _mapaTabEtapas = new Set(SPMapa.etapasDisponibles().map(e=>e.clave));
+    if(_mapaTabEtapas.has(k)) _mapaTabEtapas.delete(k); else _mapaTabEtapas.add(k);
+    // Quedarse sin ninguna etapa marcada dejaría el mapa vacío sin explicación: equivale
+    // a no filtrar.
+    if(!_mapaTabEtapas.size) _mapaTabEtapas = null;
+    redibujarClientes(); actualizarEstadoMapa(); closeSheet(); abrirOpcionesMapa();
+  });
+  document.getElementById('mapaEtapasTodas').onclick = ()=>{ _mapaTabEtapas=null; redibujarClientes(); actualizarEstadoMapa(); closeSheet(); };
+  document.getElementById('mapaVerRecorrido').onclick = ()=>{
+    closeSheet();
+    const w=document.getElementById('mapaFechaWrap');
+    if(w){ w.style.display='block'; const f=document.getElementById('mapaFecha'); if(f&&f.showPicker) try{ f.showPicker(); }catch(e){} }
+  };
+  document.getElementById('mapaDescargar').onclick = ()=>{ closeSheet(); descargarZonaMapa(); };
+}
+
+/* ── Buscador: mezcla clientes propios con lugares del mundo ── */
+function cablearBuscadorMapa(){
+  const input = document.getElementById('mapaBuscar');
+  const box = document.getElementById('mapaResultados');
+  if(!input || !box) return;
+  let t=null;
+  const fila = (icono,titulo,sub,attrs) => `<button ${attrs} style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;background:none;border:none;border-bottom:1px solid var(--border-soft);color:var(--text);cursor:pointer;text-align:left;font-family:inherit">
+    <span style="flex:none">${icono}</span><span style="flex:1;min-width:0">
+      <span style="display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titulo}</span>
+      ${sub?`<span style="display:block;font-size:11px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</span>`:''}
+    </span></button>`;
+
+  input.oninput = ()=>{
+    clearTimeout(t);
+    const q = input.value.trim();
+    if(q.length < 2){ box.style.display='none'; return; }
+    // Los clientes propios se filtran en memoria y salen al instante; los lugares del
+    // geocodificador van con retardo para no disparar una petición por tecla.
+    const propios = _mapaTabDatos.clientes
+      .filter(l => (l.customer_name||'').toLowerCase().includes(q.toLowerCase()) || String(l.customer_phone||'').includes(q))
+      .slice(0,5);
+    box.innerHTML = propios.map((l,i)=>fila('👤', esc(l.customer_name||'Cliente'), esc(l.ciudad||''), `data-cli="${i}"`)).join('')
+      || '<div style="padding:10px 12px;font-size:12px;color:var(--text-3)">Buscando lugares…</div>';
+    box.style.display='block';
+    box.querySelectorAll('[data-cli]').forEach(b=>b.onclick=()=>{
+      const l=propios[Number(b.dataset.cli)];
+      box.style.display='none'; input.blur();
+      _mapaTab.setView([l.lat,l.lng], 16); mostrarFichaCliente(l);
+    });
+
+    if(q.length < 3) return;
+    t = setTimeout(async()=>{
+      let lugares=[];
+      try{
+        const centro=_mapaTab.getCenter();
+        lugares = await SPMapa.buscarLugares(q, { lat:centro.lat, lng:centro.lng });
+      }catch(e){ lugares=[]; }
+      if(!document.getElementById('mapaResultados')) return;
+      box.innerHTML = propios.map((l,i)=>fila('👤', esc(l.customer_name||'Cliente'), esc(l.ciudad||''), `data-cli="${i}"`)).join('')
+        + lugares.map((p,i)=>fila('📍', esc(p.nombre||p.direccion), esc(p.direccion||''), `data-lug="${i}"`)).join('');
+      if(!propios.length && !lugares.length) box.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--text-3)">Sin resultados</div>';
+      box.style.display='block';
+      box.querySelectorAll('[data-cli]').forEach(b=>b.onclick=()=>{
+        const l=propios[Number(b.dataset.cli)];
+        box.style.display='none'; input.blur();
+        _mapaTab.setView([l.lat,l.lng], 16); mostrarFichaCliente(l);
+      });
+      box.querySelectorAll('[data-lug]').forEach(b=>b.onclick=()=>{
+        const p=lugares[Number(b.dataset.lug)];
+        box.style.display='none'; input.blur(); input.value=p.nombre||p.direccion;
+        _mapaTab.setView([p.lat,p.lng], 15);
+      });
+    }, 420);
+  };
+  // Tocar el mapa cierra los resultados y la ficha: el gesto natural para "quitar esto".
+  _mapaTab.on('click', ()=>{ box.style.display='none'; cerrarFichaMapa(); });
+}
+
+/* ── Descarga de teselas para trabajar sin señal ──
+   El caso real: el asesor descarga Tocaima antes de salir de cobertura. Se guardan los
+   tres niveles de zoom siguientes al actual, con tope duro para no llenarle el celular
+   ni castigar al proveedor de teselas. */
+async function descargarZonaMapa(){
+  if(!_mapaTab || !('caches' in window)){ toast('Tu navegador no permite guardar el mapa','err'); return; }
+  const z0 = Math.round(_mapaTab.getZoom());
+  const b = _mapaTab.getBounds();
+  const urls = [];
+  const cfg = await SPMapa.getConfig();
+  const plantilla = SPMapa.capaTiles(cfg)._url;
+  const subs = 'abcd';
+  for(let z=z0; z<=z0+2 && z<=19; z++){
+    const nw = _mapaTab.project(b.getNorthWest(), z).divideBy(256).floor();
+    const se = _mapaTab.project(b.getSouthEast(), z).divideBy(256).floor();
+    for(let x=nw.x; x<=se.x; x++) for(let y=nw.y; y<=se.y; y++){
+      urls.push(plantilla
+        .replace('{s}', subs[(x+y)%subs.length]).replace('{z}',z).replace('{x}',x).replace('{y}',y)
+        .replace('{r}', window.devicePixelRatio>1?'@2x':''));
+    }
+  }
+  const TOPE = 400;
+  if(urls.length > TOPE){ toast(`Zona demasiado grande (${urls.length} piezas) — acerca un poco el mapa`,'err'); return; }
+  if(!urls.length){ toast('Nada que descargar'); return; }
+
+  estadoMapa(`Descargando 0/${urls.length}…`);
+  const cache = await caches.open('sp-tiles-v1');
+  let hechas = 0, fallos = 0;
+  // De 8 en 8: en paralelo total el WebView del celular se atraganta y el proveedor
+  // empieza a rechazar peticiones.
+  for(let i=0; i<urls.length; i+=8){
+    await Promise.all(urls.slice(i,i+8).map(async u=>{
+      try{
+        const res = await fetch(u, { mode:'cors' });
+        if(res.ok) await cache.put(u, res.clone());
+        else fallos++;
+      }catch(e){ fallos++; }
+      hechas++;
+    }));
+    estadoMapa(`Descargando ${hechas}/${urls.length}…`);
+  }
+  toast(fallos ? `Mapa guardado (${fallos} piezas fallaron)` : 'Mapa guardado para usar sin señal');
+  actualizarEstadoMapa();
 }
 
 // Control del asesor sobre su propio rastreo: activar si lo rechazó antes, o retirarlo
@@ -2932,49 +3363,14 @@ function abrirAjusteUbicacion(){
   };
 }
 
-/* ════════ Proveedor de mapa (Mapbox si hay token, OSM si no) ════════
-   El asesor tiene que poder mandar la ubicación de otra ciudad sin estar allí
-   ("estoy en Tocaima y necesito mandar Mariquita"), así que el buscador importa tanto
-   como el mapa. Mapbox da mejor cobertura de lugares en Colombia; si no hay token
-   configurado, todo sigue funcionando con OpenStreetMap + Nominatim. */
-let _mapaCfg = null;
-async function getMapaConfig(){
-  if(_mapaCfg) return _mapaCfg;
-  _mapaCfg = (await api('/api/mapa/config')) || { proveedor:'osm', token:'', pais:'co' };
-  return _mapaCfg;
-}
-
-// Capa de teselas: Mapbox en modo oscuro (acorde a la marca) o el OSM de siempre.
-function capaTilesMapa(cfg){
-  if(cfg && cfg.proveedor === 'mapbox' && cfg.token){
-    return L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/512/{z}/{x}/{y}@2x?access_token=${encodeURIComponent(cfg.token)}`,
-      { maxZoom:19, tileSize:512, zoomOffset:-1, attribution:'© Mapbox © OpenStreetMap' });
-  }
-  return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OSM' });
-}
-
-// Buscador de lugares. Devuelve [{nombre, direccion, lat, lng}] con el mismo shape
-// venga de Mapbox o de Nominatim, para que la UI no tenga que distinguir.
-async function buscarLugares(q, cerca){
-  const cfg = await getMapaConfig();
-  if(cfg.proveedor === 'mapbox' && cfg.token){
-    const prox = cerca ? `&proximity=${cerca.lng},${cerca.lat}` : '';
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`
-      + `?access_token=${encodeURIComponent(cfg.token)}&country=${cfg.pais||'co'}&language=es&limit=6&autocomplete=true${prox}`;
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('mapbox_'+r.status);
-    const data = await r.json();
-    return (data.features||[]).map(f => ({
-      nombre: f.text || '',
-      direccion: f.place_name || '',
-      lat: f.center[1], lng: f.center[0],
-    }));
-  }
-  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=5&countrycodes=co&accept-language=es`);
-  if(!r.ok) throw new Error('nominatim_'+r.status);
-  const data = await r.json();
-  return (data||[]).map(res => ({ nombre: res.name||'', direccion: res.display_name||'', lat: parseFloat(res.lat), lng: parseFloat(res.lon) }));
-}
+/* ════════ Proveedor de mapa ════════
+   Teselas oscuras (CARTO sin token, Mapbox si está configurado) y buscador de lugares.
+   El asesor tiene que poder mandar la ubicación de otra ciudad sin estar allí ("estoy en
+   Tocaima y necesito mandar Mariquita"), así que el buscador importa tanto como el mapa.
+   Todo vive en /shared/mapa-base.js; aquí solo quedan los alias que ya usaba el archivo. */
+const getMapaConfig = () => SPMapa.getConfig();
+const capaTilesMapa = (cfg) => SPMapa.capaTiles(cfg);
+const buscarLugares = (q, cerca) => SPMapa.buscarLugares(q, cerca);
 
 // Hoja de envío de ubicación con minimapa interactivo (marcador arrastrable, tipo WhatsApp)
 function abrirEnviarUbicacion(){
@@ -4034,18 +4430,61 @@ function cargarVersionApp(){
   });
 }
 
-/* ════════ Bottom Nav / tabs ════════ */
-function getTABS(){ return [['chats','Chats',SVG.chat],...((me && me.rol==='jefe')?[['supervision','Supervisión',SVG.eye]]:[]),['propiedades','Propiedades',SVG.building],['calendario','Calendario',SVG.calendar],['tareas','Tareas',SVG.checkSquare],['copiloto','Copiloto',SVG.sparkles],['perfil','Perfil',SVG.user]]; }
-function renderNav(){ $('#nav').innerHTML = getTABS().map(([k,l,ic])=>`<button class="m-nav__i ${k==='chats'?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('');
-  $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab)); }
-async function irTab(t){ tab=t; haptic(8); $('#nav').querySelectorAll('.m-nav__i').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
+/* ════════ Bottom Nav / tabs ════════
+   Cinco tabs fijos + "Más". Con el mapa serían siete (ocho para el jefe), y a 45 px por
+   slot en un celular de 360 px las etiquetas quedan ilegibles. Los tres menos usados
+   viven en una hoja: siguen a un toque de distancia, pero no comprimen la barra. */
+function getTabsPrincipales(){ return [
+  ['chats','Chats',SVG.chat], ['mapa','Mapa',SVG.mapPin], ['propiedades','Propiedades',SVG.building],
+  ['tareas','Tareas',SVG.checkSquare], ['perfil','Perfil',SVG.user],
+]; }
+function getTabsSecundarios(){ return [
+  ...((me && me.rol==='jefe')?[['supervision','Supervisión',SVG.eye]]:[]),
+  ['calendario','Calendario',SVG.calendar], ['copiloto','Copiloto',SVG.sparkles],
+]; }
+function getTABS(){ return [...getTabsPrincipales(), ...getTabsSecundarios()]; }
+const esTabSecundario = k => getTabsSecundarios().some(x=>x[0]===k);
+
+function renderNav(){
+  const secundarioActivo = esTabSecundario(tab) ? getTabsSecundarios().find(x=>x[0]===tab) : null;
+  $('#nav').innerHTML = getTabsPrincipales().map(([k,l,ic])=>`<button class="m-nav__i ${k===tab?'active':''}" data-tab="${k}">${I(ic,23)}<span>${l}</span>${k==='chats'?'<span class="m-nav__dot" id="navDot" style="display:none"></span>':''}</button>`).join('')
+    // El botón "Más" toma el nombre del tab activo cuando el asesor está dentro de uno de
+    // los secundarios: si no, la barra no mostraría dónde está parado.
+    + `<button class="m-nav__i ${secundarioActivo?'active':''}" data-mas="1">${I(secundarioActivo?secundarioActivo[2]:SVG.dots,23)}<span>${secundarioActivo?secundarioActivo[1]:'Más'}</span></button>`;
+  $('#nav').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>irTab(b.dataset.tab));
+  const mas = $('#nav').querySelector('[data-mas]');
+  if(mas) mas.onclick = abrirMasTabs;
+}
+
+function abrirMasTabs(){
+  haptic(8);
+  openSheet('Más', `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:4px 0">
+    ${getTabsSecundarios().map(([k,l,ic])=>`<button data-ir="${k}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:16px;border:1px solid ${k===tab?'var(--gold-line)':'var(--border)'};background:${k===tab?'var(--gold-soft)':'var(--bg-2)'};color:${k===tab?'var(--gold)':'var(--text)'};font-size:12px;font-family:inherit;cursor:pointer">${I(ic,24)}<span>${l}</span></button>`).join('')}
+  </div>`);
+  $('#sheetBody').querySelectorAll('[data-ir]').forEach(b=>b.onclick=()=>{ closeSheet(); irTab(b.dataset.ir); });
+}
+
+async function irTab(t){ tab=t; haptic(8);
+  renderNav();  // repinta para que el botón "Más" refleje si el tab activo es secundario
   if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='Leons Group'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
-  else { $('#fab').classList.add('hidden'); mostrarLista(false); const [ , label ] = getTABS().find(x=>x[0]===t);
+  else { $('#fab').classList.add('hidden'); mostrarLista(false);
+    const entrada = getTABS().find(x=>x[0]===t);
+    if(!entrada) return;               // tab desconocido: no reventar con undefined
+    const label = entrada[1];
     if(t==='perfil'){ const m = await api('/api/me/metricas'); if(m) metricas=m; }
     pantallaTab(t,label);
   }
 }
-function mostrarLista(v){ $('#list').style.display=v?'':'none'; $('#filters').style.display=v?'':'none'; let ph=$('#tabScreen'); if(ph) ph.remove(); }
+
+// Teardown de la pantalla saliente. Sin esto, un mapa Leaflet dentro de #tabScreen se
+// queda con el contenedor arrancado del DOM pero sus listeners y temporizadores vivos, y
+// a la siguiente entrada se crea otra instancia encima.
+let _tabTeardown = null;
+function mostrarLista(v){
+  $('#list').style.display=v?'':'none'; $('#filters').style.display=v?'':'none';
+  if(_tabTeardown){ try{ _tabTeardown(); }catch(e){} _tabTeardown=null; }
+  let ph=$('#tabScreen'); if(ph) ph.remove();
+}
 // Skeleton de tarjetas (para estados de carga, en vez de "Cargando…" plano)
 function skeletonCards(n){ let h=''; for(let i=0;i<(n||3);i++){ h+=`<div class="sk-card"><div class="sk" style="width:44px;height:44px;border-radius:14px;flex-shrink:0"></div><div style="flex:1"><div class="sk sk-line" style="width:60%;margin-bottom:8px"></div><div class="sk sk-line" style="width:90%;margin-bottom:8px"></div><div class="sk sk-line" style="width:40%"></div></div></div>`; } return h; }
 function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='Leons Group';
@@ -4105,6 +4544,7 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
             <div class="sec-row" id="rowAutomatizaciones"><label>⚙️ Mis automatizaciones</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
             <div class="sec-row" id="rowMisPlantillas"><label>📋 Mis plantillas de WhatsApp</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
             <div class="sec-row" id="rowMiMapa"><label>🗺️ Mi mapa y recorrido</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
+
             <div class="sec-row" id="rowUbicacion"><label>📍 Compartir ubicación</label><span id="ubicEstado" style="font-size:12.5px;color:var(--text-3)">—</span></div>
             <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Solo mientras tienes la app abierta. La ven la administración y los jefes, nunca los clientes.</div>
           </div>
@@ -4337,8 +4777,10 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       actualizarIndicadorUbicacion();
       const ubicRow = document.getElementById('rowUbicacion');
       if (ubicRow) ubicRow.addEventListener('click', () => { haptic(8); abrirAjusteUbicacion(); });
+      // El mapa dejó de ser una pantalla escondida en el perfil: ahora es un tab propio.
+      // La fila se conserva como atajo para quien ya la conocía.
       const miMapaRow = document.getElementById('rowMiMapa');
-      if (miMapaRow) miMapaRow.addEventListener('click', () => { haptic(8); abrirMiMapa(); });
+      if (miMapaRow) miMapaRow.addEventListener('click', () => { haptic(8); irTab('mapa'); });
       cargarVersionApp();
       // Mis respuestas
       cargarMisTpl();
@@ -4357,6 +4799,13 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       cargarInsigniasPerfil();
       cargarRankingPerfil();
     }, 50);
+  } else if (t === 'mapa') {
+    // El mapa va a sangre: el contenedor se vuelve un marco sin scroll y el lienzo lo
+    // llena por completo (position:absolute), en vez de depender de una altura en vh que
+    // se descuadra al abrir el teclado o girar el celular.
+    box.style.cssText = 'position:relative;overflow:hidden;padding:0;flex:1';
+    box.innerHTML = plantillaMapaTab();
+    montarMapaTab();
   } else if (t === 'propiedades') {
     box.innerHTML=`<div id="propBox" style="padding:14px;width:100%;max-width:400px;margin:0 auto">${skeletonCards(3)}</div>`;
     cargarPropiedades();
