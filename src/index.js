@@ -2362,10 +2362,6 @@ app.post('/api/leads/:id/mute', auth.requireAuth, (req, res) => {
 // ===================== CITAS ===================== (Fase 4: extraído a src/routes/citas.js)
 app.use('/api/citas', auth.requireAuth, require('./routes/citas'));
 
-// ===================== PROPIEDADES ===================== (Fase 4: extraído a
-// src/routes/propiedades.js, incluye POST /recomendar)
-app.use('/api/propiedades', require('./routes/propiedades'));
-
 // ===================== GALERIA DE MARCA ===================== (Fase 4: extraído a
 // src/routes/galeria.js, incluido GALERIA_PATH/ensureDir/uploadGaleria)
 app.use('/api/galeria', require('./routes/galeria'));

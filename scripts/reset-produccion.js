@@ -45,7 +45,7 @@ const HISTORIAL_TABLES = [
 ];
 
 const CONSERVADAS = [
-  'config', 'wa_templates', 'templates', 'workflows', 'propiedades', 'proyectos',
+  'config', 'wa_templates', 'templates', 'workflows', 'proyectos',
   'lotes (catálogo — solo se limpian sus referencias a leads/clientes de prueba)',
   'optout (lista de exclusión de WhatsApp — se conserva por cumplimiento)',
 ];

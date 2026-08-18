@@ -477,19 +477,6 @@ function createSchema() {
   )`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_vt_vendedor ON vendedor_templates(vendedor_id)`);
 
-  execSQL(`CREATE TABLE IF NOT EXISTS propiedades (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT NOT NULL,
-    descripcion TEXT DEFAULT '',
-    ciudad TEXT DEFAULT '',
-    precio REAL DEFAULT 0,
-    m2 REAL DEFAULT 0,
-    tipo TEXT DEFAULT 'lote',
-    estado TEXT DEFAULT 'disponible' CHECK (estado IN ('disponible','reservado','vendido')),
-    imagen_url TEXT DEFAULT '',
-    created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-  )`);
-
   execSQL(`CREATE TABLE IF NOT EXISTS galeria (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre TEXT NOT NULL,
@@ -1843,26 +1830,6 @@ function getStatsSemanales(vendedorId) {
     tiempoPromedio: tprom ? Math.round(tprom.c) : 0,
     tiempoPromedioAnt: tpromAnt ? Math.round(tpromAnt.c) : 0,
   };
-}
-
-// --- Propiedades (lotes / inmuebles) ---
-function getPropiedades() {
-  return all('SELECT * FROM propiedades ORDER BY created_at DESC');
-}
-function getPropiedadById(id) {
-  return one('SELECT * FROM propiedades WHERE id = ?', [id]);
-}
-function createPropiedad(data) {
-  run('INSERT INTO propiedades (nombre, descripcion, ciudad, precio, m2, tipo, estado, imagen_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [data.nombre, data.descripcion||'', data.ciudad||'', data.precio||0, data.m2||0, data.tipo||'lote', data.estado||'disponible', data.imagen_url||'']);
-  return one('SELECT * FROM propiedades WHERE id = (SELECT last_insert_rowid())');
-}
-function updatePropiedad(id, data) {
-  run('UPDATE propiedades SET nombre=?, descripcion=?, ciudad=?, precio=?, m2=?, tipo=?, estado=?, imagen_url=? WHERE id=?',
-    [data.nombre, data.descripcion||'', data.ciudad||'', data.precio||0, data.m2||0, data.tipo||'lote', data.estado||'disponible', data.imagen_url||'', id]);
-}
-function deletePropiedad(id) {
-  run('DELETE FROM propiedades WHERE id = ?', [id]);
 }
 
 // --- Suscripciones push ---
@@ -3941,7 +3908,6 @@ module.exports = {
   getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError, setMessageButtonPayload,
   getTemplates, addTemplate, deleteTemplate,
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
-  getPropiedades, getPropiedadById, createPropiedad, updatePropiedad, deletePropiedad,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken, getAllPushSubscriptions,
   createDBSession, getDBSession, deleteDBSession, refreshSession, expireSessionSoon, cleanExpiredSessions,
   getSessionsByOwner, touchSessionLastSeen, deleteOtherSessions,

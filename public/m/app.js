@@ -3820,18 +3820,13 @@ function abrirTimeline(){ const l=current;
 
 async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'Cliente';
   openSheet('Copiloto SP', `<div id="copilotLoading" style="text-align:center;padding:24px;color:var(--text-3)">Analizando lead...</div>`);
-  let analysis = null; let propsRecom = [];
+  let analysis = null;
   try {
-    const [rAna, rProp] = await Promise.all([
-      // calificar = analyze-lead + persiste la temperatura 🔥/🌤️/❄️ en el lead
-      fetch('/api/leads/'+l.id+'/calificar', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}' }),
-      fetch('/api/propiedades/recomendar', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ leadId: l.id }) })
-    ]);
+    // calificar = analyze-lead + persiste la temperatura 🔥/🌤️/❄️ en el lead
+    const rAna = await fetch('/api/leads/'+l.id+'/calificar', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}' });
     const dAna = await rAna.json();
     analysis = dAna.ok ? dAna.analysis : null;
     if(dAna.temperatura && current && current.id===l.id){ current.temperatura=dAna.temperatura; }
-    const dProp = await rProp.json();
-    if (dProp.ok && dProp.propiedades) propsRecom = dProp.propiedades;
   } catch(e) {}
   const isAI = analysis && analysis.summary;
   const score = isAI ? Math.round(Math.max(0,Math.min(100,(analysis.closeProbability||50)))) : (l.progress_pct!=null?l.progress_pct:leadScore(l));
@@ -3839,7 +3834,6 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
   const sentIcon = analysis?.sentiment === 'positivo' ? SVG.check : analysis?.sentiment === 'negativo' ? SVG.zap : SVG.target;
   const sentLabel = analysis?.sentiment ? (analysis.sentiment.charAt(0).toUpperCase()+analysis.sentiment.slice(1)) : '—';
   const body = $('#sheetBody'); if(!body) return;
-  const propsHtml = propsRecom.length ? propsRecom.slice(0,6).map((p,i)=>`<div class="prop-c"><div class="ph">${I(SVG.building,22)}</div><div class="in"><div class="nm">${esc(p.nombre)}</div><div class="lo">${I(SVG.mapPin,11)} ${esc(p.ciudad||'')} · ${p.m2||0} m²</div><div class="pr">${money(p.precio)}</div><div class="ft"><span class="mt">${p.match}% Similitud</span><button class="snd" data-prop="${i}">Enviar</button></div></div></div>`).join('') : '<div style="color:var(--text-3);font-size:12px;padding:4px 0">Sin propiedades disponibles</div>';
   body.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:10px">${isAI ? `<span style="font-size:10px;padding:3px 10px;border-radius:999px;background:var(--gold-soft);color:var(--gold)">IA activa</span>` : `<span class="cop-badge">${I(SVG.sparkles,11)} Sin conexión IA</span>`}</div>
     ${isAI ? `
@@ -3857,11 +3851,8 @@ async function abrirCopiloto(){ const l=current; const nombre=l.customer_name||'
     <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug">${esc(sug)}</p></div>
     `}
     <div class="cop-card"><h5>${I(SVG.chat,14)} Respuesta sugerida</h5><p id="copSug2">${esc(sug)}</p><button class="cop-use" id="copUse">${I(SVG.sparkles,16)} Usar esta respuesta</button></div>
-    <div class="cop-card"><h5>${I(SVG.building,14)} Propiedades recomendadas</h5>
-      <div class="prop-scroll">${propsHtml}</div>
-    </div>`;
+`;
   $('#copUse').onclick=()=>{ if($('#scChat').classList.contains('show')){ const i=$('#cInput'); const sugText = ($('#copSug2')?.textContent || $('#copSug')?.textContent || '').trim(); if(sugText) i.value=sugText; updateSend(); } closeSheet(); haptic([10,20,10]); toast('Respuesta lista'); };
-  body.querySelectorAll('[data-prop]').forEach(b=>b.onclick=()=>{ const p=propsRecom[Number(b.dataset.prop)]; if(p&&$('#scChat').classList.contains('show')){ const i=$('#cInput'); i.value=`Te recomiendo: ${p.nombre} — ${p.m2||0} m² por ${money(p.precio)}. ¿Más info o agendamos visita?`; updateSend(); } closeSheet(); haptic(10); toast('Propiedad lista para enviar'); });
 }
 function exportarConversacion(){
   if(!current||!currentMsgs||!currentMsgs.length){ toast('Sin mensajes'); return; }
@@ -4435,7 +4426,7 @@ function cargarVersionApp(){
    slot en un celular de 360 px las etiquetas quedan ilegibles. Los tres menos usados
    viven en una hoja: siguen a un toque de distancia, pero no comprimen la barra. */
 function getTabsPrincipales(){ return [
-  ['chats','Chats',SVG.chat], ['mapa','Mapa',SVG.mapPin], ['propiedades','Propiedades',SVG.building],
+  ['chats','Chats',SVG.chat], ['mapa','Mapa',SVG.mapPin],
   ['tareas','Tareas',SVG.checkSquare], ['perfil','Perfil',SVG.user],
 ]; }
 function getTabsSecundarios(){ return [
@@ -4490,7 +4481,7 @@ function skeletonCards(n){ let h=''; for(let i=0;i<(n||3);i++){ h+=`<div class="
 function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='Leons Group';
   const box=document.createElement('div'); box.id='tabScreen'; box.className='m-scroll'; box.style.cssText='display:flex;flex-direction:column;';
   // Insertar el contenedor en el DOM ANTES de construir cada rama, para que los
-  // loaders (cargarPropiedades/cargarTareas) que consultan el DOM antes de su primer
+  // loaders (cargarTareas) que consultan el DOM antes de su primer
   // await encuentren su elemento y no salgan con return silencioso ("Cargando" eterno).
   $('#scHome').insertBefore(box, $('#fab'));
   if(t==='perfil'){
@@ -4806,9 +4797,6 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
     box.style.cssText = 'position:relative;overflow:hidden;padding:0;flex:1';
     box.innerHTML = plantillaMapaTab();
     montarMapaTab();
-  } else if (t === 'propiedades') {
-    box.innerHTML=`<div id="propBox" style="padding:14px;width:100%;max-width:400px;margin:0 auto">${skeletonCards(3)}</div>`;
-    cargarPropiedades();
   } else if (t === 'calendario') {
     box.innerHTML = `<div style="padding:14px 14px 0;width:100%;max-width:400px;margin:0 auto">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -5254,108 +5242,6 @@ async function abrirRecordatorio(citaId, yaProgramado, btnEl){
     if(r&&r.ok){ toast('Recordatorio cancelado'); closeSheet(); cargarCalendario(); }
     else toast('Error al cancelar','err');
   });
-}
-
-/* ════════ Propiedades tab — catálogo REAL de proyectos y lotes ════════ */
-const ESTADO_LOTE={disponible:{bg:'rgba(87,193,104,.12)',fg:'#57C168',label:'Disponible'},separado:{bg:'rgba(200,164,90,.12)',fg:'var(--gold)',label:'Separado'},reservado:{bg:'rgba(200,164,90,.12)',fg:'var(--gold)',label:'Reservado'},negociacion:{bg:'rgba(91,141,239,.12)',fg:'#5B8DEF',label:'Negociación'},vendido:{bg:'rgba(229,72,77,.12)',fg:'var(--red)',label:'Vendido'},bloqueado:{bg:'rgba(120,120,120,.14)',fg:'var(--text-3)',label:'Bloqueado'}};
-async function cargarPropiedades(){
-  const box=document.getElementById('propBox'); if(!box) return;
-  const proyectos=await api('/api/proyectos');
-  if(!proyectos||!proyectos.length){
-    box.innerHTML=`<div style="padding:40px 12px;text-align:center"><div style="color:var(--text-3);margin-bottom:14px">${I(SVG.building,44)}</div><div style="font-size:16px;font-weight:600;color:var(--text-2);margin-bottom:6px">Sin proyectos aún</div><p style="font-size:13px;color:var(--text-3)">El admin puede crear proyectos y lotes desde el panel de escritorio.</p></div>`;
-    return;
-  }
-  box.innerHTML=proyectos.map(p=>`
-    <div class="prop-proj" data-pid="${p.id}" style="background:var(--bg-2);border:1px solid var(--border-soft);border-radius:16px;padding:16px;margin-bottom:12px;cursor:pointer">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:44px;height:44px;border-radius:14px;background:var(--gold-soft,rgba(200,164,90,.12));display:grid;place-items:center;color:var(--gold)">${I(SVG.building,22)}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:15px;font-weight:600">${esc(p.nombre)}</div>
-          <div style="font-size:12px;color:var(--text-3)">${esc(p.ciudad||p.ubicacion||'')}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:16px;font-weight:700;color:#57C168">${p.disponibles||0}</div>
-          <div style="font-size:10px;color:var(--text-3)">disponibles</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:10px;font-size:11px;color:var(--text-3)">
-        <span>${p.total_lotes||0} lotes</span>·<span>${p.vendidos||0} vendidos</span>
-        ${p.precio_min?`·<span>desde ${money(p.precio_min)}</span>`:''}
-      </div>
-    </div>`).join('');
-  box.querySelectorAll('.prop-proj').forEach(el=>el.onclick=()=>abrirProyectoMovil(Number(el.dataset.pid),proyectos.find(p=>Number(p.id)===Number(el.dataset.pid))));
-}
-async function abrirProyectoMovil(pid,proyecto){
-  haptic(8);
-  const lotes=await api(`/api/proyectos/${pid}/lotes`);
-  const nombre=proyecto?proyecto.nombre:'Proyecto';
-  if(!lotes||!lotes.length){ openSheet(nombre,'<div style="text-align:center;color:var(--text-3);padding:20px">Este proyecto aún no tiene lotes cargados.</div>'); return; }
-  const filtros=['todos','disponible','separado','negociacion','vendido'];
-  const html=`
-    <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px" id="loteFiltros">
-      ${filtros.map((f,i)=>`<button data-lf="${f}" style="flex-shrink:0;padding:6px 12px;border-radius:999px;border:1px solid ${i===0?'var(--gold)':'var(--border)'};background:${i===0?'var(--gold-soft,rgba(200,164,90,.12))':'var(--bg-3)'};color:${i===0?'var(--gold)':'var(--text-2)'};font-size:12px;font-family:inherit">${f==='todos'?'Todos':ESTADO_LOTE[f]?ESTADO_LOTE[f].label:f}</button>`).join('')}
-    </div>
-    <div id="loteGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:50vh;overflow-y:auto"></div>`;
-  openSheet(nombre,html);
-  const grid=document.getElementById('loteGrid');
-  const render=f=>{
-    const ls=f==='todos'?lotes:lotes.filter(l=>l.estado===f);
-    grid.innerHTML=ls.length?ls.map(l=>{
-      const st=ESTADO_LOTE[l.estado]||ESTADO_LOTE.disponible;
-      return `<div class="lote-card" data-lid="${l.id}" style="background:var(--bg-3);border:1px solid var(--border-soft);border-radius:12px;padding:12px;cursor:pointer">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:14px;font-weight:700">${esc(l.manzana?l.manzana+'-':'')}${esc(l.numero||('#'+l.id))}</span>
-          <span style="font-size:9.5px;padding:2px 7px;border-radius:999px;background:${st.bg};color:${st.fg};font-weight:600">${st.label}</span>
-        </div>
-        <div style="font-size:13px;font-weight:600;color:var(--gold)">${l.precio?money(l.precio):'—'}</div>
-        <div style="font-size:11px;color:var(--text-3);margin-top:2px">${l.area?l.area+' m²':''}${l.dimensiones?' · '+esc(l.dimensiones):''}</div>
-      </div>`;
-    }).join(''):'<div style="grid-column:1/-1;text-align:center;color:var(--text-3);padding:16px">Sin lotes en este estado</div>';
-    grid.querySelectorAll('.lote-card').forEach(el=>el.onclick=()=>abrirLoteMovil(lotes.find(x=>Number(x.id)===Number(el.dataset.lid)),nombre,proyecto));
-  };
-  render('todos');
-  document.getElementById('loteFiltros').querySelectorAll('[data-lf]').forEach(b=>b.onclick=()=>{
-    document.getElementById('loteFiltros').querySelectorAll('[data-lf]').forEach(x=>{ x.style.borderColor='var(--border)'; x.style.background='var(--bg-3)'; x.style.color='var(--text-2)'; });
-    b.style.borderColor='var(--gold)'; b.style.background='var(--gold-soft,rgba(200,164,90,.12))'; b.style.color='var(--gold)';
-    render(b.dataset.lf);
-  });
-}
-function textoLote(l,proyectoNombre,proyecto){
-  const lineas=[`🏡 *${proyectoNombre}*${proyecto&&(proyecto.ciudad||proyecto.ubicacion)?' — '+(proyecto.ciudad||proyecto.ubicacion):''}`,
-    `Lote ${l.manzana?l.manzana+'-':''}${l.numero||('#'+l.id)}`];
-  if(l.area) lineas.push(`📐 Área: ${l.area} m²${l.dimensiones?' ('+l.dimensiones+')':''}`);
-  if(l.precio) lineas.push(`💰 Precio: ${money(l.precio)}`);
-  lineas.push('','¿Te gustaría agendar una visita o recibir más información?');
-  return lineas.join('\n');
-}
-function abrirLoteMovil(l,proyectoNombre,proyecto){
-  if(!l) return; haptic(8);
-  const st=ESTADO_LOTE[l.estado]||ESTADO_LOTE.disponible;
-  openSheet(`Lote ${l.manzana?l.manzana+'-':''}${l.numero||('#'+l.id)}`,`
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:12px;padding:4px 10px;border-radius:999px;background:${st.bg};color:${st.fg};font-weight:600">${st.label}</span>
-        <span style="font-size:18px;font-weight:700;color:var(--gold)">${l.precio?money(l.precio):'—'}</span>
-      </div>
-      <div style="font-size:13px;color:var(--text-2)">${esc(proyectoNombre)}</div>
-      ${l.area?`<div style="font-size:13px;color:var(--text-2)">📐 ${l.area} m²${l.dimensiones?' · '+esc(l.dimensiones):''}</div>`:''}
-      ${l.observaciones?`<div style="font-size:12px;color:var(--text-3)">${esc(l.observaciones)}</div>`:''}
-      ${l.estado==='disponible'||l.estado==='separado'||l.estado==='negociacion'?`
-      <button class="cop-use" id="loteCompartir" style="margin-top:6px">${I(SVG.chat,15)} Compartir a un lead</button>`:''}
-    </div>`);
-  const btn=document.getElementById('loteCompartir');
-  if(btn) btn.onclick=()=>{
-    const activos=leads.filter(x=>x.status!=='cerrado');
-    if(!activos.length){ toast('No tienes leads activos'); return; }
-    openSheet('Enviar lote a…',`<div style="max-height:50vh;overflow-y:auto">${activos.map(x=>`<div class="lote-dest" data-lead="${x.id}" style="display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer"><div class="m-avatar" style="width:34px;height:34px;border-radius:10px;font-size:12px;background:${avatarColor(x.customer_name||'')}">${initials(x.customer_name)}</div><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:500">${esc(x.customer_name||'Cliente')}</div><div style="font-size:11px;color:var(--text-3)">${esc(x.customer_phone||'')}</div></div></div>`).join('')}</div>`);
-    document.querySelectorAll('.lote-dest').forEach(el=>el.onclick=async()=>{
-      const leadId=Number(el.dataset.lead);
-      closeSheet(); toast('Enviando…');
-      const r=await api(`/api/leads/${leadId}/responder`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensaje:textoLote(l,proyectoNombre,proyecto)})});
-      if(r&&(r.ok||r.enviado||r.id)){ toast('Lote enviado ✓'); haptic([60,30,60]); }
-      else toast('No se pudo enviar','err');
-    });
-  };
 }
 
 /* ════════ Tareas tab — tareas REALES (/api/tareas), separadas de las citas ════════ */

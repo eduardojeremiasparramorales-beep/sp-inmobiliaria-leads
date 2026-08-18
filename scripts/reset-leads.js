@@ -56,7 +56,7 @@ const CONSERVADAS = [
   'vendedores, usuarios, sesiones y PIN — las cuentas de asesores quedan intactas',
   'config, wa_templates, templates, workflows (solo se borran los workflow_logs)',
   'citas/tareas/notificaciones sueltas (sin lead asociado)',
-  'propiedades, proyectos, lotes (catálogo — solo se limpian sus referencias a clientes/leads borrados)',
+  'proyectos, lotes (catálogo — solo se limpian sus referencias a clientes/leads borrados)',
   'lote_historial (historial de ventas de lotes, no es historial de leads/chats)',
   'optout (lista de exclusión de WhatsApp — se conserva por cumplimiento)',
 ];
