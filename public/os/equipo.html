@@ -284,9 +284,9 @@
     document.getElementById('add').addEventListener('click', ()=>{
       abrirModal('Agregar asesor', `
         <form id="addForm" style="display:flex;flex-direction:column;gap:14px">
-          <input name="nombre" placeholder="Nombre completo" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
-          <input name="telefono" placeholder="+573XXXXXXXXX" required pattern="\\+573\\d{9}" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
-          <input name="pin" placeholder="PIN de 4 dígitos" required pattern="\\d{4}" maxlength="4" inputmode="numeric" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <input name="nombre" placeholder="Nombre completo" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
+          <input name="telefono" placeholder="+573XXXXXXXXX" required pattern="\\+573\\d{9}" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
+          <input name="pin" placeholder="PIN de 4 dígitos" required pattern="\\d{4}" maxlength="4" inputmode="numeric" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
           <div style="display:flex;gap:10px;margin-top:6px">
             <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
             <button type="submit" class="btn btn--gold">Crear asesor</button>
@@ -346,7 +346,7 @@
             <div class="u-row u-gap1" style="font-size:12px"><span style="font-weight:600">${esc(quien)}</span>
               ${directo?`<span class="badge badge--gold" style="font-size:10px">${esc(destino)}</span>`:''}
               <span class="t-dim3" style="margin-left:auto;font-size:11px">${hora}</span></div>
-            <div style="font-size:13px;margin-top:2px;color:var(--txt)">${esc(m.body)}</div>
+            <div style="font-size:13px;margin-top:2px;color:var(--text)">${esc(m.body)}</div>
           </div></div>`;
       }
       let html = '';
@@ -391,7 +391,7 @@
       abrirModal(`Resetear PIN · ${name}`, `
         <form id="pinForm" style="display:flex;flex-direction:column;gap:14px">
           <div class="t-dim3" style="font-size:13px">Nuevo PIN de 4 dígitos</div>
-          <input name="pin" placeholder="0000" required pattern="\\d{4}" maxlength="4" inputmode="numeric" autofocus style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:20px;text-align:center;font-family:inherit;outline:none;letter-spacing:8px">
+          <input name="pin" placeholder="0000" required pattern="\\d{4}" maxlength="4" inputmode="numeric" autofocus style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:20px;text-align:center;font-family:inherit;outline:none;letter-spacing:8px">
           <div style="display:flex;gap:10px;margin-top:6px">
             <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
             <button type="submit" class="btn btn--gold">Guardar</button>
@@ -469,7 +469,7 @@
       ];
       abrirModal(`Cambiar rol · ${name}`, `
         <div style="display:flex;flex-direction:column;gap:10px">
-          <div class="t-dim3" style="font-size:13px;margin-bottom:2px">Rol actual: <b style="color:var(--txt)">${esc(actualLabel)}</b></div>
+          <div class="t-dim3" style="font-size:13px;margin-bottom:2px">Rol actual: <b style="color:var(--text)">${esc(actualLabel)}</b></div>
           ${opciones.map(o=>`
             <button data-setrol="${o.rol}" class="btn btn--ghost" style="text-align:left;justify-content:space-between;display:flex;gap:10px;align-items:center">
               <span>${esc(o.label)}</span><span class="t-dim3" style="font-size:11.5px">${esc(o.desc)}</span>

@@ -539,33 +539,71 @@ async function fetchTemplateFromMeta(metaId) {
   return res.data;
 }
 
+// ambito: quién tiene que actuar ante este error.
+//   'contacto'  — ese cliente/número puntual (el resto de los envíos sigue normal)
+//   'plantilla' — la plantilla usada (mal formada, pausada, deshabilitada)
+//   'cuenta'    — la WABA entera está caída: NINGÚN mensaje va a salir, hay que
+//                 avisarle al dueño del negocio de inmediato (ver services/wa-alertas.js)
+//   'temporal'  — falla pasajera de Meta, reintentar basta
+//   'desconocido' — código que todavía no está en esta tabla
+// Las claves de META_ERR_SUB son `codigo/subcodigo` y ganan sobre META_ERR (más
+// específicas). Antes esto era una cadena de `if` que devolvía sugerencia:null para
+// cualquier código no listado — y ESE texto en null caía al inglés crudo de Meta en
+// el push del asesor (ver describeWebhookError más abajo). No repetir ese patrón:
+// todo código nuevo entra aquí, nunca como un `if` suelto en otro lado.
+const META_ERR_SUB = {
+  '100/2388024': { ambito: 'plantilla', sugerencia: 'Ya existe una plantilla con ese nombre en ese idioma. Cambia el nombre o edita la existente.' },
+  '100/2388043': { ambito: 'plantilla', sugerencia: 'Falta un valor de ejemplo para alguna variable.' },
+  '200/10':      { ambito: 'cuenta',    sugerencia: 'El token no tiene el permiso whatsapp_business_management. Genera uno nuevo con ese scope en Meta.' },
+};
+const META_ERR = {
+  190:    { ambito: 'cuenta',    sugerencia: 'El token de WhatsApp expiró o fue revocado. Renueva el token del canal.' },
+  4:      { ambito: 'temporal',  sugerencia: 'Meta está limitando las peticiones. Reintenta en unos minutos.' },
+  80007:  { ambito: 'temporal',  sugerencia: 'Meta está limitando las peticiones. Reintenta en unos minutos.' },
+  // Errores de ENVÍO (los que rompen las campañas masivas con un 400 opaco)
+  132000: { ambito: 'plantilla', sugerencia: 'La cantidad de variables enviadas no coincide con la plantilla aprobada. Revisa el mapeo de variables de la campaña.' },
+  132001: { ambito: 'plantilla', sugerencia: 'La plantilla no existe con ese nombre/idioma. Sincroniza las plantillas desde Meta.' },
+  132005: { ambito: 'plantilla', sugerencia: 'Un parámetro excede el largo permitido por la plantilla.' },
+  132007: { ambito: 'plantilla', sugerencia: 'Una variable va vacía o con formato inválido (Meta rechaza parámetros en blanco). Llena el valor por defecto de esa variable.' },
+  132012: { ambito: 'plantilla', sugerencia: 'El formato de los parámetros no coincide con la plantilla (posicionales vs nombrados). Refresca la plantilla desde Meta.' },
+  132015: { ambito: 'plantilla', sugerencia: 'La plantilla está pausada por baja calidad. Espera o crea una nueva.' },
+  132016: { ambito: 'plantilla', sugerencia: 'La plantilla fue deshabilitada por Meta por calidad. Hay que reemplazarla.' },
+  131026: { ambito: 'contacto',  sugerencia: 'Ese número no puede recibir el mensaje (no tiene WhatsApp o el número está mal).' },
+  131047: { ambito: 'contacto',  sugerencia: 'Ventana de 24h cerrada: a ese contacto solo se le puede escribir con plantilla aprobada.' },
+  131049: { ambito: 'contacto',  sugerencia: 'Meta limitó la entrega de mensajes de marketing a ese usuario. No es un error de configuración.' },
+  131050: { ambito: 'contacto',  sugerencia: 'Meta limitó la entrega de mensajes de marketing a ese usuario. No es un error de configuración.' },
+  131056: { ambito: 'contacto',  sugerencia: 'Demasiados mensajes al mismo número en poco tiempo. Espacia los envíos.' },
+  // ── Nuevos (2026-08): faltaban y caían al fallback en inglés — ver describeWebhookError ──
+  131031: { ambito: 'cuenta',    sugerencia: 'Meta restringió la cuenta de WhatsApp Business: ningún mensaje va a salir hasta resolverlo. El administrador debe entrar a Business Manager → Calidad de la cuenta y apelar la restricción.' },
+  131048: { ambito: 'cuenta',    sugerencia: 'Meta frenó los envíos de este número por volumen o baja calidad (spam rate limit). Pausa las campañas: el límite se libera solo cuando la calidad se recupera.' },
+  131042: { ambito: 'cuenta',    sugerencia: 'La cuenta no puede enviar por un problema con el método de pago. El administrador debe revisar la facturación en Business Manager (tarjeta vencida, rechazada o sin configurar).' },
+  130472: { ambito: 'contacto',  sugerencia: 'Meta excluyó a ese número de recibir mensajes de marketing (lo tiene en un experimento propio). No es un fallo del CRM: espera a que el cliente escriba o contáctalo por otro medio.' },
+  133010: { ambito: 'cuenta',    sugerencia: 'El número no está registrado en la API de WhatsApp. El administrador tiene que volver a registrarlo en Meta (Cloud API, con el PIN de verificación) antes de poder enviar nada.' },
+  133004: { ambito: 'temporal',  sugerencia: 'Los servidores de WhatsApp no están respondiendo. No es un problema de la cuenta: reintenta el envío en unos minutos.' },
+  131000: { ambito: 'temporal',  sugerencia: 'Meta tuvo un fallo interno al procesar el envío. Reintenta en unos minutos; si se repite, avisa al administrador.' },
+  368:    { ambito: 'cuenta',    sugerencia: 'Meta bloqueó temporalmente el número por incumplir sus políticas. Deja de enviar mientras dure y avisa al administrador para que revise Business Manager → Calidad de la cuenta.' },
+};
+
 // Traduce un error de la Graph API a algo accionable en español, sin perder el código
 // original (para depurar) ni el mensaje de Meta (a veces es el más preciso posible).
 function normalizeMetaError(err) {
   const errData = err.response && err.response.data && err.response.data.error;
-  if (!errData) return { codigo: null, subcodigo: null, mensaje: err.message, sugerencia: null };
+  if (!errData) return { codigo: null, subcodigo: null, mensaje: err.message, sugerencia: null, ambito: 'desconocido' };
   const codigo = errData.code;
   const subcodigo = errData.error_subcode;
-  const base = { codigo, subcodigo, mensaje: errData.error_user_msg || errData.message || 'Error desconocido de Meta', sugerencia: null };
+  const base = { codigo, subcodigo, mensaje: errData.error_user_msg || errData.message || 'Error desconocido de Meta' };
 
-  if (codigo === 100 && subcodigo === 2388024) return { ...base, sugerencia: 'Ya existe una plantilla con ese nombre en ese idioma. Cambia el nombre o edita la existente.' };
-  if (codigo === 100 && subcodigo === 2388043) return { ...base, sugerencia: 'Falta un valor de ejemplo para alguna variable.' };
-  if (codigo === 190) return { ...base, sugerencia: 'El token de WhatsApp expiró o fue revocado. Renueva el token del canal.' };
-  if (codigo === 200 && subcodigo === 10) return { ...base, sugerencia: 'El token no tiene el permiso whatsapp_business_management. Genera uno nuevo con ese scope en Meta.' };
-  if (codigo === 4 || subcodigo === 80007) return { ...base, sugerencia: 'Meta está limitando las peticiones. Reintenta en unos minutos.' };
-  // Errores de ENVÍO (los que rompen las campañas masivas con un 400 opaco)
-  if (codigo === 132000) return { ...base, sugerencia: 'La cantidad de variables enviadas no coincide con la plantilla aprobada. Revisa el mapeo de variables de la campaña.' };
-  if (codigo === 132001) return { ...base, sugerencia: 'La plantilla no existe con ese nombre/idioma. Sincroniza las plantillas desde Meta.' };
-  if (codigo === 132005) return { ...base, sugerencia: 'Un parámetro excede el largo permitido por la plantilla.' };
-  if (codigo === 132007) return { ...base, sugerencia: 'Una variable va vacía o con formato inválido (Meta rechaza parámetros en blanco). Llena el valor por defecto de esa variable.' };
-  if (codigo === 132012) return { ...base, sugerencia: 'El formato de los parámetros no coincide con la plantilla (posicionales vs nombrados). Refresca la plantilla desde Meta.' };
-  if (codigo === 132015) return { ...base, sugerencia: 'La plantilla está pausada por baja calidad. Espera o crea una nueva.' };
-  if (codigo === 132016) return { ...base, sugerencia: 'La plantilla fue deshabilitada por Meta por calidad. Hay que reemplazarla.' };
-  if (codigo === 131026) return { ...base, sugerencia: 'Ese número no puede recibir el mensaje (no tiene WhatsApp o el número está mal).' };
-  if (codigo === 131047) return { ...base, sugerencia: 'Ventana de 24h cerrada: a ese contacto solo se le puede escribir con plantilla aprobada.' };
-  if (codigo === 131049 || codigo === 131050) return { ...base, sugerencia: 'Meta limitó la entrega de mensajes de marketing a ese usuario. No es un error de configuración.' };
-  if (codigo === 131056) return { ...base, sugerencia: 'Demasiados mensajes al mismo número en poco tiempo. Espacia los envíos.' };
-  return base;
+  const hit = META_ERR_SUB[`${codigo}/${subcodigo}`] || META_ERR[codigo] || (subcodigo ? META_ERR[subcodigo] : null);
+  if (hit) return { ...base, sugerencia: hit.sugerencia, ambito: hit.ambito };
+
+  // Fallback: NUNCA devolver el texto crudo de Meta como frase "humana" — antes esto
+  // devolvía sugerencia:null y quien lo consumía (describeWebhookError) caía al inglés
+  // de error_data.details. El código va incluido para poder diagnosticar qué faltó.
+  const cod = `${codigo}${subcodigo ? '/' + subcodigo : ''}`;
+  return {
+    ...base, ambito: 'desconocido',
+    sugerencia: `Meta rechazó el envío con el código ${cod} y el CRM todavía no traduce ese error. Pásale el código al administrador para que lo revise en el panel de Meta.`,
+  };
 }
 
 // Versión en una línea del error de Meta, para guardar en columnas de detalle
@@ -588,10 +626,13 @@ function describeWebhookError(e0) {
   } } } };
   const n = normalizeMetaError(wrapped);
   return {
-    // Para BD/logs: código + lo que Meta explique de verdad.
+    // Para BD/logs: código + lo que Meta explique de verdad (aquí SÍ puede ir en inglés).
     detalle: describeMetaError(wrapped),
-    // Para el push del asesor: la frase accionable en español, sin jerga de Meta.
-    humano: n.sugerencia || n.mensaje,
+    // Para el push del asesor: la frase accionable en español — con la tabla de arriba
+    // n.sugerencia nunca es null, así que el inglés de n.mensaje ya no se usa acá.
+    humano: n.sugerencia,
+    ambito: n.ambito,
+    codigo: n.codigo,
   };
 }
 

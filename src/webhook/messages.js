@@ -447,17 +447,32 @@ function processEntry(entry, entryCtx) {
       // el mensaje se envió y nadie se enteraba de por qué no llegó.
       let errDetail = null;
       let errHumano = null;
+      let errAmbito = null;
       if (isFailed && Array.isArray(st.errors) && st.errors[0]) {
         const e0 = st.errors[0];
         // `title` es una etiqueta opaca ("Re-engagement message"). El motivo real está en
         // error_data.details, y describeWebhookError además lo traduce al español.
         try {
           const d = require('../services/wa-templates').describeWebhookError(e0);
-          if (d) { errDetail = d.detalle; errHumano = d.humano; }
+          if (d) { errDetail = d.detalle; errHumano = d.humano; errAmbito = d.ambito; }
         } catch (_) { /* fallback abajo */ }
         if (!errDetail) errDetail = `[${e0.code || '?'}] ${e0.title || e0.message || 'Error desconocido'}`;
-        store.setMessageError(st.id, errDetail);
-        console.error(`[Webhook] Mensaje ${st.id} FALLÓ: ${errDetail} | payload: ${JSON.stringify(e0)}`);
+        store.setMessageError(st.id, errDetail, errHumano);
+        // Un error de ámbito 'cuenta' significa que TODOS los envíos están fallando,
+        // no solo este — hay que avisarle al dueño (push + panel de salud). El resto
+        // (ventana cerrada, número sin WhatsApp) pasa decenas de veces al día por
+        // operación normal: contarlo como error del sistema pintaría /os/salud.html en
+        // rojo permanente y dispararía la alerta de ráfaga del logger en cada campaña.
+        if (errAmbito === 'cuenta' || errAmbito === 'desconocido') {
+          try {
+            require('../services/logger').logError('webhook_status_failed', new Error(errDetail), { wamid: st.id, codigo: e0.code });
+          } catch (_) {}
+          try {
+            require('../services/wa-alertas').alertarCuenta({ codigo: e0.code, subcodigo: e0.error_subcode, humano: errHumano, detalle: errDetail, origen: 'webhook' });
+          } catch (_) {}
+        } else {
+          console.error(`[Webhook] Mensaje ${st.id} FALLÓ: ${errDetail} | payload: ${JSON.stringify(e0)}`);
+        }
       }
 
       // Notificar al panel para actualizar el checkmark en vivo
@@ -465,10 +480,9 @@ function processEntry(entry, entryCtx) {
       if (m) {
         const lead = store.getLeadById(m.lead_id);
         if (lead) {
-          events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
-          events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
+          events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, errorHumano: errHumano, ts: Date.now() });
+          events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, errorHumano: errHumano, ts: Date.now() });
           if (isFailed) {
-            events.emitToVendedor(lead.assigned_to_id, 'sistema_alerta', { tipo: 'mensaje_fallido', leadId: lead.id, messageId: m.id, mensaje: `No se pudo entregar un mensaje a ${lead.customer_name || lead.customer_phone}: ${errHumano || errDetail}`, ts: Date.now() });
             // El SSE solo llega si el panel está abierto: un mensaje que no se entregó
             // tiene que alcanzar al asesor aunque tenga la app cerrada.
             try {

@@ -31,6 +31,14 @@
   // (docker-compose.yml), así que 500MB de RSS ya es una señal de alerta temprana.
   function estadoMemoria(mb) { return mb > 500 ? 'red' : mb > 300 ? 'amber' : 'green'; }
   function estadoErrores(n) { return n > 10 ? 'red' : n > 0 ? 'amber' : 'green'; }
+  // TIER_250/TIER_50 = el número está corto de límite (falta verificación de negocio
+  // en Business Manager) — no es un error puntual, pero sí algo que el dueño debe ver.
+  function estadoWhatsapp(wa) {
+    if (!wa) return null;
+    if (wa.calidad === 'RED') return 'red';
+    if (wa.tier === 'TIER_250' || wa.tier === 'TIER_50') return 'amber';
+    return 'green';
+  }
   function fmtUptime(seg) {
     const d = Math.floor(seg / 86400), h = Math.floor((seg % 86400) / 3600), m = Math.floor((seg % 3600) / 60);
     if (d > 0) return `${d}d ${h}h`;
@@ -70,6 +78,10 @@
             <div class="salud-row"><span class="salud-row__label">Versión de Node</span><span class="salud-row__value">${esc(salud.node)}</span></div>
             <div class="salud-row"><span class="salud-row__label">Base de datos</span><span class="salud-row__value">${salud.db_mb} MB</span></div>
             <div class="salud-row"><span class="salud-row__label">Errores última hora</span><span class="salud-row__value" style="color:${estadoErrores(salud.errores_ultima_hora)==='red'?'var(--red)':estadoErrores(salud.errores_ultima_hora)==='amber'?'var(--amber)':'var(--green)'}">${salud.errores_ultima_hora}</span></div>
+            ${salud.whatsapp ? `
+            <div class="salud-row"><span class="salud-row__label">WhatsApp · calidad del número</span><span class="salud-row__value" style="color:${estadoWhatsapp(salud.whatsapp)==='red'?'var(--red)':'var(--green)'}">${esc(salud.whatsapp.calidad || '—')}</span></div>
+            <div class="salud-row"><span class="salud-row__label">WhatsApp · límite de conversaciones/día</span><span class="salud-row__value" style="color:${estadoWhatsapp(salud.whatsapp)==='amber'?'var(--amber)':'var(--green)'}">${esc(String(salud.whatsapp.tier || '—').replace('TIER_',''))}</span></div>
+            ` : ''}
           </div>
 
           <div class="card card--pad rise rise-2">

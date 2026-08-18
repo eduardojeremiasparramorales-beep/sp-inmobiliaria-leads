@@ -215,7 +215,7 @@
     modal.innerHTML = `
       <div style="background:var(--bg-1);border-radius:14px;padding:20px;width:92%;max-width:420px;max-height:80vh;overflow:auto;border:1px solid var(--border-soft)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0;color:var(--text-1);font-size:15px">Compartir al chat</h3>
+          <h3 style="margin:0;color:var(--text);font-size:15px">Compartir al chat</h3>
           <button id="csmClose" style="background:none;border:none;color:var(--text-3);font-size:20px;cursor:pointer">✕</button>
         </div>
         <input id="csmSearch" placeholder="Buscar lead por nombre o teléfono…" style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:13px;margin-bottom:10px;outline:none">
@@ -234,7 +234,7 @@
       if (!filtered.length) { list.innerHTML = '<div style="padding:16px 0;text-align:center">Sin resultados</div>'; return; }
       list.innerHTML = filtered.slice(0, 30).map(l => `
         <div data-lead="${l.id}" style="display:flex;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer">
-          <span style="color:var(--text-1)">${esc(l.customer_name || 'Sin nombre')} <span style="color:var(--text-3)">· ${esc(l.customer_phone || '')}</span></span>
+          <span style="color:var(--text)">${esc(l.customer_name || 'Sin nombre')} <span style="color:var(--text-3)">· ${esc(l.customer_phone || '')}</span></span>
           <button class="csp-btn csp-btn--ghost" style="height:28px;padding:0 10px;font-size:11px" data-send="${l.id}">Enviar</button>
         </div>`).join('');
       list.querySelectorAll('[data-send]').forEach(btn => btn.addEventListener('click', async () => {
@@ -299,7 +299,7 @@
     modal.innerHTML = `
       <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:94%;max-width:620px;max-height:92vh;overflow:auto;border:1px solid var(--border-soft)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <h3 style="margin:0;color:var(--text-1);font-size:16px">${currentProject ? 'Editar: ' + esc(currentProject.name) : 'Nuevo Proyecto SP'}</h3>
+          <h3 style="margin:0;color:var(--text);font-size:16px">${currentProject ? 'Editar: ' + esc(currentProject.name) : 'Nuevo Proyecto SP'}</h3>
           <button id="cspClose" style="background:none;border:none;color:var(--text-3);font-size:20px;cursor:pointer">✕</button>
         </div>
         <div class="csp-steps" id="cspSteps">

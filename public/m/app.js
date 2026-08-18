@@ -1750,6 +1750,20 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       if(span){ span.innerHTML=esc(span.dataset.full); span.classList.remove('bub-body--trunc'); }
       return;
     }
+    // Tap en el motivo de un mensaje no entregado → detalle + reintentar escribiendo.
+    // Va ANTES del handler genérico de .bub (copiar texto), si no el tap copiaría en
+    // vez de abrir el detalle.
+    const fail=e.target.closest('.bub-fail');
+    if(fail){
+      const m=currentMsgs.find(x=>String(x.id)===String(fail.dataset.fail));
+      if(m) openSheet('Mensaje no entregado', `
+        <div style="font-size:13px;line-height:1.55;color:var(--text-2);margin-bottom:14px">${esc(m.error_humano||'Meta rechazó el envío sin dar un motivo legible.')}</div>
+        <div style="font-size:11px;color:var(--text-3);font-family:var(--f-num);word-break:break-word;margin-bottom:16px">${esc(m.error_detail||'')}</div>
+        <button id="failReenviar" style="width:100%;height:46px;border:none;border-radius:12px;background:var(--grad-gold);color:#0A0A0A;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">Volver a escribirlo</button>`);
+      const rb=document.getElementById('failReenviar');
+      if(rb&&m) rb.onclick=()=>{ closeSheet(); const i=$('#cInput'); i.value=m.body||''; i.focus(); updateSend(); haptic(6); };
+      return;
+    }
     // Transcribir nota de voz on-demand (A3) — el resultado llega por SSE 'transcripcion'
     const trBtn=e.target.closest('[data-transcribe]');
     if(trBtn){
@@ -2349,7 +2363,7 @@ async function abrirStickers(){
 }
 
 function msgsHTML(msgs){ if(!msgs||!msgs.length) return '<div class="m-empty" style="min-height:200px"><p>Sin mensajes todavía.</p></div>'; let h='',last='';
-  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st,m.read_at):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><!-- msg-reply-act eliminado --><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${reacHTML}</div></div>`; }
+  const searchTerm=$('#cSearchInput')&&$('#cSearchInput').value.trim().toLowerCase(); let filtered=msgs; if(searchTerm) filtered=msgs.filter(m=>m.body&&m.body.toLowerCase().includes(searchTerm)); for(const m of filtered){ const f=dateLabel(m.timestamp); if(f&&f!==last){ h+=`<div class="c-date">${f}</div>`; last=f; } const out=m.direction!=='incoming'; const wrapId='msg_'+m.id; const st=m.status||'sent'; const chk=out?chkHTML(st,m.read_at):''; const hl=searchTerm&&m.body&&m.body.toLowerCase().includes(searchTerm)?' highlight':''; const sel=selIds.has(String(m.id))?' selected':''; const addedit=m.edited_at?'<span class="bub__edited">editado</span>':''; const reacHTML=renderReactions(m.reactions); const deleted=m.deleted_for_sender?'<div class="bub-deleted">Eliminaste este mensaje</div>':''; const bodyHTML=deleted||(m.media_type?renderMedia(m):esc(m.body||'')); const failTxt=(out&&st==='failed')?(m.error_humano||'No se pudo entregar. Toca para ver el detalle.'):''; const failHTML=failTxt?`<div class="bub-fail" data-fail="${m.id}">⚠️ ${esc(failTxt.length>90?failTxt.slice(0,90)+'…':failTxt)}</div>`:''; h+=`<div class="msg-wrap${selMode?' sel-mode':''}${sel}" data-msgid="${m.id}" id="${wrapId}"><div class="sel-check"></div><!-- msg-reply-act eliminado --><div class="bub bub--${out?'out':'in'}${hl}">${msgInner(m)}<div class="bub__t">${addedit}${soloHora(m.timestamp)}${chk}</div>${failHTML}${reacHTML}</div></div>`; }
   return h;
 }
 function renderReactions(reactions){
@@ -2414,6 +2428,10 @@ function chkHTML(st,readAt){
   // 'pending' = ventana de 24h cerrada: el texto NO salió a WhatsApp, espera a que el
   // cliente conteste la plantilla. Marcarlo como enviado hacía creer que ya llegó.
   if(st==='pending') return '<span class="chk chk-pending" title="WhatsApp no permite enviarlo hasta que el cliente responda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> En espera</span>';
+  // Meta rechazó el envío: antes caía al ✓ genérico de abajo y el asesor creía que el
+  // cliente lo había recibido. El motivo en español va bajo la burbuja (ver .bub-fail
+  // en msgsHTML) — este check solo avisa que hay que mirar ahí.
+  if(st==='failed') return '<span class="chk chk-failed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5v.01"/></svg> No entregado</span>';
   const visto=readAt?` <span class="chk-visto">Visto ${soloHora(readAt)}</span>`:'';
   if(st==='read') return `<span class="chk chk-read"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>${visto}`;
   if(st==='delivered') return `<span class="chk chk-delivered"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>`;
@@ -2698,7 +2716,7 @@ async function abrirPlantillaMeta(prefillName){
     if(prefillName) lista.sort((a,b)=>(b.t.nombre===prefillName?1:0)-(a.t.nombre===prefillName?1:0));
     if(!lista.length) return `<div style="padding:24px 8px;text-align:center;color:var(--text-3);font-size:13px">Ninguna plantilla coincide con la búsqueda.</div>`;
     return lista.map(({t,snippet})=>`
-      <button class="lp-cell wide" data-tplid="${t.id}" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;width:100%;padding:12px 14px;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:14px;color:var(--txt);margin-bottom:8px">
+      <button class="lp-cell wide" data-tplid="${t.id}" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;width:100%;padding:12px 14px;background:var(--bg-3);border:1px solid var(--border-soft);border-radius:14px;color:var(--text);margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:8px;width:100%">
           <span style="font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.nombre)}</span>
           ${t.categoria?`<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:var(--gold-soft,rgba(200,164,90,.12));color:var(--gold);flex-shrink:0">${esc(t.categoria)}</span>`:''}
@@ -2708,7 +2726,7 @@ async function abrirPlantillaMeta(prefillName){
   };
 
   openSheet('Plantillas de WhatsApp', `
-    <input id="mtSearch" placeholder="Buscar plantilla…" autocomplete="off" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:10px">
+    <input id="mtSearch" placeholder="Buscar plantilla…" autocomplete="off" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-bottom:10px">
     <div id="mtLista">${renderLista('')}</div>`);
   const wireLista=()=>{ $('#mtLista')?.querySelectorAll('[data-tplid]').forEach(b=>b.onclick=()=>abrirDetallePlantilla(Number(b.dataset.tplid), leadId, waTemplates)); };
   wireLista();
@@ -2755,7 +2773,7 @@ async function abrirDetallePlantilla(templateId, leadId, waTemplates){
   const camposHtml=(preview.variables||[]).map(v=>`
     <div style="margin-bottom:10px">
       <label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">${esc(v.label)}</label>
-      <input type="text" data-var="${esc(v.ph)}" value="${esc(v.valor||'')}" placeholder="Completa este dato" style="width:100%;padding:11px 13px;border-radius:11px;border:1px solid ${v.valor?'var(--border)':'var(--gold,#c8a45a)'};background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+      <input type="text" data-var="${esc(v.ph)}" value="${esc(v.valor||'')}" placeholder="Completa este dato" style="width:100%;padding:11px 13px;border-radius:11px;border:1px solid ${v.valor?'var(--border)':'var(--gold,#c8a45a)'};background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
     </div>`).join('') || `<div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Esta plantilla no tiene variables.</div>`;
 
   openSheet(tpl.nombre, `
@@ -3988,12 +4006,12 @@ async function abrirNuevoLead(){
   const waTemplates = await api('/api/wa-templates') || [];
   openSheet('Nueva conversación', `
     <form id="nlForm" style="display:flex;flex-direction:column;gap:12px">
-      <input name="phone" placeholder="Teléfono +573XXXXXXXXX" required inputmode="tel" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
-      <input name="name" placeholder="Nombre del cliente" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
-      <textarea name="message" placeholder="Mensaje inicial (opcional)" style="width:100%;min-height:60px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none;resize:none"></textarea>
+      <input name="phone" placeholder="Teléfono +573XXXXXXXXX" required inputmode="tel" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:15px;font-family:inherit;outline:none">
+      <input name="name" placeholder="Nombre del cliente" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:15px;font-family:inherit;outline:none">
+      <textarea name="message" placeholder="Mensaje inicial (opcional)" style="width:100%;min-height:60px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:15px;font-family:inherit;outline:none;resize:none"></textarea>
       ${waTemplates.length ? `
       <div style="font-size:12px;color:var(--text-3)">Plantilla — obligatoria si el número nunca te ha escrito (WhatsApp exige plantilla aprobada para el primer contacto)</div>
-      <select name="templateId" id="nlTemplate" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:15px;font-family:inherit;outline:none">
+      <select name="templateId" id="nlTemplate" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:15px;font-family:inherit;outline:none">
         <option value="">Sin plantilla</option>
         ${waTemplates.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}
       </select>
@@ -4010,7 +4028,7 @@ async function abrirNuevoLead(){
     const nameVal=$('#nlForm [name="name"]')?.value.trim()||'';
     box.innerHTML=vars.map(ph=>{
       const prefill=mapping[ph]==='nombre_cliente'?esc(nameVal):'';
-      return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph]?' — '+esc(mapping[ph]):' (sin asignar)'}" value="${prefill}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--txt);font-size:14px;font-family:inherit;outline:none;margin-bottom:4px">`;
+      return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph]?' — '+esc(mapping[ph]):' (sin asignar)'}" value="${prefill}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-bottom:4px">`;
     }).join('');
   };
   $('#nlTemplate')?.addEventListener('change', renderVarFields);
@@ -4148,7 +4166,7 @@ const AUTO_OPERADORES = [['contains','contiene'],['equals','es igual a'],['not_e
 function _autoOverlay(html){
   const ov = document.createElement('div');
   ov.id = 'autoOverlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:6000;overflow-y:auto;color:var(--text);padding:14px 14px 40px';
+  ov.className = 'm-overlay';
   ov.innerHTML = html;
   document.body.appendChild(ov);
   return ov;
@@ -4641,8 +4659,7 @@ function abrirOnboarding(){
     const p = pasos[paso];
     const esUltimo = paso === pasos.length-1;
     let ov = document.getElementById('onbOverlay');
-    if(!ov){ ov = document.createElement('div'); ov.id = 'onbOverlay'; document.body.appendChild(ov); }
-    ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:7000;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:32px 24px;text-align:center';
+    if(!ov){ ov = document.createElement('div'); ov.id = 'onbOverlay'; ov.className = 'm-overlay m-overlay--center'; ov.style.zIndex = '7000'; document.body.appendChild(ov); }
     ov.innerHTML = `
       <div style="font-size:52px;margin-bottom:18px">${p.icon}</div>
       <div style="font-size:19px;font-weight:700;margin-bottom:10px">${esc(p.titulo)}</div>
@@ -5903,7 +5920,20 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream'); _es=es;
   es.addEventListener('lead_actualizado',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){} await refrescarLead(x.leadId); if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } } else { renderFilters(); updateCardBadges(); renderList(); }
     if(_superChatAbierto&&_superChatAbierto.leadId&&Number(_superChatAbierto.leadId)===Number(x.leadId)) _superCargarTimeline(); });
   // Checkmark en vivo cuando el cliente recibe/lee (sin re-render del chat)
-  es.addEventListener('status_update',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return; const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId)); if(m) m.status=x.status; const wrap=document.getElementById('msg_'+x.messageId); if(wrap){ const t=wrap.querySelector('.bub__t'); if(t){ const old=t.querySelector('.chk'); if(old){ const tmp=document.createElement('span'); tmp.innerHTML=chkHTML(x.status,null); old.replaceWith(tmp.firstChild); } } } }catch(e){} });
+  es.addEventListener('status_update',ev=>{ try{ const x=JSON.parse(ev.data); if(!current||Number(x.leadId)!==Number(current.id)) return;
+    const m=currentMsgs.find(mm=>Number(mm.id)===Number(x.messageId));
+    // Guardar el motivo en memoria: msgsHTML() se re-ejecuta sin refetch en varios
+    // sitios (buscador, "Ver más", destacar, traducir) y sin esto el aviso de fallo
+    // desaparecería solo en el siguiente render.
+    if(m){ m.status=x.status; if(x.error!==undefined) m.error_detail=x.error||null; if(x.errorHumano!==undefined) m.error_humano=x.errorHumano||null; }
+    if(x.status==='failed'){
+      // 'failed' necesita insertar un nodo nuevo (.bub-fail), no solo cambiar el
+      // check — el reemplazo quirúrgico de abajo no alcanza para eso.
+      if(m){ const cm=$('#cMsgs'); if(cm) cm.innerHTML=msgsHTML(currentMsgs); }
+      haptic([120,60,120]); toast(x.errorHumano||'Un mensaje no se entregó','err');
+      return;
+    }
+    const wrap=document.getElementById('msg_'+x.messageId); if(wrap){ const t=wrap.querySelector('.bub__t'); if(t){ const old=t.querySelector('.chk'); if(old){ const tmp=document.createElement('span'); tmp.innerHTML=chkHTML(x.status,null); old.replaceWith(tmp.firstChild); } } } }catch(e){} });
   // Mensaje eliminado (por un asesor o por el cliente — anti-delete)
   es.addEventListener('mensaje_eliminado',async ev=>{ try{ const x=JSON.parse(ev.data); if(current&&Number(x.leadId)===Number(current.id)&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); } if(x.byClient) toast('El cliente eliminó un mensaje — texto conservado'); }
     if(_superChatAbierto&&_superChatAbierto.leadId&&Number(_superChatAbierto.leadId)===Number(x.leadId)) _superCargarTimeline(); }catch(e){} });

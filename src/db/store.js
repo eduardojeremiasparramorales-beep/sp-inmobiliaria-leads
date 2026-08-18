@@ -184,7 +184,8 @@ function createSchema() {
   ensureColumn('messages', 'deleted_for_all', 'INTEGER DEFAULT 0');
   ensureColumn('messages', 'deleted_by', 'TEXT');
   ensureColumn('messages', 'read_at', 'DATETIME');
-  ensureColumn('messages', 'error_detail', 'TEXT');
+  ensureColumn('messages', 'error_detail', 'TEXT');   // técnico, con el código de Meta — para BD/logs/admin
+  ensureColumn('messages', 'error_humano', 'TEXT');   // frase en español para el asesor — nunca inglés crudo
   ensureColumn('messages', 'starred_at', 'DATETIME');       // mensajes destacados ⭐
   ensureColumn('messages', 'transcript', 'TEXT');           // transcripción IA de notas de voz
   ensureColumn('messages', 'translated_body', 'TEXT');      // traducción IA bajo demanda (cache)
@@ -838,17 +839,20 @@ function updateMessageStatus(wamid, status) {
   run('UPDATE messages SET status = ? WHERE wamid = ?', [status, wamid]);
 }
 
-function setMessageError(wamid, detail) {
-  run('UPDATE messages SET error_detail = ? WHERE wamid = ?', [detail, wamid]);
+// `humano` es opcional (retrocompatible): quien no lo pase deja error_humano en NULL
+// y el móvil cae al texto genérico. `detail` sigue siendo el técnico con el código de
+// Meta para BD/logs; `humano` es la frase en español que ve el asesor en la burbuja.
+function setMessageError(wamid, detail, humano) {
+  run('UPDATE messages SET error_detail = ?, error_humano = ? WHERE wamid = ?', [detail, humano || null, wamid]);
 }
 
 // --- Mensajes en espera de que se reabra la ventana de 24h ---
 // Estos NO tienen wamid todavía (no salieron a Meta), así que se direccionan por id.
 function markMessageSent(messageId, wamid) {
-  run("UPDATE messages SET wamid = ?, status = 'sent', error_detail = NULL WHERE id = ?", [wamid || null, messageId]);
+  run("UPDATE messages SET wamid = ?, status = 'sent', error_detail = NULL, error_humano = NULL WHERE id = ?", [wamid || null, messageId]);
 }
-function setMessageErrorById(messageId, detail) {
-  run('UPDATE messages SET error_detail = ? WHERE id = ?', [detail, messageId]);
+function setMessageErrorById(messageId, detail, humano) {
+  run('UPDATE messages SET error_detail = ?, error_humano = ? WHERE id = ?', [detail, humano || null, messageId]);
 }
 
 // Marca un mensaje entrante como "el cliente pulsó este botón de la plantilla".

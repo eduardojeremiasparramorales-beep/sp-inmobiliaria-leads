@@ -256,7 +256,7 @@
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55)';
     modal.innerHTML = `
       <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:92%;max-width:520px;max-height:88vh;overflow:auto;border:1px solid var(--border-soft)">
-        <h3 style="margin:0 0 16px;color:var(--text-1)">Nueva campaña WhatsApp</h3>
+        <h3 style="margin:0 0 16px;color:var(--text)">Nueva campaña WhatsApp</h3>
         <form id="ncForm">
           <div class="cp-field"><label>Nombre de la campaña</label><input id="ncNombre" required placeholder="Ej: Lanzamiento Lotes Tocaima Julio"></div>
           <div class="cp-field"><label>Plantilla (solo aprobadas)</label>
@@ -326,7 +326,7 @@
       }
       if (sinMapear.length) {
         html += '<div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px">Variables sin mapear — mismo valor para toda la campaña</div>' +
-          sinMapear.map(v => `<input type="text" data-ov="${esc(v)}" placeholder="{{${esc(v)}}}" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:8px;font-size:13px">`).join('');
+          sinMapear.map(v => `<input type="text" data-ov="${esc(v)}" placeholder="{{${esc(v)}}}" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text);margin-bottom:8px;font-size:13px">`).join('');
       } else if (vars.length) {
         html += '<div style="font-size:11.5px;color:var(--text-3);margin:8px 0">Todas las variables ya están mapeadas — se resuelven por lead automáticamente.</div>';
       }

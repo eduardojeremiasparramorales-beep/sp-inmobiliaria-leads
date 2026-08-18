@@ -3344,6 +3344,7 @@ app.get('/api/admin/salud', auth.requireAdmin, (req, res) => {
     db_mb: Math.round(dbSize / 1024 / 1024 * 10) / 10,
     errores_ultima_hora: logger.erroresUltimaHora(),
     node: process.version,
+    whatsapp: _waCuentaCache,
   });
 });
 
@@ -4849,6 +4850,30 @@ async function checkMetaAdsAlertas() {
   }
 }
 
+// La cuenta puede estar "sana" (ACTIVE/APPROVED/GREEN) y aun así no enviar nada nuevo:
+// sin la verificación de negocio completada en Business Manager, Meta deja el número
+// en TIER_250 (250 conversaciones nuevas/24h) y las campañas se cortan solas al
+// llegar al tope — sin lanzar NINGÚN error que el CRM pueda detectar reactivamente.
+// Hay que preguntarlo. Cacheado: /api/admin/salud no debe llamar a Meta en cada carga.
+let _waCuentaCache = null;
+async function checkWhatsAppCuenta() {
+  if (!process.env.WHATSAPP_TOKEN || !process.env.PHONE_NUMBER_ID) return;
+  const q = await require('./services/whatsapp').getPhoneQuality();
+  _waCuentaCache = { calidad: q.quality_rating || null, tier: q.messaging_limit_tier || null, ts: Date.now() };
+  if (q.quality_rating === 'RED') {
+    await require('./services/wa-alertas').alertarCuenta({
+      codigo: 'CALIDAD_RED', origen: 'poll',
+      humano: 'La calidad del número de WhatsApp está en ROJO. Meta va a bajar el límite de envíos y puede restringir la cuenta. Pausa las campañas de marketing.',
+    });
+  }
+  if (q.messaging_limit_tier === 'TIER_250' || q.messaging_limit_tier === 'TIER_50') {
+    await require('./services/wa-alertas').alertarCuenta({
+      codigo: q.messaging_limit_tier, origen: 'poll', // ya viene como 'TIER_250'/'TIER_50' — no duplicar el prefijo
+      humano: `WhatsApp solo permite ${q.messaging_limit_tier.replace('TIER_', '')} conversaciones nuevas al día en este número. Para subir el límite hay que completar la verificación del negocio en Meta Business Manager.`,
+    });
+  }
+}
+
 async function checkEscalation() {
   try {
     const ESC_ALERTA_MIN = Number(process.env.ESC_ALERTA_MIN || store.getConfig('escalation_alerta_min') || 15);
@@ -5471,6 +5496,9 @@ function ensurePlatformAdmin() {
   // Meta Ads: recomendaciones de severidad alta (gasto sin resultados) avisan solas
   // al admin — antes había que entrar al panel a mirar campaña por campaña.
   setInterval(() => { runForAllTenants(() => checkMetaAdsAlertas()).catch(e => console.error('[SCHED] meta-ads alertas:', e.message)); }, 6 * 60 * 60 * 1000);
+
+  setInterval(() => { runForAllTenants(() => checkWhatsAppCuenta()).catch(e => console.error('[SCHED] whatsapp cuenta:', e.message)); }, 6 * 60 * 60 * 1000);
+  checkWhatsAppCuenta().catch(e => console.error('[SCHED] whatsapp cuenta (inicial):', e.message)); // no esperar 6h para el primer diagnóstico
   // Automatizaciones: reanuda delays vencidos + evalúa triggers 'schedule' y
   // 'lead:inactive'. Antes un delay solo podía vivir en memoria; con el proceso
   // reiniciándose en cada deploy, cualquier flujo con espera nunca llegaba a la acción.

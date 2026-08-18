@@ -2,7 +2,6 @@ const axios = require('axios');
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
 const WINDOW_CLOSED_CODE = 131047;
-const TOKEN_INVALID_CODE = 190;
 
 // Vid.a V3 — credenciales del canal SEGÚN el tenant activo:
 //   · Empresa #1 (SP Leons Group, legacy): WHATSAPP_TOKEN / PHONE_NUMBER_ID / WABA_ID de .env.
@@ -55,28 +54,23 @@ function getGraphConfig() {
   };
 }
 
-// Con un token expirado/revocado (código 190), TODOS los envíos fallan pero el CRM
-// aparenta funcionar (los errores solo quedaban en console.error). Se detecta y se
-// alerta al admin, con un debounce para no inundar de notificaciones idénticas.
-let lastTokenAlertAt = 0;
+// Con la cuenta caída (token expirado, restringida, límite de pago, número sin
+// registrar…) TODOS los envíos fallan pero el CRM aparenta funcionar — antes esto
+// solo se detectaba para el código 190 y quedaba en console.error + un SSE
+// ('sistema_alerta') que nunca tuvo un solo listener en todo el repo. Ahora se apoya
+// en la misma tabla que traduce los errores del webhook (normalizeMetaError): CUALQUIER
+// código de ambito 'cuenta' avisa al dueño, con dedupe por código en wa-alertas.js —
+// no hace falta duplicar ese debounce acá.
 function reportGraphError(err) {
   const errData = err.response && err.response.data && err.response.data.error;
-  if (errData && errData.code === TOKEN_INVALID_CODE) {
-    const now = Date.now();
-    if (now - lastTokenAlertAt > 10 * 60 * 1000) {
-      lastTokenAlertAt = now;
-      const ctxEmpresa = (() => { try { const c = require('../db/adapter').tenantContext.getStore(); return c && c.empresaId != null ? c.empresaId : 1; } catch (e) { return 1; } })();
-      console.error(`[WhatsApp] TOKEN INVÁLIDO O EXPIRADO (error 190) — todos los envíos de la empresa #${ctxEmpresa} están fallando. Renueva el token del canal.`);
-      try {
-        require('./events').emitToAdmins('sistema_alerta', {
-          tipo: 'token_expirado',
-          empresaId: ctxEmpresa,
-          mensaje: `El token de WhatsApp expiró o es inválido (empresa #${ctxEmpresa}). Los mensajes NO se están enviando. Renueva el token del canal.`,
-          ts: now,
-        });
-      } catch (e) { /* events no disponible en este contexto */ }
+  if (!errData) return err;
+  try {
+    const n = require('./wa-templates').normalizeMetaError(err);
+    if (n.ambito === 'cuenta') {
+      const detalle = require('./wa-templates').describeMetaError(err);
+      require('./wa-alertas').alertarCuenta({ codigo: n.codigo, subcodigo: n.subcodigo, humano: n.sugerencia, detalle, origen: 'graph' });
     }
-  }
+  } catch (e) { /* la alerta es best-effort, nunca debe romper el envío real */ }
   return err;
 }
 
@@ -343,4 +337,4 @@ async function revokeMessage(to, wamid) {
   }
 }
 
-module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality, getApiConfig, getAuth, getGraphConfig };
+module.exports = { sendMessage, sendMessageSmart, sendTemplate, markAsRead, sendTyping, sendReaction, getMediaUrl, downloadMedia, uploadMedia, sendMedia, sendLocation, editMessage, revokeMessage, getPhoneQuality, getApiConfig, getAuth, getGraphConfig, reportGraphError };

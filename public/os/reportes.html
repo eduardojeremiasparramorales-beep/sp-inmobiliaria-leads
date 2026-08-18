@@ -48,7 +48,7 @@
   let r = await api('/api/reportes');
   if (!r) { ctx.content.innerHTML = '<div class="os-content__max"><div class="card" style="padding:var(--s4);text-align:center;color:var(--text-3)">Error al cargar reportes</div></div>'; return; }
 
-  const COLORS = ['var(--gold-line)','var(--blue)','var(--green)','var(--amber)','var(--red)','var(--text-3)','var(--gold)','var(--purple)'];
+  const COLORS = ['var(--gold-line)','var(--blue)','var(--green)','var(--amber)','var(--red)','var(--text-3)','var(--gold)','var(--gold-deep)'];
   const ETQ_COLORS = { sin_clasificar:'var(--text-3)', interesado:'var(--blue)', negociacion:'var(--gold)', cita:'var(--amber)', vendido:'var(--green)' };
 
   function barChart(data, valKey, labelKey, height, color){

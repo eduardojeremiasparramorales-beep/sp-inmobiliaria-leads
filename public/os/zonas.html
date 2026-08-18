@@ -100,7 +100,7 @@
           <tbody>${REGLAS.slice().sort((a, b) => b.prioridad - a.prioridad).map(r => `
             <tr>
               <td>${esc(r.zona_nombre)}</td>
-              <td class="t-dim" style="font-size:13px">${CAMPOS[r.campo] || r.campo} ${OPERADORES[r.operador] || r.operador} <b style="color:var(--txt)">${esc(r.valor)}</b></td>
+              <td class="t-dim" style="font-size:13px">${CAMPOS[r.campo] || r.campo} ${OPERADORES[r.operador] || r.operador} <b style="color:var(--text)">${esc(r.valor)}</b></td>
               <td>${r.prioridad}</td>
               <td><button class="btn btn--ghost btn--xs t-red" data-action="borrarRegla" data-id="${r.id}">${S.trash}</button></td>
             </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-3)">Sin reglas todavía</td></tr>'}</tbody>
@@ -109,17 +109,17 @@
         <div class="card--pad" style="padding-top:var(--s2);border-top:1px solid var(--border-soft)">
           <div class="t-dim3" style="font-size:12px;margin-bottom:10px">Crear regla manual</div>
           <form id="reglaForm" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select name="zona_id" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+            <select name="zona_id" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:13px;font-family:inherit">
               <option value="">Zona…</option>
               ${ZONAS.map(z => `<option value="${z.id}">${esc(z.nombre)}</option>`).join('')}
             </select>
-            <select name="campo" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+            <select name="campo" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:13px;font-family:inherit">
               ${Object.entries(CAMPOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
             </select>
-            <select name="operador" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+            <select name="operador" required style="padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:13px;font-family:inherit">
               ${Object.entries(OPERADORES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
             </select>
-            <input name="valor" placeholder="valor a comparar" required style="flex:1;min-width:160px;padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:13px;font-family:inherit">
+            <input name="valor" placeholder="valor a comparar" required style="flex:1;min-width:160px;padding:9px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:13px;font-family:inherit">
             <button type="submit" class="btn btn--gold btn--sm">Agregar</button>
           </form>
           ${ANUNCIOS.length ? `
@@ -131,7 +131,7 @@
                   <div style="font-size:13px;font-weight:500">${esc(a.ad_name || '(sin nombre)')}</div>
                   <div class="t-dim3" style="font-size:11px">${a.ad_id ? 'ID ' + esc(a.ad_id) + ' · ' : ''}${fmt.n(a.total_leads)} leads</div>
                 </div>
-                <select data-mapZona="${i}" style="padding:7px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:12.5px;font-family:inherit">
+                <select data-mapZona="${i}" style="padding:7px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:12.5px;font-family:inherit">
                   <option value="">Mapear a zona…</option>
                   ${ZONAS.map(z => `<option value="${z.id}">${esc(z.nombre)}</option>`).join('')}
                 </select>
@@ -170,7 +170,7 @@
     document.getElementById('add').onclick = () => {
       abrirModal('Nueva zona', `
         <form id="zonaForm" style="display:flex;flex-direction:column;gap:14px">
-          <input name="nombre" placeholder="Nombre (ej. Tocaima)" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <input name="nombre" placeholder="Nombre (ej. Tocaima)" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
           <div style="display:flex;gap:10px;margin-top:6px">
             <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
             <button type="submit" class="btn btn--gold">Crear</button>
@@ -191,7 +191,7 @@
       const id = btn.dataset.id, actual = btn.dataset.nombre;
       abrirModal('Renombrar zona', `
         <form id="renForm" style="display:flex;flex-direction:column;gap:14px">
-          <input name="nombre" value="${esc(actual)}" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg);color:var(--txt);font-size:14px;font-family:inherit;outline:none">
+          <input name="nombre" value="${esc(actual)}" required style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-3);color:var(--text);font-size:14px;font-family:inherit;outline:none">
           <div style="display:flex;gap:10px;margin-top:6px">
             <button type="button" class="btn btn--ghost" id="modalCancel">Cancelar</button>
             <button type="submit" class="btn btn--gold">Guardar</button>

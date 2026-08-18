@@ -1281,7 +1281,7 @@
     box.innerHTML = '<div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin:4px 0 6px">Variables de la plantilla</div>' +
       vars.map(ph => {
         const prefill = mapping[ph] === 'nombre_cliente' ? esc(nameValue || '') : '';
-        return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph] ? ' — ' + esc(mapping[ph]) : ' (sin asignar en Configuración)'}" value="${prefill}" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:8px;font-size:13px">`;
+        return `<input type="text" data-var="${esc(ph)}" placeholder="{{${esc(ph)}}}${mapping[ph] ? ' — ' + esc(mapping[ph]) : ' (sin asignar en Configuración)'}" value="${prefill}" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text);margin-bottom:8px;font-size:13px">`;
       }).join('');
   }
 
@@ -1293,16 +1293,16 @@
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)';
     modal.innerHTML = `
       <div style="background:var(--bg-1);border-radius:14px;padding:24px;width:90%;max-width:400px;max-height:85vh;overflow:auto;border:1px solid var(--border-soft)">
-        <h3 style="margin:0 0 16px;color:var(--text-1)">Nuevo chat WhatsApp</h3>
+        <h3 style="margin:0 0 16px;color:var(--text)">Nuevo chat WhatsApp</h3>
         <form id="newChatForm">
           <label style="font-size:12px;color:var(--text-3)">Teléfono (ej: 573211234567)</label>
-          <input type="tel" id="ncPhone" required style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
+          <input type="tel" id="ncPhone" required style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text);margin-bottom:12px;font-size:14px">
           <label style="font-size:12px;color:var(--text-3)">Nombre</label>
-          <input type="text" id="ncName" placeholder="Nombre del cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px">
+          <input type="text" id="ncName" placeholder="Nombre del cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text);margin-bottom:12px;font-size:14px">
           <label style="font-size:12px;color:var(--text-3)">Mensaje</label>
-          <textarea id="ncMsg" required rows="3" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:12px;font-size:14px;resize:none"></textarea>
+          <textarea id="ncMsg" required rows="3" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text);margin-bottom:12px;font-size:14px;resize:none"></textarea>
           ${waTemplates.length ? `<label style="font-size:12px;color:var(--text-3)">Plantilla (obligatoria si el número nunca te ha escrito — WhatsApp exige que el primer contacto sea con plantilla aprobada)</label>
-          <select id="ncTemplate" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text-1);margin-bottom:8px;font-size:14px">
+          <select id="ncTemplate" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border-soft);background:var(--bg-2);color:var(--text);margin-bottom:8px;font-size:14px">
             <option value="">Sin plantilla</option>
             ${waTemplates.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}
           </select>
