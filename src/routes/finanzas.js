@@ -73,4 +73,42 @@ router.post('/comisiones/:id/pagar', (req, res) => {
   res.status(r.ok ? 200 : 404).json(r);
 });
 
+// Código de status para un resultado {ok:false, error} de finance.js.
+function statusDeError(error) {
+  if (error === 'no_existe') return 404;
+  if (error === 'cuotas_con_pagos') return 409;
+  return 400;
+}
+
+router.get('/ventas', (req, res) => {
+  const { vendedorId, desde, hasta, limite } = req.query;
+  res.json(finance.listarVentas({
+    vendedorId: Number(vendedorId), desde, hasta, limite: Number(limite),
+  }));
+});
+
+router.post('/ventas', (req, res) => {
+  const r = finance.crearVenta(req.body || {});
+  res.status(r.ok ? 200 : statusDeError(r.error)).json(r);
+});
+
+router.put('/ventas/:id', (req, res) => {
+  const r = finance.actualizarVenta(Number(req.params.id), req.body || {});
+  res.status(r.ok ? 200 : statusDeError(r.error)).json(r);
+});
+
+router.delete('/ventas/:id', (req, res) => {
+  const r = finance.eliminarVenta(Number(req.params.id));
+  res.status(r.ok ? 200 : statusDeError(r.error)).json(r);
+});
+
+router.get('/ventas/:id/cuotas', (req, res) => {
+  res.json(finance.listarCuotasPorVenta(Number(req.params.id)));
+});
+
+router.post('/cuotas/:id/pagar', (req, res) => {
+  const r = finance.marcarCuotaPagada(Number(req.params.id));
+  res.status(r.ok ? 200 : statusDeError(r.error)).json(r);
+});
+
 module.exports = router;

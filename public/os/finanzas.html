@@ -19,7 +19,7 @@
 /* Modal alta/edición — mismo patrón que /os/calendario.html */
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.42); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm); }
 .modal-bg.show { display: flex; }
-.modal { background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: var(--r); width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: var(--s3); }
+.modal { background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: var(--r); width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: var(--s3); }
 .modal h3 { font-family: var(--f-title); font-size: 15px; margin-bottom: var(--s3); color: var(--text); }
 .m-field { margin-bottom: 12px; }
 .m-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
@@ -34,6 +34,28 @@
 .row-acts button { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 12px; padding: 4px 6px; font-family: var(--f-ui); }
 .row-acts button:hover { color: var(--gold); }
 .row-acts button.danger:hover { color: var(--red); }
+/* Reparto de la venta — split visual 10% asesor / 5% empresa / resto oficina */
+.split-row { display: flex; gap: 8px; }
+.split-row .m-field { flex: 1; }
+.split-preview { display: flex; gap: 8px; margin: -4px 0 12px; }
+.split-preview__item { flex: 1; background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: var(--r-sm); padding: 8px 10px; }
+.split-preview__label { font-size: 9.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.split-preview__value { font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.pago-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
+.pago-toggle button { flex: 1; height: 36px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg-3); color: var(--text-2); font-size: 12.5px; font-family: inherit; cursor: pointer; }
+.pago-toggle button.active { background: rgba(200,164,90,.14); border-color: var(--gold-line); color: var(--gold); font-weight: 600; }
+/* Drawer de cuotas — mismo patrón que /os/automatizaciones.html */
+.drawer-ov { position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.5); display: none; justify-content: flex-end; }
+.drawer-ov.show { display: flex; }
+.drawer { width: 400px; max-width: 92vw; height: 100%; background: var(--bg-1); border-left: 1px solid var(--border-soft); overflow-y: auto; padding: var(--s3); }
+.drawer h3 { font-family: var(--f-title); font-size: 15px; margin-bottom: 4px; }
+.cuota-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border-soft); }
+.cuota-row:last-child { border-bottom: none; }
+.cuota-row__num { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-2); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--text-2); flex-shrink: 0; }
+.cuota-row__info { flex: 1; min-width: 0; }
+.cuota-row__monto { font-size: 13.5px; font-weight: 600; }
+.cuota-row__fecha { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+.cuota-row__pagar { flex-shrink: 0; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-3); color: var(--text-2); font-size: 11.5px; font-family: inherit; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -41,10 +63,10 @@
 <script>
 (async function () {
   const { ICONS, api, toast } = SPOS;
-  const ctx = await SPOS.mount({ active: 'finanzas', title: 'Centro Financiero', crumb: 'Ingresos, egresos y comisiones', padded: true });
+  const ctx = await SPOS.mount({ active: 'finanzas', title: 'Centro Financiero', crumb: 'Ingresos, egresos y ventas', padded: true });
 
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const fmt = (n) => n == null ? '$0' : '$' + Number(n).toLocaleString('es-CO');
+  const fmt = (n) => n == null ? '$0' : '$' + Math.round(Number(n)).toLocaleString('es-CO');
   const hoy = () => new Date().toISOString().slice(0, 10);
 
   const ERRORES = {
@@ -52,7 +74,11 @@
     concepto_requerido: 'Escribe un concepto.',
     monto_invalido: 'El monto debe ser mayor a 0.',
     monto_venta_invalido: 'El monto de venta debe ser mayor a 0.',
+    vendedor_requerido: 'Selecciona un asesor.',
     vendedor_y_lead_requeridos: 'Selecciona un asesor y un lead.',
+    forma_pago_invalida: 'La forma de pago debe ser contado o financiado.',
+    num_cuotas_invalido: 'Indica a cuántas cuotas queda financiado.',
+    cuotas_con_pagos: 'Ya hay cuotas pagadas — no se puede cambiar el plan de pago. Solo se puede editar notas u otros datos.',
     estado_invalido: 'Estado inválido.',
     no_existe: 'Ya no existe — puede que otra persona lo haya borrado.',
   };
@@ -60,12 +86,12 @@
 
   let resumen = null;
   let transacciones = [];
-  let comisiones = [];
+  let ventas = [];
   let proyectos = [];
   let vendedores = [];
   let leads = [];
   let vista = 'resumen';
-  let editando = null; // { tipo:'transaccion'|'comision', id:number|null }
+  let editando = null; // { tipo:'transaccion'|'venta', id:number|null }
 
   ctx.content.innerHTML = `
    <div class="os-content__max">
@@ -77,7 +103,7 @@
       <div class="u-row u-gap2">
         <button class="btn btn--sm ${vista==='resumen'?'btn--gold':'btn--ghost'}" data-view="resumen">Resumen</button>
         <button class="btn btn--sm ${vista==='transacciones'?'btn--gold':'btn--ghost'}" data-view="transacciones">Transacciones</button>
-        <button class="btn btn--sm ${vista==='comisiones'?'btn--gold':'btn--ghost'}" data-view="comisiones">Comisiones</button>
+        <button class="btn btn--sm ${vista==='ventas'?'btn--gold':'btn--ghost'}" data-view="ventas">Ventas</button>
         <button class="btn btn--gold btn--sm" id="btnNew">+ Nueva</button>
       </div>
     </div>
@@ -89,9 +115,9 @@
        <div class="m-field"><label>Tipo</label>
          <select id="tTipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select>
        </div>
-       <div class="m-field"><label>Concepto</label><input id="tConcepto" required maxlength="200" placeholder="Venta lote 14, publicidad Meta Ads…"></div>
+       <div class="m-field"><label>Concepto</label><input id="tConcepto" required maxlength="200" placeholder="Publicidad Meta Ads, arriendo oficina…"></div>
        <div class="m-field"><label>Monto (COP)</label><input id="tMonto" type="number" min="1" step="1" required></div>
-       <div class="m-field"><label>Categoría</label><input id="tCategoria" maxlength="60" placeholder="venta, comisión, marketing, arriendo…"></div>
+       <div class="m-field"><label>Categoría</label><input id="tCategoria" maxlength="60" placeholder="marketing, arriendo, nómina…"></div>
        <div class="m-field"><label>Proyecto (opcional)</label><select id="tProyecto"><option value="">— Sin proyecto —</option></select></div>
        <div class="m-field"><label>Fecha</label><input id="tFecha" type="date"></div>
        <div class="m-field"><label>Notas</label><textarea id="tNotas" rows="2" maxlength="500"></textarea></div>
@@ -100,24 +126,45 @@
          <button type="submit" class="m-ok">Guardar</button>
        </div>
      </form>
-     <form class="modal" id="fComision" style="display:none">
-       <h3 id="cTitulo">Nueva comisión</h3>
-       <div class="m-field"><label>Asesor</label><select id="cVendedor" required><option value="">— Selecciona —</option></select></div>
-       <div class="m-field"><label>Lead</label><select id="cLead" required><option value="">— Selecciona —</option></select></div>
-       <div class="m-field"><label>Monto de venta (COP)</label><input id="cMontoVenta" type="number" min="1" step="1" required></div>
-       <div class="m-field"><label>Porcentaje (%)</label><input id="cPorcentaje" type="number" min="0" max="100" step="0.1" value="5"></div>
-       <div class="m-field"><label>Comisión manual (opcional)</label><input id="cMontoComision" type="number" min="0" step="1" placeholder="Vacío = automático">
-         <div class="m-hint">Déjalo vacío para calcularla como venta × porcentaje.</div>
+     <form class="modal" id="fVenta" style="display:none">
+       <h3 id="vTitulo">Registrar venta</h3>
+       <div class="m-field"><label>Asesor que vendió</label><select id="vVendedor" required><option value="">— Selecciona —</option></select></div>
+       <div class="m-field"><label>Lead / cliente</label><select id="vLead"><option value="">— Sin lead del CRM —</option></select></div>
+       <div class="m-field"><label>Venta total del lote (COP)</label><input id="vMontoVenta" type="number" min="1" step="1" required></div>
+       <div class="split-row">
+         <div class="m-field"><label>% Asesor</label><input id="vPctAsesor" type="number" min="0" max="100" step="0.1" value="10"></div>
+         <div class="m-field"><label>% Leons Group</label><input id="vPctEmpresa" type="number" min="0" max="100" step="0.1" value="5"></div>
        </div>
-       <div class="m-field"><label>Estado</label>
-         <select id="cEstado"><option value="pendiente">Pendiente</option><option value="pagada">Pagada</option><option value="cancelada">Cancelada</option></select>
+       <div class="split-preview">
+         <div class="split-preview__item"><div class="split-preview__label">Comisión asesor</div><div class="split-preview__value" id="vPrevComision" style="color:var(--gold)">$0</div></div>
+         <div class="split-preview__item"><div class="split-preview__label">Ingreso Leons Group</div><div class="split-preview__value" id="vPrevIngreso" style="color:var(--green)">$0</div></div>
        </div>
-       <div class="m-field"><label>Notas</label><textarea id="cNotas" rows="2" maxlength="500"></textarea></div>
+       <div class="m-hint" style="margin:-6px 0 12px">El resto de la venta es la plata del lote — no entra al Centro Financiero, es de la oficina/proyecto.</div>
+       <div class="m-field" style="margin-bottom:6px"><label>Forma de pago del cliente</label></div>
+       <div class="pago-toggle">
+         <button type="button" data-pago="contado" class="active">Contado</button>
+         <button type="button" data-pago="financiado">Financiado</button>
+       </div>
+       <div class="m-field" id="vCuotasField" style="display:none"><label>Número de cuotas</label><input id="vNumCuotas" type="number" min="1" max="60" step="1" placeholder="Ej: 12">
+         <div class="m-hint">Se genera una cuota mensual desde la fecha de venta, con recordatorio de cobro para el asesor.</div>
+       </div>
+       <div class="m-field"><label>Fecha de venta</label><input id="vFecha" type="date"></div>
+       <div class="m-field"><label>Notas</label><textarea id="vNotas" rows="2" maxlength="500"></textarea></div>
        <div class="m-actions">
          <button type="button" class="m-cancel" data-cerrar>Cancelar</button>
          <button type="submit" class="m-ok">Guardar</button>
        </div>
      </form>
+   </div>
+   <div class="drawer-ov" id="drawerOv">
+     <div class="drawer">
+       <div class="u-between" style="margin-bottom:var(--s2)">
+         <h3 style="margin:0">Plan de cuotas</h3>
+         <button class="btn btn--icon btn--quiet" id="btnCerrarDrawer">${ICONS.x || '✕'}</button>
+       </div>
+       <div class="t-dim3" style="font-size:12.5px;margin-bottom:var(--s3)" id="drawerSub"></div>
+       <div id="drawerCuotas"></div>
+     </div>
    </div>`;
 
   document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
@@ -127,19 +174,19 @@
   }));
 
   async function cargar() {
-    const [r, t, c, p, v, l] = await Promise.all([
+    const [r, t, v, p, ve, l] = await Promise.all([
       api('/api/finanzas/resumen'),
       api('/api/finanzas/transacciones?limite=100'),
-      api('/api/finanzas/comisiones?limite=100'),
+      api('/api/finanzas/ventas?limite=100'),
       api('/api/proyectos'),
       api('/api/vendedores'),
       api('/api/leads'),
     ]);
     resumen = r || {};
     transacciones = Array.isArray(t) ? t : [];
-    comisiones = Array.isArray(c) ? c : [];
+    ventas = Array.isArray(v) ? v : [];
     proyectos = Array.isArray(p) ? p : [];
-    vendedores = Array.isArray(v) ? v : [];
+    vendedores = Array.isArray(ve) ? ve : [];
     leads = Array.isArray(l) ? l : [];
     render();
   }
@@ -148,7 +195,7 @@
     const el = document.getElementById('mainContent');
     if (vista === 'resumen') renderResumen(el);
     else if (vista === 'transacciones') renderTransacciones(el);
-    else renderComisiones(el);
+    else renderVentas(el);
   }
 
   function renderResumen(el) {
@@ -158,7 +205,7 @@
 
     el.innerHTML = `
       <div class="grid grid--4" style="margin-bottom:var(--s3)">
-        <div class="metric card--float"><div class="metric__label">Ingresos</div><div class="metric__value" style="color:var(--green)">${fmt(r.ingresos)}</div></div>
+        <div class="metric card--float"><div class="metric__label">Ingresos (Leons Group)</div><div class="metric__value" style="color:var(--green)">${fmt(r.ingresos)}</div></div>
         <div class="metric card--float"><div class="metric__label">Egresos</div><div class="metric__value" style="color:var(--red)">${fmt(r.egresos)}</div></div>
         <div class="metric card--float"><div class="metric__label">Utilidad</div><div class="metric__value" style="color:${r.utilidad >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(r.utilidad)}</div></div>
         <div class="metric card--float"><div class="metric__label">Margen</div><div class="metric__value">${r.margen || 0}%</div></div>
@@ -178,7 +225,7 @@
           `).join('') : '<div class="t-dim3" style="font-size:13px">Sin datos</div>'}
         </div>
         <div class="card" style="padding:var(--s3)">
-          <div class="t-h3" style="margin-bottom:var(--s2)">Comisiones</div>
+          <div class="t-h3" style="margin-bottom:var(--s2)">Comisiones de asesores</div>
           <div class="fila"><span class="fila__label">Pendientes</span><span class="fila__value" style="color:var(--amber)">${fmt(r.comisionesPendientes)}</span></div>
           <div class="fila"><span class="fila__label">Pagadas</span><span class="fila__value" style="color:var(--green)">${fmt(r.comisionesPagadas)}</span></div>
         </div>
@@ -209,8 +256,8 @@
     }).join('')}</div>`;
   }
 
-  function renderComisiones(el) {
-    if (!comisiones.length) { el.innerHTML = '<div class="empty">Sin comisiones todavía. Créalas con "+ Nueva" o desde el chat cuando marques un lead como vendido.</div>'; return; }
+  function renderVentas(el) {
+    if (!ventas.length) { el.innerHTML = '<div class="empty">Sin ventas todavía. Registra la primera con "+ Nueva".</div>'; return; }
     const ESTADO_BADGE = { pendiente: 'amber', pagada: 'green', cancelada: 'red' };
     el.innerHTML = `<div class="card" style="overflow:hidden">
       <div style="overflow-x:auto">
@@ -218,27 +265,28 @@
           <thead><tr style="border-bottom:1px solid var(--border-soft)">
             <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Fecha</th>
             <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Asesor</th>
-            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Lead</th>
-            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Venta</th>
-            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">%</th>
-            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Comisión</th>
-            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Estado</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Cliente</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Venta total</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Comisión asesor</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Ingreso Leons</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Pago</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Comisión</th>
             <th style="padding:10px 12px"></th>
           </tr></thead>
-          <tbody>${comisiones.map(c => `
+          <tbody>${ventas.map(v => `
             <tr style="border-bottom:1px solid var(--border-soft)">
-              <td style="padding:10px 12px">${esc(c.fecha_calculo)}</td>
-              <td style="padding:10px 12px">${esc(c.vendedor_nombre || '—')}</td>
-              <td style="padding:10px 12px">${esc(c.lead_nombre || '—')}</td>
-              <td style="padding:10px 12px;text-align:right">${fmt(c.monto_venta)}</td>
-              <td style="padding:10px 12px;text-align:right">${c.porcentaje}%</td>
-              <td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gold)">${fmt(c.monto_comision)}</td>
-              <td style="padding:10px 12px"><span class="badge badge--${ESTADO_BADGE[c.estado] || 'mute'}">${c.estado}</span></td>
+              <td style="padding:10px 12px">${esc(v.fecha)}</td>
+              <td style="padding:10px 12px">${esc(v.vendedor_nombre || '—')}</td>
+              <td style="padding:10px 12px">${esc(v.lead_nombre || '—')}</td>
+              <td style="padding:10px 12px;text-align:right">${fmt(v.monto_venta)}</td>
+              <td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gold)">${fmt(v.monto_comision_asesor)} <span class="t-dim3" style="font-size:11px">(${v.porcentaje_asesor}%)</span></td>
+              <td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--green)">${fmt(v.monto_ingreso_empresa)} <span class="t-dim3" style="font-size:11px">(${v.porcentaje_empresa}%)</span></td>
+              <td style="padding:10px 12px">${v.forma_pago === 'financiado' ? `<button class="link-btn" data-cuotas="${v.id}" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:12.5px;font-family:inherit;padding:0">${v.num_cuotas}x cuotas →</button>` : 'Contado'}</td>
+              <td style="padding:10px 12px">${v.comision_estado ? `<span class="badge badge--${ESTADO_BADGE[v.comision_estado] || 'mute'}">${v.comision_estado}</span>` : '<span class="t-dim3">—</span>'}</td>
               <td style="padding:10px 12px">
                 <div class="row-acts">
-                  ${c.estado === 'pendiente' ? `<button data-pagar="${c.id}">Marcar pagada</button>` : ''}
-                  <button data-editar-c="${c.id}">Editar</button>
-                  <button class="danger" data-borrar-c="${c.id}">Borrar</button>
+                  <button data-editar-v="${v.id}">Editar</button>
+                  <button class="danger" data-borrar-v="${v.id}">Borrar</button>
                 </div>
               </td>
             </tr>
@@ -246,20 +294,54 @@
         </table>
       </div>
     </div>`;
-    el.querySelectorAll('[data-pagar]').forEach(b => b.addEventListener('click', async () => {
+    el.querySelectorAll('[data-cuotas]').forEach(b => b.addEventListener('click', () => abrirDrawerCuotas(Number(b.getAttribute('data-cuotas')))));
+    el.querySelectorAll('[data-editar-v]').forEach(b => b.addEventListener('click', () => {
+      const row = ventas.find(v => String(v.id) === b.getAttribute('data-editar-v'));
+      if (row) abrirModalVenta(row);
+    }));
+    el.querySelectorAll('[data-borrar-v]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta venta? Se borra también la comisión del asesor, el ingreso registrado y las cuotas pendientes. No se puede deshacer.')) return;
+      const r = await api(`/api/finanzas/ventas/${b.getAttribute('data-borrar-v')}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Venta borrada', 'ok'); await cargar(); } else toast(errorLegible(r), 'err');
+    }));
+  }
+
+  /* ── Drawer: plan de cuotas ── */
+  const drawerOv = document.getElementById('drawerOv');
+  document.getElementById('btnCerrarDrawer').addEventListener('click', () => drawerOv.classList.remove('show'));
+  drawerOv.addEventListener('click', e => { if (e.target === drawerOv) drawerOv.classList.remove('show'); });
+
+  async function abrirDrawerCuotas(ventaId) {
+    const venta = ventas.find(v => v.id === ventaId);
+    document.getElementById('drawerSub').textContent = venta ? `${esc(venta.vendedor_nombre || '')} — ${esc(venta.lead_nombre || 'cliente')} — venta ${fmt(venta.monto_venta)}` : '';
+    document.getElementById('drawerCuotas').innerHTML = '<div class="t-dim3" style="font-size:13px">Cargando…</div>';
+    drawerOv.classList.add('show');
+    const cuotas = await api(`/api/finanzas/ventas/${ventaId}/cuotas`);
+    renderCuotas(ventaId, Array.isArray(cuotas) ? cuotas : []);
+  }
+
+  function renderCuotas(ventaId, cuotas) {
+    const box = document.getElementById('drawerCuotas');
+    if (!cuotas.length) { box.innerHTML = '<div class="t-dim3" style="font-size:13px">Sin cuotas.</div>'; return; }
+    box.innerHTML = cuotas.map(c => `
+      <div class="cuota-row">
+        <div class="cuota-row__num">${c.numero}</div>
+        <div class="cuota-row__info">
+          <div class="cuota-row__monto">${fmt(c.monto)}</div>
+          <div class="cuota-row__fecha">Vence ${esc(c.fecha_vencimiento)}${c.estado === 'pagada' ? ` · Pagada ${esc(c.fecha_pago || '')}` : ''}</div>
+        </div>
+        ${c.estado === 'pagada'
+          ? '<span class="badge badge--green">Pagada</span>'
+          : `<button class="cuota-row__pagar" data-pagar-cuota="${c.id}">Marcar pagada</button>`}
+      </div>
+    `).join('');
+    box.querySelectorAll('[data-pagar-cuota]').forEach(b => b.addEventListener('click', async () => {
       b.disabled = true; b.textContent = 'Guardando…';
-      const r = await api(`/api/finanzas/comisiones/${b.getAttribute('data-pagar')}/pagar`, { method: 'POST' });
-      if (r && r.ok) await cargar();
-      else { b.disabled = false; b.textContent = 'Marcar pagada'; toast(errorLegible(r), 'err'); }
-    }));
-    el.querySelectorAll('[data-editar-c]').forEach(b => b.addEventListener('click', () => {
-      const row = comisiones.find(c => String(c.id) === b.getAttribute('data-editar-c'));
-      if (row) abrirModalComision(row);
-    }));
-    el.querySelectorAll('[data-borrar-c]').forEach(b => b.addEventListener('click', async () => {
-      if (!confirm('¿Borrar esta comisión? No se puede deshacer.')) return;
-      const r = await api(`/api/finanzas/comisiones/${b.getAttribute('data-borrar-c')}`, { method: 'DELETE' });
-      if (r && r.ok) { toast('Comisión borrada', 'ok'); await cargar(); } else toast(errorLegible(r), 'err');
+      const r = await api(`/api/finanzas/cuotas/${b.getAttribute('data-pagar-cuota')}/pagar`, { method: 'POST' });
+      if (r && r.ok) {
+        const cuotasFrescas = await api(`/api/finanzas/ventas/${ventaId}/cuotas`);
+        renderCuotas(ventaId, Array.isArray(cuotasFrescas) ? cuotasFrescas : []);
+      } else { b.disabled = false; b.textContent = 'Marcar pagada'; toast(errorLegible(r), 'err'); }
     }));
   }
 
@@ -310,12 +392,12 @@
   /* ── Modal: alta/edición ── */
   const modalBg = document.getElementById('modalBg');
   const fTransaccion = document.getElementById('fTransaccion');
-  const fComision = document.getElementById('fComision');
+  const fVenta = document.getElementById('fVenta');
 
   function cerrarModal() {
     modalBg.classList.remove('show');
     fTransaccion.style.display = 'none';
-    fComision.style.display = 'none';
+    fVenta.style.display = 'none';
     editando = null;
   }
   document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('click', cerrarModal));
@@ -332,35 +414,67 @@
       proyectos.map(p => `<option value="${p.id}" ${row && Number(row.proyecto_id) === Number(p.id) ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('');
     document.getElementById('tFecha').value = row ? row.fecha : hoy();
     document.getElementById('tNotas').value = row ? (row.notas || '') : '';
-    fComision.style.display = 'none';
+    fVenta.style.display = 'none';
     fTransaccion.style.display = 'block';
     modalBg.classList.add('show');
     document.getElementById('tConcepto').focus();
   }
 
-  function abrirModalComision(row) {
-    editando = { tipo: 'comision', id: row ? row.id : null };
-    document.getElementById('cTitulo').textContent = row ? 'Editar comisión' : 'Nueva comisión';
-    document.getElementById('cVendedor').innerHTML = '<option value="">— Selecciona —</option>' +
+  /* ── Modal Nueva/Editar venta ── */
+  const vMontoVenta = document.getElementById('vMontoVenta');
+  const vPctAsesor = document.getElementById('vPctAsesor');
+  const vPctEmpresa = document.getElementById('vPctEmpresa');
+  let formaPagoActual = 'contado';
+
+  function actualizarPreviewSplit() {
+    const monto = Number(vMontoVenta.value) || 0;
+    const pctA = Number(vPctAsesor.value) || 0;
+    const pctE = Number(vPctEmpresa.value) || 0;
+    document.getElementById('vPrevComision').textContent = fmt(monto * pctA / 100);
+    document.getElementById('vPrevIngreso').textContent = fmt(monto * pctE / 100);
+  }
+  [vMontoVenta, vPctAsesor, vPctEmpresa].forEach(inp => inp.addEventListener('input', actualizarPreviewSplit));
+
+  document.querySelectorAll('[data-pago]').forEach(b => b.addEventListener('click', () => {
+    formaPagoActual = b.getAttribute('data-pago');
+    document.querySelectorAll('[data-pago]').forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById('vCuotasField').style.display = formaPagoActual === 'financiado' ? 'block' : 'none';
+  }));
+
+  function abrirModalVenta(row) {
+    editando = { tipo: 'venta', id: row ? row.id : null };
+    document.getElementById('vTitulo').textContent = row ? 'Editar venta' : 'Registrar venta';
+    document.getElementById('vVendedor').innerHTML = '<option value="">— Selecciona —</option>' +
       vendedores.map(v => `<option value="${v.id}" ${row && Number(row.vendedor_id) === Number(v.id) ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('');
-    document.getElementById('cLead').innerHTML = '<option value="">— Selecciona —</option>' +
+    document.getElementById('vLead').innerHTML = '<option value="">— Sin lead del CRM —</option>' +
       leads.map(l => `<option value="${l.id}" ${row && Number(row.lead_id) === Number(l.id) ? 'selected' : ''}>${esc(l.customer_name || l.customer_phone)}</option>`).join('');
-    // Vendedor y lead quedan fijos una vez creada la comisión (evita reasignarla a otra
-    // venta por accidente) — para eso se borra y se crea de nuevo.
-    document.getElementById('cVendedor').disabled = !!row;
-    document.getElementById('cLead').disabled = !!row;
-    document.getElementById('cMontoVenta').value = row ? row.monto_venta : '';
-    document.getElementById('cPorcentaje').value = row ? row.porcentaje : 5;
-    document.getElementById('cMontoComision').value = '';
-    document.getElementById('cEstado').value = row ? row.estado : 'pendiente';
-    document.getElementById('cNotas').value = row ? (row.notas || '') : '';
+    // Asesor y lead quedan fijos una vez creada la venta (evita reasignarla a otro
+    // cliente por accidente) — para eso se borra y se crea de nuevo.
+    document.getElementById('vVendedor').disabled = !!row;
+    document.getElementById('vLead').disabled = !!row;
+    vMontoVenta.value = row ? row.monto_venta : '';
+    vPctAsesor.value = row ? row.porcentaje_asesor : 10;
+    vPctEmpresa.value = row ? row.porcentaje_empresa : 5;
+    document.getElementById('vFecha').value = row ? row.fecha : hoy();
+    document.getElementById('vNotas').value = row ? (row.notas || '') : '';
+
+    formaPagoActual = row ? row.forma_pago : 'contado';
+    document.querySelectorAll('[data-pago]').forEach(x => x.classList.toggle('active', x.getAttribute('data-pago') === formaPagoActual));
+    document.getElementById('vCuotasField').style.display = formaPagoActual === 'financiado' ? 'block' : 'none';
+    document.getElementById('vNumCuotas').value = row ? (row.num_cuotas || '') : '';
+    // El plan de cuotas queda bloqueado desde el backend en cuanto hay una cuota
+    // pagada — se deshabilita acá también para que quede claro por qué no cambia nada.
+    document.getElementById('vNumCuotas').disabled = false;
+    document.querySelectorAll('[data-pago]').forEach(x => x.disabled = false);
+
+    actualizarPreviewSplit();
     fTransaccion.style.display = 'none';
-    fComision.style.display = 'block';
+    fVenta.style.display = 'block';
     modalBg.classList.add('show');
   }
 
   document.getElementById('btnNew').addEventListener('click', () => {
-    if (vista === 'comisiones') abrirModalComision(null);
+    if (vista === 'ventas') abrirModalVenta(null);
     else abrirModalTransaccion(null);
   });
 
@@ -382,22 +496,23 @@
     else toast(errorLegible(r), 'err');
   });
 
-  fComision.addEventListener('submit', async (ev) => {
+  fVenta.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const body = {
-      vendedorId: Number(document.getElementById('cVendedor').value),
-      leadId: Number(document.getElementById('cLead').value),
-      montoVenta: Number(document.getElementById('cMontoVenta').value),
-      porcentaje: Number(document.getElementById('cPorcentaje').value) || 5,
-      estado: document.getElementById('cEstado').value,
-      notas: document.getElementById('cNotas').value.trim(),
+      vendedorId: Number(document.getElementById('vVendedor').value) || undefined,
+      leadId: document.getElementById('vLead').value ? Number(document.getElementById('vLead').value) : null,
+      montoVenta: Number(vMontoVenta.value),
+      porcentajeAsesor: Number(vPctAsesor.value),
+      porcentajeEmpresa: Number(vPctEmpresa.value),
+      formaPago: formaPagoActual,
+      numCuotas: formaPagoActual === 'financiado' ? Number(document.getElementById('vNumCuotas').value) : null,
+      fecha: document.getElementById('vFecha').value || hoy(),
+      notas: document.getElementById('vNotas').value.trim(),
     };
-    const mc = document.getElementById('cMontoComision').value;
-    if (mc !== '') body.montoComision = Number(mc);
     const editId = editando && editando.id;
-    const url = editId ? `/api/finanzas/comisiones/${editId}` : '/api/finanzas/comisiones';
+    const url = editId ? `/api/finanzas/ventas/${editId}` : '/api/finanzas/ventas';
     const r = await api(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (r && r.ok) { toast(editId ? 'Comisión actualizada' : 'Comisión creada', 'ok'); cerrarModal(); await cargar(); }
+    if (r && r.ok) { toast(editId ? 'Venta actualizada' : 'Venta registrada', 'ok'); cerrarModal(); await cargar(); }
     else toast(errorLegible(r), 'err');
   });
 

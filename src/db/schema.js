@@ -369,6 +369,55 @@ function createNewTables(db) {
     CREATE INDEX IF NOT EXISTS idx_transacciones_proyecto ON transacciones(proyecto_id);
     CREATE INDEX IF NOT EXISTS idx_comisiones_vendedor ON comisiones(vendedor_id);
     CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
+
+    -- Una venta es la fuente de verdad: de ahí nacen automáticamente la comisión del
+    -- asesor (comision_id) y el ingreso real de Leons Group (transaccion_id) — dos
+    -- efectos derivados de un mismo evento de negocio, nunca capturados a mano por
+    -- separado (así el dashboard de Resumen jamás confunde el 100% de la venta del
+    -- lote con el 5% que de verdad entra a la empresa).
+    CREATE TABLE IF NOT EXISTS ventas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER,
+      vendedor_id INTEGER NOT NULL,
+      monto_venta REAL NOT NULL,
+      porcentaje_asesor REAL NOT NULL DEFAULT 10,
+      monto_comision_asesor REAL NOT NULL,
+      porcentaje_empresa REAL NOT NULL DEFAULT 5,
+      monto_ingreso_empresa REAL NOT NULL,
+      forma_pago TEXT NOT NULL DEFAULT 'contado' CHECK (forma_pago IN ('contado', 'financiado')),
+      num_cuotas INTEGER,
+      comision_id INTEGER,
+      transaccion_id INTEGER,
+      notas TEXT DEFAULT '',
+      fecha TEXT DEFAULT (date('now')),
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME,
+      FOREIGN KEY (lead_id) REFERENCES leads(id),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id),
+      FOREIGN KEY (comision_id) REFERENCES comisiones(id),
+      FOREIGN KEY (transaccion_id) REFERENCES transacciones(id)
+    );
+
+    -- Plan de cobro del cliente (contado no genera filas acá). Cada cuota nace con una
+    -- tarea propia (tarea_id) en el sistema de tareas del asesor que ya vence/notifica
+    -- solo — no hay un cronjob nuevo, se reusa el que ya existe.
+    CREATE TABLE IF NOT EXISTS venta_cuotas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      venta_id INTEGER NOT NULL,
+      numero INTEGER NOT NULL,
+      monto REAL NOT NULL,
+      fecha_vencimiento TEXT NOT NULL,
+      estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagada', 'vencida')),
+      fecha_pago TEXT,
+      tarea_id INTEGER,
+      created_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (venta_id) REFERENCES ventas(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ventas_vendedor ON ventas(vendedor_id);
+    CREATE INDEX IF NOT EXISTS idx_ventas_lead ON ventas(lead_id);
+    CREATE INDEX IF NOT EXISTS idx_cuotas_venta ON venta_cuotas(venta_id);
+    CREATE INDEX IF NOT EXISTS idx_cuotas_estado ON venta_cuotas(estado);
   `);
 
   // Fase 3 — Centro Documental
