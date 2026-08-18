@@ -92,15 +92,30 @@ async function flushPendingOutbound(phone, entryCtx) {
   const run = async () => {
     const pending = store.getPendingOutbound(phone);
     if (!pending.length) return;
-    store.clearPendingOutbound(phone);
     for (const p of pending) {
       try {
         const result = await sendMessage(phone, p.body);
         const wamid = result && result.messages && result.messages[0] && result.messages[0].id;
-        if (p.lead_id) store.saveMessage(p.lead_id, 'panel', phone, p.body, 'outgoing', null, null, wamid || null, 'sent');
+        // La burbuja ya existe desde que el asesor escribió (status 'pending'): se
+        // actualiza en vez de insertar otra, que era de dónde salía el mensaje duplicado.
+        if (p.message_id) store.markMessageSent(p.message_id, wamid || null);
+        else if (p.lead_id) store.saveMessage(p.lead_id, 'panel', phone, p.body, 'outgoing', null, null, wamid || null, 'sent');
+        // Solo se descarta de la cola lo que YA salió. Vaciar la cola entera antes de
+        // enviar perdía el mensaje del asesor de forma irrecuperable si Meta fallaba.
+        store.deletePendingOutbound(p.id);
+        if (p.lead_id) {
+          const lead = store.getLeadById(p.lead_id);
+          if (lead) events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: p.message_id || null, status: 'sent', ts: Date.now() });
+        }
         console.log(`[Webhook] Mensaje encolado enviado a ${phone} tras reapertura de ventana`);
       } catch (e) {
-        console.error('[Webhook] Error al enviar mensaje encolado:', e.message);
+        // El mensaje se queda en la cola para el próximo intento; el asesor ve el fallo
+        // en su propia burbuja en vez de que desaparezca en silencio.
+        let detalle = e.message;
+        try { detalle = require('../services/wa-templates').describeMetaError(e) || detalle; } catch (_) {}
+        store.bumpPendingOutboundIntento(p.id);
+        if (p.message_id) store.setMessageErrorById(p.message_id, detalle);
+        console.error(`[Webhook] Error al enviar mensaje encolado (queda en cola, intento ${(p.intentos || 0) + 1}):`, detalle);
       }
     }
   };
@@ -431,11 +446,18 @@ function processEntry(entry, entryCtx) {
       // cerrada, plantilla rechazada, etc.). Antes se descartaba: el vendedor creía que
       // el mensaje se envió y nadie se enteraba de por qué no llegó.
       let errDetail = null;
+      let errHumano = null;
       if (isFailed && Array.isArray(st.errors) && st.errors[0]) {
         const e0 = st.errors[0];
-        errDetail = `[${e0.code || '?'}] ${e0.title || e0.message || 'Error desconocido'}`;
+        // `title` es una etiqueta opaca ("Re-engagement message"). El motivo real está en
+        // error_data.details, y describeWebhookError además lo traduce al español.
+        try {
+          const d = require('../services/wa-templates').describeWebhookError(e0);
+          if (d) { errDetail = d.detalle; errHumano = d.humano; }
+        } catch (_) { /* fallback abajo */ }
+        if (!errDetail) errDetail = `[${e0.code || '?'}] ${e0.title || e0.message || 'Error desconocido'}`;
         store.setMessageError(st.id, errDetail);
-        console.error(`[Webhook] Mensaje ${st.id} FALLÓ: ${errDetail}`);
+        console.error(`[Webhook] Mensaje ${st.id} FALLÓ: ${errDetail} | payload: ${JSON.stringify(e0)}`);
       }
 
       // Notificar al panel para actualizar el checkmark en vivo
@@ -446,14 +468,16 @@ function processEntry(entry, entryCtx) {
           events.emitToVendedor(lead.assigned_to_id, 'status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
           events.emitToAdmins('status_update', { leadId: lead.id, messageId: m.id, status: st.status, error: errDetail, ts: Date.now() });
           if (isFailed) {
-            events.emitToVendedor(lead.assigned_to_id, 'sistema_alerta', { tipo: 'mensaje_fallido', leadId: lead.id, messageId: m.id, mensaje: `No se pudo entregar un mensaje a ${lead.customer_name || lead.customer_phone}: ${errDetail}`, ts: Date.now() });
+            events.emitToVendedor(lead.assigned_to_id, 'sistema_alerta', { tipo: 'mensaje_fallido', leadId: lead.id, messageId: m.id, mensaje: `No se pudo entregar un mensaje a ${lead.customer_name || lead.customer_phone}: ${errHumano || errDetail}`, ts: Date.now() });
             // El SSE solo llega si el panel está abierto: un mensaje que no se entregó
             // tiene que alcanzar al asesor aunque tenga la app cerrada.
             try {
               require('../services/notify').notify({
                 vendedorId: lead.assigned_to_id, tipo: 'mensaje_fallido', leadId: lead.id, push: true,
                 titulo: '⚠️ Mensaje no entregado',
-                cuerpo: `${lead.customer_name || lead.customer_phone}: ${errDetail || 'Meta rechazó el envío'}`.slice(0, 120),
+                // La sugerencia en español, no el `title` crudo de Meta: el asesor tiene
+                // que poder actuar sobre el aviso, no solo saber que algo falló.
+                cuerpo: `${lead.customer_name || lead.customer_phone}: ${errHumano || errDetail || 'Meta rechazó el envío'}`.slice(0, 160),
               }).catch(e => console.error('Error notify mensaje_fallido:', e.message));
             } catch (e) { /* notify opcional */ }
           }

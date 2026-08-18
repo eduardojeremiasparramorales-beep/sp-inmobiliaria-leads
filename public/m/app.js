@@ -2359,6 +2359,9 @@ function linkPreviews(){
 }
 function chkHTML(st,readAt){
   if(st==='queued') return '<span class="chk chk-queued" title="Sin conexión — se enviará solo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>';
+  // 'pending' = ventana de 24h cerrada: el texto NO salió a WhatsApp, espera a que el
+  // cliente conteste la plantilla. Marcarlo como enviado hacía creer que ya llegó.
+  if(st==='pending') return '<span class="chk chk-pending" title="WhatsApp no permite enviarlo hasta que el cliente responda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> En espera</span>';
   const visto=readAt?` <span class="chk-visto">Visto ${soloHora(readAt)}</span>`:'';
   if(st==='read') return `<span class="chk chk-read"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>${visto}`;
   if(st==='delivered') return `<span class="chk chk-delivered"><svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="10"><path d="M2 6l4 4L10 2"/><path d="M8 6l4 4L20 2"/></svg></span>`;
@@ -2458,7 +2461,10 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
   const body = replyTo ? {mensaje:msg, replyTo:replyTo.id} : {mensaje:msg};
   const r=await postOrQueue(`/api/leads/${current.id}/responder`, body, tempId, current.id);
   cancelarReply();
-  if(r && r.queued){
+  // OJO: `queued` llega de dos sitios distintos. postOrQueue devuelve {queued:true} SIN
+  // `ok` cuando no hay red; el servidor devuelve {ok:true, queued:true} cuando la ventana
+  // de 24h está cerrada. Confundirlos mostraba "Sin conexión" con la señal perfecta.
+  if(r && r.queued && !r.ok){
     // Sin red: el mensaje optimista se queda en pantalla marcado como pendiente,
     // se reintenta solo al volver la conexión (outboxFlush, evento 'online').
     tempMsg.status='queued';
@@ -2474,12 +2480,14 @@ async function enviar(){ const inp=$('#cInput'); const msg=(inp.value||'').trim(
         leads.unshift(reopenedLead);
         archivadosCount=archivedLeads.length;
       }
-      toast(r.queued?'Conversación reabierta — plantilla enviada, mensaje encolado':'Conversación reabierta');
+      toast(r.queued?'Conversación reabierta — plantilla enviada, tu mensaje queda en espera':'Conversación reabierta');
     } else if(r.templateSent){
-      toast('Plantilla enviada — mensaje encolado hasta que el cliente responda');
+      toast('Pasaron más de 24 h: se envió la plantilla. Tu mensaje se enviará en cuanto el cliente responda.');
     }
     const d=await api(`/api/leads/${current.id}/mensajes`);
     if(d){ currentMsgs=d.mensajes; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); b.scrollTop=b.scrollHeight; }
+    // La ventana pasó a cerrada justo ahora: refrescar el banner sin reabrir el chat.
+    if(r.queued) checkWindowStatus(current.id);
     cargar();
   } else {
     // Falló — quitar mensaje optimista y restaurar texto
@@ -2563,7 +2571,13 @@ async function checkWindowStatus(leadId){
     const st=await api(`/api/leads/${leadId}/window-status`);
     if(!st || st.open){ badge.style.display='none'; badge.innerHTML=''; return; }
     badge.style.display='flex';
-    badge.innerHTML=`<span>${I(SVG.clock,14)} Ventana de WhatsApp cerrada — hay que reactivar con plantilla</span><button id="cReactivarBtn">Reactivar</button>`;
+    if(st.templateProblema){
+      // Sin plantilla válida no sale NADA hacia este cliente: es un problema de
+      // configuración que solo el admin puede resolver, no un fallo del asesor.
+      badge.innerHTML=`<span>${I(SVG.clock,14)} Pasaron más de 24 h. ${esc(st.templateProblema)} Avisa al admin.</span>`;
+      return;
+    }
+    badge.innerHTML=`<span>${I(SVG.clock,14)} Pasaron más de 24 h sin respuesta: WhatsApp solo permite enviarle una plantilla</span><button id="cReactivarBtn">Reactivar</button>`;
     const btn=$('#cReactivarBtn'); if(btn) btn.onclick=()=>abrirPlantillaMeta(st.templateName||null);
   }catch(e){ badge.style.display='none'; }
 }

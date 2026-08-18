@@ -566,6 +566,11 @@ function createSchema() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_pending_outbound_phone ON pending_outbound(phone)`);
+  // Fila de `messages` que representa este envío en el chat (creada con status
+  // 'pending'). El flush la actualiza a 'sent' en vez de insertar una burbuja nueva.
+  ensureColumn('pending_outbound', 'message_id', 'INTEGER');
+  // Intentos de flush fallidos: si el reenvío falla, la fila se conserva y se cuenta.
+  ensureColumn('pending_outbound', 'intentos', 'INTEGER DEFAULT 0');
 
   // Tareas: la tabla existe en schema.js (lead_id, texto, fecha_vencimiento, completada).
   // Columnas nuevas para tareas por vendedor + recordatorios con push:
@@ -832,6 +837,15 @@ function updateMessageStatus(wamid, status) {
 
 function setMessageError(wamid, detail) {
   run('UPDATE messages SET error_detail = ? WHERE wamid = ?', [detail, wamid]);
+}
+
+// --- Mensajes en espera de que se reabra la ventana de 24h ---
+// Estos NO tienen wamid todavía (no salieron a Meta), así que se direccionan por id.
+function markMessageSent(messageId, wamid) {
+  run("UPDATE messages SET wamid = ?, status = 'sent', error_detail = NULL WHERE id = ?", [wamid || null, messageId]);
+}
+function setMessageErrorById(messageId, detail) {
+  run('UPDATE messages SET error_detail = ? WHERE id = ?', [detail, messageId]);
 }
 
 // Marca un mensaje entrante como "el cliente pulsó este botón de la plantilla".
@@ -3364,14 +3378,30 @@ function deleteUbicacionGuardada(id) {
 // Un template de reactivación ENTREGADO no reabre la ventana de servicio de WhatsApp
 // (solo lo hace una respuesta del cliente). El mensaje original del vendedor se guarda
 // aquí y se envía cuando el webhook detecta esa respuesta (ver flushPendingOutbound).
-function queuePendingOutbound(leadId, phone, body) {
-  run('INSERT INTO pending_outbound (lead_id, phone, body) VALUES (?, ?, ?)', [leadId || null, phone, body]);
+function queuePendingOutbound(leadId, phone, body, messageId) {
+  run('INSERT INTO pending_outbound (lead_id, phone, body, message_id) VALUES (?, ?, ?, ?)', [leadId || null, phone, body, messageId || null]);
+  const r = one('SELECT id FROM pending_outbound WHERE id = last_insert_rowid()');
+  return r ? r.id : null;
+}
+// El caller (p.ej. POST /responder) crea la burbuja 'pending' DESPUÉS de encolar;
+// esto la vincula para que el flush actualice esa fila en vez de duplicarla.
+function attachPendingMessage(pendingId, messageId) {
+  if (!pendingId || !messageId) return;
+  run('UPDATE pending_outbound SET message_id = ? WHERE id = ?', [messageId, pendingId]);
 }
 function getPendingOutbound(phone) {
   return all('SELECT * FROM pending_outbound WHERE phone = ? ORDER BY id ASC', [phone]);
 }
 function clearPendingOutbound(phone) {
   run('DELETE FROM pending_outbound WHERE phone = ?', [phone]);
+}
+// Borrado por fila: el flush solo descarta lo que YA salió. Vaciar la cola entera
+// antes de enviar perdía el mensaje del asesor cuando el reenvío fallaba.
+function deletePendingOutbound(id) {
+  run('DELETE FROM pending_outbound WHERE id = ?', [id]);
+}
+function bumpPendingOutboundIntento(id) {
+  run('UPDATE pending_outbound SET intentos = COALESCE(intentos,0) + 1 WHERE id = ?', [id]);
 }
 
 // ===================== PROYECTOS / LOTES =====================
@@ -3905,7 +3935,7 @@ module.exports = {
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin, setVendedor2FA,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,
-  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError, setMessageButtonPayload,
+  getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError, setMessageErrorById, markMessageSent, setMessageButtonPayload,
   getTemplates, addTemplate, deleteTemplate,
   getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken, getAllPushSubscriptions,
@@ -3929,7 +3959,7 @@ module.exports = {
   getCadenciaPasos, setCadenciaPasos, enrollCadencia, stopCadencia, getCadenciaDue, updateCadenciaLead, getLeadsParaAutoCadencia,
   deleteVendedor, getAdminInbox, getAdminInboxStats,
   updateCustomerMessageTimestamp, isWindowOpen, getWindowExpiresAt,
-  queuePendingOutbound, getPendingOutbound, clearPendingOutbound,
+  queuePendingOutbound, getPendingOutbound, clearPendingOutbound, deletePendingOutbound, bumpPendingOutboundIntento, attachPendingMessage,
   // Nuevo schema multicanal
   createCustomer, getCustomerById, findCustomerByChannel, setCustomerAvatarIfEmpty,
   linkChannelToCustomer, getCustomerChannels, getCustomers, updateCustomer, deleteCustomer,

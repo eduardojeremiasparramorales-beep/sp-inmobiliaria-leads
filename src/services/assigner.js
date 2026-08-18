@@ -227,7 +227,9 @@ function routeReply(fromPhone, messageBody, customerName, wamid, referral, callb
     // Enviar mensaje de bienvenida personalizado con nombre del asesor
     const welcome = getWelcomeMsg().replace(/\{\{asesor\}\}/gi, vendedorAsignado.nombre);
     sendMessageSmart(fromPhone, welcome, r.leadId)
-      .then(() => saveMessage(r.leadId, 'sistema', fromPhone, welcome, 'outgoing'))
+      // Si quedó encolado (ventana cerrada) el cuerpo no salió: flushPendingOutbound
+      // creará la burbuja cuando el cliente responda. Guardarla aquí la duplicaba.
+      .then(smart => { if (!smart || !smart.queued) saveMessage(r.leadId, 'sistema', fromPhone, welcome, 'outgoing'); })
       .catch(e => console.error('Error enviando bienvenida:', e.message));
 
     saveMessage(r.leadId, fromPhone, vendedorAsignado.telefono, messageBody, 'incoming', null, null, wamid || null);

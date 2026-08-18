@@ -66,6 +66,26 @@ function elegirCandidataReactivacion(aprobadas) {
   return porNombre(pocasVariables) || porNombre(usables) || pocasVariables[0] || usables[0] || null;
 }
 
+// Comprueba que `reengagement_template` siga apuntando a una plantilla enviable.
+// Si no, el error sale a data/errors.log y al panel de Salud del Sistema: sin esta
+// plantilla NINGÚN mensaje a un lead con más de 24h sin responder puede salir.
+// Devuelve null si está sana, o el motivo del problema.
+function verificarPlantillaReactivacion() {
+  const store = require('../db/store');
+  const nombre = store.getConfig('reengagement_template');
+  if (!nombre) return 'No hay plantilla de reactivación configurada.';
+  const tpl = store.getWATemplateByName(nombre);
+  let motivo = null;
+  if (!tpl) motivo = `La plantilla de reactivación "${nombre}" ya no existe en Meta.`;
+  else if (tpl.estado !== 'APPROVED') motivo = `La plantilla de reactivación "${nombre}" está en estado ${tpl.estado}, no se puede enviar.`;
+  if (motivo) {
+    try {
+      require('./logger').logError('reengagement_template', new Error(motivo), { nombre, estado: tpl ? tpl.estado : 'NO_EXISTE' });
+    } catch (e) { console.error(`[wa-templates] ${motivo}`); }
+  }
+  return motivo;
+}
+
 async function syncTemplatesFromMeta() {
   const store = require('../db/store');
   const remote = await fetchApprovedTemplatesFromMeta();
@@ -120,6 +140,11 @@ async function syncTemplatesFromMeta() {
       store.setConfig('reengagement_template', candidata.nombre);
       console.log(`[wa-templates] reengagement_template auto-configurado → "${candidata.nombre}"`);
     }
+  } else {
+    // La plantilla configurada puede degradarse en Meta (PAUSED/DISABLED/DELETED)
+    // después de elegirla. Si eso pasa, TODO mensaje a un lead con ventana cerrada
+    // falla en silencio — hay que verlo en el panel de salud, no en los logs.
+    verificarPlantillaReactivacion();
   }
 
   return { synced, total: remote.length, porEstado };
@@ -209,6 +234,13 @@ function resolveTemplateValues(templateRecord, lead, vendedor, overrides) {
 // conversación" (Fase 1.4) y, más adelante, por el motor de campañas (Fase 2).
 async function sendResolvedTemplate(to, templateRecord, lead, vendedor, overrides) {
   const { sendTemplate } = require('./whatsapp');
+  // Meta rechaza cualquier plantilla que no esté APPROVED. Fallar aquí, con el estado
+  // real en el mensaje, evita un 400 opaco que nadie sabía interpretar.
+  if (templateRecord && templateRecord.estado && templateRecord.estado !== 'APPROVED') {
+    const err = new Error(`La plantilla "${templateRecord.nombre}" está en estado ${templateRecord.estado} y Meta no permite enviarla.`);
+    err.templateNoAprobada = true;
+    throw err;
+  }
   const values = resolveTemplateValues(templateRecord, lead, vendedor, overrides);
   const components = buildTemplateComponents(templateRecord, values);
   return sendTemplate(to, templateRecord.nombre, components, templateRecord.idioma);
@@ -544,6 +576,25 @@ function describeMetaError(err) {
   return `${cod}${n.mensaje}${n.sugerencia ? ' — ' + n.sugerencia : ''}`.slice(0, 400);
 }
 
+// Los fallos que llegan por webhook (statuses[].errors[0]) no son errores de axios:
+// vienen como objeto plano y el detalle real está en error_data.details, no en `title`.
+// Se envuelve con la forma que espera normalizeMetaError para reusar la misma tabla.
+function describeWebhookError(e0) {
+  if (!e0) return null;
+  const details = e0.error_data && e0.error_data.details;
+  const wrapped = { response: { data: { error: {
+    code: e0.code, error_subcode: e0.error_subcode,
+    message: details || e0.message || e0.title || 'Error desconocido de Meta',
+  } } } };
+  const n = normalizeMetaError(wrapped);
+  return {
+    // Para BD/logs: código + lo que Meta explique de verdad.
+    detalle: describeMetaError(wrapped),
+    // Para el push del asesor: la frase accionable en español, sin jerga de Meta.
+    humano: n.sugerencia || n.mensaje,
+  };
+}
+
 // ═══════════════════════ Ciclo de vida (webhook de estado) ═══════════════════════
 //
 // Procesa los `changes` de message_template_status_update / quality_update /
@@ -651,5 +702,6 @@ module.exports = {
   buildCitaRecordatorioValues, buildCitaRecordatorioComponents, recordatorioTextoPlano,
   slugificarNombre, validateTemplateSpec, buildMetaTemplatePayload,
   createTemplateInMeta, updateTemplateInMeta, deleteTemplateInMeta, fetchTemplateFromMeta,
-  normalizeMetaError, describeMetaError, handleTemplateWebhook, refrescarEstadosPendientes,
+  normalizeMetaError, describeMetaError, describeWebhookError, handleTemplateWebhook, refrescarEstadosPendientes,
+  verificarPlantillaReactivacion,
 };

@@ -1126,7 +1126,13 @@ app.get('/api/leads/:id/window-status', auth.requireAuth, (req, res) => {
   const isOpen = store.isWindowOpen(lead.id);
   const expiresAt = store.getWindowExpiresAt(lead.id);
   const templateName = store.getConfig('reengagement_template') || '';
-  res.json({ open: isOpen, expiresAt, templateName });
+  // El panel necesita distinguir "ventana cerrada pero puedo mandar plantilla" de
+  // "ventana cerrada y la plantilla no sirve" — son dos avisos distintos para el asesor.
+  let templateProblema = null;
+  if (!isOpen) {
+    try { templateProblema = require('./services/wa-templates').verificarPlantillaReactivacion(); } catch (e) { /* opcional */ }
+  }
+  res.json({ open: isOpen, expiresAt, templateName, templateProblema });
 });
 
 // ===================== INBOX MULTICANAL (Nuevo Schema) =====================
@@ -1478,8 +1484,19 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
       // WhatsApp: usar sendMessageSmart (ventana 24h + template auto)
       const mensajeConFirma = buildMensajeConFirma(textoParaEnviar, req.session.nombre);
       smartResult = await sendMessageSmart(lead.customer_phone, mensajeConFirma, lead.id);
-      const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
-      store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, wamid, 'sent');
+      if (smartResult.queued) {
+        // Ventana de 24h cerrada: el texto NO salió, quedó en pending_outbound y en su
+        // lugar se envió la plantilla de reactivación. La burbuja del asesor se guarda
+        // sin wamid y como 'pending' — si llevara el wamid del template, el webhook de
+        // fallo de Meta (setMessageError busca por wamid) marcaría el mensaje equivocado
+        // como "no entregado". El template se registra en su propia fila.
+        const msgId = store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, null, 'pending');
+        store.attachPendingMessage(smartResult.pendingId, msgId);
+        store.saveMessage(lead.id, fromNumber, lead.customer_phone, `[Template: ${smartResult.templateName}]`, 'outgoing', null, null, smartResult.templateWamid, smartResult.templateWamid ? 'sent' : 'pending');
+      } else {
+        const wamid = smartResult.data && smartResult.data.messages && smartResult.data.messages[0] ? smartResult.data.messages[0].id : null;
+        store.saveMessage(lead.id, fromNumber, lead.customer_phone, textoParaEnviar, 'outgoing', null, replyToId, wamid, 'sent');
+      }
     } else {
       // Messenger / Instagram: usar el adapter del canal
       const { getAdapter } = require('./channels');
@@ -1516,10 +1533,20 @@ app.post('/api/leads/:id/responder', auth.requireAuth, messageLimiter, async (re
         customerName: lead.customer_name,
       });
     } catch (e) { /* feed opcional */ }
-    res.json({ ok: true, reopened, templateSent: smartResult ? !!smartResult.templateSent : false, queued: smartResult ? !!smartResult.queued : false });
+    res.json({
+      ok: true, reopened,
+      templateSent: smartResult ? !!smartResult.templateSent : false,
+      queued: smartResult ? !!smartResult.queued : false,
+      templateName: smartResult ? smartResult.templateName || null : null,
+    });
   } catch (e) {
     console.error('Error enviando respuesta desde panel:', e.message);
-    const detail = e.windowClosed ? 'window_closed_no_template' : e.message;
+    // describeMetaError traduce los códigos de Meta al español con sugerencia
+    // (ver services/wa-templates.js). Antes salía el texto crudo de axios.
+    let detail = e.windowClosed ? 'window_closed_no_template' : e.message;
+    if (!e.windowClosed) {
+      try { detail = require('./services/wa-templates').describeMetaError(e) || detail; } catch (_) { /* fallback al message */ }
+    }
     res.status(502).json({ error: 'error_envio', detalle: detail });
   }
 });
@@ -3230,17 +3257,24 @@ app.post('/api/leads/proactive', auth.requireAuth, async (req, res) => {
       }
     }
 
+    let pendingId = null;
+    let queuedProactive = false;
     if (tplSent) {
       // La plantilla no abre la ventana de inmediato (solo lo hace la respuesta del
       // cliente) — el mensaje real se encola y se envía cuando el webhook detecte esa
       // respuesta (mismo mecanismo que sendMessageSmart usa para leads existentes).
-      store.queuePendingOutbound(lead.id, cleanPhone, String(message).trim());
+      pendingId = store.queuePendingOutbound(lead.id, cleanPhone, String(message).trim());
+      queuedProactive = true;
     } else {
-      await sendMessageSmart(cleanPhone, String(message).trim(), lead.id);
+      const smart = await sendMessageSmart(cleanPhone, String(message).trim(), lead.id);
+      pendingId = smart.pendingId || null;
+      queuedProactive = !!smart.queued;
     }
 
-    // 4. Guardar mensaje outgoing
-    store.saveMessage(lead.id, 'sistema', cleanPhone, String(message).trim(), 'outgoing');
+    // 4. Guardar mensaje outgoing. Si quedó encolado no salió a Meta todavía: se marca
+    // 'pending' y se vincula a la cola para que el flush actualice ESTA fila.
+    const proactiveMsgId = store.saveMessage(lead.id, 'sistema', cleanPhone, String(message).trim(), 'outgoing', null, null, null, queuedProactive ? 'pending' : 'sent');
+    if (queuedProactive) store.attachPendingMessage(pendingId, proactiveMsgId);
     store.syncLeadToConversation(store.getLeadById(lead.id), {
       direction: 'outgoing', body: String(message).trim(), fromNumber: 'sistema', toNumber: cleanPhone,
     });
@@ -3886,10 +3920,14 @@ app.post('/api/leads/:id/enviar-template', auth.requireAuth, async (req, res) =>
     console.log(`[enviar-template] OK — lead=${lead.id} template=${tplNombre} channel=${leadChannel} wamid=${wamid || 'no_wamid'}`);
     res.json({ ok: true, reopened, wamid, messageStatus });
   } catch (e) {
-    const errData = e.response && e.response.data && e.response.data.error;
-    const detail = errData
-      ? (errData.error_user_msg || errData.message || JSON.stringify(e.response.data))
-      : e.message;
+    // describeMetaError añade el código y la sugerencia en español; antes salía el
+    // mensaje crudo de Meta, que el asesor no podía interpretar.
+    let detail;
+    try { detail = require('./services/wa-templates').describeMetaError(e); } catch (_) {}
+    if (!detail) {
+      const errData = e.response && e.response.data && e.response.data.error;
+      detail = errData ? (errData.error_user_msg || errData.message || JSON.stringify(e.response.data)) : e.message;
+    }
     console.error('[enviar-template] ERROR:', e.response ? JSON.stringify(e.response.data) : e.message);
     res.status(502).json({ error: 'error_whatsapp', detalle: detail });
   }

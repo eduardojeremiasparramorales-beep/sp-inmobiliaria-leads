@@ -136,6 +136,13 @@ async function sendMessageSmart(to, text, leadId) {
         tplResult = await sendTemplate(to, templateName);
       }
     } catch (tplErr) {
+      // Si la plantilla no está aprobada, reintentar por el camino crudo solo cambia un
+      // error claro por un 400 opaco de Meta — se propaga tal cual.
+      if (tplErr.templateNoAprobada) {
+        tplErr.windowClosed = true;
+        tplErr.accion = 'plantilla_reactivacion_invalida';
+        throw tplErr;
+      }
       console.error(`[WhatsApp] sendMessageSmart template fallback: ${tplErr.message}`);
       tplResult = await sendTemplate(to, templateName);
     }
@@ -144,8 +151,9 @@ async function sendMessageSmart(to, text, leadId) {
     // cliente. Reintentar el free-form aquí siempre fallaba con el mismo 131047 y el mensaje
     // original se perdía. En vez de eso, se encola y se envía cuando el webhook detecte
     // la respuesta del cliente (ver flushPendingOutbound en webhook/messages.js).
-    store.queuePendingOutbound(leadId || null, to, text);
-    return { data: tplResult, templateSent: true, reopenedWindow: false, queued: true };
+    const pendingId = store.queuePendingOutbound(leadId || null, to, text);
+    const templateWamid = tplResult && tplResult.messages && tplResult.messages[0] ? tplResult.messages[0].id : null;
+    return { data: tplResult, templateSent: true, reopenedWindow: false, queued: true, pendingId, templateName, templateWamid };
   }
 }
 
