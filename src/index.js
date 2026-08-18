@@ -994,6 +994,7 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
     foto: v ? v.foto : null,
     estado: v ? v.estado : null,
     two_fa: v ? (v.two_fa ? true : false) : false,
+    chat_bg: v ? (v.chat_bg || 'leones') : 'leones',
   });
 });
 
@@ -2156,7 +2157,7 @@ app.get('/api/equipo/general/unread', auth.requireAuth, (req, res) => {
 });
 
 // Monitoreo admin: todas las conversaciones internas (solo lectura)
-app.get('/api/equipo/monitor', auth.requireAdmin, (req, res) => {
+app.get('/api/equipo/monitor', auth.requireSupervisorOrAdmin, (req, res) => {
   res.json(store.getAllTeamMessagesForAdmin(req.query.limit ? Number(req.query.limit) : 200));
 });
 
@@ -2179,18 +2180,22 @@ app.post('/api/equipo/typing', auth.requireAuth, (req, res) => {
 });
 
 // Admin: lista de conversaciones del chat interno para inbox
-app.get('/api/equipo/admin/conversations', auth.requireAdmin, (req, res) => {
+app.get('/api/equipo/admin/conversations', auth.requireSupervisorOrAdmin, (req, res) => {
   const convs = store.getAdminTeamConversations();
   res.json(convs);
 });
 
-// Admin: mensajes de cualquier conversación interna
-app.get('/api/equipo/admin/messages', auth.requireAdmin, (req, res) => {
+// Admin: mensajes de cualquier conversación interna — general o un DM entre CUALQUIER
+// par (admin↔asesor o asesor↔asesor). `with` se conserva como alias de `b` con `a=0`
+// (admin) por compatibilidad con el único formato que existía antes.
+app.get('/api/equipo/admin/messages', auth.requireSupervisorOrAdmin, (req, res) => {
   const type = req.query.type || 'general';
-  const withId = req.query.with ? Number(req.query.with) : null;
   const limit = Math.min(Number(req.query.limit) || 100, 200);
-  if (type === 'dm' && withId != null) {
-    return res.json(store.getTeamDirectMessages(0, withId, limit));
+  if (type === 'dm') {
+    const a = req.query.a != null ? Number(req.query.a) : 0;
+    const bRaw = req.query.b != null ? req.query.b : req.query.with;
+    if (bRaw == null) return res.status(400).json({ error: 'falta_destinatario' });
+    return res.json(store.getTeamDirectMessages(a, Number(bRaw), null, limit));
   }
   res.json(store.getTeamMessages(null, limit));
 });
@@ -3353,6 +3358,14 @@ app.post('/api/mi-about', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Guardar el fondo de chat elegido (persistido en el servidor, cross-device — antes
+// vivía solo en localStorage y se perdía al cambiar de celular)
+app.post('/api/mi-chat-bg', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  store.setVendedorChatBg(req.session.vendedorId, (req.body || {}).valor);
+  res.json({ ok: true });
+});
+
 // Barrido de recordatorios: cada 60s, push a los vencidos (funciona con la app cerrada)
 function checkRecordatorios() {
   try {
@@ -4469,8 +4482,18 @@ app.post('/api/workflows', auth.requireAdmin, (req, res) => {
 });
 
 app.put('/api/workflows/:id', auth.requireAdmin, (req, res) => {
+  const actual = store.getWorkflowById(req.params.id);
+  if (!actual) return res.status(404).json({ error: 'workflow_no_existe' });
+  // Si es una automatización PERSONAL de un asesor (vendedor_id no nulo), el admin no
+  // puede colarle acciones/disparadores fuera del ámbito del asesor (webhook, reasignar
+  // a terceros, etc.) — la misma regla que ya aplica cuando el asesor la edita él mismo.
+  if (actual.vendedor_id != null) {
+    const body = req.body || {};
+    const graph = body.graph !== undefined ? body.graph : null;
+    const motivo = validarGrafoAsesor(graph, body.trigger_event);
+    if (motivo) return res.status(400).json({ error: motivo });
+  }
   const workflow = store.updateWorkflow(req.params.id, req.body || {});
-  if (!workflow) return res.status(404).json({ error: 'workflow_no_existe' });
   require('./services/workflow').loadRules();
   res.json(workflow);
 });
@@ -4596,6 +4619,14 @@ app.post('/api/templates', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+app.put('/api/templates/:id', auth.requireAdmin, (req, res) => {
+  const { titulo, cuerpo } = req.body || {};
+  if (!titulo || !cuerpo) return res.status(400).json({ error: 'titulo y cuerpo requeridos' });
+  if (!store.getTemplateById(req.params.id)) return res.status(404).json({ error: 'no_existe' });
+  store.updateTemplate(req.params.id, titulo, cuerpo);
+  res.json({ ok: true });
+});
+
 app.delete('/api/templates/:id', auth.requireAdmin, (req, res) => {
   store.deleteTemplate(req.params.id);
   res.json({ ok: true });
@@ -4615,8 +4646,20 @@ app.post('/api/mis-templates', auth.requireAuth, (req, res) => {
   store.addVendedorTemplate(vendedorId, titulo, cuerpo);
   res.json({ ok: true });
 });
+app.put('/api/mis-templates/:id', auth.requireAuth, (req, res) => {
+  const { titulo, cuerpo } = req.body || {};
+  if (!titulo || !cuerpo) return res.status(400).json({ error: 'titulo y cuerpo requeridos' });
+  const tpl = store.getVendedorTemplateById(req.params.id);
+  if (!tpl) return res.status(404).json({ error: 'no_existe' });
+  if (Number(tpl.vendedor_id) !== Number(req.session.vendedorId)) return res.status(403).json({ error: 'sin_permiso' });
+  store.updateVendedorTemplate(req.params.id, titulo, cuerpo);
+  res.json({ ok: true });
+});
 app.delete('/api/mis-templates/:id', auth.requireAuth, (req, res) => {
-  store.deleteVendedorTemplate(req.params.id);
+  const tpl = store.getVendedorTemplateById(req.params.id);
+  if (!tpl) return res.status(404).json({ error: 'no_existe' });
+  if (Number(tpl.vendedor_id) !== Number(req.session.vendedorId)) return res.status(403).json({ error: 'sin_permiso' });
+  store.deleteVendedorTemplate(req.params.id, req.session.vendedorId);
   res.json({ ok: true });
 });
 
@@ -5180,6 +5223,17 @@ app.get('/api/intelligence/datos', auth.requireAdmin, (req, res) => {
 // --- Centro Financiero --- (Fase 4: extraído a src/routes/finanzas.js, mismo patrón
 // que routes/meta-ads.js — sin cambiar comportamiento, solo mover y montar con app.use)
 app.use('/api/finanzas', auth.requireAdmin, require('./routes/finanzas'));
+
+// Comisiones del asesor logueado — fuera de /api/finanzas porque ese router entero
+// va bajo requireAdmin. El asesor solo ve las suyas (mismo patrón que /api/mis-leads).
+const finance = require('./services/finance');
+app.get('/api/mis-comisiones', auth.requireAuth, (req, res) => {
+  if (!req.session.vendedorId) return res.status(400).json({ error: 'sin_vendedor' });
+  const { estado, desde, limite } = req.query;
+  res.json(finance.listarComisiones({
+    vendedorId: req.session.vendedorId, estado, desde, limite: Number(limite),
+  }));
+});
 
 // ===================== FASE 3 — DOCS, IA AGENTS =====================
 // (Fase 4: ambos extraídos a src/routes/ — mismo patrón que routes/meta-ads.js)

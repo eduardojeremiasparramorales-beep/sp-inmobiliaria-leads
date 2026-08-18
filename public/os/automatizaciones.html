@@ -192,6 +192,17 @@
     return flujos.filter(f => String(f.vendedor_id) === String(filtroDueno));
   }
 
+  // Mismo criterio que WorkflowEngine.parseGraph (src/services/workflow.js) — un flujo
+  // puede tener la columna `graph` no vacía pero sin nodos (JSON roto o {nodes:[]}), y el
+  // motor lo trata exactamente igual que si no tuviera grafo: lo salta en silencio. Antes
+  // esta lista solo miraba activo/pausado, así que un flujo así se veía "Activo" sin pista
+  // de que nunca corre.
+  function grafoValido(f) {
+    if (!f.graph) return false;
+    try { const g = JSON.parse(f.graph); return !!(g && Array.isArray(g.nodes) && g.nodes.length); }
+    catch (e) { return false; }
+  }
+
   function renderList() {
     const activos = flujos.filter(f => f.activo).length;
     ctx.content.innerHTML = `<div class="os-content__max">
@@ -222,6 +233,7 @@
                 </div>
                 <span class="badge badge--${f.activo ? 'green' : 'mute'}">${f.activo ? 'Activo' : 'Pausado'}</span>
               </div>
+              ${!grafoValido(f) ? `<div style="margin-top:6px;font-size:11.5px;color:var(--amber);background:rgba(200,164,90,.1);border:1px solid rgba(200,164,90,.3);border-radius:8px;padding:6px 10px">⚠️ Sin grafo configurado — este flujo está "${f.activo?'activo':'pausado'}" en la lista pero el motor nunca lo ejecuta. Ábrelo y guárdalo desde el editor para generarlo.</div>` : ''}
               <div class="wf-card__actions">
                 <button class="btn btn--quiet btn--sm" data-edit="${f.id}">Editar</button>
                 <button class="btn btn--quiet btn--sm" data-toggle="${f.id}" data-a="${f.activo?0:1}">${f.activo?'Pausar':'Activar'}</button>

@@ -970,3 +970,16 @@ body.glass-lite .btn--ghost { background: var(--bg-2); border-color: var(--borde
 :root:not([data-theme="light"]) .metric:hover {
   box-shadow: 0 10px 40px rgba(255,215,106,.22), 0 0 0 1px var(--gold-line);
 }
+
+/* Fondo de leones — mismo ajuste que en /m/, aplicado al panel de escritorio
+   (Inbox y Chat Interno). Vive en .ibx-thread (contenedor de pantalla, no
+   scrollea) para no repetir el bug de /m/ donde se perdía al re-renderizar la
+   lista de mensajes; .ibx-msgs (el que sí scrollea) se vuelve transparente. */
+.ibx-thread.chat-bg-patron {
+  background:
+    linear-gradient(180deg, rgba(10,10,10,.7), rgba(12,12,12,.8)),
+    url('/images/chat-bg.jpg');
+  background-size: auto, 420px 420px;
+  background-repeat: repeat;
+}
+.ibx-thread.chat-bg-patron .ibx-msgs { background: transparent; }

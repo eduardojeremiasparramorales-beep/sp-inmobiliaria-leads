@@ -67,11 +67,12 @@
   .sk-card{ display:flex; gap:12px; align-items:center; padding:14px; background:var(--bg-2); border:1px solid var(--border-soft); border-radius:16px; margin-bottom:12px; }
   .sk-line{ height:11px; }
   .m-row{ position:relative; overflow:hidden; }
-  .m-row__actions{ position:absolute; top:0; bottom:0; display:flex; align-items:center; }
-  .m-row__actions.left{ left:0; }
-  .m-row__actions.right{ right:0; }
-  .swipe-act{ width:64px; align-self:stretch; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:#fff; font-size:10px; font-weight:600; border:none; }
-  .swipe-act svg{ width:19px; height:19px; }
+  /* Swipe lateral (estilo WhatsApp): .m-card se traduce con JS sobre estos fondos.
+     Desliza a la derecha → llamar; a la izquierda → archivar/restaurar. */
+  .swipe-bg{ position:absolute; top:0; bottom:0; width:96px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:#fff; font-size:10px; font-weight:600; z-index:0; }
+  .swipe-bg--right{ left:0; background:var(--green); }
+  .swipe-bg--left{ right:0; background:var(--red); }
+  .swipe-bg svg{ width:19px; height:19px; }
 
   /* ── Supervisión (tab jefe) ── */
   .super-card{ transition:background .15s; }
@@ -107,6 +108,8 @@
   .m-badge{ min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--gold); color:#0A0A0A; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0; }
   .m-card__l3{ display:flex; align-items:center; gap:6px; margin-top:6px; }
   .m-tag{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px; letter-spacing:.03em; flex-shrink:0; }
+  .m-tag--etq{ cursor:pointer; }
+  .m-tag--etq:active{ transform:scale(.94); }
   .m-vendor{ font-size:10px; font-weight:500; padding:2px 7px; border-radius:999px; background:rgba(200,164,90,.12); color:var(--gold); border:1px solid rgba(200,164,90,.25); display:inline-flex; align-items:center; gap:3px; letter-spacing:.02em; }
   .m-meta{ font-size:10.5px; color:var(--text-3); display:inline-flex; align-items:center; gap:3px; }
   .m-meta svg{ width:11px; height:11px; opacity:.7; }
@@ -235,14 +238,21 @@
   .eq-presence-dot.off{ background:var(--text-3); opacity:.5; }
 
   .c-msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px calc(6px + var(--kb)); display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--bg-0),#0C0C0C); }
-  .c-msgs.c-msgs--patron{
+
+  /* Fondo de leones — la imagen vive en el contenedor de PANTALLA (#scChat/#scEquipo),
+     que nunca se recrea, no en la lista de mensajes (que sí se recrea en cada render y
+     por eso el fondo se perdía al borrar/seleccionar mensajes). Sin
+     background-attachment:fixed a propósito: puesto sobre un ancestro con scroll propio
+     es un patrón que parpadea/no pinta en iOS WKWebView; al vivir en el contenedor
+     estático no hace falta "fixed" para que no se mueva. */
+  #scChat.chat-bg-patron, #scEquipo.chat-bg-patron{
     background:
       linear-gradient(180deg, rgba(10,10,10,.7), rgba(12,12,12,.8)),
       url('/images/chat-bg.jpg');
     background-size: auto, 420px 420px;
     background-repeat: repeat;
-    background-attachment: fixed;
   }
+  #scChat.chat-bg-patron .c-msgs, #scEquipo.chat-bg-patron #eqMsgs{ background: transparent; }
   .c-date{ align-self:center; flex-shrink:0; font-size:11px; color:var(--text-3); background:var(--bg-2); border:1px solid var(--border-soft); padding:3px 12px; border-radius:999px; margin:8px 0; }
   .bub{ width:fit-content; max-width:80%; padding:9px 13px; border-radius:20px; font-size:14.5px; line-height:1.42; word-wrap:break-word; position:relative; animation:bubIn .28s var(--spring); }
   .bub--in{ margin-right:auto; background:rgba(0,0,0,.85); border:1px solid rgba(255,215,106,.22); box-shadow:inset 0 1px 0 rgba(255,255,255,.05); border-bottom-left-radius:6px; }
@@ -588,6 +598,20 @@
   .sec-btn{ width:100%; height:44px; border:none; background:none; color:var(--text-2); font-size:14px; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; padding:0 16px; }
   .sec-btn:active{ background:var(--bg-3); }
   .sec-btn.danger{ color:var(--red); }
+
+  /* Editor de "Mis automatizaciones" — filas repetibles de condición/acción */
+  .auto-row{ display:flex; gap:6px; align-items:center; margin-bottom:8px; }
+  .auto-row select, .auto-row input{ flex:1; min-width:0; height:40px; background:var(--bg-3); border:1px solid var(--border); border-radius:10px; color:var(--text); padding:0 10px; font-size:13px; font-family:inherit; }
+  .auto-row__head{ display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .auto-row__head select{ flex:1; min-width:0; height:40px; background:var(--bg-3); border:1px solid var(--border); border-radius:10px; color:var(--text); padding:0 10px; font-size:13px; font-family:inherit; }
+  .auto-row--stack{ background:var(--bg-2); border:1px solid var(--border-soft); border-radius:12px; padding:10px; margin-bottom:8px; }
+  .auto-del-btn{ width:32px; height:32px; flex-shrink:0; border-radius:50%; background:none; border:none; color:var(--red); font-size:15px; cursor:pointer; }
+  .auto-add-btn{ width:100%; height:40px; border-radius:10px; border:1px dashed var(--border); background:none; color:var(--gold); font-size:13px; font-family:inherit; cursor:pointer; margin:4px 0 16px; }
+  .auto-hint{ font-size:11.5px; color:var(--text-3); padding:6px 2px 12px; }
+  .auto-label{ font-size:11px; color:var(--text-3); display:block; margin:6px 0 4px; }
+  .auto-toggle-row{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-2); margin:6px 0 10px; cursor:pointer; }
+  .auto-toggle-row input{ width:18px; height:18px; accent-color:var(--gold); flex:none; }
+  .auto-row--stack textarea.aParamInput{ width:100%; background:var(--bg-3); border:1px solid var(--border); border-radius:10px; color:var(--text); padding:8px 10px; font-size:13px; font-family:inherit; resize:vertical; min-height:56px; }
   .bg-opt{ display:flex; flex-direction:column; align-items:center; gap:5px; cursor:pointer; padding:6px 4px; border-radius:12px; flex:1; transition:background .2s; }
   .bg-opt.active{ background:rgba(200,164,90,.1); }
   .bg-preview{ width:100%; height:52px; border-radius:10px; border:1.5px solid var(--border-strong); overflow:hidden; transition:border-color .2s; }

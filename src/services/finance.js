@@ -1,67 +1,66 @@
 // Centro Financiero Básico
 // Trackea ingresos, egresos, comisiones y P&L por proyecto.
+// Las tablas `transacciones` y `comisiones` las crea src/db/schema.js (createNewTables)
+// al provisionar cada tenant — este módulo no define su propio DDL.
 
 const store = require('../db/store');
 const log = require('../utils/logger');
 
-function ensureTable() {
-  const db = store.getDB();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS transacciones (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tipo TEXT NOT NULL CHECK (tipo IN ('ingreso', 'egreso')),
-      categoria TEXT NOT NULL DEFAULT 'venta',
-      concepto TEXT NOT NULL,
-      monto REAL NOT NULL DEFAULT 0,
-      moneda TEXT DEFAULT 'COP',
-      proyecto_id INTEGER,
-      lead_id INTEGER,
-      vendedor_id INTEGER,
-      fecha TEXT DEFAULT (date('now')),
-      notas TEXT DEFAULT '',
-      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
-      FOREIGN KEY (lead_id) REFERENCES leads(id),
-      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
-    );
+const TIPOS_TRANSACCION = ['ingreso', 'egreso'];
+const ESTADOS_COMISION = ['pendiente', 'pagada', 'cancelada'];
 
-    CREATE TABLE IF NOT EXISTS comisiones (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      vendedor_id INTEGER NOT NULL,
-      lead_id INTEGER NOT NULL,
-      monto_venta REAL NOT NULL,
-      porcentaje REAL NOT NULL DEFAULT 5,
-      monto_comision REAL NOT NULL,
-      estado TEXT DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagada', 'cancelada')),
-      fecha_calculo TEXT DEFAULT (date('now')),
-      fecha_pago TEXT,
-      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id),
-      FOREIGN KEY (lead_id) REFERENCES leads(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_transacciones_tipo ON transacciones(tipo);
-    CREATE INDEX IF NOT EXISTS idx_transacciones_fecha ON transacciones(fecha);
-    CREATE INDEX IF NOT EXISTS idx_transacciones_proyecto ON transacciones(proyecto_id);
-    CREATE INDEX IF NOT EXISTS idx_comisiones_vendedor ON comisiones(vendedor_id);
-    CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
-  `);
+function numeroValido(n) {
+  return typeof n === 'number' ? Number.isFinite(n) : Number.isFinite(Number(n)) && String(n).trim() !== '';
 }
 
 // --- Transacciones ---
-function crearTransaccion(data) {
-  ensureTable();
+function crearTransaccion(data = {}) {
   const { tipo, categoria, concepto, monto, moneda, proyectoId, leadId, vendedorId, fecha, notas } = data;
-  const result = store.run(
+  if (!TIPOS_TRANSACCION.includes(tipo)) return { ok: false, error: 'tipo_invalido' };
+  if (!concepto || !String(concepto).trim()) return { ok: false, error: 'concepto_requerido' };
+  if (!numeroValido(monto) || Number(monto) <= 0) return { ok: false, error: 'monto_invalido' };
+
+  store.run(
     `INSERT INTO transacciones (tipo, categoria, concepto, monto, moneda, proyecto_id, lead_id, vendedor_id, fecha, notas)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [tipo, categoria || 'venta', concepto, monto, moneda || 'COP', proyectoId || null, leadId || null, vendedorId || null, fecha || new Date().toISOString().slice(0, 10), notas || '']
+    [tipo, categoria || 'venta', String(concepto).trim(), Number(monto), moneda || 'COP', proyectoId || null, leadId || null, vendedorId || null, fecha || new Date().toISOString().slice(0, 10), notas || '']
   );
-  return { ok: true, id: result.lastInsertRowid };
+  const row = store.one('SELECT id FROM transacciones WHERE id = last_insert_rowid()');
+  return { ok: true, id: row ? row.id : null };
+}
+
+function actualizarTransaccion(id, data = {}) {
+  const actual = store.one('SELECT * FROM transacciones WHERE id = ?', [id]);
+  if (!actual) return { ok: false, error: 'no_existe' };
+
+  const { tipo, categoria, concepto, monto, moneda, proyectoId, leadId, vendedorId, fecha, notas } = data;
+  if (tipo !== undefined && !TIPOS_TRANSACCION.includes(tipo)) return { ok: false, error: 'tipo_invalido' };
+  if (concepto !== undefined && !String(concepto).trim()) return { ok: false, error: 'concepto_requerido' };
+  if (monto !== undefined && (!numeroValido(monto) || Number(monto) <= 0)) return { ok: false, error: 'monto_invalido' };
+
+  store.run(
+    `UPDATE transacciones SET
+       tipo = ?, categoria = ?, concepto = ?, monto = ?, moneda = ?,
+       proyecto_id = ?, lead_id = ?, vendedor_id = ?, fecha = ?, notas = ?
+     WHERE id = ?`,
+    [
+      tipo !== undefined ? tipo : actual.tipo,
+      categoria !== undefined ? categoria : actual.categoria,
+      concepto !== undefined ? String(concepto).trim() : actual.concepto,
+      monto !== undefined ? Number(monto) : actual.monto,
+      moneda !== undefined ? moneda : actual.moneda,
+      proyectoId !== undefined ? (proyectoId || null) : actual.proyecto_id,
+      leadId !== undefined ? (leadId || null) : actual.lead_id,
+      vendedorId !== undefined ? (vendedorId || null) : actual.vendedor_id,
+      fecha !== undefined ? fecha : actual.fecha,
+      notas !== undefined ? notas : actual.notas,
+      id,
+    ]
+  );
+  return { ok: true };
 }
 
 function listarTransacciones(filtros = {}) {
-  ensureTable();
   let where = [];
   let params = [];
   if (filtros.tipo) { where.push('tipo = ?'); params.push(filtros.tipo); }
@@ -84,26 +83,67 @@ function listarTransacciones(filtros = {}) {
 }
 
 function eliminarTransaccion(id) {
-  ensureTable();
-  store.run(`DELETE FROM transacciones WHERE id = ?`, [id]);
+  const r = store.run(`DELETE FROM transacciones WHERE id = ?`, [id]);
+  if (!r || !r.changes) return { ok: false, error: 'no_existe' };
   return { ok: true };
 }
 
 // --- Comisiones ---
-function calcularComision(vendedorId, leadId, montoVenta, porcentaje = 5) {
-  ensureTable();
-  const monto = montoVenta * (porcentaje / 100);
-  const result = store.run(
-    `INSERT INTO comisiones (vendedor_id, lead_id, monto_venta, porcentaje, monto_comision)
-     VALUES (?, ?, ?, ?, ?)`,
-    [vendedorId, leadId, montoVenta, porcentaje, monto]
+// Crea una comisión: si no se pasa montoComision explícito, se calcula como
+// montoVenta * porcentaje/100. Pasar montoComision permite un override manual
+// (ej. comisión pactada aparte del % estándar).
+function crearComision(data = {}) {
+  const { vendedorId, leadId, montoVenta, porcentaje, montoComision, estado, notas } = data;
+  if (!vendedorId || !leadId) return { ok: false, error: 'vendedor_y_lead_requeridos' };
+  if (!numeroValido(montoVenta) || Number(montoVenta) <= 0) return { ok: false, error: 'monto_venta_invalido' };
+  const pct = numeroValido(porcentaje) ? Number(porcentaje) : 5;
+  const monto = numeroValido(montoComision) ? Number(montoComision) : Number(montoVenta) * (pct / 100);
+  const est = ESTADOS_COMISION.includes(estado) ? estado : 'pendiente';
+
+  store.run(
+    `INSERT INTO comisiones (vendedor_id, lead_id, monto_venta, porcentaje, monto_comision, estado, notas)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [vendedorId, leadId, Number(montoVenta), pct, monto, est, notas || '']
   );
-  log.info('FINANZAS', `Comisión calculada: $${monto.toLocaleString()} para vendedor ${vendedorId}`);
-  return { ok: true, id: result.lastInsertRowid, monto };
+  const row = store.one('SELECT id FROM comisiones WHERE id = last_insert_rowid()');
+  log.info('FINANZAS', `Comisión creada: $${monto.toLocaleString()} para vendedor ${vendedorId}`);
+  return { ok: true, id: row ? row.id : null, monto };
+}
+
+function actualizarComision(id, data = {}) {
+  const actual = store.one('SELECT * FROM comisiones WHERE id = ?', [id]);
+  if (!actual) return { ok: false, error: 'no_existe' };
+
+  const { montoVenta, porcentaje, montoComision, estado, notas } = data;
+  if (montoVenta !== undefined && (!numeroValido(montoVenta) || Number(montoVenta) <= 0)) return { ok: false, error: 'monto_venta_invalido' };
+  if (estado !== undefined && !ESTADOS_COMISION.includes(estado)) return { ok: false, error: 'estado_invalido' };
+
+  const nuevoMontoVenta = montoVenta !== undefined ? Number(montoVenta) : actual.monto_venta;
+  const nuevoPorcentaje = numeroValido(porcentaje) ? Number(porcentaje) : actual.porcentaje;
+  // Si mandan un monto_comision explícito se respeta (override manual); si no,
+  // y cambió venta o porcentaje, se recalcula; si no cambió nada, se deja como estaba.
+  let nuevoMontoComision = actual.monto_comision;
+  if (numeroValido(montoComision)) nuevoMontoComision = Number(montoComision);
+  else if (montoVenta !== undefined || porcentaje !== undefined) nuevoMontoComision = nuevoMontoVenta * (nuevoPorcentaje / 100);
+
+  const nuevoEstado = estado !== undefined ? estado : actual.estado;
+  const nuevaFechaPago = nuevoEstado === 'pagada' ? (actual.fecha_pago || new Date().toISOString().slice(0, 10)) : (nuevoEstado === actual.estado ? actual.fecha_pago : null);
+
+  store.run(
+    `UPDATE comisiones SET monto_venta = ?, porcentaje = ?, monto_comision = ?, estado = ?, fecha_pago = ?, notas = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+    [nuevoMontoVenta, nuevoPorcentaje, nuevoMontoComision, nuevoEstado, nuevaFechaPago, notas !== undefined ? notas : actual.notas, id]
+  );
+  return { ok: true };
+}
+
+function eliminarComision(id) {
+  const r = store.run(`DELETE FROM comisiones WHERE id = ?`, [id]);
+  if (!r || !r.changes) return { ok: false, error: 'no_existe' };
+  return { ok: true };
 }
 
 function listarComisiones(filtros = {}) {
-  ensureTable();
   let where = [];
   let params = [];
   if (filtros.vendedorId) { where.push('c.vendedor_id = ?'); params.push(filtros.vendedorId); }
@@ -123,14 +163,13 @@ function listarComisiones(filtros = {}) {
 }
 
 function marcarComisionPagada(id) {
-  ensureTable();
-  store.run(`UPDATE comisiones SET estado = 'pagada', fecha_pago = date('now') WHERE id = ?`, [id]);
+  const r = store.run(`UPDATE comisiones SET estado = 'pagada', fecha_pago = date('now'), updated_at = datetime('now') WHERE id = ?`, [id]);
+  if (!r || !r.changes) return { ok: false, error: 'no_existe' };
   return { ok: true };
 }
 
 // --- Dashboard Financiero ---
 function obtenerResumen(filtros = {}) {
-  ensureTable();
   const desde = filtros.desde || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const hasta = filtros.hasta || new Date().toISOString().slice(0, 10);
 
@@ -199,11 +238,13 @@ function obtenerResumen(filtros = {}) {
 }
 
 module.exports = {
-  ensureTable,
   crearTransaccion,
+  actualizarTransaccion,
   listarTransacciones,
   eliminarTransaccion,
-  calcularComision,
+  crearComision,
+  actualizarComision,
+  eliminarComision,
   listarComisiones,
   marcarComisionPagada,
   obtenerResumen,

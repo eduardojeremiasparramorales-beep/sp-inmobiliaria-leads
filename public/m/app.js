@@ -45,6 +45,7 @@ const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 let me = null, leads = [], filtro = 'todos', term = '', tab = 'chats', ordenPrioridad = false;
+let _chatBg = localStorage.getItem('sp_chat_bg') || 'leones'; // caché offline; la fuente real es me.chat_bg (servidor)
 let hotScores = new Map(); // lead_id -> score (lead scoring, solo visible para admin — ver /api/leads/calientes)
 let current = null, currentMsgs = [], metricas = null;
 let _templates = [];
@@ -60,6 +61,15 @@ const initials = n => String(n||'C').trim().split(/\s+/).slice(0,2).map(w=>w[0])
 const money = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function haptic(p){ if(localStorage.getItem('sp_notif_vibrate')==='false') return; try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
+// Fondo de leones — la clase vive en el contenedor ESTÁTICO de cada pantalla (#scChat,
+// #scEquipo), que renderChat()/renderEquipo() nunca recrean (solo reemplazan su
+// contenido interno). Así se aplica UNA vez y sobrevive a cualquier re-render, a
+// diferencia de aplicarla sobre #cMsgs (que sí se recrea en cada mensaje/selección).
+function aplicarFondoChat(){
+  const on = _chatBg === 'leones';
+  document.getElementById('scChat')?.classList.toggle('chat-bg-patron', on);
+  document.getElementById('scEquipo')?.classList.toggle('chat-bg-patron', on);
+}
 function toast(m,type){ const t=$('#toast'); t.textContent=m; t.className=type==='err'?'show toast-err':'show'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),type==='err'?4000:2200); }
 function playNotifSound(){
   if(localStorage.getItem('sp_notif_sound')==='false') return;
@@ -1333,6 +1343,9 @@ async function init(){
   else {
     me = await api('/api/me');
     if(!me){ location.replace('/login.html'); return; }
+    _chatBg = me.chat_bg === 'none' ? 'none' : 'leones';
+    localStorage.setItem('sp_chat_bg', _chatBg);
+    aplicarFondoChat();
     renderNav();
     const meAv = document.getElementById('meAvatar');
     if (meAv) {
@@ -1383,6 +1396,7 @@ async function init(){
       cerrarChat();
     }
   });
+  if(!DEMO) mostrarOnboardingSiCorresponde();
 }
 
 async function cargar(){ const d = await api('/api/mis-leads'); if(d) leads = d; else if(!leads.length) toast('Sin conexión. Reintentando...'); renderList(); }
@@ -1492,6 +1506,8 @@ function cardHTML(l,idx){
   const archived=showArchivados;
   const greenDot=unread&&!archived?'<span class="m-unread-dot"></span>':'';
   return `<div class="m-row" data-id="${l.id}" data-phone="${esc(l.customer_phone||'')}">
+    <div class="swipe-bg swipe-bg--right">${I(SVG.phone,19)}<span>Llamar</span></div>
+    <div class="swipe-bg swipe-bg--left">${I(archived?SVG.refresh:SVG.archive,19)}<span>${archived?'Restaurar':'Archivar'}</span></div>
     <div class="m-card ${unread?'unread':''}${archived?' archived':''}" data-open="${l.id}" style="animation:bubIn .3s var(--spring) ${Math.min(idx*30,300)}ms both">
       <span class="m-card__prio" style="background:${prio}"></span>
       ${l.pinned_at?`<span class="m-card__pin">${I(SVG.pin,11)} Fijado</span>`:''}
@@ -1499,7 +1515,7 @@ function cardHTML(l,idx){
       ${l.muted_at?`<span class="m-card__mute"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.56 2.9A7 7 0 0 1 19 9v4l4 7H4.8"/><path d="M2 2l20 20"/><path d="M12 22a2 2 0 0 1-2-2"/><path d="M14.5 6.5a2.5 2.5 0 0 0-3.26-1.12"/></svg> Silenciado</span>`:''}
       <div class="m-avatar" style="background:${avatarColor(nombre)}">${initials(nombre)}${unread&&!archived?greenDot:''}<span class="m-avatar__st ${st.cls}"></span></div>
       <div class="m-card__body">
-        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span>${(()=>{const ch=(l.customer_phone||'').startsWith('instagram_')?'\ud83d\udfe3 IG':(l.customer_phone||'').startsWith('messenger_')?'\ud83d\udd35 M':'\ud83d\udfe2 WA';return ch?`<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:rgba(255,255,255,.08);color:var(--text-3);margin-left:3px">${ch}</span>`:'';})()}${tempBadge(l.temperatura)}${hotScores.has(Number(l.id))?`<span style="font-size:9px;padding:1px 5px;border-radius:999px;background:rgba(200,164,90,.16);color:var(--gold);margin-left:3px" title="Score de lead caliente">🔥 ${hotScores.get(Number(l.id))}</span>`:''}<span class="m-tag t-${e.cls}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
+        <div class="m-card__l1"><span class="m-card__name">${esc(nombre)}</span>${(()=>{const ch=(l.customer_phone||'').startsWith('instagram_')?'\ud83d\udfe3 IG':(l.customer_phone||'').startsWith('messenger_')?'\ud83d\udd35 M':'\ud83d\udfe2 WA';return ch?`<span style="font-size:9px;padding:1px 4px;border-radius:4px;background:rgba(255,255,255,.08);color:var(--text-3);margin-left:3px">${ch}</span>`:'';})()}${tempBadge(l.temperatura)}${hotScores.has(Number(l.id))?`<span style="font-size:9px;padding:1px 5px;border-radius:999px;background:rgba(200,164,90,.16);color:var(--gold);margin-left:3px" title="Score de lead caliente">🔥 ${hotScores.get(Number(l.id))}</span>`:''}<span class="m-tag t-${e.cls} m-tag--etq" data-etq-lead="${l.id}">${e.t}</span><span class="m-card__time">${horaCorta(l.updated_at||l.created_at)}</span></div>
         <div class="m-card__l2"><span class="m-card__msg">${(()=>{ let dr=''; try{ dr=localStorage.getItem('sp_draft_'+l.id)||''; }catch(e){} return dr?`<span style="color:var(--gold);font-weight:600">Borrador:</span> ${esc(dr.slice(0,40))}`:esc(l.last_message||l.first_message||'—'); })()}</span>${unread?`<span class="m-badge">${unread>9?'9+':unread}</span>`:''}</div>
         <div class="m-card__l3">
           <span class="m-meta">${I(SVG.building,11)} ${l.proyecto||'—'}</span>
@@ -1515,18 +1531,54 @@ function cardHTML(l,idx){
   </div>`;
 }
 
-/* ════════ Tarjetas: long-press (estilo WhatsApp) — sin swipe lateral ════════ */
+/* ════════ Tarjetas: long-press + swipe lateral (estilo WhatsApp) ════════
+   Antes solo existía el long-press: archivar o llamar costaban 450ms de espera + un tap
+   en el sheet. El swipe reutiliza swipeAction() tal cual — misma lógica que el menú
+   largo, solo un segundo gesto más rápido para las dos acciones más usadas. */
 function wireCard(row){
   const card=row.querySelector('.m-card'); if(!card) return;
+  const tagEl=card.querySelector('.m-tag--etq');
+  if(tagEl) tagEl.addEventListener('click',e=>{ e.stopPropagation(); haptic(8); abrirEtapaPara(findLead(Number(tagEl.dataset.etqLead))); });
   let lpTimer=null, lpFired=false, sx=0, sy=0;
+  let dragging=false, dx=0, dragFired=false;
+  const MAX_SWIPE=96, COMMIT=64;
   const abrirMenu=()=>{ lpTimer=null; lpFired=true; setTimeout(()=>{ lpFired=false; },600); haptic(18); cardMenu(Number(row.dataset.id)); };
-  card.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; lpFired=false; lpTimer=setTimeout(abrirMenu,450); },{passive:true});
-  card.addEventListener('touchmove',e=>{ if(!lpTimer) return; const dx=Math.abs(e.touches[0].clientX-sx), dy=Math.abs(e.touches[0].clientY-sy); if(dx>10||dy>10){ clearTimeout(lpTimer); lpTimer=null; } },{passive:true});
-  const cancelar=()=>{ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } };
-  card.addEventListener('touchend',cancelar);
-  card.addEventListener('touchcancel',cancelar);
+  card.addEventListener('touchstart',e=>{
+    sx=e.touches[0].clientX; sy=e.touches[0].clientY; lpFired=false; dragging=false; dx=0;
+    lpTimer=setTimeout(abrirMenu,450);
+  },{passive:true});
+  card.addEventListener('touchmove',e=>{
+    const cx=e.touches[0].clientX, cy=e.touches[0].clientY;
+    const ddx=cx-sx, ddy=cy-sy;
+    if(!dragging){
+      if(Math.abs(ddx)>10 && Math.abs(ddx)>Math.abs(ddy)){ dragging=true; if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } }
+      else if(Math.abs(ddx)>10||Math.abs(ddy)>10){ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } }
+    }
+    if(dragging){
+      dx=Math.max(-MAX_SWIPE,Math.min(MAX_SWIPE,ddx));
+      card.style.transition='none';
+      card.style.transform=`translateX(${dx}px)`;
+    }
+  },{passive:true});
+  const soltar=()=>{
+    if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
+    if(dragging){
+      const commit=Math.abs(dx)>=COMMIT;
+      card.style.transition='transform .28s var(--spring)';
+      card.style.transform='translateX(0)';
+      if(commit){
+        dragFired=true; setTimeout(()=>{ dragFired=false; },400);
+        haptic(14);
+        const accion=dx>0?'call':(showArchivados?'unarch':'arch');
+        setTimeout(()=>swipeAction(accion,row),80);
+      }
+      dragging=false; dx=0;
+    }
+  };
+  card.addEventListener('touchend',soltar);
+  card.addEventListener('touchcancel',soltar);
   card.addEventListener('contextmenu',e=>{ e.preventDefault(); abrirMenu(); }); // desktop: click derecho
-  card.addEventListener('click',()=>{ if(lpFired){ lpFired=false; return; } abrirChat(Number(card.dataset.open)); });
+  card.addEventListener('click',()=>{ if(lpFired||dragFired){ lpFired=false; dragFired=false; return; } abrirChat(Number(card.dataset.open)); });
 }
 function cardMenu(id){
   const l=findLead(id); if(!l) return;
@@ -1616,8 +1668,6 @@ async function abrirChat(id){ let l; let msgs;
   }catch(e){ console.error('abrirChat/api',e); msgs=msgs||[]; }
   try{
     currentMsgs=msgs||[]; renderChat(current,currentMsgs);
-    const _cm=document.getElementById('cMsgs');
-    if(_cm&&localStorage.getItem('sp_chat_bg')==='leones') _cm.classList.add('c-msgs--patron');
     $('#scChat').classList.add('show');
     history.pushState({ chat: id }, '');
     if(!DEMO) checkWindowStatus(current.id);
@@ -1660,7 +1710,7 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
       <button class="sel-act x" data-sel="clear" title="Cancelar">${I(SVG.x,18)}</button>
     </div>
     <div class="c-input">
-      <div class="c-quick" id="cQuick">${(_templates.length?_templates:QUICK).map(q=>`<button data-q="${esc(q.body||q.cuerpo)}">${esc(q.t||q.titulo)}</button>`).join('')}</div>
+      <div class="c-quick" id="cQuick">${(_templates.length?_templates:QUICK).map(q=>`<button data-q="${esc(q.body||q.cuerpo)}">${esc(q.t||q.titulo)}</button>`).join('')}<button data-mas-plantillas>➕ Más</button></div>
       <div class="rec-bar" id="recBar">
         <span class="rec-dot" id="recDot"></span>
         <span class="rec-time" id="recTime">0:00</span>
@@ -1739,7 +1789,9 @@ function renderChat(l,msgs){ const nombre=l.customer_name||'Cliente'; const st=e
   $('#scChat').querySelectorAll('.c-act').forEach(b=>b.onclick=()=>chatAccion(b.dataset.ca));
   $('#cPlus').onclick=()=>{ $('#cPlus').classList.toggle('open'); abrirAdjuntos(); };
   $('#cEmoji').onclick=()=>toggleComposeEmojiPicker();
-  $('#cQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
+  $('#cQuick').querySelectorAll('button[data-q]').forEach(b=>b.onclick=()=>{ const i=$('#cInput'); i.value=b.dataset.q; i.focus(); updateSend(); haptic(6); });
+  const btnMasPlantillas=$('#cQuick').querySelector('[data-mas-plantillas]');
+  if(btnMasPlantillas) btnMasPlantillas.onclick=()=>{ haptic(6); abrirPlantillas(); };
   const inp=$('#cInput');
   // Borrador por chat: restaurar el texto no enviado al abrir
   try{ const dr=current&&localStorage.getItem(draftKey(current.id)); if(dr){ inp.value=dr; inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px'; } }catch(e){}
@@ -2508,6 +2560,37 @@ function chatAccion(a){ haptic(10); const p=(current.customer_phone||'').replace
 /* ════════ Bottom Sheets ════════ */
 function openSheet(title,html){ $('#sheetTitle').textContent=title; $('#sheetBody').innerHTML=html; $('#sheetBg').classList.add('show'); $('#sheet').classList.add('show'); haptic(8); }
 function closeSheet(){ $('#sheetBg').classList.remove('show'); $('#sheet').classList.remove('show'); }
+// Arrastrar hacia abajo para cerrar — antes .sheet__grab era puramente decorativo (cero
+// listeners de touch), la única forma de cerrar era el botón ✕ o tocar el fondo.
+function wireSheetDrag(){
+  const sheet=$('#sheet'); if(!sheet) return;
+  const zonas=[sheet.querySelector('.sheet__grab'),sheet.querySelector('.sheet__head')].filter(Boolean);
+  let startY=0, dy=0, dragging=false;
+  const onStart=e=>{ startY=e.touches[0].clientY; dy=0; dragging=true; sheet.style.transition='none'; };
+  const onMove=e=>{
+    if(!dragging) return;
+    dy=Math.max(0, e.touches[0].clientY-startY);
+    sheet.style.transform=`translateY(${dy}px)`;
+  };
+  const onEnd=()=>{
+    if(!dragging) return; dragging=false;
+    if(dy>100){
+      haptic(10);
+      sheet.style.transition='transform .22s var(--ease)';
+      sheet.style.transform='translateY(100%)';
+      setTimeout(()=>{ $('#sheetBg').classList.remove('show'); sheet.classList.remove('show'); sheet.style.transition=''; sheet.style.transform=''; },220);
+    } else {
+      sheet.style.transition='transform .3s var(--spring)';
+      sheet.style.transform='';
+    }
+  };
+  zonas.forEach(el=>{
+    el.addEventListener('touchstart',onStart,{passive:true});
+    el.addEventListener('touchmove',onMove,{passive:true});
+    el.addEventListener('touchend',onEnd);
+    el.addEventListener('touchcancel',onEnd);
+  });
+}
 
 const QUICK=[
   {t:'Saludo',body:'¡Hola! Soy tu asesor de Sergio Parra Inversiones & Finca Raíz. ¿En qué proyecto estás interesado? 😊'},
@@ -3891,9 +3974,15 @@ function vaciarConversacion(){
 function abrirNota(){ openSheet('Nota rápida', `<textarea id="ntx" class="c-pill" style="width:100%;min-height:120px;padding:14px;color:var(--text);background:var(--bg-3);border:1px solid var(--border);border-radius:14px;outline:none" placeholder="Ej: Llamar después de las 6 PM. Quiere financiación…"></textarea><button class="cop-use" id="ntok" style="margin-top:12px">Guardar nota</button>`);
   $('#ntok').onclick=async()=>{ const v=$('#ntx').value.trim(); if(!v) return; if(!DEMO&&current) await api(`/api/leads/${current.id}/notas`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota:v})}); haptic([10,20,10]); closeSheet(); toast('Nota guardada'); };
 }
-function abrirEtapa(){ const l=current; openSheet('Cambiar etapa', Object.entries(ETQ).map(([v,e])=>`<button class="lp-cell wide" style="display:flex;align-items:center;gap:10px;text-align:left;width:100%;margin-bottom:8px;color:var(--text)" data-etq="${v}"><span class="m-tag t-${e.cls}">${e.t}</span>${(l.etiqueta||'sin_clasificar')===v?'<span style="margin-left:auto;color:var(--gold)">✓</span>':''}</button>`).join(''));
+// Antes solo se podía cambiar la etapa DENTRO del chat abierto (abrirEtapa, sobre
+// `current`). abrirEtapaPara(l) generaliza lo mismo para poder tocarla también desde
+// el chip de la tarjeta en la lista, sin abrir el chat primero.
+function abrirEtapaPara(l){
+  if(!l) return;
+  openSheet('Cambiar etapa', Object.entries(ETQ).map(([v,e])=>`<button class="lp-cell wide" style="display:flex;align-items:center;gap:10px;text-align:left;width:100%;margin-bottom:8px;color:var(--text)" data-etq="${v}"><span class="m-tag t-${e.cls}">${e.t}</span>${(l.etiqueta||'sin_clasificar')===v?'<span style="margin-left:auto;color:var(--gold)">✓</span>':''}</button>`).join(''));
   $('#sheetBody').querySelectorAll('[data-etq]').forEach(b=>b.onclick=async()=>{ const v=b.dataset.etq; if(!DEMO){ await api(`/api/leads/${l.id}/etiqueta`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({etiqueta:v})}); } l.etiqueta=v; haptic([10,20,10]); closeSheet(); renderList(); if(!DEMO) cargar(); toast('Etapa actualizada'); });
 }
+function abrirEtapa(){ abrirEtapaPara(current); }
 
 async function abrirNuevoLead(){
   const waTemplates = await api('/api/wa-templates') || [];
@@ -4016,10 +4105,16 @@ function abrirCambiarPin(){
    lenguaje llano ("Cuando… si… entonces…") y el cliente la traduce al mismo grafo
    {nodes,edges} que ejecuta el motor. Solo corren sobre SUS leads (el backend lo
    fuerza con vendedor_id) y solo con acciones de su ámbito. */
+// Mismo catálogo de disparadores que el backend permite para reglas de asesor
+// (TRIGGERS_ASESOR en src/index.js) — antes faltaban message:outgoing y
+// conversation:closed, así que esos dos disparadores solo eran alcanzables desde el
+// editor de grafo del admin, nunca desde acá.
 const AUTO_TRIGGERS = [
   ['message:incoming', 'Un cliente me escribe'],
+  ['message:outgoing', 'Yo le respondo a un cliente'],
   ['button:clicked', 'Un cliente pulsa un botón de plantilla'],
   ['conversation:assigned', 'Me asignan un chat nuevo'],
+  ['conversation:closed', 'Cierro una conversación'],
   ['lead:inactive', 'Un cliente lleva horas sin responder'],
   ['lead:caliente', 'Un lead se califica como caliente'],
   ['cita:creada', 'Agendo una cita'],
@@ -4027,6 +4122,7 @@ const AUTO_TRIGGERS = [
   ['lead:tag_changed', 'Cambia la etapa de un lead'],
   ['campana:finalizada', 'Termina una campaña masiva'],
 ];
+// Mismo catálogo que ACCIONES_ASESOR en src/index.js — antes faltaba send_template.
 const AUTO_ACCIONES = [
   ['crear_tarea', 'Crearme una tarea', 'texto', 'Texto de la tarea', 'Dar seguimiento a {{cliente}}'],
   ['nota_interna', 'Dejar una nota interna', 'texto', 'Nota', ''],
@@ -4034,6 +4130,7 @@ const AUTO_ACCIONES = [
   ['tag', 'Ponerle una etiqueta', 'etapa', 'Etiqueta', 'interesado'],
   ['marcar_temperatura', 'Marcar la temperatura', 'temp', 'Temperatura', 'caliente'],
   ['send_message', 'Responderle al cliente', 'texto', 'Mensaje a enviar', ''],
+  ['send_template', 'Enviarle una plantilla de WhatsApp', 'texto', 'Nombre exacto de la plantilla', ''],
   ['crear_cita', 'Agendarme una cita', 'texto', 'Título de la cita', 'Cita con {{cliente}}'],
   ['posponer', 'Posponer el chat', 'horas', 'Posponer (horas)', '24'],
   ['iniciar_cadencia', 'Iniciar la cadencia de seguimiento', null, '', ''],
@@ -4041,6 +4138,12 @@ const AUTO_ACCIONES = [
   ['notificar_asesor', 'Avisarme por notificación', 'texto', 'Aviso', 'Revisa el chat de {{cliente}}'],
 ];
 const AUTO_ETAPAS = [['sin_clasificar','Sin clasificar'],['interesado','Interesado'],['cita','Cita'],['negociacion','Negociación'],['vendido','Vendido'],['perdido','Perdido']];
+// Mismos 14 campos y 5 operadores que el editor de grafo del admin (CAMPOS/OPERADORES
+// en public/os/automatizaciones.html) — antes el editor del asesor solo podía condicionar
+// por "el mensaje contiene X", el resto (etiqueta, proyecto, temperatura, asesor…) era
+// inalcanzable desde el celular.
+const AUTO_CAMPOS = [['body','Texto del mensaje'],['button_payload','Botón pulsado (id)'],['channel','Canal'],['customer_name','Nombre del cliente'],['etiqueta','Etiqueta'],['status','Estado'],['priority','Prioridad'],['zona','Zona del lead'],['proyecto','Proyecto'],['ciudad','Ciudad'],['origen','Origen del lead'],['presupuesto','Presupuesto'],['temperatura','Temperatura'],['asesor','Asesor asignado']];
+const AUTO_OPERADORES = [['contains','contiene'],['equals','es igual a'],['not_equals','es distinto de'],['in','está en (lista)'],['regex','coincide (regex)']];
 
 function _autoOverlay(html){
   const ov = document.createElement('div');
@@ -4078,13 +4181,18 @@ async function _autoRenderLista(){
   box.innerHTML = reglas.map(r => {
     const g = _autoParse(r.graph);
     const trg = (AUTO_TRIGGERS.find(t => t[0] === r.trigger_event) || [null, r.trigger_event])[1];
-    const acc = g.accion ? (AUTO_ACCIONES.find(a => a[0] === g.accion.subtype) || [null, g.accion.subtype])[1] : '—';
+    const accLabels = g.acciones.map(a => (AUTO_ACCIONES.find(x => x[0] === a.tipo) || [null, a.tipo])[1]);
+    const acc = accLabels.length > 2 ? `${accLabels[0]} + ${accLabels.length - 1} más` : (accLabels.join(' + ') || '—');
+    const condTxt = g.condiciones.length === 1
+      ? ` y ${(AUTO_CAMPOS.find(c=>c[0]===g.condiciones[0].field)||[null,g.condiciones[0].field])[1]} ${(AUTO_OPERADORES.find(o=>o[0]===g.condiciones[0].operator)||[null,''])[1]} “${esc(g.condiciones[0].value)}”`
+      : g.condiciones.length > 1 ? ` y ${g.condiciones.length} condiciones` : '';
+    const delayTxt = g.delay ? `, espera ${g.delay.amount} ${({minutes:'min',hours:'h',days:'d'})[g.delay.unit]||g.delay.unit}` : '';
     return `<div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:8px">
         <b style="flex:1;font-size:14px">${esc(r.nombre)}</b>
         <button class="autoTog" data-id="${r.id}" data-a="${r.activo?0:1}" style="border:none;background:${r.activo?'rgba(78,123,70,.18)':'rgba(255,255,255,.06)'};color:${r.activo?'#4E7B46':'var(--text-3)'};border-radius:999px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit">${r.activo?'Activa':'Pausada'}</button>
       </div>
-      <div style="font-size:12px;color:var(--text-2);margin-top:6px;line-height:1.5">Cuando <b>${esc(trg)}</b>${g.condicion?` y el mensaje contiene “${esc(g.condicion)}”`:''} → <b>${esc(acc)}</b></div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:6px;line-height:1.5">Cuando <b>${esc(trg)}</b>${condTxt}${delayTxt} → <b>${esc(acc)}</b></div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="autoEdit" data-id="${r.id}" style="flex:1;border:1px solid var(--border);background:var(--bg-3);color:var(--text-2);border-radius:10px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit">Editar</button>
         <button class="autoDel" data-id="${r.id}" style="border:1px solid rgba(229,72,77,.3);background:rgba(229,72,77,.08);color:var(--red);border-radius:10px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">Borrar</button>
@@ -4114,28 +4222,86 @@ function _autoParse(graphStr){
     const g = typeof graphStr === 'string' ? JSON.parse(graphStr) : graphStr;
     const nodes = (g && g.nodes) || [];
     const cond = nodes.find(n => n.type === 'condition');
-    const c0 = cond && cond.params && (cond.params.conditions||[])[0];
+    const delayNode = nodes.find(n => n.type === 'delay');
     return {
       trigger: nodes.find(n => n.type === 'trigger') || null,
-      condicion: c0 ? c0.value : '',
-      accion: nodes.find(n => n.type === 'action') || null,
-      complejo: nodes.filter(n => n.type === 'action').length > 1,
+      condiciones: cond && cond.params && Array.isArray(cond.params.conditions) ? cond.params.conditions.map(c=>({...c})) : [],
+      delay: delayNode ? { amount:(delayNode.params&&delayNode.params.amount)||30, unit:(delayNode.params&&delayNode.params.unit)||'minutes' } : null,
+      acciones: nodes.filter(n => n.type === 'action').map(n => ({ tipo:n.subtype, params:{...(n.params||{})} })),
     };
-  }catch(e){ return { trigger:null, condicion:'', accion:null, complejo:false }; }
+  }catch(e){ return { trigger:null, condiciones:[], delay:null, acciones:[] }; }
+}
+
+// Nombre del parámetro que espera el motor para cada acción (ver executeAction en
+// src/services/workflow.js).
+function _autoClaveParam(accion){
+  return { crear_tarea:'texto', nota_interna:'texto', set_etapa:'etiqueta', tag:'value',
+    marcar_temperatura:'temperatura', send_message:'text', send_template:'name', crear_cita:'titulo',
+    posponer:'enHoras', notificar_asesor:'message' }[accion] || 'texto';
+}
+
+function _autoParamHTML(def, val){
+  if(!def || !def[2]) return '<div class="auto-hint">Esta acción no necesita más datos.</div>';
+  const [, , tipo, label] = def;
+  if(tipo === 'etapa'){
+    return `<label class="auto-label">${label}</label><select class="aParamInput">${AUTO_ETAPAS.map(([v,l])=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  }
+  if(tipo === 'temp'){
+    return `<label class="auto-label">${label}</label><select class="aParamInput">${[['caliente','Caliente'],['tibio','Tibio'],['frio','Frío']].map(([v,l])=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  }
+  if(tipo === 'horas'){
+    return `<label class="auto-label">${label}</label><input class="aParamInput" type="number" min="1" value="${esc(String(val||24))}">`;
+  }
+  return `<label class="auto-label">${label}</label><textarea class="aParamInput" rows="2" placeholder="Puedes usar {{cliente}} y {{proyecto}}">${esc(String(val||''))}</textarea>`;
+}
+
+// Traduce la regla del formulario al grafo {nodes,edges} del motor. Ahora admite varias
+// condiciones (antes solo "el mensaje contiene X"), un retardo opcional entre el
+// disparador y las acciones, y varias acciones en secuencia (antes como máximo una) —
+// mismo motor, mismo formato de grafo que ya ejecuta src/services/workflow.js.
+function _autoConstruirGrafo({ trigger, horas, condiciones, delay, acciones }){
+  const nodes = [];
+  const pasos = [];
+  if(condiciones && condiciones.length){
+    pasos.push({ id:'n_cond', type:'condition', params:{ logic:'and', conditions:condiciones } });
+  }
+  if(delay && Number(delay.amount) > 0){
+    pasos.push({ id:'n_delay', type:'delay', params:{ amount:Number(delay.amount), unit:delay.unit||'minutes' } });
+  }
+  (acciones||[]).forEach((a,i) => pasos.push({ id:'n_accion_'+i, type:'action', subtype:a.tipo, params:a.params||{} }));
+
+  const tParams = trigger === 'lead:inactive' ? { hours: Number(horas) || 24 } : {};
+  nodes.push({ id:'n_trigger', type:'trigger', subtype:trigger, params:tParams, x:60, y:60 });
+
+  const edges = [];
+  let previo = 'n_trigger';
+  let y = 180;
+  pasos.forEach((paso, i) => {
+    nodes.push({ ...paso, x:60, y });
+    // Solo la rama VERDADERA de una condición continúa — si no se cumple, la regla no
+    // hace nada (no hay "si no" en este editor simplificado).
+    const previoEsCondicion = i > 0 && pasos[i-1].type === 'condition';
+    edges.push({ from:previo, to:paso.id, ...(previoEsCondicion?{branch:'true'}:{}) });
+    previo = paso.id;
+    y += 120;
+  });
+  return { nodes, edges };
 }
 
 function abrirEditorAutomatizacion(regla){
-  const g = regla ? _autoParse(regla.graph) : { trigger:null, condicion:'', accion:null, complejo:false };
-  const triggerActual = regla ? regla.trigger_event : 'button:clicked';
-  const accionActual = g.accion ? g.accion.subtype : 'crear_tarea';
-  const paramActual = g.accion ? (g.accion.params||{}) : {};
+  const g = regla ? _autoParse(regla.graph) : { trigger:null, condiciones:[], delay:null, acciones:[] };
+  const triggerActual = regla ? regla.trigger_event : 'message:incoming';
+  let condiciones = g.condiciones.map(c=>({...c}));
+  let delayActivo = !!g.delay;
+  let delayAmount = g.delay ? g.delay.amount : 30;
+  let delayUnit = g.delay ? g.delay.unit : 'minutes';
+  let acciones = g.acciones.length ? g.acciones.map(a=>({...a, params:{...a.params}})) : [{ tipo:'crear_tarea', params:{} }];
 
   _autoCerrar();
   _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:14px">
       <button id="autoBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
       <div style="font-weight:600;font-size:15px">${regla?'Editar':'Nueva'} automatización</div>
     </div>
-    ${g.complejo?`<div style="background:rgba(200,164,90,.1);border:1px solid rgba(200,164,90,.3);border-radius:12px;padding:10px;font-size:11.5px;color:var(--text-2);margin-bottom:12px">Esta regla tiene varias acciones. Si la guardas desde aquí, quedará solo con la primera.</div>`:''}
     <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Nombre</label>
     <input id="autoNombre" value="${esc(regla?regla.nombre:'')}" placeholder="Ej: Avisarme cuando confirmen interés" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">
 
@@ -4145,21 +4311,22 @@ function abrirEditorAutomatizacion(regla){
     </select>
     <div id="autoTriggerExtra"></div>
 
-    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Y si el mensaje contiene… (opcional)</label>
-    <input id="autoCond" value="${esc(g.condicion||'')}" placeholder="Ej: precio, visita, financiación" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Condiciones (opcional)</label>
+    <div id="condList" style="margin-top:6px"></div>
+    <button type="button" class="auto-add-btn" id="btnAddCond">+ Agregar condición</button>
+
+    <label class="auto-toggle-row"><input type="checkbox" id="delayToggle"> Esperar antes de actuar</label>
+    <div id="delayBox"></div>
 
     <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">Entonces…</label>
-    <select id="autoAccion" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0 10px">
-      ${AUTO_ACCIONES.map(([v,l]) => `<option value="${v}" ${accionActual===v?'selected':''}>${l}</option>`).join('')}
-    </select>
-    <div id="autoParam"></div>
+    <div id="accList" style="margin-top:6px"></div>
+    <button type="button" class="auto-add-btn" id="btnAddAcc">+ Agregar otra acción</button>
 
-    <button id="autoGuardar" style="width:100%;height:48px;margin-top:18px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Guardar</button>`);
+    <button id="autoGuardar" style="width:100%;height:48px;margin-top:8px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Guardar</button>`);
 
   document.getElementById('autoBack').onclick = () => { _autoCerrar(); abrirMisAutomatizaciones(); };
 
   const selTrigger = document.getElementById('autoTrigger');
-  const selAccion = document.getElementById('autoAccion');
   function pintarExtraTrigger(){
     const box = document.getElementById('autoTriggerExtra');
     const horas = (g.trigger && g.trigger.params && g.trigger.params.hours) || 24;
@@ -4168,45 +4335,94 @@ function abrirEditorAutomatizacion(regla){
          <input id="autoHoras" type="number" min="1" value="${horas}" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0 14px">`
       : '';
   }
-  function pintarParam(){
-    const def = AUTO_ACCIONES.find(a => a[0] === selAccion.value);
-    const box = document.getElementById('autoParam');
-    if(!def || !def[2]){ box.innerHTML = '<div style="font-size:11.5px;color:var(--text-3);padding-bottom:8px">Esta acción no necesita más datos.</div>'; return; }
-    const [, , tipo, label, ejemplo] = def;
-    const clave = _autoClaveParam(selAccion.value);
-    const val = paramActual[clave] != null ? paramActual[clave] : ejemplo;
-    if(tipo === 'etapa'){
-      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
-        <select id="autoParamInput" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0">${AUTO_ETAPAS.map(([v,l])=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`).join('')}</select>`;
-    } else if(tipo === 'temp'){
-      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
-        <select id="autoParamInput" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 10px;font-size:14px;font-family:inherit;margin:6px 0">${[['caliente','Caliente'],['tibio','Tibio'],['frio','Frío']].map(([v,l])=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`).join('')}</select>`;
-    } else if(tipo === 'horas'){
-      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
-        <input id="autoParamInput" type="number" min="1" value="${esc(String(val||24))}" style="width:100%;height:44px;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 12px;font-size:14px;font-family:inherit;margin:6px 0">`;
-    } else {
-      box.innerHTML = `<label style="font-size:11px;color:var(--text-3)">${label}</label>
-        <textarea id="autoParamInput" rows="3" placeholder="Puedes usar {{cliente}} y {{proyecto}}" style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:10px 12px;font-size:14px;font-family:inherit;margin:6px 0;resize:vertical">${esc(String(val||''))}</textarea>`;
+  selTrigger.onchange = pintarExtraTrigger;
+  pintarExtraTrigger();
+
+  // ── Condiciones (0..N) ──
+  function renderCondiciones(){
+    const box = document.getElementById('condList');
+    if(!condiciones.length){ box.innerHTML = '<div class="auto-hint">Sin condiciones — se ejecuta siempre que ocurra el disparador.</div>'; return; }
+    box.innerHTML = condiciones.map((c,i) => `
+      <div class="auto-row" data-i="${i}">
+        <select class="cCampo">${AUTO_CAMPOS.map(([v,l])=>`<option value="${v}" ${c.field===v?'selected':''}>${l}</option>`).join('')}</select>
+        <select class="cOp">${AUTO_OPERADORES.map(([v,l])=>`<option value="${v}" ${c.operator===v?'selected':''}>${l}</option>`).join('')}</select>
+        <input class="cVal" value="${esc(c.value||'')}" placeholder="valor">
+        <button type="button" class="auto-del-btn" data-del>✕</button>
+      </div>`).join('');
+    box.querySelectorAll('.auto-row').forEach(row => {
+      const i = Number(row.dataset.i);
+      row.querySelector('.cCampo').onchange = e => { condiciones[i].field = e.target.value; };
+      row.querySelector('.cOp').onchange = e => { condiciones[i].operator = e.target.value; };
+      row.querySelector('.cVal').oninput = e => { condiciones[i].value = e.target.value; };
+      row.querySelector('[data-del]').onclick = () => { condiciones.splice(i,1); renderCondiciones(); };
+    });
+  }
+  document.getElementById('btnAddCond').onclick = () => { condiciones.push({ field:'body', operator:'contains', value:'' }); renderCondiciones(); };
+  renderCondiciones();
+
+  // ── Retardo opcional ──
+  function renderDelay(){
+    document.getElementById('delayBox').innerHTML = delayActivo ? `
+      <div class="auto-row">
+        <input id="delayAmount" type="number" min="1" value="${delayAmount}">
+        <select id="delayUnit">
+          <option value="minutes" ${delayUnit==='minutes'?'selected':''}>minutos</option>
+          <option value="hours" ${delayUnit==='hours'?'selected':''}>horas</option>
+          <option value="days" ${delayUnit==='days'?'selected':''}>días</option>
+        </select>
+      </div>` : '';
+    if(delayActivo){
+      document.getElementById('delayAmount').oninput = e => { delayAmount = e.target.value; };
+      document.getElementById('delayUnit').onchange = e => { delayUnit = e.target.value; };
     }
   }
-  selTrigger.onchange = pintarExtraTrigger;
-  selAccion.onchange = pintarParam;
-  pintarExtraTrigger(); pintarParam();
+  const delayToggle = document.getElementById('delayToggle');
+  delayToggle.checked = delayActivo;
+  delayToggle.onchange = e => { delayActivo = e.target.checked; renderDelay(); };
+  renderDelay();
+
+  // ── Acciones (1..N) ──
+  function renderAcciones(){
+    const box = document.getElementById('accList');
+    box.innerHTML = acciones.map((a,i) => {
+      const def = AUTO_ACCIONES.find(x => x[0] === a.tipo) || AUTO_ACCIONES[0];
+      const clave = _autoClaveParam(a.tipo);
+      const val = a.params[clave] != null ? a.params[clave] : (def[4]||'');
+      return `<div class="auto-row--stack" data-i="${i}">
+        <div class="auto-row__head">
+          <select class="aTipo">${AUTO_ACCIONES.map(([v,l])=>`<option value="${v}" ${a.tipo===v?'selected':''}>${l}</option>`).join('')}</select>
+          ${acciones.length>1?'<button type="button" class="auto-del-btn" data-del>✕</button>':''}
+        </div>
+        <div class="aParamBox">${_autoParamHTML(def, val)}</div>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('.auto-row--stack').forEach(row => {
+      const i = Number(row.dataset.i);
+      row.querySelector('.aTipo').onchange = e => { acciones[i] = { tipo:e.target.value, params:{} }; renderAcciones(); };
+      const pInput = row.querySelector('.aParamInput');
+      if(pInput) pInput.oninput = pInput.onchange = e => { acciones[i].params[_autoClaveParam(acciones[i].tipo)] = e.target.value; };
+      const del = row.querySelector('[data-del]');
+      if(del) del.onclick = () => { acciones.splice(i,1); renderAcciones(); };
+    });
+  }
+  document.getElementById('btnAddAcc').onclick = () => { acciones.push({ tipo:'crear_tarea', params:{} }); renderAcciones(); };
+  renderAcciones();
 
   document.getElementById('autoGuardar').onclick = async () => {
     const nombre = document.getElementById('autoNombre').value.trim();
     if(!nombre){ toast('Ponle un nombre a la regla','err'); return; }
-    const inp = document.getElementById('autoParamInput');
+    if(!acciones.length){ toast('Agrega al menos una acción','err'); return; }
     const horasInp = document.getElementById('autoHoras');
+    const condicionesLimpias = condiciones.filter(c => c.value !== '' && c.value != null);
     const cuerpo = {
       nombre,
       trigger_event: selTrigger.value,
       graph: _autoConstruirGrafo({
         trigger: selTrigger.value,
         horas: horasInp ? Number(horasInp.value) : null,
-        condicion: document.getElementById('autoCond').value.trim(),
-        accion: selAccion.value,
-        valor: inp ? inp.value : null,
+        condiciones: condicionesLimpias,
+        delay: delayActivo ? { amount:delayAmount, unit:delayUnit } : null,
+        acciones,
       }),
     };
     const r = regla
@@ -4215,36 +4431,6 @@ function abrirEditorAutomatizacion(regla){
     if(r && !r._error){ toast('Automatización guardada'); _autoCerrar(); abrirMisAutomatizaciones(); }
     else toast((r && (r.detalle || r.error)) || 'No se pudo guardar','err');
   };
-}
-
-// Nombre del parámetro que espera el motor para cada acción (ver executeAction).
-function _autoClaveParam(accion){
-  return { crear_tarea:'texto', nota_interna:'texto', set_etapa:'etiqueta', tag:'value',
-    marcar_temperatura:'temperatura', send_message:'text', crear_cita:'titulo',
-    posponer:'enHoras', notificar_asesor:'message' }[accion] || 'texto';
-}
-
-// Traduce la regla del formulario al grafo {nodes,edges} del motor.
-function _autoConstruirGrafo({ trigger, horas, condicion, accion, valor }){
-  const nodes = [];
-  const edges = [];
-  const tParams = trigger === 'lead:inactive' ? { hours: Number(horas) || 24 } : {};
-  nodes.push({ id:'n_trigger', type:'trigger', subtype:trigger, params:tParams, x:60, y:60 });
-  let previo = 'n_trigger';
-  if(condicion){
-    nodes.push({ id:'n_cond', type:'condition', params:{ logic:'and', conditions:[{ field:'body', operator:'contains', value:condicion }] }, x:60, y:180 });
-    edges.push({ from:previo, to:'n_cond' });
-    previo = 'n_cond';
-  }
-  const clave = _autoClaveParam(accion);
-  const params = {};
-  if(valor !== null && valor !== undefined && String(valor) !== ''){
-    params[clave] = clave === 'enHoras' ? Number(valor) : valor;
-  }
-  nodes.push({ id:'n_accion', type:'action', subtype:accion, params, x:60, y:300 });
-  // Desde una condición, la acción cuelga de la rama verdadera.
-  edges.push(previo === 'n_cond' ? { from:'n_cond', to:'n_accion', branch:'true' } : { from:previo, to:'n_accion' });
-  return { nodes, edges };
 }
 
 /* ════════ Mis plantillas de WhatsApp (propuestas del asesor) ════════
@@ -4435,6 +4621,98 @@ function cargarVersionApp(){
   });
 }
 
+/* ════════ Onboarding — antes no existía nada que le enseñara la app a un asesor
+   nuevo (crítico para asesores de otros grupos que van a entrar sin que nadie los
+   capacite). Se muestra solo una vez por dispositivo; desde Perfil → Ayuda se puede
+   volver a ver cuando quiera. ════════ */
+function mostrarOnboardingSiCorresponde(){
+  if(localStorage.getItem('sp_onboarding_visto')) return;
+  abrirOnboarding();
+}
+function abrirOnboarding(){
+  let paso = 0;
+  const pasos = [
+    { icon:'👋', titulo:`Bienvenido${me&&me.nombre?', '+me.nombre.split(' ')[0]:''}`, texto:'Este panel es tu herramienta de trabajo: acá hablas con tus clientes, agendas visitas y cierras ventas. Te mostramos rápido cómo se usa — toma menos de un minuto.' },
+    { icon:'💬', titulo:'Chats', texto:'Acá llegan los clientes que te asignan. Mantén presionada una tarjeta para llamar, archivar, cambiar de etapa o posponer. Dentro del chat, desliza un mensaje para responderlo y mantenlo presionado para más opciones (copiar, destacar, reenviar).' },
+    { icon:'🗺️', titulo:'Mapa y Tareas', texto:'El Mapa te ubica a ti y a tus clientes por zona, y guarda tu recorrido del día. Tareas son tus recordatorios personales — te avisan aunque tengas la app cerrada.' },
+    { icon:'⚙️', titulo:'Perfil', texto:'Ahí ves tus métricas y tus comisiones, y puedes crear tus propias respuestas rápidas y automatizaciones. Si alguna vez te pierdes, vuelve a esta guía tocando "Cómo usar la app" en Ayuda.' },
+  ];
+  function render(){
+    const p = pasos[paso];
+    const esUltimo = paso === pasos.length-1;
+    let ov = document.getElementById('onbOverlay');
+    if(!ov){ ov = document.createElement('div'); ov.id = 'onbOverlay'; document.body.appendChild(ov); }
+    ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:7000;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:32px 24px;text-align:center';
+    ov.innerHTML = `
+      <div style="font-size:52px;margin-bottom:18px">${p.icon}</div>
+      <div style="font-size:19px;font-weight:700;margin-bottom:10px">${esc(p.titulo)}</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.6;max-width:320px;margin-bottom:28px">${esc(p.texto)}</div>
+      <div style="display:flex;gap:6px;margin-bottom:24px">${pasos.map((_,i)=>`<div style="width:${i===paso?18:6}px;height:6px;border-radius:3px;background:${i===paso?'var(--gold)':'var(--border)'};transition:all .2s"></div>`).join('')}</div>
+      <button id="onbNext" style="width:100%;max-width:280px;height:48px;border-radius:14px;border:none;background:var(--gold);color:#0A0A0A;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">${esUltimo?'Empezar':'Siguiente'}</button>
+      ${!esUltimo?'<button id="onbSaltar" style="background:none;border:none;color:var(--text-3);font-size:13px;cursor:pointer;font-family:inherit">Saltar</button>':''}`;
+    document.getElementById('onbNext').onclick = () => { haptic(8); if(esUltimo){ cerrar(); } else { paso++; render(); } };
+    const saltar = document.getElementById('onbSaltar');
+    if(saltar) saltar.onclick = cerrar;
+  }
+  function cerrar(){
+    localStorage.setItem('sp_onboarding_visto','1');
+    const ov = document.getElementById('onbOverlay');
+    if(ov) ov.remove();
+  }
+  render();
+}
+
+/* ════════ Mis comisiones (solo lectura — el alta/edición es del admin en /os/finanzas) ════════ */
+const COMISION_COLOR = { pendiente: 'var(--gold)', pagada: 'var(--green)', cancelada: 'var(--red)' };
+const COMISION_LABEL = { pendiente: 'Pendiente', pagada: 'Pagada', cancelada: 'Cancelada' };
+async function abrirMisComisiones(){
+  const ov = _autoOverlay(`<div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:12px">
+      <button id="finBack" style="background:none;border:none;color:var(--gold);font-size:24px;padding:0 4px;cursor:pointer;line-height:1">←</button>
+      <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px">Mis comisiones</div>
+      <div style="font-size:11px;color:var(--text-3)">Las registra el admin al cerrar una venta</div></div>
+    </div>
+    <div id="finResumen" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px"></div>
+    <div id="finLista">${skeletonCards(2)}</div>`);
+  document.getElementById('finBack').onclick = _autoCerrar;
+  await _finRenderLista();
+}
+async function _finRenderLista(){
+  const box = document.getElementById('finLista');
+  const resBox = document.getElementById('finResumen');
+  if(!box) return;
+  const lista = await api('/api/mis-comisiones') || [];
+  if(resBox){
+    const pendiente = lista.filter(c=>c.estado==='pendiente').reduce((s,c)=>s+Number(c.monto_comision||0),0);
+    const pagada = lista.filter(c=>c.estado==='pagada').reduce((s,c)=>s+Number(c.monto_comision||0),0);
+    resBox.innerHTML = `
+      <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:var(--gold)">${money(pendiente)}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px">Por cobrar</div>
+      </div>
+      <div style="background:var(--bg-2);border-radius:14px;padding:14px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:var(--green)">${money(pagada)}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px">Ya pagado</div>
+      </div>`;
+  }
+  if(!lista.length){
+    box.innerHTML = `<div style="text-align:center;color:var(--text-3);padding:34px 16px;font-size:13px;line-height:1.6">
+      Todavía no tienes comisiones registradas.<br>Aparecen aquí cuando el admin registra una venta tuya en Finanzas.</div>`;
+    return;
+  }
+  box.innerHTML = lista.map(c => `
+    <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <b style="flex:1;font-size:14px">${esc(c.lead_nombre||'Cliente')}</b>
+        <span style="border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;background:${COMISION_COLOR[c.estado]||'var(--text-3)'}22;color:${COMISION_COLOR[c.estado]||'var(--text-3)'}">${COMISION_LABEL[c.estado]||c.estado}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:6px">Venta ${money(c.monto_venta)} · ${c.porcentaje}%</div>
+      <div style="display:flex;align-items:baseline;gap:6px;margin-top:6px">
+        <span style="font-size:19px;font-weight:700;color:var(--gold)">${money(c.monto_comision)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${c.fecha_calculo||''}</span>
+      </div>
+    </div>`).join('');
+}
+
 /* ════════ Bottom Nav / tabs ════════
    Cinco tabs fijos + "Más". Con el mapa serían siete (ocho para el jefe), y a 45 px por
    slot en un celular de 360 px las etiquetas quedan ilegibles. Los tres menos usados
@@ -4469,10 +4747,14 @@ function abrirMasTabs(){
   $('#sheetBody').querySelectorAll('[data-ir]').forEach(b=>b.onclick=()=>{ closeSheet(); irTab(b.dataset.ir); });
 }
 
+// Tabs donde el FAB tiene una acción de "crear" con sentido — en el resto (mapa, perfil,
+// copiloto, supervisión) no hay un "nuevo X" evidente, así que se sigue ocultando ahí.
+const FAB_TABS = ['chats','tareas','calendario'];
 async function irTab(t){ tab=t; haptic(8);
   renderNav();  // repinta para que el botón "Más" refleje si el tab activo es secundario
-  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='Leons Group'; renderList(); $('#fab').classList.remove('hidden'); mostrarLista(true); }
-  else { $('#fab').classList.add('hidden'); mostrarLista(false);
+  $('#fab').classList.toggle('hidden', !FAB_TABS.includes(t));
+  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='Leons Group'; renderList(); mostrarLista(true); }
+  else { mostrarLista(false);
     const entrada = getTABS().find(x=>x[0]===t);
     if(!entrada) return;               // tab desconocido: no reventar con undefined
     const label = entrada[1];
@@ -4546,12 +4828,29 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         <div class="sec">
           <div class="sec-label">Mi trabajo</div>
           <div class="sec-body">
+            <div class="sec-row" id="rowMisComisiones"><label>💰 Mis comisiones</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
             <div class="sec-row" id="rowAutomatizaciones"><label>⚙️ Mis automatizaciones</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
             <div class="sec-row" id="rowMisPlantillas"><label>📋 Mis plantillas de WhatsApp</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
             <div class="sec-row" id="rowMiMapa"><label>🗺️ Mi mapa y recorrido</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Abrir</button></div>
 
             <div class="sec-row" id="rowUbicacion"><label>📍 Compartir ubicación</label><span id="ubicEstado" style="font-size:12.5px;color:var(--text-3)">—</span></div>
             <div class="sec-row" style="font-size:11px;color:var(--text-3);padding-top:0">Solo mientras tienes la app abierta. La ven la administración y los jefes, nunca los clientes.</div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Ayuda</div>
+          <div class="sec-body">
+            <div class="sec-row" id="rowOnboarding"><label>❓ Cómo usar la app</label><button class="sec-btn" style="width:auto;color:var(--gold);flex:none">Ver guía</button></div>
+            <div class="sec-row" style="cursor:default;flex-direction:column;align-items:flex-start;gap:6px">
+              <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em">Atajos rápidos</label>
+              <div style="font-size:12.5px;color:var(--text-2);line-height:1.8">
+                📌 Mantén presionada una tarjeta de chat → llamar, archivar, cambiar etapa, posponer<br>
+                👉 Desliza un mensaje hacia la derecha → responderlo<br>
+                ✋ Mantén presionado un mensaje → copiar, destacar, reenviar, eliminar<br>
+                🎙️ Mantén presionado el micrófono → grabar nota de voz
+              </div>
+            </div>
           </div>
         </div>
 
@@ -4622,11 +4921,11 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
           <div class="sec-label">Fondo de chat</div>
           <div class="sec-body">
             <div style="display:flex;gap:8px;padding:6px 16px 10px">
-              <div class="bg-opt${!localStorage.getItem('sp_chat_bg')||localStorage.getItem('sp_chat_bg')==='none'?' active':''}" data-bg="none">
+              <div class="bg-opt${_chatBg==='none'?' active':''}" data-bg="none">
                 <div class="bg-preview bg-preview--none"></div>
                 <span>Ninguno</span>
               </div>
-              <div class="bg-opt${localStorage.getItem('sp_chat_bg')==='leones'?' active':''}" data-bg="leones">
+              <div class="bg-opt${_chatBg==='leones'?' active':''}" data-bg="leones">
                 <div class="bg-preview bg-preview--leones"></div>
                 <span>Leones</span>
               </div>
@@ -4692,11 +4991,11 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
         const bg=this.dataset.bg;
         document.querySelectorAll('.bg-opt').forEach(x=>x.classList.remove('active'));
         this.classList.add('active');
-        if(bg==='none') localStorage.removeItem('sp_chat_bg');
-        else localStorage.setItem('sp_chat_bg',bg);
+        _chatBg=bg;
+        localStorage.setItem('sp_chat_bg',bg);
+        aplicarFondoChat();
         haptic(6);
-        const cMsgs=document.getElementById('cMsgs');
-        if(cMsgs) cMsgs.classList.toggle('c-msgs--patron',bg==='leones');
+        api('/api/mi-chat-bg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor:bg})});
       }));
       // Apariencia: Sistema/Claro/Oscuro — motor real en /os/theme.js
       const marcarThemeActivo=()=>{
@@ -4768,6 +5067,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       });
       const edBtn = document.getElementById('btnEditarPerfil');
       if (edBtn) edBtn.addEventListener('click', () => abrirEditarPerfil());
+      const onbRow = document.getElementById('rowOnboarding');
+      if (onbRow) onbRow.addEventListener('click', () => { haptic(8); abrirOnboarding(); });
       // Cuenta y seguridad
       const pinRow = document.getElementById('rowCambiarPin');
       if (pinRow) pinRow.addEventListener('click', () => { haptic(8); abrirCambiarPin(); });
@@ -4775,6 +5076,8 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       if (sesRow) sesRow.addEventListener('click', () => { haptic(8); abrirSesiones(); });
       const expRow = document.getElementById('rowExportar');
       if (expRow) expRow.addEventListener('click', () => { haptic(8); exportarPerfil(); });
+      const finRow = document.getElementById('rowMisComisiones');
+      if (finRow) finRow.addEventListener('click', () => { haptic(8); abrirMisComisiones(); });
       const autoRow = document.getElementById('rowAutomatizaciones');
       if (autoRow) autoRow.addEventListener('click', () => { haptic(8); abrirMisAutomatizaciones(); });
       const tplRow = document.getElementById('rowMisPlantillas');
@@ -4969,11 +5272,16 @@ function wire(){
     } else { _msgResults=[]; }
   });
   $('#filters').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filtro=b.dataset.f; haptic(8); renderList(); });
-  $('#fab').onclick=()=>abrirNuevoLead();
+  $('#fab').onclick=()=>{
+    if(tab==='tareas'){ const inp=document.getElementById('taskTxt'); if(inp){ inp.scrollIntoView({block:'center',behavior:'smooth'}); inp.focus(); } else abrirNuevoLead(); }
+    else if(tab==='calendario'){ if(typeof abrirModalCita==='function') abrirModalCita(); else abrirNuevoLead(); }
+    else abrirNuevoLead();
+  };
   $('#btnNotif').onclick=()=>abrirNotificaciones();
   const meAvatarEl = document.getElementById('meAvatar'); if (meAvatarEl) meAvatarEl.onclick = () => { const pn = document.querySelector('[data-tab="perfil"]'); if (pn) pn.click(); };
   $('#btnPrioridad').onclick=()=>{ ordenPrioridad=!ordenPrioridad; $('#btnPrioridad').classList.toggle('active',ordenPrioridad); haptic(8); toast(ordenPrioridad?'Ordenando por prioridad':'Orden por más reciente'); renderList(); };
   $('#sheetX').onclick=closeSheet; $('#sheetBg').onclick=closeSheet;
+  wireSheetDrag();
   // Logout desde tab Perfil (long-press)
   const perfNav=$('[data-tab="perfil"]');
   if(perfNav){ let pt; perfNav.addEventListener('touchstart',()=>{ pt=setTimeout(()=>{ pt=null; $('#btnLogout')?.click(); },600); },{passive:true}); perfNav.addEventListener('touchend',()=>{ if(pt){ clearTimeout(pt); pt=null; } },{passive:true}); perfNav.addEventListener('touchmove',()=>{ if(pt){ clearTimeout(pt); pt=null; } },{passive:true}); }
@@ -5037,15 +5345,14 @@ async function cargarMisTpl(){
   if(!data||!data.length){
     box.innerHTML='<div class="sec-row"><button class="sec-btn" id="btnAddTpl" style="color:var(--gold)">+ Agregar respuesta</button></div>';
   } else {
-    box.innerHTML=data.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border-soft)"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--gold)">${esc(t.titulo)}</div><div style="font-size:12px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.cuerpo)}</div></div><button class="tpl-del" data-id="${t.id}" style="width:28px;height:28px;border-radius:50%;background:none;border:none;color:var(--red);display:grid;place-items:center">${I(SVG.x,14)}</button></div>`).join('')+
+    box.innerHTML=data.map(t=>`<div class="tpl-edit" data-id="${t.id}" style="display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border-soft);cursor:pointer"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--gold)">${esc(t.titulo)}</div><div style="font-size:12px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.cuerpo)}</div></div><button class="tpl-del" data-id="${t.id}" style="width:28px;height:28px;border-radius:50%;background:none;border:none;color:var(--red);display:grid;place-items:center">${I(SVG.x,14)}</button></div>`).join('')+
       '<div style="padding:8px 16px"><button class="sec-btn" id="btnAddTpl" style="color:var(--gold)">+ Agregar respuesta</button></div>';
   }
-  const addBtn=document.getElementById('btnAddTpl');
-  if(addBtn) addBtn.onclick=()=>{
-    openSheet('Nueva respuesta', `
+  function abrirFormTpl(existente){
+    openSheet(existente?'Editar respuesta':'Nueva respuesta', `
       <div style="display:flex;flex-direction:column;gap:10px">
-        <input id="ntTitulo" placeholder="Título (Ej: Precio lote)" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
-        <textarea id="ntCuerpo" placeholder="Mensaje de respuesta..." style="width:100%;min-height:80px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none;resize:none"></textarea>
+        <input id="ntTitulo" placeholder="Título (Ej: Precio lote)" value="${existente?esc(existente.titulo):''}" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none">
+        <textarea id="ntCuerpo" placeholder="Mensaje de respuesta..." style="width:100%;min-height:80px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);font-size:14px;outline:none;resize:none">${existente?esc(existente.cuerpo):''}</textarea>
         <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
           <span style="font-size:11px;color:var(--text-3)">Insertar:</span>
           ${['{{nombre}}','{{asesor}}','{{proyecto}}'].map(v=>`<button type="button" class="nt-var" data-var="${v}" style="font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--gold);background:var(--gold-soft,rgba(200,164,90,.12));color:var(--gold)">${v}</button>`).join('')}
@@ -5062,11 +5369,20 @@ async function cargarMisTpl(){
     $('#ntSave').onclick=async()=>{
       const titulo=$('#ntTitulo').value.trim(); const cuerpo=$('#ntCuerpo').value.trim();
       if(!titulo||!cuerpo){ toast('Completa título y mensaje'); return; }
-      const r=await api('/api/mis-templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,cuerpo})});
-      if(r){ toast('Respuesta guardada'); closeSheet(); cargarMisTpl(); } else toast('Error');
+      const url=existente?`/api/mis-templates/${existente.id}`:'/api/mis-templates';
+      const r=await api(url,{method:existente?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,cuerpo})});
+      if(r&&r.ok){ toast(existente?'Respuesta actualizada':'Respuesta guardada'); closeSheet(); cargarMisTpl(); } else toast('Error');
     };
-  };
-  box.querySelectorAll('.tpl-del').forEach(b=>b.onclick=async()=>{
+  }
+  const addBtn=document.getElementById('btnAddTpl');
+  if(addBtn) addBtn.onclick=()=>abrirFormTpl(null);
+  box.querySelectorAll('.tpl-edit').forEach(row=>row.onclick=(ev)=>{
+    if(ev.target.closest('.tpl-del')) return;
+    const existente=data.find(t=>String(t.id)===row.dataset.id);
+    if(existente) abrirFormTpl(existente);
+  });
+  box.querySelectorAll('.tpl-del').forEach(b=>b.onclick=async(ev)=>{
+    ev.stopPropagation();
     const id=b.dataset.id; const r=await api(`/api/mis-templates/${id}`,{method:'DELETE'});
     if(r){ toast('Eliminada'); cargarMisTpl(); } else toast('Error');
   });
@@ -5613,9 +5929,9 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream'); _es=es;
     if(_eqAbierto&&(canalGeneral||directo)){ showEqTyping(t.from_nombre); setTimeout(hideEqTyping,5000); }
   }catch(e){} });
   // Reacciones del equipo en vivo
-  es.addEventListener('equipo_reaction',ev=>{ try{ const r=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===r.message_id); if(idx>=0){ teamMsgs[idx].reactions=r.reactions; if(_eqAbierto) renderEquipo(); } }catch(e){} });
+  es.addEventListener('equipo_reaction',ev=>{ try{ const r=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===r.messageId); if(idx>=0){ teamMsgs[idx].reactions=r.reactions; if(_eqAbierto) renderEquipo(); } }catch(e){} });
   // Mensaje del equipo eliminado en vivo
-  es.addEventListener('equipo_message_deleted',ev=>{ try{ const d=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===d.message_id); if(idx>=0){ teamMsgs[idx].deleted=1; if(_eqAbierto) renderEquipo(); } }catch(e){} });
+  es.addEventListener('equipo_message_deleted',ev=>{ try{ const d=JSON.parse(ev.data); const idx=teamMsgs.findIndex(x=>x.id===d.messageId); if(idx>=0){ teamMsgs[idx].deleted=1; if(_eqAbierto) renderEquipo(); } }catch(e){} });
   // Mensaje fijado/desfijado en vivo
   es.addEventListener('equipo_message_pinned',ev=>{ try{ if(_eqAbierto) eqLoadPinned(); }catch(e){} });
   // ✓✓ Leído en tiempo real — el receptor abrió el DM y el emisor ve los doble checks

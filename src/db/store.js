@@ -498,6 +498,9 @@ function createSchema() {
   // error) al provisionar un negocio nuevo desde cero por primera vez.
   ensureColumn('campanas_sp_projects', 'proyecto_id', 'INTEGER'); // vínculo con proyectos reales del CRM (F2)
   ensureColumn('conversations', 'last_customer_message_at', 'DATETIME');
+  ensureColumn('comisiones', 'notas', "TEXT DEFAULT ''");
+  ensureColumn('comisiones', 'updated_at', 'DATETIME');
+  ensureColumn('vendedores', 'chat_bg', "TEXT DEFAULT 'leones'"); // fondo de chat — leones por defecto, ver /api/mi-chat-bg
 
   // Automatizaciones — editor visual (nodos + aristas). trigger_event/conditions/
   // actions (el formato lineal viejo) se conservan intactos; `graph` es la fuente de
@@ -1055,9 +1058,14 @@ function getAllTeamMessagesForAdmin(limit) {
 
 // Admin: todas las conversaciones del chat interno (general + DMs) con metadata
 function getAdminTeamConversations() {
+  // msg_count/count son "no leídos para el admin (vendedor 0)", no el total histórico —
+  // antes contaban TODOS los mensajes y el badge parecía tener cientos de pendientes
+  // permanentemente.
+  const lastReadGeneral = getTeamGeneralLastRead(0);
   const generalLast = one(
-    `SELECT tm.*, (SELECT COUNT(*) FROM team_messages WHERE to_vendedor_id IS NULL) AS msg_count
-     FROM team_messages tm WHERE tm.to_vendedor_id IS NULL ORDER BY tm.id DESC LIMIT 1`
+    `SELECT tm.*, (SELECT COUNT(*) FROM team_messages WHERE to_vendedor_id IS NULL AND id > ?) AS msg_count
+     FROM team_messages tm WHERE tm.to_vendedor_id IS NULL ORDER BY tm.id DESC LIMIT 1`,
+    [lastReadGeneral]
   );
   const dms = all(
     `SELECT tm.*,
@@ -1085,10 +1093,10 @@ function getAdminTeamConversations() {
         last_message: m.body,
         last_at: m.created_at,
         last_from: m.from_nombre_full,
-        count: 0
+        count: 0 // no leídos PARA EL ADMIN — queda en 0 en un DM asesor↔asesor (el admin no es destinatario ahí)
       };
     }
-    dmMap[key].count++;
+    if (Number(m.to_vendedor_id) === 0 && !m.read_at) dmMap[key].count++;
   });
   return {
     general: generalLast ? {
@@ -1806,8 +1814,16 @@ function getTemplates() {
   return all('SELECT * FROM templates ORDER BY titulo');
 }
 
+function getTemplateById(id) {
+  return one('SELECT * FROM templates WHERE id = ?', [id]);
+}
+
 function addTemplate(titulo, cuerpo) {
   run('INSERT INTO templates (titulo, cuerpo) VALUES (?, ?)', [titulo, cuerpo]);
+}
+
+function updateTemplate(id, titulo, cuerpo) {
+  run('UPDATE templates SET titulo = ?, cuerpo = ? WHERE id = ?', [titulo, cuerpo, id]);
 }
 
 function deleteTemplate(id) {
@@ -1818,11 +1834,20 @@ function deleteTemplate(id) {
 function getVendedorTemplates(vendedorId) {
   return all('SELECT * FROM vendedor_templates WHERE vendedor_id = ? ORDER BY titulo', [vendedorId]);
 }
+function getVendedorTemplateById(id) {
+  return one('SELECT * FROM vendedor_templates WHERE id = ?', [id]);
+}
 function addVendedorTemplate(vendedorId, titulo, cuerpo) {
   run('INSERT INTO vendedor_templates (vendedor_id, titulo, cuerpo) VALUES (?, ?, ?)', [vendedorId, titulo, cuerpo]);
 }
-function deleteVendedorTemplate(id) {
-  run('DELETE FROM vendedor_templates WHERE id = ?', [id]);
+function updateVendedorTemplate(id, titulo, cuerpo) {
+  run('UPDATE vendedor_templates SET titulo = ?, cuerpo = ? WHERE id = ?', [titulo, cuerpo, id]);
+}
+// AND vendedor_id = ? es la defensa real: sin ella, cualquier asesor autenticado podía
+// borrar la plantilla de otro con solo adivinar/enumerar el id (IDOR). La ruta además
+// verifica dueño antes de llamar acá para poder devolver 403 en vez de un 200 mudo.
+function deleteVendedorTemplate(id, vendedorId) {
+  run('DELETE FROM vendedor_templates WHERE id = ? AND vendedor_id = ?', [id, vendedorId]);
 }
 
 // --- Estadísticas semanales del vendedor ---
@@ -1993,6 +2018,11 @@ function markTareaNotificada(id) {
 
 function setVendedorAbout(id, texto) {
   run('UPDATE vendedores SET about = ? WHERE id = ?', [String(texto || '').slice(0, 300), Number(id)]);
+}
+
+const CHAT_BG_VALIDOS = ['leones', 'none'];
+function setVendedorChatBg(id, valor) {
+  run('UPDATE vendedores SET chat_bg = ? WHERE id = ?', [CHAT_BG_VALIDOS.includes(valor) ? valor : 'leones', Number(id)]);
 }
 
 // --- Centro de notificaciones ---
@@ -3269,10 +3299,14 @@ function getWorkflowById(id) {
 // data.graph, si viene, ya es un objeto {nodes,edges} — se guarda serializado. Si no
 // viene (creación vieja vía trigger_event/conditions/actions), migrateWorkflowsToGraph()
 // lo completa en el próximo arranque; no hace falta duplicar esa lógica aquí.
+// `conditions`/`actions` NO se escriben más: el motor (runGraph) solo lee `graph` desde
+// hace tiempo, y seguir serializándolas ahí era trabajo muerto que además podía sugerir,
+// erróneamente, que esas columnas seguían siendo la fuente de verdad. Las columnas se
+// dejan en el schema (DEFAULT '[]') solo para que migrateWorkflowsToGraph() siga
+// pudiendo leer filas viejas que nunca tuvieron graph.
 function createWorkflow(data) {
-  run('INSERT INTO workflows (nombre, activo, trigger_event, conditions, actions, graph, vendedor_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [
+  run('INSERT INTO workflows (nombre, activo, trigger_event, graph, vendedor_id, updated_at) VALUES (?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))', [
     data.nombre, data.activo === false ? 0 : 1, data.trigger_event || (data.graph && inferTriggerFromGraph(data.graph)) || '',
-    JSON.stringify(data.conditions || []), JSON.stringify(data.actions || []),
     data.graph ? JSON.stringify(data.graph) : null,
     data.vendedorId != null ? Number(data.vendedorId) : null,
   ]);
@@ -3283,12 +3317,10 @@ function updateWorkflow(id, data) {
   const actual = getWorkflowById(id);
   if (!actual) return null;
   const graph = data.graph !== undefined ? data.graph : null;
-  run('UPDATE workflows SET nombre = ?, activo = ?, trigger_event = ?, conditions = ?, actions = ?, graph = COALESCE(?, graph), updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [
+  run('UPDATE workflows SET nombre = ?, activo = ?, trigger_event = ?, graph = COALESCE(?, graph), updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [
     data.nombre !== undefined ? data.nombre : actual.nombre,
     data.activo !== undefined ? (data.activo ? 1 : 0) : actual.activo,
     data.trigger_event !== undefined ? data.trigger_event : (graph ? inferTriggerFromGraph(graph) : actual.trigger_event),
-    data.conditions !== undefined ? JSON.stringify(data.conditions) : actual.conditions,
-    data.actions !== undefined ? JSON.stringify(data.actions) : actual.actions,
     graph ? JSON.stringify(graph) : null,
     id,
   ]);
@@ -3936,13 +3968,13 @@ module.exports = {
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,
   getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError, setMessageErrorById, markMessageSent, setMessageButtonPayload,
-  getTemplates, addTemplate, deleteTemplate,
-  getVendedorTemplates, addVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
+  getTemplates, getTemplateById, addTemplate, updateTemplate, deleteTemplate,
+  getVendedorTemplates, getVendedorTemplateById, addVendedorTemplate, updateVendedorTemplate, deleteVendedorTemplate, getStatsSemanales,
   savePushSubscription, getPushSubscriptionsByVendedor, deletePushSubscription, saveFcmToken, getAllPushSubscriptions,
   createDBSession, getDBSession, deleteDBSession, refreshSession, expireSessionSoon, cleanExpiredSessions,
   getSessionsByOwner, touchSessionLastSeen, deleteOtherSessions,
   createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,
-  getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout,
+  getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout, setVendedorChatBg,
   countMessagesByLead, getLeadAggregates, getLeadCountsByAdIds,
   getConfig, setConfig, normalizePhone,
   getWATemplates, getWATemplatesAprobadas, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName,

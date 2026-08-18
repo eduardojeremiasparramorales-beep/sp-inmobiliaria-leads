@@ -16,22 +16,56 @@
 .fila:last-child { border-bottom: none; }
 .fila__label { font-size: 13px; flex: 1; }
 .fila__value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Modal alta/edición — mismo patrón que /os/calendario.html */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.42); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm); }
+.modal-bg.show { display: flex; }
+.modal { background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: var(--r); width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: var(--s3); }
+.modal h3 { font-family: var(--f-title); font-size: 15px; margin-bottom: var(--s3); color: var(--text); }
+.m-field { margin-bottom: 12px; }
+.m-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
+.m-field input, .m-field select, .m-field textarea { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 9px 12px; font-family: var(--f-ui); font-size: 13px; outline: none; }
+.m-field input:focus, .m-field select:focus, .m-field textarea:focus { border-color: var(--gold-line); }
+.m-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+.m-actions { display: flex; gap: 8px; margin-top: var(--s2); }
+.m-actions button { flex: 1; height: 38px; border-radius: var(--r-sm); font-weight: 600; font-size: 13px; cursor: pointer; font-family: var(--f-ui); border: none; }
+.m-ok { background: var(--gold); color: #000; }
+.m-cancel { background: var(--bg-3); color: var(--text-2); border: 1px solid var(--border) !important; }
+.row-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.row-acts button { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 12px; padding: 4px 6px; font-family: var(--f-ui); }
+.row-acts button:hover { color: var(--gold); }
+.row-acts button.danger:hover { color: var(--red); }
 </style>
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
 <script>
 (async function () {
-  const { ICONS, api } = SPOS;
+  const { ICONS, api, toast } = SPOS;
   const ctx = await SPOS.mount({ active: 'finanzas', title: 'Centro Financiero', crumb: 'Ingresos, egresos y comisiones', padded: true });
 
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const fmt = (n) => n == null ? '$0' : '$' + Number(n).toLocaleString('es-CO');
+  const hoy = () => new Date().toISOString().slice(0, 10);
+
+  const ERRORES = {
+    tipo_invalido: 'El tipo debe ser ingreso o egreso.',
+    concepto_requerido: 'Escribe un concepto.',
+    monto_invalido: 'El monto debe ser mayor a 0.',
+    monto_venta_invalido: 'El monto de venta debe ser mayor a 0.',
+    vendedor_y_lead_requeridos: 'Selecciona un asesor y un lead.',
+    estado_invalido: 'Estado inválido.',
+    no_existe: 'Ya no existe — puede que otra persona lo haya borrado.',
+  };
+  const errorLegible = (r) => (r && r.error && ERRORES[r.error]) || 'No se pudo guardar. Intenta de nuevo.';
 
   let resumen = null;
   let transacciones = [];
   let comisiones = [];
+  let proyectos = [];
+  let vendedores = [];
+  let leads = [];
   let vista = 'resumen';
+  let editando = null; // { tipo:'transaccion'|'comision', id:number|null }
 
   ctx.content.innerHTML = `
    <div class="os-content__max">
@@ -48,6 +82,42 @@
       </div>
     </div>
     <div id="mainContent"></div>
+   </div>
+   <div class="modal-bg" id="modalBg">
+     <form class="modal" id="fTransaccion" style="display:none">
+       <h3 id="tTitulo">Nueva transacción</h3>
+       <div class="m-field"><label>Tipo</label>
+         <select id="tTipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select>
+       </div>
+       <div class="m-field"><label>Concepto</label><input id="tConcepto" required maxlength="200" placeholder="Venta lote 14, publicidad Meta Ads…"></div>
+       <div class="m-field"><label>Monto (COP)</label><input id="tMonto" type="number" min="1" step="1" required></div>
+       <div class="m-field"><label>Categoría</label><input id="tCategoria" maxlength="60" placeholder="venta, comisión, marketing, arriendo…"></div>
+       <div class="m-field"><label>Proyecto (opcional)</label><select id="tProyecto"><option value="">— Sin proyecto —</option></select></div>
+       <div class="m-field"><label>Fecha</label><input id="tFecha" type="date"></div>
+       <div class="m-field"><label>Notas</label><textarea id="tNotas" rows="2" maxlength="500"></textarea></div>
+       <div class="m-actions">
+         <button type="button" class="m-cancel" data-cerrar>Cancelar</button>
+         <button type="submit" class="m-ok">Guardar</button>
+       </div>
+     </form>
+     <form class="modal" id="fComision" style="display:none">
+       <h3 id="cTitulo">Nueva comisión</h3>
+       <div class="m-field"><label>Asesor</label><select id="cVendedor" required><option value="">— Selecciona —</option></select></div>
+       <div class="m-field"><label>Lead</label><select id="cLead" required><option value="">— Selecciona —</option></select></div>
+       <div class="m-field"><label>Monto de venta (COP)</label><input id="cMontoVenta" type="number" min="1" step="1" required></div>
+       <div class="m-field"><label>Porcentaje (%)</label><input id="cPorcentaje" type="number" min="0" max="100" step="0.1" value="5"></div>
+       <div class="m-field"><label>Comisión manual (opcional)</label><input id="cMontoComision" type="number" min="0" step="1" placeholder="Vacío = automático">
+         <div class="m-hint">Déjalo vacío para calcularla como venta × porcentaje.</div>
+       </div>
+       <div class="m-field"><label>Estado</label>
+         <select id="cEstado"><option value="pendiente">Pendiente</option><option value="pagada">Pagada</option><option value="cancelada">Cancelada</option></select>
+       </div>
+       <div class="m-field"><label>Notas</label><textarea id="cNotas" rows="2" maxlength="500"></textarea></div>
+       <div class="m-actions">
+         <button type="button" class="m-cancel" data-cerrar>Cancelar</button>
+         <button type="submit" class="m-ok">Guardar</button>
+       </div>
+     </form>
    </div>`;
 
   document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
@@ -57,14 +127,20 @@
   }));
 
   async function cargar() {
-    const [r, t, c] = await Promise.all([
+    const [r, t, c, p, v, l] = await Promise.all([
       api('/api/finanzas/resumen'),
       api('/api/finanzas/transacciones?limite=100'),
       api('/api/finanzas/comisiones?limite=100'),
+      api('/api/proyectos'),
+      api('/api/vendedores'),
+      api('/api/leads'),
     ]);
     resumen = r || {};
-    transacciones = t || [];
+    transacciones = Array.isArray(t) ? t : [];
     comisiones = Array.isArray(c) ? c : [];
+    proyectos = Array.isArray(p) ? p : [];
+    vendedores = Array.isArray(v) ? v : [];
+    leads = Array.isArray(l) ? l : [];
     render();
   }
 
@@ -134,7 +210,7 @@
   }
 
   function renderComisiones(el) {
-    if (!comisiones.length) { el.innerHTML = '<div class="empty">Sin comisiones calculadas todavía. Se generan desde la ficha del lead al marcarlo vendido.</div>'; return; }
+    if (!comisiones.length) { el.innerHTML = '<div class="empty">Sin comisiones todavía. Créalas con "+ Nueva" o desde el chat cuando marques un lead como vendido.</div>'; return; }
     const ESTADO_BADGE = { pendiente: 'amber', pagada: 'green', cancelada: 'red' };
     el.innerHTML = `<div class="card" style="overflow:hidden">
       <div style="overflow-x:auto">
@@ -158,7 +234,13 @@
               <td style="padding:10px 12px;text-align:right">${c.porcentaje}%</td>
               <td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gold)">${fmt(c.monto_comision)}</td>
               <td style="padding:10px 12px"><span class="badge badge--${ESTADO_BADGE[c.estado] || 'mute'}">${c.estado}</span></td>
-              <td style="padding:10px 12px;text-align:right">${c.estado === 'pendiente' ? `<button class="btn btn--ghost btn--sm" data-pagar="${c.id}">Marcar pagada</button>` : ''}</td>
+              <td style="padding:10px 12px">
+                <div class="row-acts">
+                  ${c.estado === 'pendiente' ? `<button data-pagar="${c.id}">Marcar pagada</button>` : ''}
+                  <button data-editar-c="${c.id}">Editar</button>
+                  <button class="danger" data-borrar-c="${c.id}">Borrar</button>
+                </div>
+              </td>
             </tr>
           `).join('')}</tbody>
         </table>
@@ -168,12 +250,21 @@
       b.disabled = true; b.textContent = 'Guardando…';
       const r = await api(`/api/finanzas/comisiones/${b.getAttribute('data-pagar')}/pagar`, { method: 'POST' });
       if (r && r.ok) await cargar();
-      else { b.disabled = false; b.textContent = 'Marcar pagada'; }
+      else { b.disabled = false; b.textContent = 'Marcar pagada'; toast(errorLegible(r), 'err'); }
+    }));
+    el.querySelectorAll('[data-editar-c]').forEach(b => b.addEventListener('click', () => {
+      const row = comisiones.find(c => String(c.id) === b.getAttribute('data-editar-c'));
+      if (row) abrirModalComision(row);
+    }));
+    el.querySelectorAll('[data-borrar-c]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta comisión? No se puede deshacer.')) return;
+      const r = await api(`/api/finanzas/comisiones/${b.getAttribute('data-borrar-c')}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Comisión borrada', 'ok'); await cargar(); } else toast(errorLegible(r), 'err');
     }));
   }
 
   function renderTransacciones(el) {
-    if (!transacciones.length) { el.innerHTML = '<div class="empty">Sin transacciones registradas.</div>'; return; }
+    if (!transacciones.length) { el.innerHTML = '<div class="empty">Sin transacciones registradas. Crea la primera con "+ Nueva".</div>'; return; }
     el.innerHTML = `<div class="card" style="overflow:hidden">
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -184,6 +275,7 @@
             <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Concepto</th>
             <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Proyecto</th>
             <th style="text-align:right;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-3)">Monto</th>
+            <th style="padding:10px 12px"></th>
           </tr></thead>
           <tbody>${transacciones.map(t => `
             <tr style="border-bottom:1px solid var(--border-soft)">
@@ -193,12 +285,121 @@
               <td style="padding:10px 12px">${esc(t.concepto)}</td>
               <td style="padding:10px 12px">${esc(t.proyecto_nombre || '—')}</td>
               <td style="padding:10px 12px;text-align:right;font-weight:600;color:${t.tipo === 'ingreso' ? 'var(--green)' : 'var(--red)'}">${t.tipo === 'ingreso' ? '+' : '-'}${fmt(t.monto)}</td>
+              <td style="padding:10px 12px">
+                <div class="row-acts">
+                  <button data-editar-t="${t.id}">Editar</button>
+                  <button class="danger" data-borrar-t="${t.id}">Borrar</button>
+                </div>
+              </td>
             </tr>
           `).join('')}</tbody>
         </table>
       </div>
     </div>`;
+    el.querySelectorAll('[data-editar-t]').forEach(b => b.addEventListener('click', () => {
+      const row = transacciones.find(t => String(t.id) === b.getAttribute('data-editar-t'));
+      if (row) abrirModalTransaccion(row);
+    }));
+    el.querySelectorAll('[data-borrar-t]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta transacción? No se puede deshacer.')) return;
+      const r = await api(`/api/finanzas/transacciones/${b.getAttribute('data-borrar-t')}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Transacción borrada', 'ok'); await cargar(); } else toast(errorLegible(r), 'err');
+    }));
   }
+
+  /* ── Modal: alta/edición ── */
+  const modalBg = document.getElementById('modalBg');
+  const fTransaccion = document.getElementById('fTransaccion');
+  const fComision = document.getElementById('fComision');
+
+  function cerrarModal() {
+    modalBg.classList.remove('show');
+    fTransaccion.style.display = 'none';
+    fComision.style.display = 'none';
+    editando = null;
+  }
+  document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('click', cerrarModal));
+  modalBg.addEventListener('click', e => { if (e.target === modalBg) cerrarModal(); });
+
+  function abrirModalTransaccion(row) {
+    editando = { tipo: 'transaccion', id: row ? row.id : null };
+    document.getElementById('tTitulo').textContent = row ? 'Editar transacción' : 'Nueva transacción';
+    document.getElementById('tTipo').value = row ? row.tipo : 'ingreso';
+    document.getElementById('tConcepto').value = row ? (row.concepto || '') : '';
+    document.getElementById('tMonto').value = row ? row.monto : '';
+    document.getElementById('tCategoria').value = row ? (row.categoria || '') : '';
+    document.getElementById('tProyecto').innerHTML = '<option value="">— Sin proyecto —</option>' +
+      proyectos.map(p => `<option value="${p.id}" ${row && Number(row.proyecto_id) === Number(p.id) ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('');
+    document.getElementById('tFecha').value = row ? row.fecha : hoy();
+    document.getElementById('tNotas').value = row ? (row.notas || '') : '';
+    fComision.style.display = 'none';
+    fTransaccion.style.display = 'block';
+    modalBg.classList.add('show');
+    document.getElementById('tConcepto').focus();
+  }
+
+  function abrirModalComision(row) {
+    editando = { tipo: 'comision', id: row ? row.id : null };
+    document.getElementById('cTitulo').textContent = row ? 'Editar comisión' : 'Nueva comisión';
+    document.getElementById('cVendedor').innerHTML = '<option value="">— Selecciona —</option>' +
+      vendedores.map(v => `<option value="${v.id}" ${row && Number(row.vendedor_id) === Number(v.id) ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('');
+    document.getElementById('cLead').innerHTML = '<option value="">— Selecciona —</option>' +
+      leads.map(l => `<option value="${l.id}" ${row && Number(row.lead_id) === Number(l.id) ? 'selected' : ''}>${esc(l.customer_name || l.customer_phone)}</option>`).join('');
+    // Vendedor y lead quedan fijos una vez creada la comisión (evita reasignarla a otra
+    // venta por accidente) — para eso se borra y se crea de nuevo.
+    document.getElementById('cVendedor').disabled = !!row;
+    document.getElementById('cLead').disabled = !!row;
+    document.getElementById('cMontoVenta').value = row ? row.monto_venta : '';
+    document.getElementById('cPorcentaje').value = row ? row.porcentaje : 5;
+    document.getElementById('cMontoComision').value = '';
+    document.getElementById('cEstado').value = row ? row.estado : 'pendiente';
+    document.getElementById('cNotas').value = row ? (row.notas || '') : '';
+    fTransaccion.style.display = 'none';
+    fComision.style.display = 'block';
+    modalBg.classList.add('show');
+  }
+
+  document.getElementById('btnNew').addEventListener('click', () => {
+    if (vista === 'comisiones') abrirModalComision(null);
+    else abrirModalTransaccion(null);
+  });
+
+  fTransaccion.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const body = {
+      tipo: document.getElementById('tTipo').value,
+      concepto: document.getElementById('tConcepto').value.trim(),
+      monto: Number(document.getElementById('tMonto').value),
+      categoria: document.getElementById('tCategoria').value.trim() || 'venta',
+      proyectoId: document.getElementById('tProyecto').value || null,
+      fecha: document.getElementById('tFecha').value || hoy(),
+      notas: document.getElementById('tNotas').value.trim(),
+    };
+    const editId = editando && editando.id;
+    const url = editId ? `/api/finanzas/transacciones/${editId}` : '/api/finanzas/transacciones';
+    const r = await api(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r && r.ok) { toast(editId ? 'Transacción actualizada' : 'Transacción creada', 'ok'); cerrarModal(); await cargar(); }
+    else toast(errorLegible(r), 'err');
+  });
+
+  fComision.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const body = {
+      vendedorId: Number(document.getElementById('cVendedor').value),
+      leadId: Number(document.getElementById('cLead').value),
+      montoVenta: Number(document.getElementById('cMontoVenta').value),
+      porcentaje: Number(document.getElementById('cPorcentaje').value) || 5,
+      estado: document.getElementById('cEstado').value,
+      notas: document.getElementById('cNotas').value.trim(),
+    };
+    const mc = document.getElementById('cMontoComision').value;
+    if (mc !== '') body.montoComision = Number(mc);
+    const editId = editando && editando.id;
+    const url = editId ? `/api/finanzas/comisiones/${editId}` : '/api/finanzas/comisiones';
+    const r = await api(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r && r.ok) { toast(editId ? 'Comisión actualizada' : 'Comisión creada', 'ok'); cerrarModal(); await cargar(); }
+    else toast(errorLegible(r), 'err');
+  });
 
   await cargar();
 })();

@@ -269,6 +269,20 @@
   }
   .btn-back { display: none; }
   .leaflet-map{ width:100%; height:120px; background:var(--bg-4); border-radius:10px 10px 0 0; overflow:hidden; }
+
+  /* Modal "Registrar venta" — mismo patrón que /os/calendario.html */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.42); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm); }
+  .modal-bg.show { display: flex; }
+  .modal { background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: var(--r); width: min(400px, calc(100vw - 32px)); padding: var(--s3); }
+  .modal h3 { font-family: var(--f-title); font-size: 15px; margin-bottom: var(--s3); color: var(--text); }
+  .m-field { margin-bottom: 12px; }
+  .m-field label { display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
+  .m-field input { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); padding: 9px 12px; font-family: var(--f-ui); font-size: 13px; outline: none; }
+  .m-field input:focus { border-color: var(--gold-line); }
+  .m-actions { display: flex; gap: 8px; margin-top: var(--s2); }
+  .m-actions button { flex: 1; height: 38px; border-radius: var(--r-sm); font-weight: 600; font-size: 13px; cursor: pointer; font-family: var(--f-ui); border: none; }
+  .m-ok { background: var(--gold); color: #000; }
+  .m-cancel { background: var(--bg-3); color: var(--text-2); border: 1px solid var(--border) !important; }
 </style>
 </head>
 <body>
@@ -349,8 +363,48 @@
 
   /* ── DOM ── */
   const listEl = document.createElement('div'); listEl.className = 'ibx-list'; listEl.id = 'ibxList';
-  const threadEl = document.createElement('div'); threadEl.className = 'ibx-thread'; threadEl.id = 'ibxThread';
+  const threadEl = document.createElement('div'); threadEl.className = 'ibx-thread' + (ctx.me.chat_bg !== 'none' ? ' chat-bg-patron' : ''); threadEl.id = 'ibxThread';
   ctx.content.appendChild(listEl); ctx.content.appendChild(threadEl);
+  ctx.content.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="ventaModalBg">
+      <form class="modal" id="fVenta">
+        <h3>🎉 Registrar la venta</h3>
+        <div class="m-field"><label>Monto de venta (COP)</label><input id="vMonto" type="number" min="1" step="1" required placeholder="Ej: 15000000"></div>
+        <div class="m-field"><label>Comisión (%)</label><input id="vPorcentaje" type="number" min="0" max="100" step="0.1" value="5"></div>
+        <div class="m-actions">
+          <button type="button" class="m-cancel" id="ventaOmitir">Omitir</button>
+          <button type="submit" class="m-ok">Registrar</button>
+        </div>
+      </form>
+    </div>`);
+
+  /* Registrar venta — se abre cuando una conversación pasa a etiqueta "vendido" y
+     tiene lead + asesor asignado (si falta alguno, no hay a quién ponerle la comisión). */
+  let ventaPendiente = null;
+  const ventaModalBg = document.getElementById('ventaModalBg');
+  function abrirModalVenta(leadId, vendedorId) {
+    ventaPendiente = { leadId, vendedorId };
+    document.getElementById('vMonto').value = '';
+    document.getElementById('vPorcentaje').value = 5;
+    ventaModalBg.classList.add('show');
+    document.getElementById('vMonto').focus();
+  }
+  function cerrarModalVenta() { ventaModalBg.classList.remove('show'); ventaPendiente = null; }
+  document.getElementById('ventaOmitir').addEventListener('click', cerrarModalVenta);
+  ventaModalBg.addEventListener('click', e => { if (e.target === ventaModalBg) cerrarModalVenta(); });
+  document.getElementById('fVenta').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    if (!ventaPendiente) return;
+    const body = {
+      vendedorId: ventaPendiente.vendedorId,
+      leadId: ventaPendiente.leadId,
+      montoVenta: Number(document.getElementById('vMonto').value),
+      porcentaje: Number(document.getElementById('vPorcentaje').value) || 5,
+    };
+    const r = await api('/api/finanzas/comisiones', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r && r.ok) { toast('Comisión registrada 💰 — puedes verla en Finanzas', 'ok'); cerrarModalVenta(); }
+    else toast('No se pudo registrar la comisión', 'err');
+  });
 
   const CHIPS = [['todos','Todos'],['whatsapp','WhatsApp'],['instagram','Instagram'],['messenger','Messenger']];
   listEl.innerHTML = `
@@ -560,8 +614,13 @@
       }));
 
     document.getElementById('etqSel')?.addEventListener('change', async e => {
-      const r = await api('/api/inbox/conversations/' + id + '/etiqueta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etiqueta: e.target.value }) });
-      if (r !== null) { c.etiqueta = e.target.value; toast('Etiqueta actualizada', 'ok'); } else toast('Error al actualizar etiqueta', 'err');
+      const nueva = e.target.value;
+      const r = await api('/api/inbox/conversations/' + id + '/etiqueta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etiqueta: nueva }) });
+      if (r !== null) {
+        c.etiqueta = nueva;
+        toast('Etiqueta actualizada', 'ok');
+        if (nueva === 'vendido' && c.lead_id && c.assigned_to_id) abrirModalVenta(c.lead_id, c.assigned_to_id);
+      } else toast('Error al actualizar etiqueta', 'err');
     });
 
     document.getElementById('asigSel')?.addEventListener('change', async e => {

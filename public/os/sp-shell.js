@@ -77,6 +77,7 @@
       { id: 'zonas', label: 'Zonas', icon: 'mapPin', href: '/os/zonas.html', admin: true },
       { id: 'galeria', label: 'Galería', icon: 'spark', href: '/os/galeria.html' },
       { id: 'plantillas', label: 'Plantillas WhatsApp', icon: 'msg', href: '/os/plantillas.html', admin: true },
+      { id: 'respuestas', label: 'Respuestas rápidas', icon: 'msg', href: '/os/respuestas.html', admin: true },
       { id: 'campaigns', label: 'Mensajes masivos', icon: 'campaigns', href: '/os/campanas.html' },
       { id: 'campanas-sp', label: 'Estudio creativo', icon: 'spark', href: '/os/campanas-sp.html' },
       { id: 'meta-ads', label: 'Meta Ads', icon: 'campaigns', href: '/os/meta-ads.html', admin: true },

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>Leons Group · Respuestas Rápidas</title><link rel="stylesheet" href="/fonts/fonts.css">
+<script src="/os/theme.js"></script>
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+.tpl-card{ padding:var(--s3); border-bottom:1px solid var(--border-soft); display:flex; gap:12px; align-items:flex-start; }
+.tpl-card:last-child{ border-bottom:none; }
+.tpl-card__body{ flex:1; min-width:0; }
+.tpl-card__titulo{ font-size:13.5px; font-weight:600; color:var(--gold); margin-bottom:4px; }
+.tpl-card__cuerpo{ font-size:13px; color:var(--text-2); line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.tpl-card__acts{ display:flex; gap:6px; flex-shrink:0; }
+.tpl-card__acts button{ background:none; border:none; color:var(--text-3); cursor:pointer; font-size:12px; padding:4px 8px; font-family:var(--f-ui); }
+.tpl-card__acts button:hover{ color:var(--gold); }
+.tpl-card__acts button.danger:hover{ color:var(--red); }
+/* Modal — mismo patrón que /os/finanzas.html y /os/calendario.html */
+.modal-bg{ position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:300; display:none; align-items:center; justify-content:center; backdrop-filter:var(--blur-sm); -webkit-backdrop-filter:var(--blur-sm); }
+.modal-bg.show{ display:flex; }
+.modal{ background:var(--bg-1); border:1px solid var(--border-strong); border-radius:var(--r); width:min(460px, calc(100vw - 32px)); padding:var(--s3); }
+.modal h3{ font-family:var(--f-title); font-size:15px; margin-bottom:var(--s3); color:var(--text); }
+.m-field{ margin-bottom:12px; }
+.m-field label{ display:block; font-size:10.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:.1em; margin-bottom:5px; }
+.m-field input, .m-field textarea{ width:100%; background:var(--bg-3); border:1px solid var(--border); border-radius:var(--r-sm); color:var(--text); padding:9px 12px; font-family:var(--f-ui); font-size:13px; outline:none; }
+.m-field textarea{ resize:vertical; min-height:90px; }
+.m-field input:focus, .m-field textarea:focus{ border-color:var(--gold-line); }
+.m-hint{ font-size:11px; color:var(--text-3); margin-top:4px; }
+.m-actions{ display:flex; gap:8px; margin-top:var(--s2); }
+.m-actions button{ flex:1; height:38px; border-radius:var(--r-sm); font-weight:600; font-size:13px; cursor:pointer; font-family:var(--f-ui); border:none; }
+.m-ok{ background:var(--gold); color:#000; }
+.m-cancel{ background:var(--bg-3); color:var(--text-2); border:1px solid var(--border) !important; }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  const { api, toast } = SPOS;
+  const ctx = await SPOS.mount({ active: 'respuestas', title: 'Respuestas Rápidas', crumb: 'Plantillas de texto que cualquier asesor puede usar en un chat', padded: true });
+
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  let templates = [];
+  let editando = null; // id o null (alta)
+
+  ctx.content.innerHTML = `
+   <div class="os-content__max">
+    <div class="u-between" style="margin-bottom:var(--s3)">
+      <div>
+        <div class="t-h2">Respuestas rápidas</div>
+        <div class="t-dim3" style="font-size:13px;margin-top:4px">Aparecen como chips arriba del cuadro de texto en el chat de cualquier asesor</div>
+      </div>
+      <button class="btn btn--gold btn--sm" id="btnNew">+ Nueva</button>
+    </div>
+    <div class="card" id="listaCard" style="overflow:hidden"></div>
+   </div>
+   <div class="modal-bg" id="modalBg">
+     <form class="modal" id="fTpl">
+       <h3 id="tplTitulo">Nueva respuesta</h3>
+       <div class="m-field"><label>Título</label><input id="tTitulo" required maxlength="80" placeholder="Ej: Precio de lotes"></div>
+       <div class="m-field"><label>Mensaje</label><textarea id="tCuerpo" required maxlength="1000" placeholder="Texto que se envía al cliente..."></textarea>
+         <div class="m-hint">Se puede usar {{nombre}} y {{asesor}} — se reemplazan al enviar.</div>
+       </div>
+       <div class="m-actions">
+         <button type="button" class="m-cancel" data-cerrar>Cancelar</button>
+         <button type="submit" class="m-ok">Guardar</button>
+       </div>
+     </form>
+   </div>`;
+
+  async function cargar() {
+    const data = await api('/api/templates');
+    templates = Array.isArray(data) ? data : [];
+    render();
+  }
+
+  function render() {
+    const el = document.getElementById('listaCard');
+    if (!templates.length) {
+      el.innerHTML = '<div class="empty">Sin respuestas rápidas todavía. Crea la primera con "+ Nueva".</div>';
+      return;
+    }
+    el.innerHTML = templates.map(t => `
+      <div class="tpl-card">
+        <div class="tpl-card__body">
+          <div class="tpl-card__titulo">${esc(t.titulo)}</div>
+          <div class="tpl-card__cuerpo">${esc(t.cuerpo)}</div>
+        </div>
+        <div class="tpl-card__acts">
+          <button data-editar="${t.id}">Editar</button>
+          <button class="danger" data-borrar="${t.id}">Borrar</button>
+        </div>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-editar]').forEach(b => b.addEventListener('click', () => {
+      const t = templates.find(x => String(x.id) === b.getAttribute('data-editar'));
+      if (t) abrirModal(t);
+    }));
+    el.querySelectorAll('[data-borrar]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta respuesta rápida? No se puede deshacer.')) return;
+      const r = await api(`/api/templates/${b.getAttribute('data-borrar')}`, { method: 'DELETE' });
+      if (r && r.ok) { toast('Respuesta borrada', 'ok'); await cargar(); }
+      else toast('No se pudo borrar', 'err');
+    }));
+  }
+
+  const modalBg = document.getElementById('modalBg');
+  const fTpl = document.getElementById('fTpl');
+
+  function cerrarModal() { modalBg.classList.remove('show'); editando = null; }
+  document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('click', cerrarModal));
+  modalBg.addEventListener('click', e => { if (e.target === modalBg) cerrarModal(); });
+
+  function abrirModal(t) {
+    editando = t ? t.id : null;
+    document.getElementById('tplTitulo').textContent = t ? 'Editar respuesta' : 'Nueva respuesta';
+    document.getElementById('tTitulo').value = t ? t.titulo : '';
+    document.getElementById('tCuerpo').value = t ? t.cuerpo : '';
+    modalBg.classList.add('show');
+    document.getElementById('tTitulo').focus();
+  }
+
+  document.getElementById('btnNew').addEventListener('click', () => abrirModal(null));
+
+  fTpl.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const titulo = document.getElementById('tTitulo').value.trim();
+    const cuerpo = document.getElementById('tCuerpo').value.trim();
+    if (!titulo || !cuerpo) { toast('Completa título y mensaje', 'err'); return; }
+    const url = editando ? `/api/templates/${editando}` : '/api/templates';
+    const r = await api(url, { method: editando ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ titulo, cuerpo }) });
+    if (r && r.ok) { toast(editando ? 'Respuesta actualizada' : 'Respuesta creada', 'ok'); cerrarModal(); await cargar(); }
+    else toast('No se pudo guardar', 'err');
+  });
+
+  await cargar();
+})();
+</script>
+</body>
+</html>

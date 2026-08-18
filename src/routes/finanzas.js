@@ -23,11 +23,17 @@ router.get('/transacciones', (req, res) => {
 
 router.post('/transacciones', (req, res) => {
   const r = finance.crearTransaccion(req.body || {});
-  res.json(r);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+router.put('/transacciones/:id', (req, res) => {
+  const r = finance.actualizarTransaccion(Number(req.params.id), req.body || {});
+  res.status(r.ok ? 200 : (r.error === 'no_existe' ? 404 : 400)).json(r);
 });
 
 router.delete('/transacciones/:id', (req, res) => {
-  res.json(finance.eliminarTransaccion(Number(req.params.id)));
+  const r = finance.eliminarTransaccion(Number(req.params.id));
+  res.status(r.ok ? 200 : 404).json(r);
 });
 
 router.get('/comisiones', (req, res) => {
@@ -37,14 +43,34 @@ router.get('/comisiones', (req, res) => {
   }));
 });
 
+// Alta manual de comisión (usada desde "Registrar venta" en la ficha del lead y
+// desde "+ Nueva" en Finanzas). Si no se manda montoComision, se calcula como
+// montoVenta * porcentaje/100.
+router.post('/comisiones', (req, res) => {
+  const r = finance.crearComision(req.body || {});
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+// Alias histórico de /comisiones — mismo comportamiento, se mantiene por compatibilidad.
 router.post('/comisiones/calcular', (req, res) => {
   const { vendedorId, leadId, montoVenta, porcentaje } = req.body || {};
-  if (!vendedorId || !leadId || !montoVenta) return res.status(400).json({ error: 'faltan_datos' });
-  res.json(finance.calcularComision(vendedorId, leadId, montoVenta, porcentaje || 5));
+  const r = finance.crearComision({ vendedorId, leadId, montoVenta, porcentaje: porcentaje || 5 });
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+router.put('/comisiones/:id', (req, res) => {
+  const r = finance.actualizarComision(Number(req.params.id), req.body || {});
+  res.status(r.ok ? 200 : (r.error === 'no_existe' ? 404 : 400)).json(r);
+});
+
+router.delete('/comisiones/:id', (req, res) => {
+  const r = finance.eliminarComision(Number(req.params.id));
+  res.status(r.ok ? 200 : 404).json(r);
 });
 
 router.post('/comisiones/:id/pagar', (req, res) => {
-  res.json(finance.marcarComisionPagada(Number(req.params.id)));
+  const r = finance.marcarComisionPagada(Number(req.params.id));
+  res.status(r.ok ? 200 : 404).json(r);
 });
 
 module.exports = router;

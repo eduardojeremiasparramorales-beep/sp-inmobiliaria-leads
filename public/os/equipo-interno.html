@@ -125,11 +125,12 @@ if(!ctx)return;
 ctx.content.style.cssText='flex:1;min-height:0;overflow:hidden;padding:0;display:flex';
 
 const listEl=document.createElement('div');listEl.className='ibx-list';listEl.id='eqList';
-const threadEl=document.createElement('div');threadEl.className='ibx-thread';threadEl.id='eqThread';
+const threadEl=document.createElement('div');threadEl.className='ibx-thread'+(ctx.me.chat_bg!=='none'?' chat-bg-patron':'');threadEl.id='eqThread';
 ctx.content.appendChild(listEl);ctx.content.appendChild(threadEl);
 
 let conversations={general:{},dms:[]};
 let currentView=null;
+let currentViewA=0; // el otro lado del par — 0 (admin) salvo que sea un DM asesor↔asesor
 let messages=[];
 let vendedores=[];
 let _replyTo=null;
@@ -147,7 +148,8 @@ threadEl.innerHTML=`<div class="ibx-empty" id="eqEmpty">${I(D.inbox,48)}<p>Selec
 
 async function cargar(){
   const[convData,vendData]=await Promise.all([api('/api/equipo/admin/conversations'),api('/api/vendedores')]);
-  if(convData)conversations=convData;
+  if(convData&&!convData.error)conversations=convData;
+  else toast(convData&&convData.error==='requiere_supervisor_o_admin'?'No tienes permiso para ver el chat interno':'No se pudo cargar el chat interno. Desliza para reintentar.','err');
   if(Array.isArray(vendData))vendedores=vendData;
   renderList();
 }
@@ -181,8 +183,12 @@ function renderList(){
   box.querySelectorAll('[data-view]').forEach(el=>{
     el.addEventListener('click',()=>{
       const v=el.dataset.view;
-      if(v==='general')currentView=null;
-      else if(v.startsWith('dm_')){const ids=v.replace('dm_','').split('_').map(Number);currentView=ids[0];}
+      if(v==='general'){currentView=null;currentViewA=0;}
+      else if(v.startsWith('dm_')){
+        const ids=v.replace('dm_','').split('_').map(Number);
+        if(ids.includes(0)){currentViewA=0;currentView=ids.find(x=>x!==0);}
+        else{currentViewA=ids[0];currentView=ids[1];}
+      }
       renderList();abrirChat();
     });
   });
@@ -229,7 +235,7 @@ async function abrirChat(){
       </div>
     </div>`;
 
-  document.getElementById('eqBtnBack').addEventListener('click',()=>{currentView=null;renderList();document.getElementById('eqEmpty').style.display='';document.getElementById('eqChat').style.display='none';});
+  document.getElementById('eqBtnBack').addEventListener('click',()=>{currentView=null;currentViewA=0;renderList();document.getElementById('eqEmpty').style.display='';document.getElementById('eqChat').style.display='none';});
   document.getElementById('eqSend').addEventListener('click',enviarMsg);
   document.getElementById('eqClipBtn').addEventListener('click',eqAbrirAdjuntos);
   eqInitFileInput();
@@ -251,9 +257,14 @@ async function abrirChat(){
 }
 
 async function cargarMensajes(){
-  const url=currentView!=null?`/api/equipo/admin/messages?type=dm&with=${currentView}`:'/api/equipo/admin/messages?type=general';
+  const url=currentView!=null?`/api/equipo/admin/messages?type=dm&a=${currentViewA}&b=${currentView}`:'/api/equipo/admin/messages?type=general';
   const data=await api(url);
   if(Array.isArray(data)){messages=data;renderMensajes();}
+  else{
+    const box=document.getElementById('eqMsgs');
+    if(box)box.innerHTML='<div style="text-align:center;color:var(--text-3);padding:40px 20px;font-size:13px">No se pudieron cargar los mensajes.</div>';
+    toast('No se pudieron cargar los mensajes','err');
+  }
 }
 
 function renderMedia(m){
@@ -656,14 +667,22 @@ function conectarStreamChat(){
       try{const m=JSON.parse(ev.data);if(currentView==null&&!_searchMode){messages.push(m);renderMensajes();hideTyping();}}catch(e){}
     });
     _chatStream.addEventListener('equipo_directo',ev=>{
-      try{const m=JSON.parse(ev.data);if(currentView!=null&&(Number(m.from_vendedor_id)===currentView||Number(m.to_vendedor_id)===currentView)&&!_searchMode){messages.push(m);renderMensajes();hideTyping();}}catch(e){}
+      try{
+        const m=JSON.parse(ev.data);
+        const f=Number(m.from_vendedor_id),t=Number(m.to_vendedor_id);
+        const esDelPar=currentView!=null&&((f===currentViewA&&t===currentView)||(f===currentView&&t===currentViewA));
+        if(esDelPar&&!_searchMode){messages.push(m);renderMensajes();hideTyping();}
+      }catch(e){}
     });
     _chatStream.addEventListener('equipo_typing',ev=>{
       try{const t=JSON.parse(ev.data);if(Number(t.from_id)===0)return;const bar=document.getElementById('eqTypingBar');const nm=document.getElementById('eqTypingName');if(bar&&nm){const canal=t.to==null&&currentView==null;const dm=t.to!=null&&currentView!=null&&Number(t.from_id)===currentView;if(canal||dm){nm.textContent=t.from_nombre+' está escribiendo…';bar.classList.add('show');setTimeout(()=>bar.classList.remove('show'),5000);}}}catch(e){}
     });
     _chatStream.addEventListener('equipo_message_pinned',()=>{cargarPinned();});
     _chatStream.addEventListener('equipo_message_edited',ev=>{
-      try{const d=JSON.parse(ev.data);const idx=messages.findIndex(x=>x.id===d.message_id);if(idx>=0){messages[idx].body=d.body;messages[idx].edited_at=d.edited_at;renderMensajes();}}catch(e){}
+      try{const d=JSON.parse(ev.data);const idx=messages.findIndex(x=>x.id===d.messageId);if(idx>=0){messages[idx].body=d.body;messages[idx].edited_at=d.edited_at;renderMensajes();}}catch(e){}
+    });
+    _chatStream.addEventListener('equipo_message_deleted',ev=>{
+      try{const d=JSON.parse(ev.data);const idx=messages.findIndex(x=>x.id===d.messageId);if(idx>=0){messages[idx].deleted=1;renderMensajes();}}catch(e){}
     });
     _chatStream.onerror=()=>{dot()?.classList.remove('on');_chatStream.close();setTimeout(conectarStreamChat,5000);};
   }catch(e){}
