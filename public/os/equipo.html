@@ -8,6 +8,46 @@
 <link rel="stylesheet" href="/fonts/fonts.css">
 <script src="/os/theme.js"></script>
 <link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  /* ── Drawer de detalle del asesor ───────────────────────────────────────────
+     Overlay lateral en vez de .os-panel del shell: ese se oculta por debajo de
+     1100px (sp-os.css) y esta página se consulta desde el celular. */
+  #eqScrim { z-index: 90; }            /* .os-scrim del shell es 79 (bajo el nav) */
+  #eqDrawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 91;
+    width: min(580px, 100%);
+    background: var(--bg-0); border-left: 1px solid var(--border-soft);
+    box-shadow: var(--sh-3);
+    display: flex; flex-direction: column; min-height: 0;
+    transform: translateX(100%); transition: transform .26s var(--ease-out);
+    visibility: hidden;
+  }
+  #eqDrawer.open { transform: none; visibility: visible; }
+  .eq-dw__head { flex-shrink: 0; padding: var(--s3) var(--s3) var(--s2); border-bottom: 1px solid var(--border-soft); }
+  .eq-dw__tabs { flex-shrink: 0; padding: 0 var(--s3); margin: 0; }
+  .eq-dw__body { flex: 1; overflow-y: auto; min-height: 0; padding: var(--s3); }
+  .eq-dw__body .tabs__pane { display: none; }
+  .eq-dw__body .tabs__pane.active { display: block; }
+  .eq-x { background: none; border: none; color: var(--text-3); cursor: pointer; padding: 6px; line-height: 0; border-radius: var(--r-sm); }
+  .eq-x:hover { color: var(--text); background: var(--bg-2); }
+
+  /* Lista de conversaciones */
+  .eq-lead { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: var(--r-sm); cursor: pointer; border: 1px solid transparent; transition: background .12s, border-color .12s; }
+  .eq-lead:hover { background: var(--bg-2); border-color: var(--border-soft); }
+  .eq-lead__body { flex: 1; min-width: 0; }
+  .eq-lead__name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Hilo de chat — mismo lenguaje visual que inbox.html, con prefijo propio */
+  .eq-msgs { display: flex; flex-direction: column; gap: 4px; padding: var(--s2) 0; }
+  .eq-bub { max-width: 78%; padding: 9px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.45; word-wrap: break-word; white-space: pre-wrap; }
+  .eq-bub--in { align-self: flex-start; background: var(--bg-3); border-bottom-left-radius: 5px; color: var(--text); }
+  .eq-bub--out { align-self: flex-end; background: linear-gradient(160deg, #2A5C4E, #1E4A3E); color: #F0F5F2; border-bottom-right-radius: 5px; }
+  .eq-bub--note { align-self: center; background: var(--amber-soft); border: 1px solid rgba(224,164,74,.3); color: var(--amber); font-size: 12.5px; max-width: 88%; border-radius: 10px; }
+  .eq-bub__t { font-size: 10.5px; opacity: .45; margin-top: 3px; text-align: right; display: block; font-variant-numeric: tabular-nums; }
+  .eq-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-soft); background: var(--bg-1); color: var(--text); font-size: 13.5px; font-family: inherit; outline: none; resize: none; }
+  .eq-input:focus { border-color: var(--gold-line); }
+  .eq-warn { font-size: 11.5px; color: var(--amber); background: var(--amber-soft); border: 1px solid rgba(224,164,74,.25); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; }
+</style>
 </head>
 <body>
 <script src="/os/sp-shell.js"></script>
@@ -21,6 +61,7 @@
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
     activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
     user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
   };
 
   const ctx = await SPOS.mount({
@@ -65,6 +106,10 @@
     const vends = vendsAll.filter(v => v.estado !== 'pendiente' && !adminVendedorIds.has(v.id) && !['supervisor', 'jefe'].includes(vRolMap[v.id] || 'vendedor'));
     const adminsSup = vendsAll.filter(v => adminVendedorIds.has(v.id) || ['supervisor', 'jefe'].includes(vRolMap[v.id] || 'vendedor'));
 
+    // El drawer vive fuera de ctx.content (sobrevive a este innerHTML), así que
+    // necesita los datos por referencia estable en vez de por closure.
+    ST = { team, vendsAll, ZONAS, adminVendedorIds, vRolMap, vUserMap, totalLeads };
+
     ctx.content.innerHTML = `
      <div class="os-content__max">
       <div class="grid grid--4 rise rise-1" style="margin-bottom:var(--s3)">
@@ -74,15 +119,15 @@
         ${metric('target','Conversión media', avgConv+'%')}
       </div>
 
-      <div class="grid grid--3 rise rise-2" style="margin-bottom:var(--s3)">
+      <div class="grid grid--3 rise rise-2" style="margin-bottom:var(--s3)" id="teamGrid">
         ${team.map((v,i)=>{
           const share = totalLeads ? Math.round((v.total/totalLeads)*100) : 0;
-          return `<div class="card card--pad card--float">
+          return `<div class="card card--pad card--float" data-vendedor-id="${v.id}" role="button" tabindex="0" style="cursor:pointer" title="Ver chats y opciones de ${esc(v.nombre)}">
             <div class="u-between" style="margin-bottom:var(--s2)">
               <div class="u-row u-gap2">
                 <div class="avatar avatar--md" style="background:${avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div>
-                <div><div style="font-weight:600">${v.nombre}</div>
-                <div class="u-row u-gap1" style="font-size:11.5px"><span class="dot dot--${v.estado==='activo'?'green':'mute'}"></span><span class="t-dim3">${v.estado}</span></div></div>
+                <div><div style="font-weight:600">${esc(v.nombre)}</div>
+                <div class="u-row u-gap1" style="font-size:11.5px"><span class="dot dot--${v.estado==='activo'?'green':'mute'}"></span><span class="t-dim3">${esc(v.estado)}</span></div></div>
               </div>
               ${v.id===topId?`<span class="badge badge--gold">${ICONS.flame.replace('<svg ','<svg style="width:12px;height:12px" ')}Top</span>`:''}
             </div>
@@ -263,25 +308,25 @@
       });
     });
 
-    // ── Pendientes: aprobar / rechazar ──
-    document.querySelectorAll('[data-action="aprobar"]').forEach(btn => btn.addEventListener('click', async ()=>{
-      const id = btn.dataset.id; const name = btn.dataset.name;
-      if(!confirm(`¿Aprobar a ${name}? Podrá iniciar sesión de inmediato.`)) return;
-      try {
-        const r = await api('/api/vendedores/'+id+'/estado', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ estado:'activo' }) });
-        if(r && r.ok){ toast(name+' aprobado'); cargar(); }
-        else toast(r?.error || 'Error al aprobar','err');
-      } catch(err){ toast('Error de conexión','err'); }
-    }));
-    document.querySelectorAll('[data-action="rechazar"]').forEach(btn => btn.addEventListener('click', async ()=>{
-      const id = btn.dataset.id; const name = btn.dataset.name;
-      if(!confirm(`¿Rechazar y eliminar el registro de ${name}? No podrá volver a intentarlo con el mismo teléfono a menos que se vuelva a registrar.`)) return;
-      try {
-        const r = await api('/api/vendedores/'+id, { method:'DELETE' });
-        if(r && r.ok){ toast(name+' rechazado'); cargar(); }
-        else toast(r?.error || 'Error al rechazar','err');
-      } catch(err){ toast('Error de conexión','err'); }
-    }));
+    // Las acciones con [data-action] (aprobar, resetPin, zonas, rol, estado, delete…)
+    // se atienden con un único listener delegado en document — ver ACC más abajo.
+    // Así funcionan igual en las tablas y dentro del drawer, que se renderiza aparte.
+
+    // ── Tarjetas del equipo: abrir el drawer de detalle ──
+    const grid = ctx.content.querySelector('#teamGrid');
+    if (grid) {
+      grid.addEventListener('click', e => {
+        const card = e.target.closest('[data-vendedor-id]');
+        if (card) abrirDrawer(Number(card.dataset.vendedorId));
+      });
+      grid.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const card = e.target.closest('[data-vendedor-id]');
+        if (!card) return;
+        e.preventDefault();
+        abrirDrawer(Number(card.dataset.vendedorId));
+      });
+    }
 
     // ── Monitoreo del chat interno ──
     async function cargarMonitor(){
@@ -316,8 +361,31 @@
     cargarMonitor();
     const monBtn = document.getElementById('monRefresh'); if(monBtn) monBtn.addEventListener('click', cargarMonitor);
 
-    // ── Acciones de tabla ──
-    document.querySelectorAll('[data-action="resetPin"]').forEach(btn => btn.addEventListener('click', ()=>{
+    // ── Acciones sobre un asesor ──
+    // Se registran en ACC (ámbito de módulo) y las dispara el listener delegado.
+    // Se reasignan en cada cargar() para que capturen ZONAS y demás datos frescos.
+
+    ACC.aprobar = async (btn) => {
+      const id = btn.dataset.id; const name = btn.dataset.name;
+      if(!confirm(`¿Aprobar a ${name}? Podrá iniciar sesión de inmediato.`)) return;
+      try {
+        const r = await api('/api/vendedores/'+id+'/estado', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ estado:'activo' }) });
+        if(r && r.ok){ toast(name+' aprobado'); cargar(); }
+        else toast(r?.error || 'Error al aprobar','err');
+      } catch(err){ toast('Error de conexión','err'); }
+    };
+
+    ACC.rechazar = async (btn) => {
+      const id = btn.dataset.id; const name = btn.dataset.name;
+      if(!confirm(`¿Rechazar y eliminar el registro de ${name}? No podrá volver a intentarlo con el mismo teléfono a menos que se vuelva a registrar.`)) return;
+      try {
+        const r = await api('/api/vendedores/'+id, { method:'DELETE' });
+        if(r && r.ok){ toast(name+' rechazado'); cargar(); }
+        else toast(r?.error || 'Error al rechazar','err');
+      } catch(err){ toast('Error de conexión','err'); }
+    };
+
+    ACC.resetPin = (btn) => {
       const id = btn.dataset.id;
       const name = btn.dataset.name;
       abrirModal(`Resetear PIN · ${name}`, `
@@ -340,9 +408,9 @@
           else toast('Error al actualizar PIN','err');
         } catch(err){ toast('Error de conexión','err'); }
       });
-    }));
+    };
 
-    document.querySelectorAll('[data-action="zonas"]').forEach(btn => btn.addEventListener('click', ()=>{
+    ACC.zonas = (btn) => {
       const id = btn.dataset.id;
       const name = btn.dataset.name;
       const actuales = new Set(String(btn.dataset.zonas || '').split(',').map(s => s.trim()).filter(Boolean));
@@ -375,9 +443,9 @@
           else toast(r?.error || 'Error al guardar','err');
         } catch(err){ toast('Error de conexión','err'); }
       });
-    }));
+    };
 
-    document.querySelectorAll('[data-action="fixPhone"]').forEach(btn => btn.addEventListener('click', async ()=>{
+    ACC.fixPhone = async (btn) => {
       const id = btn.dataset.id;
       const oldTel = btn.dataset.tel;
       const newTel = oldTel.startsWith('57') ? '+'+oldTel : '+57'+oldTel.replace(/\D/g,'');
@@ -387,9 +455,9 @@
         if(r && r.ok){ toast('Teléfono corregido'); cargar(); }
         else toast(r?.error || 'Error','err');
       } catch(err){ toast('Error de conexión','err'); }
-    }));
+    };
 
-    document.querySelectorAll('[data-action="rol"]').forEach(btn => btn.addEventListener('click', ()=>{
+    ACC.rol = (btn) => {
       const id = btn.dataset.id;
       const name = btn.dataset.name;
       const actual = btn.dataset.rol;
@@ -419,9 +487,9 @@
         } catch(err){ toast('Error de conexión','err'); }
       }));
       function newLabel(rol){ return { vendedor:'Asesor', supervisor:'Supervisor', jefe:'Jefe' }[rol] || rol; }
-    }));
+    };
 
-    document.querySelectorAll('[data-action="estado"]').forEach(btn => btn.addEventListener('click', async ()=>{
+    ACC.estado = async (btn) => {
       const id = btn.dataset.id;
       const name = btn.dataset.name;
       const actual = btn.dataset.estado;
@@ -432,9 +500,9 @@
         if(r && r.ok){ toast('Estado cambiado'); cargar(); }
         else toast('Error','err');
       } catch(err){ toast('Error de conexión','err'); }
-    }));
+    };
 
-    document.querySelectorAll('[data-action="delete"]').forEach(btn => btn.addEventListener('click', async ()=>{
+    ACC.delete = async (btn) => {
       const id = btn.dataset.id;
       const name = btn.dataset.name;
       if(!confirm(`¿Eliminar a ${name}? Sus leads se reasignarán automáticamente.`)) return;
@@ -444,6 +512,7 @@
         if(r && r.ok){
           const reasig = r.reasignadoA ? ` Leads reasignados a ${r.reasignadoA.nombre}` : '';
           toast('Asesor eliminado.'+reasig);
+          if (Number(id) === dwId) cerrarDrawer();
           cargar();
         } else {
           const errores = { no_puedes_eliminar_tu_propia_cuenta:'No puedes eliminar tu propia cuenta', no_se_puede_eliminar_una_cuenta_admin:'Las cuentas admin no se pueden eliminar', vendedor_no_existe:'Ese asesor ya no existe' };
@@ -451,8 +520,10 @@
           toast(r?.detalle ? `${base}: ${r.detalle}` : base, 'err');
         }
       } catch(err){ toast('Error de conexión','err'); }
-    }));
+    };
 
+    // Si el drawer está abierto, repintarlo con los datos recién cargados
+    if (dwId != null) pintarDrawer();
   }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -478,6 +549,411 @@
 
   function metric(icon,label,value){ return `<div class="metric"><div class="metric__top"><div class="metric__icon">${ICONS[icon]}</div></div><div><div class="metric__value t-num">${value}</div><div class="metric__label">${label}</div></div></div>`; }
   function miniStat(k,v){ return `<div style="background:var(--bg-1);border:1px solid var(--border-soft);border-radius:10px;padding:9px;text-align:center"><div class="t-num" style="font-size:16px;font-weight:600">${v}</div><div class="t-dim3" style="font-size:10.5px">${k}</div></div>`; }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  Estado compartido y acciones
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // cargar() reemplaza ctx.content por completo; el drawer vive fuera de él, así
+  // que lee de aquí en vez de por closure.
+  let ST = { team: [], vendsAll: [], ZONAS: [], adminVendedorIds: new Set(), vRolMap: {}, vUserMap: {}, totalLeads: 0 };
+
+  // Handlers de [data-action], rellenados por cargar(). Un solo listener delegado
+  // los atiende, así sirven igual en las tablas y dentro del drawer (que se
+  // renderiza después y no existiría al momento de cablear con querySelectorAll).
+  const ACC = {};
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const fn = ACC[btn.dataset.action];
+    if (!fn) return;
+    e.preventDefault();
+    fn(btn);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  Drawer de detalle del asesor
+  // ══════════════════════════════════════════════════════════════════════════
+
+  let dwId = null;        // asesor abierto (null = cerrado)
+  let dwTab = 'chats';
+  let dwLeads = null;     // null = cargando · array = leads del asesor
+  let dwLeadId = null;    // hilo abierto dentro de la pestaña Chats
+  let dwMsgs = null;
+  let dwPerfil = null;
+  let dwDM = null;
+
+  const scrim = document.createElement('div');
+  scrim.className = 'os-scrim'; scrim.id = 'eqScrim';
+  const drawer = document.createElement('aside');
+  drawer.id = 'eqDrawer';
+  drawer.setAttribute('role', 'dialog');
+  drawer.setAttribute('aria-modal', 'true');
+  document.body.appendChild(scrim);
+  document.body.appendChild(drawer);
+
+  scrim.addEventListener('click', cerrarDrawer);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && dwId != null && !modalActive) cerrarDrawer();
+  });
+
+  function abrirDrawer(id){
+    const otro = Number(id) !== Number(dwId);
+    dwId = Number(id);
+    if (otro) { dwTab = 'chats'; dwLeads = null; dwLeadId = null; dwMsgs = null; dwPerfil = null; dwDM = null; }
+    scrim.classList.add('show');
+    drawer.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    pintarDrawer();
+    if (otro) { cargarLeadsDelAsesor(); cargarPerfil(); }
+  }
+
+  function cerrarDrawer(){
+    dwId = null; dwLeadId = null; dwLeads = null; dwMsgs = null; dwPerfil = null; dwDM = null;
+    scrim.classList.remove('show');
+    drawer.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function asesorActual(){
+    const met = ST.team.find(v => Number(v.id) === dwId) || {};
+    const row = ST.vendsAll.find(v => Number(v.id) === dwId) || {};
+    return Object.assign({}, met, row, { id: dwId, nombre: row.nombre || met.nombre || 'Asesor' });
+  }
+
+  function pintarDrawer(){
+    if (dwId == null) return;
+    const v = asesorActual();
+    const tel = String(v.telefono || '').replace(/\D/g, '');
+    const TABS = [['chats','Chats'],['interno','Interno'],['perf','Rendimiento'],['ajustes','Ajustes']];
+    drawer.innerHTML = `
+      <div class="eq-dw__head">
+        <div class="u-between u-gap2" style="margin-bottom:var(--s2)">
+          <div class="u-row u-gap2" style="min-width:0">
+            <div class="avatar avatar--md" style="background:${avatarColor(v.nombre)};overflow:hidden;flex-shrink:0">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div>
+            <div style="min-width:0">
+              <div class="t-h3" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.nombre)}</div>
+              <div class="u-row u-gap1" style="font-size:11.5px">
+                <span class="dot dot--${v.estado==='activo'?'green':'mute'}"></span>
+                <span class="t-dim3">${esc(v.estado || '—')}</span>
+                <span class="t-dim3">·</span>
+                <span class="t-dim3 t-num">${fmtPhone(v.telefono)}</span>
+              </div>
+            </div>
+          </div>
+          <button class="eq-x" id="eqClose" title="Cerrar (Esc)" aria-label="Cerrar">${S.x}</button>
+        </div>
+        ${tel ? `<div class="u-row u-gap1">
+          <a class="btn btn--ghost btn--sm" href="tel:+${tel}">Llamar</a>
+          <a class="btn btn--ghost btn--sm" href="https://wa.me/${tel}" target="_blank" rel="noopener">WhatsApp</a>
+        </div>` : ''}
+      </div>
+      <div class="tabs eq-dw__tabs">
+        ${TABS.map(([k,l]) => `<button class="tabs__item${dwTab===k?' active':''}" data-dwtab="${k}">${l}</button>`).join('')}
+      </div>
+      <div class="eq-dw__body" id="eqBody"></div>`;
+    drawer.querySelector('#eqClose').addEventListener('click', cerrarDrawer);
+    drawer.querySelectorAll('[data-dwtab]').forEach(b => b.addEventListener('click', () => {
+      dwTab = b.dataset.dwtab;
+      if (dwTab === 'interno' && dwDM === null) cargarDM();
+      pintarDrawer();
+    }));
+    pintarTab();
+  }
+
+  function pintarTab(){
+    const body = drawer.querySelector('#eqBody');
+    if (!body) return;
+    if (dwTab === 'chats')   return pintarChats(body);
+    if (dwTab === 'interno') return pintarInterno(body);
+    if (dwTab === 'perf')    return pintarPerf(body);
+    if (dwTab === 'ajustes') return pintarAjustes(body);
+  }
+
+  const cargando = (txt) => `<div class="t-dim3" style="text-align:center;padding:var(--s4) 0;font-size:13px">${txt || 'Cargando…'}</div>`;
+  const vacio = (txt) => `<div class="empty">${ICONS.msg}<div>${txt}</div></div>`;
+
+  function hace(ts){
+    const d = SPOS.parseDbDate(ts); if (!d) return '';
+    const min = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (min < 1) return 'ahora';
+    if (min < 60) return min + ' min';
+    const h = Math.floor(min / 60);
+    if (h < 24) return h + ' h';
+    return Math.floor(h / 24) + ' d';
+  }
+
+  // ── Pestaña Chats ─────────────────────────────────────────────────────────
+
+  async function cargarLeadsDelAsesor(){
+    const id = dwId;
+    dwLeads = null;
+    if (dwTab === 'chats') pintarTab();
+    const r = await api('/api/leads?vendedorId=' + id + '&limite=100');
+    if (id !== dwId) return;               // el admin ya abrió otro asesor
+    dwLeads = Array.isArray(r) ? r : [];
+    if (dwTab === 'chats') pintarTab();
+    if (dwTab === 'perf') pintarTab();     // el bloque "sin responder" sale de aquí
+  }
+
+  const sinResponder = (l) => !l.first_response_at;
+
+  function pintarChats(body){
+    if (dwLeadId != null) return pintarHilo(body);
+    if (dwLeads === null) { body.innerHTML = cargando('Cargando sus conversaciones…'); return; }
+    if (!dwLeads.length) { body.innerHTML = vacio('Este asesor aún no tiene leads asignados'); return; }
+    const pend = dwLeads.filter(sinResponder).length;
+    body.innerHTML = `
+      <div class="u-between" style="margin-bottom:var(--s2)">
+        <span class="t-label">${dwLeads.length} conversacion${dwLeads.length===1?'':'es'}</span>
+        ${pend ? `<span class="badge" style="background:var(--red-soft);color:var(--red);border:1px solid rgba(200,70,70,.3);font-size:10.5px">${pend} sin responder</span>` : ''}
+      </div>
+      <div class="u-col" style="gap:2px">
+        ${dwLeads.map(l => {
+          const nom = l.customer_name || 'Sin nombre';
+          return `<div class="eq-lead" data-leadid="${l.id}">
+            <div class="avatar avatar--sm" style="background:${avatarColor(nom)};flex-shrink:0">${initials(nom)}</div>
+            <div class="eq-lead__body">
+              <div class="eq-lead__name">${esc(nom)}</div>
+              <div class="t-dim3 t-num" style="font-size:11.5px">${fmtPhone(l.customer_phone)}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              ${sinResponder(l) ? '<span class="badge" style="background:var(--red-soft);color:var(--red);border:1px solid rgba(200,70,70,.3);font-size:10px">Sin responder</span>' : ''}
+              ${l.sin_leer > 0 ? `<span class="os-nav__badge">${l.sin_leer}</span>` : ''}
+              <div class="t-dim3" style="font-size:10.5px;margin-top:3px">${hace(l.updated_at)}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    body.querySelectorAll('[data-leadid]').forEach(el => el.addEventListener('click', () => abrirHilo(Number(el.dataset.leadid))));
+  }
+
+  async function abrirHilo(leadId){
+    dwLeadId = leadId; dwMsgs = null;
+    pintarTab();
+    const r = await api('/api/leads/' + leadId + '/mensajes?limit=100');
+    if (dwLeadId !== leadId) return;
+    dwMsgs = (r && Array.isArray(r.mensajes)) ? r.mensajes : [];
+    pintarTab();
+  }
+
+  function pintarHilo(body){
+    const lead = (dwLeads || []).find(l => Number(l.id) === dwLeadId) || {};
+    const nom = lead.customer_name || 'Cliente';
+    const otros = ST.vendsAll.filter(v => v.estado === 'activo' && Number(v.id) !== dwId);
+    body.innerHTML = `
+      <div class="u-between u-gap2" style="margin-bottom:var(--s2)">
+        <button class="btn btn--ghost btn--xs" id="eqBack">← Conversaciones</button>
+        <div class="u-row u-gap1">
+          ${otros.length ? `<button class="btn btn--ghost btn--xs" id="eqReasignar">Reasignar</button>` : ''}
+          <a class="btn btn--ghost btn--xs" href="/os/inbox.html" title="Abrir en el inbox completo">Inbox</a>
+        </div>
+      </div>
+      <div class="u-row u-gap2" style="margin-bottom:var(--s2)">
+        <div class="avatar avatar--sm" style="background:${avatarColor(nom)}">${initials(nom)}</div>
+        <div><div style="font-weight:600;font-size:13.5px">${esc(nom)}</div>
+        <div class="t-dim3 t-num" style="font-size:11.5px">${fmtPhone(lead.customer_phone)}</div></div>
+      </div>
+      <div id="eqReasignaBox"></div>
+      <div class="eq-msgs" id="eqMsgs">${dwMsgs === null ? cargando('Cargando mensajes…') : renderMsgs()}</div>
+      <div style="margin-top:var(--s2);border-top:1px solid var(--border-soft);padding-top:var(--s2)">
+        <div class="eq-warn">Escribes como la empresa, no como ${esc(asesorActual().nombre)}. El asesor no recibe aviso de este mensaje.</div>
+        <textarea class="eq-input" id="eqTxt" rows="2" placeholder="Escribir al cliente…"></textarea>
+        <button class="btn btn--gold btn--sm btn--block" id="eqEnviar" style="margin-top:8px">Enviar al cliente</button>
+      </div>`;
+
+    body.querySelector('#eqBack').addEventListener('click', () => { dwLeadId = null; dwMsgs = null; pintarTab(); });
+
+    const msgsEl = body.querySelector('#eqMsgs');
+    if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    const reasBtn = body.querySelector('#eqReasignar');
+    if (reasBtn) reasBtn.addEventListener('click', () => {
+      const box = body.querySelector('#eqReasignaBox');
+      box.innerHTML = `
+        <div class="surface" style="padding:12px;margin-bottom:var(--s2)">
+          <div class="t-label" style="margin-bottom:8px">Pasar este lead a otro asesor</div>
+          <select class="eq-input" id="eqReasSel">
+            ${otros.map(v => `<option value="${v.id}">${esc(v.nombre)}</option>`).join('')}
+          </select>
+          <div class="u-row u-gap1" style="margin-top:8px">
+            <button class="btn btn--gold btn--xs" id="eqReasOk">Reasignar</button>
+            <button class="btn btn--ghost btn--xs" id="eqReasNo">Cancelar</button>
+          </div>
+        </div>`;
+      box.querySelector('#eqReasNo').addEventListener('click', () => { box.innerHTML = ''; });
+      box.querySelector('#eqReasOk').addEventListener('click', async () => {
+        const destinoId = Number(box.querySelector('#eqReasSel').value);
+        const destino = otros.find(v => Number(v.id) === destinoId);
+        if (!confirm(`¿Pasar el lead de ${nom} a ${destino.nombre}?`)) return;
+        const r = await api('/api/leads/' + dwLeadId + '/reasignar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vendedorId: destinoId })
+        });
+        if (r && !r.error) {
+          toast(`Lead reasignado a ${destino.nombre}`);
+          dwLeadId = null; dwMsgs = null;
+          cargarLeadsDelAsesor();
+        } else toast(r?.error || 'Error al reasignar', 'err');
+      });
+    });
+
+    const btnEnv = body.querySelector('#eqEnviar');
+    btnEnv.addEventListener('click', async () => {
+      const ta = body.querySelector('#eqTxt');
+      const texto = ta.value.trim();
+      if (!texto) return;
+      const leadId = dwLeadId;
+      btnEnv.disabled = true; btnEnv.textContent = 'Enviando…';
+      const r = await api('/api/leads/' + leadId + '/responder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mensaje: texto })
+      });
+      btnEnv.disabled = false; btnEnv.textContent = 'Enviar al cliente';
+      if (r && !r.error) {
+        ta.value = '';
+        toast('Mensaje enviado');
+        // Rastro para que el asesor sepa que el admin intervino
+        api('/api/leads/' + leadId + '/notas', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto: 'El admin respondió a este cliente desde el panel de Equipo.' })
+        }).catch(() => {});
+        abrirHilo(leadId);
+      } else toast(r?.error || 'No se pudo enviar', 'err');
+    });
+  }
+
+  function renderMsgs(){
+    if (!dwMsgs || !dwMsgs.length) return `<div class="t-dim3" style="text-align:center;padding:var(--s3) 0;font-size:12.5px">Sin mensajes en esta conversación</div>`;
+    return dwMsgs.map(m => {
+      const hora = fmtFechaHora(m.created_at, { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+      if (m.event_type === 'note') return `<div class="eq-bub eq-bub--note">📝 ${esc(m.body)}<span class="eq-bub__t">${hora}</span></div>`;
+      const out = m.direction === 'outgoing';
+      return `<div class="eq-bub eq-bub--${out ? 'out' : 'in'}">${esc(m.body || '(adjunto)')}<span class="eq-bub__t">${hora}</span></div>`;
+    }).join('');
+  }
+
+  // ── Pestaña Interno (DM admin ↔ asesor) ───────────────────────────────────
+
+  async function cargarDM(){
+    const id = dwId;
+    dwDM = null;
+    const r = await api('/api/equipo/admin/messages?type=dm&with=' + id + '&limit=100');
+    if (id !== dwId) return;
+    dwDM = Array.isArray(r) ? r : [];
+    if (dwTab === 'interno') pintarTab();
+  }
+
+  function pintarInterno(body){
+    const v = asesorActual();
+    body.innerHTML = `
+      <div class="eq-msgs" id="eqDMs">${
+        dwDM === null ? cargando('Cargando el chat interno…')
+        : !dwDM.length ? `<div class="t-dim3" style="text-align:center;padding:var(--s3) 0;font-size:12.5px">Aún no has hablado con ${esc(v.nombre)} por interno</div>`
+        : dwDM.map(m => {
+            const out = Number(m.from_vendedor_id) === 0;
+            const hora = fmtFechaHora(m.created_at, { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+            return `<div class="eq-bub eq-bub--${out ? 'out' : 'in'}">${esc(m.body)}<span class="eq-bub__t">${hora}</span></div>`;
+          }).join('')
+      }</div>
+      <div style="margin-top:var(--s2);border-top:1px solid var(--border-soft);padding-top:var(--s2)">
+        <textarea class="eq-input" id="eqDMTxt" rows="2" placeholder="Mensaje interno para ${esc(v.nombre)}…"></textarea>
+        <button class="btn btn--gold btn--sm btn--block" id="eqDMEnviar" style="margin-top:8px">Enviar mensaje interno</button>
+      </div>`;
+    const box = body.querySelector('#eqDMs');
+    if (box) box.scrollTop = box.scrollHeight;
+    const btn = body.querySelector('#eqDMEnviar');
+    btn.addEventListener('click', async () => {
+      const ta = body.querySelector('#eqDMTxt');
+      const texto = ta.value.trim();
+      if (!texto) return;
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      const r = await api('/api/equipo/mensajes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: texto, to: dwId })
+      });
+      btn.disabled = false; btn.textContent = 'Enviar mensaje interno';
+      if (r && !r.error) { ta.value = ''; toast('Mensaje interno enviado'); cargarDM(); }
+      else toast(r?.error || 'No se pudo enviar', 'err');
+    });
+  }
+
+  // ── Pestaña Rendimiento ───────────────────────────────────────────────────
+
+  async function cargarPerfil(){
+    const id = dwId;
+    dwPerfil = null;
+    const r = await api('/api/vendedores/' + id + '/perfil');
+    if (id !== dwId) return;
+    dwPerfil = (r && !r.error) ? r : {};
+    if (dwTab === 'perf') pintarTab();
+  }
+
+  function pintarPerf(body){
+    const v = asesorActual();
+    const share = ST.totalLeads ? Math.round(((v.total || 0) / ST.totalLeads) * 100) : 0;
+    const met = (dwPerfil && dwPerfil.metricas) || {};
+    const pend = (dwLeads || []).filter(sinResponder);
+    body.innerHTML = `
+      <div class="grid grid--3" style="gap:8px;margin-bottom:var(--s3)">
+        ${miniStat('Leads', fmt.n(v.total || 0))}
+        ${miniStat('Activos', fmt.n(v.activos || 0))}
+        ${miniStat('Cierres', fmt.n(v.vendidos || 0))}
+      </div>
+      <div class="surface" style="padding:14px;margin-bottom:var(--s3)">
+        ${fila('Conversión', (v.conversion || 0) + '%')}
+        ${fila('Tasa de respuesta', dwPerfil === null ? '…' : ((met.tasaRespuesta ?? '—') + (met.tasaRespuesta != null ? '%' : '')))}
+        ${fila('Leads cerrados', dwPerfil === null ? '…' : fmt.n(met.leadsCerrados || 0))}
+        ${fila('Carga del equipo', share + '%', true)}
+      </div>
+      <div class="t-label" style="margin-bottom:var(--s2)">Sin responder</div>
+      ${dwLeads === null ? cargando('Revisando sus conversaciones…')
+        : !pend.length ? `<div class="t-dim3" style="font-size:12.5px;padding:6px 0">Al día — no tiene leads sin responder.</div>`
+        : `<div class="u-col" style="gap:2px">${pend.map(l => {
+            const nom = l.customer_name || 'Sin nombre';
+            return `<div class="eq-lead" data-pendid="${l.id}">
+              <div class="avatar avatar--sm" style="background:${avatarColor(nom)};flex-shrink:0">${initials(nom)}</div>
+              <div class="eq-lead__body">
+                <div class="eq-lead__name">${esc(nom)}</div>
+                <div class="t-dim3" style="font-size:11.5px">Esperando desde hace ${hace(l.created_at)}</div>
+              </div>
+            </div>`;
+          }).join('')}</div>`}
+      ${(dwPerfil && Array.isArray(dwPerfil.insignias) && dwPerfil.insignias.length) ? `
+        <div class="t-label" style="margin:var(--s3) 0 var(--s2)">Insignias</div>
+        <div class="u-row u-gap1 u-wrap">${dwPerfil.insignias.map(i => `<span class="badge badge--gold" style="font-size:10.5px">${esc(i.nombre || i.slug || i)}</span>`).join('')}</div>` : ''}`;
+    body.querySelectorAll('[data-pendid]').forEach(el => el.addEventListener('click', () => {
+      dwTab = 'chats';
+      pintarDrawer();
+      abrirHilo(Number(el.dataset.pendid));
+    }));
+  }
+
+  function fila(k, v, last){ return `<div class="u-between" style="padding:7px 0${last?'':';border-bottom:1px solid var(--border-soft)'}"><span class="t-dim3" style="font-size:12px">${k}</span><span style="font-size:12.5px;font-weight:500">${v}</span></div>`; }
+
+  // ── Pestaña Ajustes ───────────────────────────────────────────────────────
+
+  function pintarAjustes(body){
+    const v = asesorActual();
+    const esAdmin = ST.adminVendedorIds.has(dwId);
+    const zonasV = String(v.zonas || '').split(',').map(s => s.trim()).filter(Boolean);
+    const rolActual = ST.vRolMap[dwId] || 'vendedor';
+    const malTel = v.telefono && !String(v.telefono).startsWith('+57');
+    const d = `data-id="${dwId}" data-name="${esc(v.nombre)}"`;
+    body.innerHTML = `
+      <div class="u-col u-gap1">
+        <button class="btn btn--ghost btn--block btn--sm" data-action="resetPin" ${d}>${S.refresh} Resetear PIN</button>
+        ${malTel ? `<button class="btn btn--ghost btn--block btn--sm" data-action="fixPhone" ${d} data-tel="${esc(v.telefono)}">${S.refresh} Corregir teléfono (+57)</button>` : ''}
+        ${esAdmin ? `
+          <div class="t-dim3" style="font-size:12px;text-align:center;padding:var(--s2) 0">
+            Cuenta protegida — las cuentas admin no se pueden suspender ni eliminar desde aquí.
+          </div>` : `
+          <button class="btn btn--ghost btn--block btn--sm" data-action="zonas" ${d} data-zonas="${esc(zonasV.join(','))}">${ICONS.mapPin.replace('<svg ','<svg style="width:14px;height:14px" ')} Zonas${zonasV.length?` · ${zonasV.length}`:''}</button>
+          <button class="btn btn--ghost btn--block btn--sm" data-action="rol" ${d} data-rol="${rolActual}">${S.user} Cambiar rol</button>
+          <button class="btn btn--ghost btn--block btn--sm" data-action="estado" ${d} data-estado="${v.estado}">${S.activity} ${v.estado==='activo'?'Suspender':'Activar'}</button>
+          <button class="btn btn--ghost btn--block btn--sm t-red" data-action="delete" ${d} style="margin-top:var(--s2)">${S.trash} Eliminar asesor</button>`}
+      </div>`;
+  }
 
   cargar();
 })();
