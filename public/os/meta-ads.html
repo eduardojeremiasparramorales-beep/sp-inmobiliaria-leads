@@ -214,6 +214,7 @@
       { hash: '#/wizard', label: '+ Crear campaña', match: r => r.name === 'wizard' },
       { hash: '#/audiencias', label: 'Audiencias', match: r => r.name === 'audiencias' },
       { hash: '#/recomendaciones', label: '💡 Recomendaciones', match: r => r.name === 'recomendaciones' },
+      { hash: '#/comparativa', label: '📊 Antes vs Ahora', match: r => r.name === 'comparativa' },
     ];
     return `<div class="ma-nav">${items.map(it => `<a href="${it.hash}" class="${it.match(route) ? 'active' : ''}">${it.label}</a>`).join('')}</div>`;
   }
@@ -279,6 +280,7 @@
     if (route.name === 'wizard') return renderSection(body, (el) => renderWizard(el));
     if (route.name === 'audiencias') return renderSection(body, (el) => renderAudiencesView(el));
     if (route.name === 'recomendaciones') return renderSection(body, (el) => renderRecommendations(el));
+    if (route.name === 'comparativa') return renderSection(body, (el) => renderComparativa(el));
     return renderSection(body, (el) => renderCampaignsList(el));
   }
 
@@ -733,17 +735,181 @@
   }
 
   // ════════════════════════════════════════════════════════════
+  // VISTA: Antes vs Ahora (comparativa contra el baseline histórico)
+  // ════════════════════════════════════════════════════════════
+  const VEREDICTO_BADGE = { bien: 'active', alerta: 'paused', mal: 'error' };
+  const VEREDICTO_LABEL = { bien: 'Bien', alerta: 'Alerta', mal: 'Mal' };
+
+  function rangoDesdeAtras(dias) {
+    const until = new Date();
+    const since = new Date(until.getTime() - (dias - 1) * 86400000);
+    const fmt10 = (d) => d.toISOString().split('T')[0];
+    return { since: fmt10(since), until: fmt10(until) };
+  }
+
+  async function renderComparativa(el) {
+    let dias = 30, vs = 'baseline', rangoManual = null;
+
+    async function cargar() {
+      const box = document.getElementById('maCompBox');
+      box.innerHTML = '<div class="ma-loading"><div class="ma-spinner"></div> Calculando…</div>';
+      const { since, until } = rangoManual || rangoDesdeAtras(dias);
+      const data = await api(`/api/meta-ads/comparativa?since=${since}&until=${until}&vs=${vs}`);
+      if (!data || data.error) { box.innerHTML = ''; box.appendChild(errorPanel(data || {}, cargar)); return; }
+      box.innerHTML = comparativaHtml(data);
+    }
+
+    el.innerHTML = `
+      <div class="ma-sec">
+        <h3>Antes vs Ahora</h3>
+        <p>Compara lo que corre hoy contra el baseline histórico de Tocaima (11 feb → 8 jun 2026: $2.885.297 COP, 2.968 leads, CPL $926-972) o contra el periodo inmediatamente anterior.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          ${[7, 30, 60, 90].map(d => `<button class="ma-btn ma-btn--xs${d === dias && !rangoManual ? ' ma-btn--gold' : ''}" data-dias="${d}">${d}d</button>`).join('')}
+          <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
+          <button class="ma-btn ma-btn--xs${vs === 'baseline' ? ' ma-btn--gold' : ''}" data-vs="baseline">vs Baseline histórico</button>
+          <button class="ma-btn ma-btn--xs${vs === 'anterior' ? ' ma-btn--gold' : ''}" data-vs="anterior">vs Periodo anterior</button>
+        </div>
+        <div id="maCompBox"></div>
+      </div>
+    `;
+
+    function rebind() {
+      el.querySelectorAll('[data-dias]').forEach(btn => btn.addEventListener('click', () => {
+        dias = Number(btn.dataset.dias); rangoManual = null;
+        renderSection(el, renderComparativa);
+      }));
+      el.querySelectorAll('[data-vs]').forEach(btn => btn.addEventListener('click', () => {
+        vs = btn.dataset.vs;
+        renderSection(el, renderComparativa);
+      }));
+    }
+    rebind();
+    await cargar();
+  }
+
+  function comparativaHtml(data) {
+    const { actual, referencia, deltas, veredictos, umbrales, vs } = data;
+    const refLabel = referencia.esBaseline ? `Baseline (${referencia.periodo.since} → ${referencia.periodo.until}, métrica de Meta)` : `Periodo anterior (${referencia.periodo.since} → ${referencia.periodo.until})`;
+    const deltaHtml = (v) => v == null ? '—' : `<span style="color:${v <= 0 ? 'var(--green)' : '#ff5050'}">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
+    const badge = (tipo) => tipo ? `<span class="ma-badge ma-badge--${VEREDICTO_BADGE[tipo]}">${VEREDICTO_LABEL[tipo]}</span>` : '';
+
+    return `
+      <table style="width:100%;font-size:12.5px;border-collapse:collapse">
+        <thead><tr style="color:var(--text-3);text-transform:uppercase;font-size:9.5px;letter-spacing:.05em">
+          <th style="text-align:left;padding:8px">Métrica</th>
+          <th style="text-align:right;padding:8px">Ahora (${actual.periodo.since} → ${actual.periodo.until})</th>
+          <th style="text-align:right;padding:8px">${esc(refLabel)}</th>
+          <th style="text-align:right;padding:8px">Δ</th>
+          <th style="text-align:right;padding:8px"></th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px">Gasto</td>
+            <td style="text-align:right;padding:8px">${fmtMoney(actual.spend)}</td>
+            <td style="text-align:right;padding:8px">${fmtMoney(referencia.spend)}</td>
+            <td style="text-align:right;padding:8px">${deltaHtml(deltas.spend)}</td>
+            <td></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px">Leads (Meta)</td>
+            <td style="text-align:right;padding:8px">${fmt(actual.leadsMeta)}</td>
+            <td style="text-align:right;padding:8px">${referencia.leadsMeta != null ? fmt(referencia.leadsMeta) : '—'}</td>
+            <td style="text-align:right;padding:8px">${deltaHtml(deltas.leadsMeta)}</td>
+            <td></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border);background:rgba(200,164,90,.05)">
+            <td style="padding:8px"><b>CPL Meta</b> <span style="color:var(--text-3);font-size:10.5px">(comparable con el histórico)</span></td>
+            <td style="text-align:right;padding:8px"><b>${actual.cplMeta ? fmtMoney(actual.cplMeta) : '—'}</b></td>
+            <td style="text-align:right;padding:8px">${referencia.cplMeta ? fmtMoney(referencia.cplMeta) : '—'}</td>
+            <td style="text-align:right;padding:8px">${deltaHtml(deltas.cplMeta)}</td>
+            <td style="text-align:right;padding:8px">${badge(veredictos.cpl)}</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px">CPL real CRM <span style="color:var(--text-3);font-size:10.5px">(el que manda para presupuesto)</span></td>
+            <td style="text-align:right;padding:8px">${actual.cplCRM ? fmtMoney(actual.cplCRM) : '—'}</td>
+            <td style="text-align:right;padding:8px">${referencia.cplCRM != null && referencia.cplCRM ? fmtMoney(referencia.cplCRM) : '— (el baseline no midió esto)'}</td>
+            <td style="text-align:right;padding:8px">—</td>
+            <td></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px">CTR</td>
+            <td style="text-align:right;padding:8px">${actual.ctr.toFixed(2)}%</td>
+            <td style="text-align:right;padding:8px">${referencia.ctr != null ? referencia.ctr.toFixed(2) + '%' : '—'}</td>
+            <td style="text-align:right;padding:8px">${deltaHtml(deltas.ctr)}</td>
+            <td style="text-align:right;padding:8px">${badge(veredictos.ctr)}</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px">CPM</td>
+            <td style="text-align:right;padding:8px">${fmtMoney(actual.cpm)}</td>
+            <td style="text-align:right;padding:8px">${referencia.cpm != null ? fmtMoney(referencia.cpm) : '—'}</td>
+            <td style="text-align:right;padding:8px">${deltaHtml(deltas.cpm)}</td>
+            <td style="text-align:right;padding:8px">${badge(veredictos.cpm)}</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px">Frecuencia</td>
+            <td style="text-align:right;padding:8px">${actual.frequency ? actual.frequency.toFixed(1) + 'x' : '—'}</td>
+            <td style="text-align:right;padding:8px">${referencia.frequency ? referencia.frequency.toFixed(1) + 'x' : '—'}</td>
+            <td style="text-align:right;padding:8px">—</td>
+            <td style="text-align:right;padding:8px">${badge(veredictos.frecuencia)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:12px;font-size:11.5px;color:var(--text-3)">
+        CPL Meta y CPL real CRM miden cosas distintas: CPL Meta cuenta lo que Meta reporta como conversación iniciada (misma definición que el histórico de $926-972); CPL real CRM cuenta solo los leads que de verdad llegaron al CRM con el anuncio atribuido — siempre sale más alto porque cuenta menos leads, no porque el rendimiento haya empeorado. Compara CPL Meta con CPL Meta, y usa CPL real CRM para decidir presupuesto del día a día.
+      </p>
+    `;
+  }
+
+  // ════════════════════════════════════════════════════════════
   // VISTA: Recomendaciones (servicio inteligente) + comparación
   // ════════════════════════════════════════════════════════════
   const TIPO_LABEL = {
     ganadora: '🏆 Campaña ganadora', cpl_alto: '⚠️ CPL alto', sin_resultados: '🚨 Gasto sin resultados',
     ctr_caida: '📉 CTR cayendo', fatiga: '😴 Fatiga creativa', infrautilizada: '💤 Infrautilizada',
+    cpl_sobre_baseline: '📈 CPL sobre el baseline', ctr_bajo_baseline: '📉 CTR bajo el baseline',
+    cpm_sobre_baseline: '💸 CPM sobre el baseline', atribucion_rota: '🔌 Atribución rota',
+    sin_pixel: '🎯 Sin Pixel', sin_audiencias: '👥 Sin audiencias',
   };
   const SEV_CLASS = { 1: 'active', 2: 'paused', 3: 'error' };
+  const ESTADO_MEJORA_LABEL = { pendiente: 'Pendiente', aplicada: 'Aplicada', descartada: 'Descartada', resuelta: 'Resuelta' };
+
+  function mejoraRowHtml(m) {
+    const fecha = (iso) => iso ? new Date(iso).toLocaleDateString('es-CO') : '';
+    return `
+      <div class="ma-camp">
+        <div class="ma-camp__top">
+          <div class="ma-camp__name">${esc(TIPO_LABEL[m.tipo] || m.tipo)}${m.campaign_name ? ' — ' + esc(m.campaign_name) : ''}</div>
+          <span class="ma-badge ma-badge--${SEV_CLASS[m.severidad] || 'paused'}">Severidad ${m.severidad}</span>
+        </div>
+        <p style="margin:8px 0 0;font-size:12.5px;color:var(--text-2)">${esc(m.mensaje)}</p>
+        <p style="margin:4px 0 0;font-size:11px;color:var(--text-3)">
+          ${ESTADO_MEJORA_LABEL[m.estado] || m.estado} · detectada ${fecha(m.created_at)}${m.resuelta_at ? ' · resuelta ' + fecha(m.resuelta_at) : ''}
+        </p>
+        ${m.estado === 'pendiente' || m.estado === 'aplicada' ? `
+        <div class="ma-camp__actions">
+          ${m.campaign_id ? `<a class="ma-btn ma-btn--xs" href="#/campaign/${encodeURIComponent(m.campaign_id)}">Ver campaña</a>` : ''}
+          ${m.estado === 'pendiente' ? `<button class="ma-btn ma-btn--xs ma-btn--gold" data-mejora-aplicada="${m.id}">Marcar aplicada</button>` : ''}
+          <button class="ma-btn ma-btn--xs" data-mejora-descartada="${m.id}">Descartar</button>
+        </div>` : ''}
+      </div>`;
+  }
 
   async function renderRecommendations(el) {
-    const recs = await apiOrThrow('/api/meta-ads/recommendations');
+    const [recs, mejoras] = await Promise.all([
+      apiOrThrow('/api/meta-ads/recommendations'),
+      apiOrThrow('/api/meta-ads/mejoras'),
+    ]);
+    const pendientesYAplicadas = mejoras.filter(m => m.estado === 'pendiente' || m.estado === 'aplicada');
+    const cerradas = mejoras.filter(m => m.estado === 'resuelta' || m.estado === 'descartada');
+
     el.innerHTML = `
+      <div class="ma-sec">
+        <h3>Mejoras con seguimiento</h3>
+        <p>Lo que hay que mejorar en cada revisión — se recalcula cada vez que entras aquí, pero a diferencia del análisis de abajo, queda guardado con estado y se cierra solo cuando la condición que la disparó desaparece.</p>
+        ${!pendientesYAplicadas.length ? '<div class="ma-empty">Sin mejoras pendientes por ahora.</div>' : pendientesYAplicadas.map(mejoraRowHtml).join('')}
+        ${cerradas.length ? `<details style="margin-top:10px"><summary style="cursor:pointer;font-size:11.5px;color:var(--text-3)">${cerradas.length} resueltas/descartadas</summary>${cerradas.map(mejoraRowHtml).join('')}</details>` : ''}
+      </div>
+
       <div class="ma-sec">
         <h3>Recomendaciones</h3>
         <p>Análisis automático de las campañas activas — CPL real, tendencia de CTR, fatiga creativa y uso del presupuesto. Se recalcula cada vez que entras a esta vista. Las de severidad 3 también avisan por notificación.</p>
@@ -770,6 +936,17 @@
         <div id="maCompareBox" style="margin-top:12px"></div>
       </div>
     `;
+
+    el.querySelectorAll('[data-mejora-aplicada]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/mejoras/${btn.dataset.mejoraAplicada}/estado`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: 'aplicada' }) });
+      if (r && r.ok) { toast('Marcada como aplicada', 'ok'); renderSection(el, renderRecommendations); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
+    el.querySelectorAll('[data-mejora-descartada]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const r = await api(`/api/meta-ads/mejoras/${btn.dataset.mejoraDescartada}/estado`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: 'descartada' }) });
+      if (r && r.ok) { toast('Descartada', 'ok'); renderSection(el, renderRecommendations); } else { toast('Error: ' + errMsg(r), 'err'); btn.disabled = false; }
+    }));
 
     el.querySelectorAll('[data-apply-dup]').forEach(btn => btn.addEventListener('click', async () => {
       if (!confirm('¿Duplicar esta campaña? La copia se crea PAUSADA.')) return;

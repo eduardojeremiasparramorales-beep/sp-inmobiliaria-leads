@@ -1275,6 +1275,156 @@ async function syncLeadsToAudience(audienceId) {
   return { synced: mapped.length, audienceId };
 }
 
+// ─── Comparativa de periodos (Antes vs Ahora) ─────────────────
+// El resto del archivo tiene date_preset:'last_30d' clavado en todas partes — esto
+// generaliza a un rango [since, until] explícito, reutilizando el mismo shape de
+// `metrics` que ya devuelven getCampaigns()/getCampaignFull() para no inventar un
+// formato nuevo que el front tenga que aprender aparte.
+async function getInsightsRange({ since, until, level } = {}) {
+  const { accountId } = getConfig();
+  if (!since || !until) throw new Error('Faltan since/until');
+  const data = await graphGet(`/${accountId}/insights`, {
+    level: level || 'account',
+    fields: 'impressions,clicks,spend,actions,ctr,cpc,cpm,reach,frequency',
+    time_range: JSON.stringify({ since, until }),
+    limit: 200,
+  }, { cacheTtlMs: 60000 });
+  return data.data || [];
+}
+
+// Nota de huso horario: Graph interpreta since/until en el huso de la cuenta
+// publicitaria (Bogotá, UTC-5 para esta cuenta); leads.created_at en el CRM se
+// guarda en UTC (convención del proyecto — ver CLAUDE.md). Por eso al cruzar contra
+// el CRM se traslada el borde del rango +5h antes de comparar contra created_at, o
+// los días de borde quedan descuadrados hasta 5 horas.
+const BOGOTA_OFFSET_MS = 5 * 60 * 60 * 1000;
+function dateOnlyToUtcIso(dateStr, endOfDay) {
+  // dateStr: 'YYYY-MM-DD' en horario de Bogotá. endOfDay=true -> 23:59:59.999 local.
+  const localMs = Date.parse(dateStr + (endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'));
+  return new Date(localMs + BOGOTA_OFFSET_MS).toISOString();
+}
+
+function addDays(dateStr, delta) {
+  const d = new Date(dateStr + 'T00:00:00.000Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().split('T')[0];
+}
+
+function daysBetween(since, until) {
+  const a = new Date(since + 'T00:00:00.000Z');
+  const b = new Date(until + 'T00:00:00.000Z');
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+
+// Suma insights (cuenta o por campaña) de un rango + cruza leads reales del CRM por
+// ad_id — mismo criterio "fuente de verdad" que getCampaigns()/getCampaignById().
+async function summarizeRange(since, until) {
+  const { accountId } = getConfig();
+  const [insights, adsData] = await Promise.all([
+    getInsightsRange({ since, until, level: 'account' }),
+    graphGet(`/${accountId}/ads`, { fields: 'id', limit: 500 }, { cacheTtlMs: 60000 }).catch(() => ({ data: [] })),
+  ]);
+  const m = insights[0] || {};
+  const spend = parseFloat(m.spend || 0);
+  const impressions = parseInt(m.impressions || 0);
+  const clicks = parseInt(m.clicks || 0);
+  const reach = parseInt(m.reach || 0);
+  const frequency = parseFloat(m.frequency || 0);
+  const ctr = parseFloat(m.ctr || 0);
+  const cpc = parseFloat(m.cpc || 0);
+  const cpm = parseFloat(m.cpm || 0);
+  const leadsMeta = extractLeads(m.actions);
+
+  const adIds = (adsData.data || []).map(a => a.id).filter(Boolean);
+  const sinceUtc = dateOnlyToUtcIso(since, false);
+  const untilUtc = dateOnlyToUtcIso(until, true);
+  let leadsCRM = 0;
+  try {
+    leadsCRM = store.countLeadsByAdIdsRange(adIds, sinceUtc, untilUtc);
+  } catch (e) {
+    console.error('[META-ADS] No se pudo cruzar leads reales del CRM para el rango:', e.message);
+  }
+
+  const dias = daysBetween(since, until);
+  return {
+    periodo: { since, until, dias },
+    spend, impressions, clicks, reach, frequency, ctr, cpc, cpm,
+    leadsMeta, leadsCRM,
+    cplMeta: leadsMeta > 0 ? spend / leadsMeta : 0,
+    cplCRM: leadsCRM > 0 ? spend / leadsCRM : 0,
+    gastoDia: dias > 0 ? spend / dias : 0,
+    leadsDia: dias > 0 ? leadsCRM / dias : 0,
+  };
+}
+
+function pctDelta(actual, referencia) {
+  if (!referencia) return null;
+  return ((actual - referencia) / referencia) * 100;
+}
+
+// veredicto por métrica: 'bien' | 'alerta' | 'mal' — comparado contra los umbrales
+// del baseline (ver meta-ads-baseline.js), no contra el periodo de referencia elegido
+// (baseline o anterior) — el semáforo siempre mide contra la vara histórica fija.
+function evaluarVeredictos(actual, umbrales) {
+  const v = {};
+  if (actual.leadsMeta > 0) {
+    v.cpl = actual.cplMeta <= umbrales.cplBueno ? 'bien' : (actual.cplMeta <= umbrales.cplAlerta ? 'alerta' : 'mal');
+  } else {
+    v.cpl = null;
+  }
+  v.ctr = actual.ctr >= umbrales.ctrMin ? 'bien' : 'mal';
+  v.cpm = actual.cpm <= umbrales.cpmMax ? 'bien' : 'mal';
+  v.frecuencia = actual.frequency <= umbrales.frecuenciaMax ? 'bien' : (actual.frequency > 0 ? 'alerta' : null);
+  return v;
+}
+
+/**
+ * Compara un rango [since, until] contra el baseline histórico de Tocaima o contra
+ * el periodo inmediatamente anterior de igual duración. Devuelve ambas definiciones
+ * de CPL (Meta y CRM real) lado a lado — nunca se mezclan ni se sustituyen una por
+ * otra, porque el baseline se midió con la métrica de Meta (ver meta-ads-baseline.js).
+ */
+async function comparePeriods({ since, until, vs }) {
+  const baseline = require('./meta-ads-baseline').getBaseline();
+  const actual = await summarizeRange(since, until);
+
+  let referencia;
+  if (vs === 'anterior') {
+    const dias = daysBetween(since, until);
+    const prevUntil = addDays(since, -1);
+    const prevSince = addDays(prevUntil, -(dias - 1));
+    referencia = await summarizeRange(prevSince, prevUntil);
+    referencia.esBaseline = false;
+  } else {
+    referencia = {
+      periodo: baseline.periodo,
+      spend: baseline.spend, impressions: baseline.impressions, reach: baseline.reach,
+      frequency: baseline.frecuencia, ctr: baseline.ctr, cpm: baseline.cpm,
+      clicks: null, cpc: null,
+      leadsMeta: baseline.leadsMeta, leadsCRM: null,
+      cplMeta: baseline.cplMeta, cplCRM: null,
+      gastoDia: baseline.periodo.dias > 0 ? baseline.spend / baseline.periodo.dias : 0,
+      leadsDia: baseline.periodo.dias > 0 ? baseline.leadsMeta / baseline.periodo.dias : 0,
+      esBaseline: true, fuente: baseline.fuente, definicionLead: baseline.definicionLead,
+    };
+  }
+
+  const deltas = {
+    spend: pctDelta(actual.spend, referencia.spend),
+    cplMeta: pctDelta(actual.cplMeta, referencia.cplMeta),
+    ctr: pctDelta(actual.ctr, referencia.ctr),
+    cpm: pctDelta(actual.cpm, referencia.cpm),
+    leadsMeta: pctDelta(actual.leadsMeta, referencia.leadsMeta),
+  };
+
+  return {
+    vs: vs === 'anterior' ? 'anterior' : 'baseline',
+    actual, referencia, deltas,
+    veredictos: evaluarVeredictos(actual, baseline.umbrales),
+    umbrales: baseline.umbrales,
+  };
+}
+
 // ─── Resumen de estado ───────────────────────────────────────
 
 // Antes llamaba a getCampaigns() completo (que a su vez ya hacía sus propias 3
@@ -1380,6 +1530,10 @@ module.exports = {
   getCampaignRealLeads,
   // Conversions API
   sendConversionEvent,
+  // Comparativa de periodos
+  getInsightsRange,
+  comparePeriods,
+  summarizeRange,
   // Creación de campañas (flujo legacy WhatsApp)
   getAccountInfo,
   createCampaign,

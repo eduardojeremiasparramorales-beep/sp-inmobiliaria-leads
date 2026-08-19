@@ -4909,6 +4909,16 @@ async function checkMetaAdsAlertas() {
     } catch (e) { /* feed opcional */ }
   }
 
+  // Mejoras con seguimiento (comparativa contra el baseline histórico) + snapshot
+  // diario de cuenta — corre en el mismo ciclo de 6h, sin agregar un scheduler
+  // nuevo. sincronizar() ya cierra solo las mejoras cuya condición desapareció.
+  try {
+    const mejoras = require('./services/meta-ads-mejoras');
+    await mejoras.sincronizar();
+    await mejoras.guardarSnapshotDiario();
+  } catch (e) {
+    console.error('[SCHED] meta-ads mejoras/snapshot:', e.message);
+  }
 }
 
 // La cuenta puede estar "sana" (ACTIVE/APPROVED/GREEN) y aun así no enviar nada nuevo:

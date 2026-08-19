@@ -366,4 +366,42 @@ router.get('/compare', requireConfig, wrap(async (req, res) => {
   res.json(await metaAdsAdvisor.compare(ids));
 }));
 
+// ─── Comparativa de periodos (Antes vs Ahora) ─────────────────
+// Compara un rango contra el baseline histórico de Tocaima ($926-972 CPL) o contra
+// el periodo inmediatamente anterior de igual duración — ver comparePeriods() en
+// meta-ads.js, que devuelve CPL Meta y CPL real CRM por separado (no son
+// intercambiables: el baseline se midió con la métrica de Meta).
+const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
+router.get('/comparativa', requireConfig, wrap(async (req, res) => {
+  const { since, until, vs } = req.query;
+  if (!FECHA_RE.test(since || '') || !FECHA_RE.test(until || '')) {
+    return res.status(400).json({ error: 'fechas_invalidas', detalle: 'since/until deben venir como YYYY-MM-DD' });
+  }
+  if (since > until) return res.status(400).json({ error: 'rango_invertido' });
+  const dias = Math.round((new Date(until) - new Date(since)) / 86400000) + 1;
+  if (dias > 365) return res.status(400).json({ error: 'rango_muy_amplio', detalle: 'Máximo 365 días' });
+  res.json(await metaAds.comparePeriods({ since, until, vs: vs === 'anterior' ? 'anterior' : 'baseline' }));
+}));
+
+// ─── Mejoras con seguimiento ────────────────────────────────────
+// Lista viva persistida (meta_ads_mejoras) — a diferencia de /recommendations, que
+// se recalcula al vuelo y se pierde, esto guarda estado y se cierra sola cuando la
+// condición que la disparó deja de cumplirse (ver meta-ads-mejoras.js sincronizar()).
+const metaAdsMejoras = require('../services/meta-ads-mejoras');
+const ESTADOS_MEJORA_VALIDOS = ['pendiente', 'aplicada', 'descartada', 'resuelta'];
+
+router.get('/mejoras', requireConfig, wrap(async (req, res) => {
+  await metaAdsMejoras.sincronizar();
+  const estado = req.query.estado && ESTADOS_MEJORA_VALIDOS.includes(req.query.estado) ? req.query.estado : undefined;
+  res.json(metaAdsMejoras.listMejoras(estado));
+}));
+
+router.post('/mejoras/:id/estado', requireConfig, wrap(async (req, res) => {
+  const { estado, nota } = req.body || {};
+  if (!ESTADOS_MEJORA_VALIDOS.includes(estado)) return res.status(400).json({ error: 'estado_invalido' });
+  const row = metaAdsMejoras.setEstado(req.params.id, estado, nota);
+  if (!row) return res.status(404).json({ error: 'mejora_no_encontrada' });
+  res.json({ ok: true, mejora: row });
+}));
+
 module.exports = router;
