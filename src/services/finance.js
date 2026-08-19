@@ -275,6 +275,12 @@ function crearVenta(data = {}) {
   store.run('UPDATE ventas SET comision_id = ?, transaccion_id = ? WHERE id = ?', [comisionId, transaccionId, ventaId]);
   if (fPago === 'financiado') generarCuotas(ventaId, monto, nCuotas, fechaVenta, vendedorId, leadId);
 
+  // Gamificación de la Red: la venta CONFIRMADA por el admin (esta función es la única
+  // fuente) otorga XP al asesor. Idempotente por ref_id=ventaId — reguardar la misma
+  // venta no duplica puntos. Best-effort: nunca tumba el registro de la venta.
+  try { require('./niveles').otorgar(vendedorId, 'venta_confirmada', ventaId); }
+  catch (e) { console.error('[XP] venta_confirmada:', e.message); }
+
   log.info('FINANZAS', `Venta #${ventaId}: total $${monto.toLocaleString()}, comisión asesor $${montoComisionAsesor.toLocaleString()}, ingreso Leons $${montoIngresoEmpresa.toLocaleString()}`);
   return { ok: true, id: ventaId, montoComisionAsesor, montoIngresoEmpresa, comisionId, transaccionId };
 }

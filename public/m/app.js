@@ -988,9 +988,9 @@ function renderEqBanner(){
     const avs=_eqAsesores.slice(0,maxShow);
     const extra=_eqAsesores.length-maxShow;
     box.innerHTML=
-      '<div class="eq-banner__logo"><img src="/icons/logo.png" alt=""></div>'+
-      '<div class="eq-banner__brand">EQUIPO LEONS</div>'+
-      '<div class="eq-banner__sub">Chat interno — los clientes no lo ven</div>'+
+      '<div class="eq-banner__logo"><img src="'+((me&&me.externo&&me.grupo&&me.grupo.marca_logo)||'/icons/logo.png')+'" alt=""></div>'+
+      '<div class="eq-banner__brand">'+((me&&me.externo)?('COMUNIDAD '+String(marcaNombre()).toUpperCase()):'EQUIPO LEONS')+'</div>'+
+      '<div class="eq-banner__sub">'+((me&&me.externo)?'Comunidad de asesores — los clientes no la ven':'Chat interno — los clientes no lo ven')+'</div>'+
       '<div class="eq-banner__team">'+
         avs.map(a=>{ const p=_eqPresence[a.id]; const online=p&&(Date.now()-new Date(p.last_seen).getTime()<60000); return `<div class="av" style="background:${avatarColor(a.nombre)};overflow:hidden;position:relative">${a.foto?`<img src="${esc(a.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(a.nombre)}<div class="eq-presence-dot ${online?'on':'off'}" data-vid="${a.id}"></div></div>`; }).join('')+
         (extra>0?`<div class="eq-banner__more">+${extra}</div>`:'')+
@@ -1343,6 +1343,9 @@ async function init(){
   else {
     me = await api('/api/me');
     if(!me){ location.replace('/login.html'); return; }
+    // Red de externos: sin suscripción vigente, la app NO muestra leads — solo la pantalla
+    // de suscripción (subir comprobante). El gate se apoya en /api/me.suscripcion.vigente.
+    if(me.externo && me.suscripcion && !me.suscripcion.vigente){ renderSuscripcionGate(); return; }
     _chatBg = me.chat_bg === 'none' ? 'none' : 'leones';
     localStorage.setItem('sp_chat_bg', _chatBg);
     aplicarFondoChat();
@@ -4740,6 +4743,8 @@ function getTabsPrincipales(){ return [
 ]; }
 function getTabsSecundarios(){ return [
   ...((me && me.rol==='jefe')?[['supervision','Supervisión',SVG.eye]]:[]),
+  // Ranking global de la Red: solo para asesores externos (gamificación de la Red).
+  ...((me && me.externo)?[['ranking','Ranking',SVG.star]]:[]),
   ['calendario','Calendario',SVG.calendar], ['copiloto','Copiloto',SVG.sparkles],
 ]; }
 function getTABS(){ return [...getTabsPrincipales(), ...getTabsSecundarios()]; }
@@ -4770,7 +4775,7 @@ const FAB_TABS = ['chats','tareas','calendario'];
 async function irTab(t){ tab=t; haptic(8);
   renderNav();  // repinta para que el botón "Más" refleje si el tab activo es secundario
   $('#fab').classList.toggle('hidden', !FAB_TABS.includes(t));
-  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent='Leons Group'; renderList(); mostrarLista(true); }
+  if(t==='chats'){ showArchivados=false; $('#navTitle').childNodes[0].nodeValue='Conversaciones'; $('#navSub').textContent=marcaNombre(); renderList(); mostrarLista(true); }
   else { mostrarLista(false);
     const entrada = getTABS().find(x=>x[0]===t);
     if(!entrada) return;               // tab desconocido: no reventar con undefined
@@ -4791,7 +4796,7 @@ function mostrarLista(v){
 }
 // Skeleton de tarjetas (para estados de carga, en vez de "Cargando…" plano)
 function skeletonCards(n){ let h=''; for(let i=0;i<(n||3);i++){ h+=`<div class="sk-card"><div class="sk" style="width:44px;height:44px;border-radius:14px;flex-shrink:0"></div><div style="flex:1"><div class="sk sk-line" style="width:60%;margin-bottom:8px"></div><div class="sk sk-line" style="width:90%;margin-bottom:8px"></div><div class="sk sk-line" style="width:40%"></div></div></div>`; } return h; }
-function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent='Leons Group';
+function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('#navSub').textContent=marcaNombre();
   const box=document.createElement('div'); box.id='tabScreen'; box.className='m-scroll'; box.style.cssText='display:flex;flex-direction:column;';
   // Insertar el contenedor en el DOM ANTES de construir cada rama, para que los
   // loaders (cargarTareas) que consultan el DOM antes de su primer
@@ -5193,6 +5198,13 @@ function pantallaTab(t,label){ $('#navTitle').childNodes[0].nodeValue=label; $('
       </div>
     </div>`;
     cargarSupervision();
+  } else if (t === 'ranking') {
+    box.innerHTML = `<div style="padding:18px;width:100%;max-width:440px;margin:0 auto">
+      <div id="rankMiNivel" style="margin-bottom:16px">${skeletonCards(1)}</div>
+      <h3 style="font-size:13px;font-weight:600;color:var(--gold);margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em">🏆 Ranking de la Red</h3>
+      <div id="rankLista">${skeletonCards(4)}</div>
+    </div>`;
+    cargarRankingRed();
   } else if (t === 'copiloto') {
     const act = leads.filter(l => l.status !== 'cerrado');
     const sinResp = leads.filter(l => Number(l.unread_count||0) > 0);
@@ -5438,6 +5450,43 @@ async function cargarInsigniasPerfil(){
       <span style="font-size:9.5px;color:var(--text-3);text-align:center;line-height:1.1">${esc(c.label)}</span>
     </div>`;
   }).join('')}</div><div style="font-size:11px;color:var(--text-3);margin-top:8px">${ganadas.size} de ${cats.length} desbloqueadas</div>`;
+}
+// Ranking global de la Red (asesores externos): nivel del propio asesor con barra de
+// progreso + podio/lista de toda la Red, resaltando la posición propia.
+async function cargarRankingRed(){
+  const miBox=document.getElementById('rankMiNivel');
+  const lista=document.getElementById('rankLista');
+  const [nivelData, rank]=await Promise.all([api('/api/red/nivel'), api('/api/red/ranking')]);
+  if(miBox && nivelData && nivelData.nivel){
+    const n=nivelData.nivel;
+    const pct=Math.round((n.progreso||0)*100);
+    const falta=n.faltanXp||0;
+    miBox.innerHTML=`<div style="background:var(--bg-2);border:1px solid var(--gold-line,rgba(200,164,90,.3));border-radius:18px;padding:18px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:34px">${n.emoji||'🥉'}</div>
+        <div style="flex:1">
+          <div style="font-size:17px;font-weight:800;color:var(--gold)">${esc(n.nombre||'Bronce')}</div>
+          <div style="font-size:12px;color:var(--text-3)">${nivelData.xp||0} XP acumulado</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;height:9px;border-radius:999px;background:var(--bg-4,rgba(255,255,255,.08));overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:var(--grad-gold);border-radius:999px"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px">${n.siguienteNombre?`Faltan ${falta} XP para ${esc(n.siguienteNombre)}`:'¡Nivel máximo alcanzado! 💎'}</div>
+    </div>`;
+  } else if(miBox){ miBox.innerHTML=''; }
+  if(!lista) return;
+  if(!Array.isArray(rank)||!rank.length){ lista.innerHTML='<div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Aún no hay ranking. ¡Cierra ventas para escalar!</div>'; return; }
+  const medal=i=>i===0?'🥇':i===1?'🥈':i===2?'🥉':`<span style="color:var(--text-3);font-size:13px;width:22px;display:inline-block;text-align:center">${i+1}</span>`;
+  lista.innerHTML=rank.map((v,i)=>`<div style="display:flex;align-items:center;gap:11px;padding:11px 10px;border-radius:12px;margin-bottom:6px;${v.yo?'background:var(--gold-soft,rgba(200,164,90,.1));border:1px solid var(--gold-line,rgba(200,164,90,.3))':'border-bottom:1px solid var(--border-soft)'}">
+    <span style="width:26px;text-align:center;font-size:16px">${medal(i)}</span>
+    <div class="m-avatar" style="width:36px;height:36px;border-radius:12px;font-size:13px;background:${v.foto?'':avatarColor(v.nombre)};overflow:hidden">${v.foto?`<img src="${esc(v.foto)}" style="width:100%;height:100%;object-fit:cover">`:initials(v.nombre)}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:14px;font-weight:${v.yo?700:500};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.nombre)}${v.yo?' <span style=\"font-size:10px;color:var(--gold)\">(tú)</span>':''}</div>
+      <div style="font-size:11px;color:var(--text-3)">${(v.nivel&&v.nivel.emoji)||'🥉'} ${esc((v.nivel&&v.nivel.nombre)||'Bronce')} · ${v.vendidos} ${v.vendidos===1?'venta':'ventas'}</div>
+    </div>
+    <div style="font-size:13px;color:var(--gold);font-weight:700">${v.xp} XP</div>
+  </div>`).join('');
 }
 async function cargarRankingPerfil(){
   const box=document.getElementById('perfilRanking'); if(!box) return;
@@ -5910,6 +5959,13 @@ function conectarStream(){ try{ const es=new EventSource('/api/stream'); _es=es;
     const d=await api('/api/mis-leads'); if(d){ leads=d; renderFilters(); updateCardBadges(); renderList(); }
     if(current&&$('#scChat').classList.contains('show')){ const dm=await api(`/api/leads/${current.id}/mensajes`); if(dm){ currentMsgs=dm.mensajes; _audioPlayers={}; $('#cMsgs').innerHTML=msgsHTML(currentMsgs); const b=$('#cMsgs'); b.scrollTop=b.scrollHeight; } }
   });
+  // Red de externos: aprobación/rechazo de la suscripción en vivo. Si el asesor está en la
+  // pantalla de suscripción y le aprueban el pago, la app se recarga sola con acceso pleno.
+  es.addEventListener('red_suscripcion',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){}
+    if(x.estado==='activa'){ toast('✅ ¡Suscripción activada!'); setTimeout(()=>location.reload(),1200); }
+    else if(x.estado==='rechazado'){ toast('Tu comprobante fue rechazado. Vuelve a enviarlo.'); }
+    else if(x.estado==='vencida'){ toast('Tu suscripción venció. Renueva para seguir recibiendo clientes.'); }
+  });
   es.addEventListener('nuevo_mensaje',async ev=>{ let x={}; try{x=JSON.parse(ev.data);}catch(e){}
     await refrescarLead(x.leadId);
     if(tab==='supervision'){ try{ cargarSuperVisionRefresh(); }catch(e){} }
@@ -6036,5 +6092,68 @@ init();
 const _chatObs=new MutationObserver(()=>initLocationMaps());
 const _chatEl=$('#cMsgs');
 if(_chatEl) _chatObs.observe(_chatEl,{childList:true,subtree:false});
+
+/* ════════ Red de externos: marca del grupo + pantalla de suscripción ════════ */
+function marcaNombre(){ return (me && me.grupo && me.grupo.marca_nombre) || 'Leons Group'; }
+
+// Pantalla que reemplaza toda la app cuando un asesor externo aún no tiene suscripción
+// vigente: explica el plan y deja subir el comprobante de pago (Nequi/transferencia).
+async function renderSuscripcionGate(){
+  const nav=$('#nav'); if(nav) nav.style.display='none';
+  const fab=$('#fab'); if(fab) fab.style.display='none';
+  const home=$('#scHome'); if(!home) return;
+  home.querySelector('.m-scroll')?.remove();
+  const s=(me&&me.suscripcion)||{};
+  let info=null; try{ info=await api('/api/red/mi-suscripcion'); }catch(e){}
+  const plan=(info&&info.plan)||null;
+  const pendiente=(info&&info.pagoPendiente)||null;
+  const money=n=>'$'+(Number(n)||0).toLocaleString('es-CO');
+  const box=document.createElement('div');
+  box.className='m-scroll';
+  box.style.cssText='padding:24px 20px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px';
+  const estadoTxt = s.estado==='vencida' ? 'Tu suscripción venció' : s.estado==='pendiente' ? 'Tu pago está en revisión' : 'Activa tu cuenta';
+  const sub = pendiente
+    ? 'Recibimos tu comprobante. El equipo lo verifica y activamos tu cuenta muy pronto — te avisaremos.'
+    : 'Para empezar a recibir clientes, activa tu suscripción con un pago mensual. Sube tu comprobante y lo aprobamos.';
+  box.innerHTML=`
+    <div style="width:80px;height:80px;border-radius:24px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.4)"><img src="${(me.grupo&&me.grupo.marca_logo)||'/icons/logo.png'}" style="width:100%;height:100%;object-fit:cover" alt=""></div>
+    <div style="font-family:var(--f-title);font-size:20px;color:var(--gold)">${esc(marcaNombre())}</div>
+    <div style="font-size:17px;font-weight:700">${esc(estadoTxt)}</div>
+    <div style="font-size:13px;color:var(--text-2);line-height:1.6;max-width:340px">${esc(sub)}</div>
+    ${plan?`<div style="background:var(--bg-2);border:1px solid var(--gold-line,rgba(200,164,90,.3));border-radius:16px;padding:18px;width:100%;max-width:340px">
+      <div style="font-size:13px;color:var(--text-3)">${esc(plan.nombre)}</div>
+      <div style="font-size:26px;font-weight:800;color:var(--gold);margin:4px 0">${money(plan.precio)}<span style="font-size:13px;color:var(--text-3);font-weight:400"> / ${plan.dias_vigencia} días</span></div>
+    </div>`:''}
+    ${pendiente?`<div style="background:var(--gold-soft,rgba(200,164,90,.1));border-radius:12px;padding:12px 16px;font-size:12px;color:var(--gold);max-width:340px">⏳ Comprobante enviado — en revisión</div>`:`
+    <label style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px">
+      <input type="file" id="gateFile" accept="image/*,application/pdf" style="display:none">
+      <button id="gatePick" style="height:52px;border-radius:14px;border:1px dashed var(--gold);background:var(--gold-soft,rgba(200,164,90,.08));color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">📎 Elegir comprobante (foto o PDF)</button>
+      <div id="gateFileName" style="font-size:12px;color:var(--text-3)"></div>
+      <input id="gateRef" placeholder="Referencia (opcional: Nequi, #transf.)" style="height:46px;border-radius:12px;border:1px solid var(--border);background:var(--bg-3);color:var(--text);padding:0 14px;font-size:14px;font-family:inherit">
+      <button id="gateSend" disabled style="height:52px;border-radius:14px;border:none;background:var(--grad-gold);color:#0A0A0A;font-size:15px;font-weight:700;cursor:pointer;opacity:.5">Enviar comprobante</button>
+    </label>`}
+    <button id="gateLogout" style="margin-top:10px;background:none;border:none;color:var(--text-3);font-size:13px;text-decoration:underline;cursor:pointer">Cerrar sesión</button>
+  `;
+  home.insertBefore(box, home.querySelector('.m-fab'));
+  // Wiring
+  $('#gateLogout')?.addEventListener('click', async()=>{ try{ await api('/api/logout',{method:'POST'}); }catch(e){} location.replace('/login.html'); });
+  const file=$('#gateFile'), pick=$('#gatePick'), send=$('#gateSend'), name=$('#gateFileName');
+  if(pick&&file){
+    pick.addEventListener('click', ()=>file.click());
+    file.addEventListener('change', ()=>{ if(file.files[0]){ name.textContent=file.files[0].name; send.disabled=false; send.style.opacity='1'; } });
+    send.addEventListener('click', async()=>{
+      if(!file.files[0]) return;
+      send.disabled=true; send.textContent='Enviando…';
+      const fd=new FormData(); fd.append('comprobante', file.files[0]); fd.append('referencia', ($('#gateRef')?.value||''));
+      try{
+        const res=await fetch('/api/red/pago/comprobante',{method:'POST',body:fd,credentials:'include'});
+        if(res.ok){ toast('¡Comprobante enviado! Te avisamos al aprobarlo.'); setTimeout(()=>location.reload(), 1400); }
+        else { toast('No se pudo enviar. Intenta de nuevo.'); send.disabled=false; send.textContent='Enviar comprobante'; }
+      }catch(e){ toast('Error de conexión'); send.disabled=false; send.textContent='Enviar comprobante'; }
+    });
+  }
+  // Escuchar la aprobación en vivo (SSE) sin obligar al asesor a recargar a mano.
+  try{ conectarStream && conectarStream(); }catch(e){}
+}
 
 })();

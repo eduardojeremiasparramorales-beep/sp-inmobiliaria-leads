@@ -72,21 +72,42 @@ function pickVendedorPorZona(activos, zonaSlug) {
   return activos.find(v => vendedorCubreZona(v, zonaSlug)) || null;
 }
 
-// Punto único de decisión de asesor para toda la app. hints: { zona, proyecto, origen }.
-// Devuelve { vendedor, fuente } — fuente 'zona' | 'fallback' (útil para marcar el lead
-// como fuera de zona cuando nadie cubre la que le tocaba).
+// Punto único de decisión de asesor para toda la app. hints: { zona, proyecto, origen,
+// grupo }. Devuelve { vendedor, fuente, grupo, degradado } — fuente 'zona' | 'fallback'.
+//
+// Orden de decisión: (1) grupo destino — si el lead ya trae grupo sellado (reapertura o
+// reasignación) se respeta y NUNCA cruza de mundo; si no, la cuota configurable decide
+// (services/reparto.js). (2) se filtra el pool al grupo; si nadie del grupo puede tomarlo
+// se degrada al resto para no perder el lead. (3) dentro del grupo: zona primero, luego
+// menor carga EFECTIVA (ponderada por nivel de gamificación).
 function elegirVendedor(activos, hints) {
   if (!activos || !activos.length) return { vendedor: null, fuente: null };
-  const { zona } = hints || {};
+  hints = hints || {};
+  const { zona } = hints;
+  const reparto = require('./reparto');
 
-  const porZona = pickVendedorPorZona(activos, zona);
-  if (porZona) return { vendedor: porZona, fuente: 'zona' };
+  // 1) Grupo destino
+  let grupoDestino = hints.grupo != null ? Number(hints.grupo) : null;
+  let degradado = false;
+  if (grupoDestino == null) {
+    const r = reparto.elegirGrupo(activos);
+    grupoDestino = r.grupoId; degradado = r.degradado;
+  }
 
-  // Nadie cubre la zona (o no hay zona) → mismo comportamiento de siempre: menor carga
-  // global, con preferencia por especialización de proyecto/ciudad/origen si aplica.
-  const { pickVendedorInteligente } = require('./assigner');
-  const vendedor = pickVendedorInteligente(activos, hints);
-  return { vendedor, fuente: zona ? 'fallback' : null };
+  // 2) Filtrar al grupo destino; degradar si nadie del grupo está disponible
+  let pool = activos.filter(v => reparto.grupoDe(v) === grupoDestino);
+  if (!pool.length) {
+    reparto.registrarDegradacion(grupoDestino, activos);
+    pool = activos;
+    degradado = true;
+  }
+
+  // 3) Zona primero (F-zonas), luego carga efectiva por nivel
+  const porZona = pickVendedorPorZona(pool, zona);
+  if (porZona) return { vendedor: porZona, fuente: 'zona', grupo: grupoDestino, degradado };
+
+  const vendedor = reparto.pickPorCargaEfectiva(pool, hints);
+  return { vendedor, fuente: zona ? 'fallback' : null, grupo: grupoDestino, degradado };
 }
 
 module.exports = {

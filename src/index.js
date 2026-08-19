@@ -828,6 +828,10 @@ app.get('/api/reportes', auth.requireAdmin, (req, res) => {
 // (auto-registro sin sesión previa) — cada ruta declara su propio nivel adentro.
 app.use('/api/vendedores', require('./routes/vendedores'));
 
+// Red de Asesores Externos: suscripción, pagos, nivel y ranking (asesor externo) + gestión
+// admin. Sin auth a nivel de mount — cada ruta declara su nivel (requireExterno/requireAdmin).
+app.use('/api/red', require('./routes/red'));
+
 // ===================== AUTENTICACIÓN =====================
 
 app.post('/api/login', loginLimiter, (req, res) => {
@@ -986,6 +990,22 @@ app.post('/api/logout', auth.requireAuth, (req, res) => {
 
 app.get('/api/me', auth.requireAuth, (req, res) => {
   const v = req.session.vendedorId ? store.getVendedorById(req.session.vendedorId) : null;
+  // Grupo del asesor (Red de externos): la app móvil lo usa para el branding (marca del
+  // grupo en vez de 'Leons Group'), para mostrar el tab Ranking y la sala de chat 'red',
+  // y para saber si debe exigir suscripción antes de dar acceso a los leads.
+  const grupoId = v && v.grupo_id != null ? Number(v.grupo_id) : 1;
+  const grupo = store.getGrupoById(grupoId) || null;
+  const esExterno = grupoId === 2;
+  let suscripcion = null;
+  if (esExterno && v) {
+    try {
+      const vig = store.getSuscripcionVigente(v.id);
+      const ult = store.getSuscripcionByVendedor(v.id);
+      const s = vig || ult;
+      if (s) suscripcion = { estado: s.estado, vence_at: s.vence_at, vigente: !!vig };
+      else suscripcion = { estado: 'ninguna', vence_at: null, vigente: false };
+    } catch (e) { suscripcion = { estado: 'ninguna', vence_at: null, vigente: false }; }
+  }
   res.json({
     nombre: req.session.nombre, email: req.session.email,
     rol: req.session.rol, vendedorId: req.session.vendedorId,
@@ -995,6 +1015,10 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
     estado: v ? v.estado : null,
     two_fa: v ? (v.two_fa ? true : false) : false,
     chat_bg: v ? (v.chat_bg || 'leones') : 'leones',
+    grupoId,
+    grupo: grupo ? { id: grupo.id, slug: grupo.slug, nombre: grupo.nombre, tipo: grupo.tipo, marca_nombre: grupo.marca_nombre, marca_logo: grupo.marca_logo } : null,
+    externo: esExterno,
+    suscripcion,
   });
 });
 
@@ -2050,6 +2074,16 @@ app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
   // ?con=<vendedorId> → hilo directo; sin él → canal general
   const con = req.query.con ? Number(req.query.con) : null;
   const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
+  // Sala del solicitante: los externos ven el canal 'red', el resto 'leons'.
+  const sala = auth.esExterno(req) ? 'red' : 'leons';
+  // DM entre asesores: solo dentro del mismo grupo (un externo no puede abrir un hilo con
+  // un asesor de Leons y viceversa). El admin puede con cualquiera.
+  if (con != null && !esAccesoGlobal(req)) {
+    const otro = store.getVendedorById(con);
+    const gYo = auth.grupoDeSesion(req);
+    const gOtro = otro && otro.grupo_id != null ? Number(otro.grupo_id) : 1;
+    if (!otro || gYo !== gOtro) return res.status(403).json({ error: 'dm_fuera_de_grupo' });
+  }
   let msgs;
   if (con != null) {
     const readSenders = store.markTeamDirectRead(yo, con);
@@ -2062,7 +2096,7 @@ app.get('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     }
     msgs = store.getTeamDirectMessages(yo, con, req.query.before_id ? Number(req.query.before_id) : null, 200);
   } else {
-    msgs = store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 200);
+    msgs = store.getTeamMessages(req.query.before_id ? Number(req.query.before_id) : null, 200, sala);
   }
   // Enriquecer con reacciones
   if (Array.isArray(msgs) && msgs.length) {
@@ -2087,7 +2121,16 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
   const toVendedorId = (to != null && to !== '') ? Number(to) : null;
   const menciones = Array.isArray(mentions) ? mentions.map(Number).filter(Boolean) : [];
   const replyToId = replyTo ? Number(replyTo) : null;
-  const msg = store.saveTeamMessage(fromId, nombre, String(body || '').trim(), { toVendedorId, mentions: menciones, leadRef, replyToId, mediaType: media_type || null, mediaUrl: media_url || null });
+  // Sala del emisor: externos escriben en 'red', el resto en 'leons'. Un DM solo puede ir
+  // a alguien del mismo grupo (el admin es la excepción — puede escribir a cualquiera).
+  const sala = auth.esExterno(req) ? 'red' : 'leons';
+  if (toVendedorId != null && !esAccesoGlobal(req)) {
+    const otro = store.getVendedorById(toVendedorId);
+    const gYo = auth.grupoDeSesion(req);
+    const gOtro = otro && otro.grupo_id != null ? Number(otro.grupo_id) : 1;
+    if (!otro || gYo !== gOtro) return res.status(403).json({ error: 'dm_fuera_de_grupo' });
+  }
+  const msg = store.saveTeamMessage(fromId, nombre, String(body || '').trim(), { toVendedorId, mentions: menciones, leadRef, replyToId, mediaType: media_type || null, mediaUrl: media_url || null, sala });
 
   if (toVendedorId != null) {
     // Directo: al destinatario y a los admins (monitoreo transparente)
@@ -2100,7 +2143,9 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
       r.then(ok => console.log(`[EQUIPO-PUSH] DM enviado a vendor ${toVendedorId}`)).catch(e => console.error(`[EQUIPO-PUSH] DM fallo a vendor ${toVendedorId}:`, e.message || e));
     } catch (e) { console.error('[EQUIPO-PUSH] DM setup fallo:', e.message); }
   } else {
-    events.emitToTodos('equipo_mensaje', msg);
+    // Aísla el canal general por grupo: un mensaje de la Red no llega al SSE de Leons.
+    const grupoEmisor = esAccesoGlobal(req) ? (sala === 'red' ? 2 : 1) : auth.grupoDeSesion(req);
+    events.emitToGrupo(grupoEmisor, 'equipo_mensaje', msg);
     // Push a TODO el equipo del canal general (excepto remitente y mencionados — los
     // mencionados reciben una push dedicada más abajo con título "te mencionó").
     // OJO: getVendedoresActivos() es la lista del round-robin de leads — excluye
@@ -2110,7 +2155,8 @@ app.post('/api/equipo/mensajes', auth.requireAuth, (req, res) => {
     // estén al día, no solo quienes reciben leads nuevos. getVendedores() trae a todos.
     try {
       const push = require('./services/push');
-      const activos = store.getVendedores();
+      // Push del canal general SOLO a los asesores del mismo grupo (aislamiento Red/Leons).
+      const activos = store.getVendedores({ grupoId: (esAccesoGlobal(req) ? (sala === 'red' ? 2 : 1) : auth.grupoDeSesion(req)) });
       const mencionSet = new Set(menciones.map(Number));
       for (const v of activos) {
         if (Number(v.id) !== fromId && !mencionSet.has(Number(v.id))) {
@@ -2151,8 +2197,9 @@ app.post('/api/equipo/general/leido', auth.requireAuth, (req, res) => {
 app.get('/api/equipo/general/unread', auth.requireAuth, (req, res) => {
   const yo = req.session.rol === 'admin' ? 0 : Number(req.session.vendedorId) || 0;
   const lastRead = store.getTeamGeneralLastRead(yo);
-  // contar no leídos desde lastRead
-  const row = store.one('SELECT COUNT(*) AS n FROM team_messages WHERE to_vendedor_id IS NULL AND (deleted IS NULL OR deleted = 0) AND id > ?', [lastRead]);
+  const sala = auth.esExterno(req) ? 'red' : 'leons';
+  // contar no leídos desde lastRead, SOLO de la sala del solicitante
+  const row = store.one("SELECT COUNT(*) AS n FROM team_messages WHERE to_vendedor_id IS NULL AND COALESCE(sala,'leons') = ? AND (deleted IS NULL OR deleted = 0) AND id > ?", [sala, lastRead]);
   res.json({ lastRead, unread: row ? Number(row.n) : 0 });
 });
 
@@ -2681,6 +2728,13 @@ app.post('/api/leads/:id/cerrar', auth.requireAuth, (req, res) => {
   // conversation:closed solo se emitía desde el router multicanal — el cierre de un
   // lead de WhatsApp (el canal dominante) nunca lo disparaba.
   try { require('./services/assigner').triggerWorkflow('conversation:closed', lead.id, ''); } catch (e) { /* workflow opcional */ }
+  // Gamificación de la Red: cerrar un lead de la Red que SÍ fue atendido (tuvo primera
+  // respuesta) otorga XP de lead atendido al asesor. Idempotente por ref_id=leadId.
+  try {
+    if (Number(lead.grupo_id) === 2 && lead.assigned_to_id && lead.first_response_at) {
+      require('./services/niveles').otorgar(lead.assigned_to_id, 'lead_atendido', lead.id);
+    }
+  } catch (e) { /* XP best-effort */ }
   res.json({ ok: true });
 });
 
@@ -3181,6 +3235,12 @@ app.post('/api/leads/:id/reasignar', auth.requireSupervisorOrAdmin, (req, res) =
   if (!lead) return res.status(404).json({ error: 'lead_no_existe' });
   const vendedor = getVendedores().find(v => Number(v.id) === Number(vendedorId));
   if (!vendedor) return res.status(400).json({ error: 'vendedor_no_existe' });
+  // Aislamiento de grupos: un lead sellado a un grupo no se reasigna a un asesor del otro
+  // mundo (Leons ↔ Red), aunque quien reasigna sea admin. El grupo del lead es traza
+  // permanente; NULL cuenta como Leons.
+  const grupoLead = lead.grupo_id != null ? Number(lead.grupo_id) : 1;
+  const grupoVend = vendedor.grupo_id != null ? Number(vendedor.grupo_id) : 1;
+  if (grupoLead !== grupoVend) return res.status(400).json({ error: 'no_se_puede_reasignar_a_otro_grupo' });
   const anteriorId = lead.assigned_to_id;
   store.reassignLead(lead.id, vendedor, anteriorId);
   // Notificar a ambos vendedores y admins para refrescar sus listas
@@ -4848,6 +4908,7 @@ async function checkMetaAdsAlertas() {
       });
     } catch (e) { /* feed opcional */ }
   }
+
 }
 
 // La cuenta puede estar "sana" (ACTIVE/APPROVED/GREEN) y aun así no enviar nada nuevo:
@@ -4928,10 +4989,13 @@ async function checkEscalation() {
           // Prefiere un vendedor que cubra la zona del lead (F-zonas); si nadie la cubre,
           // cae en preferir al que ya atiende el mismo proyecto/ciudad/origen (si la carga
           // está casi empatada) en vez de repartir estrictamente por menor carga.
-          const { vendedor: otroVendedor, fuente: fuenteReasig } = require('./services/zonas').elegirVendedor(activos, { zona: lead.zona, proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
+          const { vendedor: otroVendedor, fuente: fuenteReasig } = require('./services/zonas').elegirVendedor(activos, { zona: lead.zona, proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen, grupo: lead.grupo_id != null ? Number(lead.grupo_id) : 1 });
           if (fuenteReasig === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
           if (otroVendedor && lead.assigned_to_id) {
             const vendedorAnterior = lead.assigned_to_id;
+            // Penalización XP a la Red: el asesor externo que dejó caer el lead (sin
+            // responder hasta el escalado) pierde puntos. Idempotente por ref_id=leadId.
+            try { if (Number(lead.grupo_id) === 2 && vendedorAnterior) require('./services/niveles').otorgar(vendedorAnterior, 'lead_abandonado', lead.id); } catch (e) {}
             store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
             // Notificar a AMBOS vendedores
             events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
@@ -5003,10 +5067,13 @@ async function checkEscalation() {
         // Si es nuevo y no se reasignó antes, intentar reasignar ahora
         if (esNuevo && !esAsentado) {
           const activos = getVendedoresActivos().filter(v => v.id !== lead.assigned_to_id);
-          const { vendedor: otroVendedor, fuente: fuenteReasig } = require('./services/zonas').elegirVendedor(activos, { zona: lead.zona, proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen });
+          const { vendedor: otroVendedor, fuente: fuenteReasig } = require('./services/zonas').elegirVendedor(activos, { zona: lead.zona, proyecto: lead.proyecto, ciudad: lead.ciudad, origen: lead.origen, grupo: lead.grupo_id != null ? Number(lead.grupo_id) : 1 });
           if (fuenteReasig === 'fallback') store.setLeadZonaFuente(lead.id, 'fallback');
           if (otroVendedor && lead.assigned_to_id) {
             const vendedorAnterior = lead.assigned_to_id;
+            // Penalización XP a la Red: el asesor externo que dejó caer el lead (sin
+            // responder hasta el escalado) pierde puntos. Idempotente por ref_id=leadId.
+            try { if (Number(lead.grupo_id) === 2 && vendedorAnterior) require('./services/niveles').otorgar(vendedorAnterior, 'lead_abandonado', lead.id); } catch (e) {}
             store.reassignLead(lead.id, otroVendedor, vendedorAnterior);
             events.emitToVendedor(otroVendedor.id, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });
             events.emitToVendedor(vendedorAnterior, 'nuevo_mensaje', { leadId: lead.id, tipo: 'reasignado_automatico', ts: Date.now() });

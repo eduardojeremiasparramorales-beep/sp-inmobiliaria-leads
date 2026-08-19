@@ -80,4 +80,18 @@ function emitToTodos(evento, data) {
   for (const id of clients.keys()) emitToVendedor(id, evento, data);
 }
 
-module.exports = { addClient, removeClient, emitToVendedor, emitToAdmins, emitToTodos, getEventsSince };
+// Enviar solo a los asesores de un grupo (Red vs Leons) + admins (vendedor 0, que
+// monitorea ambos mundos). Aísla el chat de la Red del SSE del equipo interno: un
+// mensaje de la sala 'red' no debe llegar a los paneles de Leons.
+function emitToGrupo(grupoId, evento, data) {
+  let ids;
+  try {
+    const store = require('../db/store');
+    ids = store.getVendedores({ grupoId: Number(grupoId) }).map(v => Number(v.id));
+  } catch (e) { ids = []; }
+  const set = new Set(ids);
+  set.add(0); // admin siempre recibe (monitoreo transparente)
+  for (const id of set) if (clients.has(id)) emitToVendedor(id, evento, data);
+}
+
+module.exports = { addClient, removeClient, emitToVendedor, emitToAdmins, emitToTodos, emitToGrupo, getEventsSince };

@@ -168,7 +168,10 @@ function routeReply(fromPhone, messageBody, customerName, wamid, referral, callb
       ? vendedores.find(vd => vd.id === lead.assigned_to_id && vd.estado === 'activo')
       : null;
     if (!v) {
-      const { vendedor: elegido, fuente } = elegirVendedor(activos, { zona: lead.zona });
+      // Lead ya sellado a un grupo: la reasignación se queda DENTRO de ese grupo (no cruza
+      // Leons con la Red). Un lead sin grupo (histórico) cuenta como Leons.
+      const grupoLead = lead.grupo_id != null ? Number(lead.grupo_id) : 1;
+      const { vendedor: elegido, fuente } = elegirVendedor(activos, { zona: lead.zona, grupo: grupoLead });
       v = elegido || activos[0];
       if (fuente === 'fallback') setLeadZonaFuente(lead.id, 'fallback');
     }

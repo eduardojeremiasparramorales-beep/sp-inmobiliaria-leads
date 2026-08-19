@@ -34,6 +34,15 @@ function createSession(data) {
   // saber en qué BD buscar la sesión (y en qué BD vive el vendedor).
   let empresaId = data.empresaId != null ? data.empresaId : null;
   let empresaDbPath = data.empresaDbPath || null;
+  // Grupo del asesor (Red de externos). Si el llamador no lo pasa, se resuelve del
+  // vendedor una sola vez aquí (login/rotación de token) y queda cacheado en la sesión.
+  let grupoId = data.grupoId != null ? Number(data.grupoId) : null;
+  if (grupoId == null && (data.vendedor_id || data.vendedorId)) {
+    try {
+      const v = store.getVendedorById(data.vendedor_id || data.vendedorId);
+      if (v && v.grupo_id != null) grupoId = Number(v.grupo_id);
+    } catch (e) { /* sin grupo → Leons por defecto en las lecturas */ }
+  }
   try {
     const adapter = require('../db/adapter');
     const ctx = adapter.tenantContext.getStore();
@@ -51,6 +60,7 @@ function createSession(data) {
     userAgent: data.userAgent || '',
     empresaId,
     empresaDbPath,
+    grupoId,
   });
   return token;
 }
@@ -72,6 +82,7 @@ function getSession(token) {
     email: s.email || '',
     empresaId: s.empresa_id != null ? Number(s.empresa_id) : null,
     empresaDbPath: s.empresa_db_path || null,
+    grupoId: s.grupo_id != null ? Number(s.grupo_id) : (s.vendedor_id ? 1 : null),
   };
 }
 
@@ -114,6 +125,7 @@ function requireAuth(req, res, next) {
         const nuevo = createSession({
           userId: raw.user_id, vendedorId: raw.vendedor_id,
           rol: raw.rol, nombre: raw.nombre, email: raw.email,
+          grupoId: raw.grupo_id != null ? Number(raw.grupo_id) : undefined, // preservar el grupo al rotar
           userAgent: raw.user_agent || req.headers['user-agent'] || '', // preservar el dispositivo al rotar el token
         });
         // El token viejo expira en 5 min (created_at retrocedido a TTL-5min)
@@ -169,9 +181,32 @@ function esAccesoGlobal(req) {
   return req.session.rol === 'admin' || req.session.rol === 'supervisor' || req.session.rol === 'jefe';
 }
 
+// Grupo de la sesión actual (Red de externos): NULL/ausente cuenta como Leons (grupo 1),
+// que es lo correcto para toda cuenta preexistente a la Red.
+function grupoDeSesion(req) {
+  const g = req.session && req.session.grupoId;
+  return g != null ? Number(g) : 1;
+}
+
+// ¿La sesión pertenece a la Red de externos (grupo 2)? Los flujos de suscripción,
+// ranking de la Red y sala de chat 'red' se activan solo para estos asesores.
+function esExterno(req) {
+  return grupoDeSesion(req) === 2;
+}
+
+// ¿El recurso (lead, asesor, mensaje…) es del mismo grupo que la sesión? El acceso global
+// (admin/supervisor/jefe) siempre pasa — ven ambos mundos. Un recurso sin grupo (NULL)
+// cuenta como Leons. Es defensa en profundidad para las vistas de LISTA y referencias
+// cruzadas; el acceso a un lead individual ya está aislado por assigned_to_id.
+function mismoGrupo(req, recursoGrupoId) {
+  if (esAccesoGlobal(req)) return true;
+  const g = recursoGrupoId != null ? Number(recursoGrupoId) : 1;
+  return g === grupoDeSesion(req);
+}
+
 module.exports = {
   hashPassword, verifyPassword,
   createSession, getSession, destroySession, getTokenFromReq,
   requireAuth, requireAdmin, requireSupervisor, requireSupervisorOrAdmin,
-  esAccesoGlobal,
+  esAccesoGlobal, grupoDeSesion, esExterno, mismoGrupo,
 };

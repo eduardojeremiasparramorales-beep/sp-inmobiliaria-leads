@@ -54,19 +54,29 @@ router.post('/', auth.requireAdmin, (req, res) => {
 // respeta para no colapsarlo a 'vendedor'). Sin cédula/fecha de nacimiento — la
 // biometría se configura después, en el dispositivo.
 router.post('/registro', registroLimiter, (req, res) => {
-  const { nombre, telefono, pin, foto, rol } = req.body || {};
+  const { nombre, telefono, pin, foto, rol, tipo, terminos } = req.body || {};
   if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'nombre_requerido' });
   if (!telefono || !validarTelefono(telefono)) return res.status(400).json({ error: 'formato_telefono_invalido_debe_ser_57' });
   if (!pin || !/^\d{4}$/.test(String(pin)) || String(pin) === '0000') return res.status(400).json({ error: 'pin_invalido' });
-  // El rol del registro es acotado: solo 'asesor' (default histórico) o 'supervisor'.
-  // Cualquier otro valor (incluido 'admin') se rechaza — el admin nunca se auto-crea.
-  const rolRegistro = String(rol || 'asesor').toLowerCase();
+  // tipo distingue el equipo INTERNO de Leons (grupo 1) de la RED de externos (grupo 2).
+  // Un externo SIEMPRE es 'asesor' (nunca supervisor/jefe — esos roles son de Leons) y
+  // debe aceptar los T&C explícitamente (respaldo ante reclamos, ver plan riesgo #1).
+  const esExterno = String(tipo || 'interno').toLowerCase() === 'externo';
+  const rolRegistro = esExterno ? 'asesor' : String(rol || 'asesor').toLowerCase();
   if (!['asesor', 'supervisor', 'jefe'].includes(rolRegistro)) return res.status(400).json({ error: 'rol_invalido' });
+  if (esExterno && !terminos) return res.status(400).json({ error: 'debes_aceptar_los_terminos' });
+  const grupoId = esExterno ? 2 : 1;
   const tel = String(telefono).replace(/[\s-]/g, '');
   if (store.getVendedorByTelefono(tel)) return res.status(409).json({ error: 'telefono_ya_registrado' });
   if (foto && String(foto).length > 3 * 1024 * 1024) return res.status(400).json({ error: 'foto_demasiado_grande' });
-  const vendedorId = store.addVendedor(String(nombre).trim(), tel, 'pendiente');
+  const vendedorId = store.addVendedor(String(nombre).trim(), tel, 'pendiente', grupoId);
   store.setVendedorPin(vendedorId, auth.hashPassword(String(pin)));
+  if (esExterno) {
+    store.setVendedorTerminos(vendedorId);
+    // Suscripción en estado 'pendiente' (sin vencimiento aún): el externo entra al pool de
+    // leads solo cuando su primer pago quede aprobado (ver Fase 2 / getVendedoresActivos).
+    try { store.crearSuscripcionPendiente(vendedorId); } catch (e) { console.error('[REGISTRO] suscripción pendiente:', e.message); }
+  }
   if (foto && /^data:image\//.test(String(foto))) store.setVendedorFoto(vendedorId, String(foto));
   // Supervisor: crear la fila en usuarios para que el login respete el rol.
   // El email queda vacío (el supervisor se autentica por teléfono+PIN, no por email);
@@ -79,15 +89,15 @@ router.post('/registro', registroLimiter, (req, res) => {
     const emailJefe = `jefe+${vendedorId}@spinmobiliaria.com`;
     store.createUsuario(emailJefe, null, String(nombre).trim(), 'jefe', vendedorId);
   }
-  const label = rolRegistro === 'supervisor' ? 'supervisor' : rolRegistro === 'jefe' ? 'jefe' : 'asesor';
+  const label = esExterno ? 'asesor externo (Red)' : rolRegistro === 'supervisor' ? 'supervisor' : rolRegistro === 'jefe' ? 'jefe' : 'asesor';
   console.log(`[REGISTRO] Nuevo ${label} pendiente de aprobación: ${nombre} (${tel})`);
-  events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), rol: rolRegistro, ts: Date.now() });
+  events.emitToAdmins('vendedor_pendiente', { vendedorId, nombre: String(nombre).trim(), rol: rolRegistro, grupoId, externo: esExterno, ts: Date.now() });
   try {
     require('../services/activity').logAsesorConectado({
       vendedorId, nombre: String(nombre).trim(), rol: rolRegistro,
     });
   } catch (e) { /* feed opcional */ }
-  res.json({ ok: true, vendedorId, estado: 'pendiente', rol: rolRegistro });
+  res.json({ ok: true, vendedorId, estado: 'pendiente', rol: rolRegistro, externo: esExterno });
 });
 
 router.post('/:id/pin', auth.requireAdmin, (req, res) => {

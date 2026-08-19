@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<title>Leons Group · Red de Asesores</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<script src="/os/theme.js"></script>
+<link rel="stylesheet" href="/os/sp-os.css">
+<style>
+  .red-page { max-width: 1000px; margin: 0 auto; }
+  .red-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .red-section { margin-bottom: 28px; }
+  .red-section h3 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .red-cuota { display: flex; flex-direction: column; gap: 10px; }
+  .red-cuota__bar { display: flex; height: 34px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border-soft); }
+  .red-cuota__seg { display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #0A0A0A; transition: flex-basis .2s; }
+  .red-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+  .red-row:last-child { border-bottom: none; }
+  .red-av { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; background: var(--bg-3); flex-shrink: 0; overflow: hidden; }
+  .red-av img { width: 100%; height: 100%; object-fit: cover; }
+  .red-badge { border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 600; }
+  .red-lvl { font-size: 11px; color: var(--text-3); }
+  .red-empty { text-align: center; color: var(--text-3); padding: 30px 16px; font-size: 13px; line-height: 1.6; }
+  .red-comp { max-width: 100%; max-height: 340px; border-radius: 10px; border: 1px solid var(--border-soft); }
+</style>
+</head>
+<body>
+<script src="/os/sp-shell.js"></script>
+<script>
+(async function () {
+  'use strict';
+  const { api, toast } = SPOS;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const money = n => '$' + (Number(n) || 0).toLocaleString('es-CO');
+  const initials = n => String(n || '?').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
+
+  const ctx = await SPOS.mount({ active: 'red', title: 'Red de Asesores', crumb: 'Externos · suscripción · reparto · ranking', padded: true, adminOnly: true });
+  if (!ctx) return;
+
+  const ESTADO_COLOR = { activa:'var(--green)', prueba:'var(--gold)', vencida:'var(--red)', pendiente:'var(--text-3)', ninguna:'var(--text-3)' };
+
+  function tile(label, value, sub) {
+    return `<div class="metric card--float"><div class="metric__value">${value}</div><div class="metric__label">${esc(label)}</div>${sub?`<div style="font-size:11px;color:var(--text-3);margin-top:2px">${esc(sub)}</div>`:''}</div>`;
+  }
+
+  async function cargar() {
+    const [resumen, pagos, asesores, grupos] = await Promise.all([
+      api('/api/red/admin/resumen'), api('/api/red/admin/pagos'),
+      api('/api/red/admin/asesores'), api('/api/red/admin/grupos'),
+    ]);
+    render(resumen || {}, pagos || [], asesores || [], grupos || []);
+  }
+
+  function render(resumen, pagos, asesores, grupos) {
+    const cont = ctx.content;
+    const leons = grupos.find(g => g.id === 1) || { cuota_pct: 100 };
+    const red = grupos.find(g => g.id === 2) || { cuota_pct: 0 };
+
+    cont.innerHTML = `
+      <div class="red-page">
+        <div class="red-tiles">
+          ${tile('Asesores externos', resumen.totalExternos || 0)}
+          ${tile('Activos (con pago)', resumen.activos || 0)}
+          ${tile('Pagos por revisar', pagos.length, pagos.length ? 'requieren tu aprobación' : 'al día')}
+          ${tile('Vencen en 5 días', resumen.porVencer || 0)}
+        </div>
+
+        <div class="red-section">
+          <h3>⚖️ Cuota de reparto de leads</h3>
+          <div class="red-cuota">
+            <div class="red-cuota__bar" id="cuotaBar">
+              <div class="red-cuota__seg" id="segLeons" style="background:var(--gold);flex-basis:${leons.cuota_pct}%">Leons ${leons.cuota_pct}%</div>
+              <div class="red-cuota__seg" id="segRed" style="background:var(--green);flex-basis:${red.cuota_pct}%">Red ${red.cuota_pct}%</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px">
+              <input type="range" id="cuotaRange" min="0" max="100" step="5" value="${red.cuota_pct}" style="flex:1;accent-color:var(--green)">
+              <span style="font-size:13px;min-width:120px">Red: <b id="cuotaVal">${red.cuota_pct}%</b> · Leons: <b id="cuotaValL">${leons.cuota_pct}%</b></span>
+              <button class="btn btn--primary" id="btnCuota" disabled>Guardar</button>
+            </div>
+            <div style="font-size:12px;color:var(--text-3)">De cada 100 leads nuevos, la Red recibe ese porcentaje. Con 0% la Red no recibe nada (solo Leons).</div>
+          </div>
+        </div>
+
+        <div class="red-section">
+          <h3>🧾 Comprobantes por aprobar ${pagos.length?`<span class="red-badge" style="background:var(--red);color:#fff">${pagos.length}</span>`:''}</h3>
+          <div id="pagosList">${pagos.length ? pagos.map(pagoRow).join('') : '<div class="red-empty">No hay comprobantes pendientes. Cuando un asesor externo suba su pago, aparece aquí para aprobarlo.</div>'}</div>
+        </div>
+
+        <div class="red-section">
+          <h3>👥 Asesores externos</h3>
+          <div id="asesoresList">${asesores.length ? asesores.map(asesorRow).join('') : '<div class="red-empty">Todavía no hay asesores externos. Cuando alguien se registre como «asesor externo» desde el login, aparece aquí.</div>'}</div>
+        </div>
+      </div>`;
+
+    // Cuota slider
+    const range = document.getElementById('cuotaRange');
+    const btnCuota = document.getElementById('btnCuota');
+    range.addEventListener('input', () => {
+      const r = Number(range.value), l = 100 - r;
+      document.getElementById('cuotaVal').textContent = r + '%';
+      document.getElementById('cuotaValL').textContent = l + '%';
+      document.getElementById('segRed').style.flexBasis = r + '%';
+      document.getElementById('segRed').textContent = 'Red ' + r + '%';
+      document.getElementById('segLeons').style.flexBasis = l + '%';
+      document.getElementById('segLeons').textContent = 'Leons ' + l + '%';
+      btnCuota.disabled = (r === red.cuota_pct);
+    });
+    btnCuota.addEventListener('click', async () => {
+      const r = Number(range.value), l = 100 - r;
+      btnCuota.disabled = true;
+      await api('/api/red/admin/grupos/2', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ cuota_pct: r }) });
+      await api('/api/red/admin/grupos/1', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ cuota_pct: l }) });
+      toast('Cuota actualizada: Leons ' + l + '% · Red ' + r + '%');
+      cargar();
+    });
+
+    // Aprobar / rechazar pagos
+    cont.querySelectorAll('[data-aprobar]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true;
+      await api('/api/red/admin/pagos/' + b.dataset.aprobar + '/aprobar', { method:'POST' });
+      toast('Pago aprobado · suscripción activada'); cargar();
+    }));
+    cont.querySelectorAll('[data-rechazar]').forEach(b => b.addEventListener('click', async () => {
+      const notas = prompt('Motivo del rechazo (opcional):') || '';
+      b.disabled = true;
+      await api('/api/red/admin/pagos/' + b.dataset.rechazar + '/rechazar', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ notas }) });
+      toast('Comprobante rechazado'); cargar();
+    }));
+    cont.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => {
+      const box = document.getElementById('comp_' + b.dataset.ver);
+      if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }));
+  }
+
+  function pagoRow(p) {
+    const esImg = !/\.pdf$/i.test(p.comprobante_url || '');
+    const url = '/api/red/admin/comprobante/' + encodeURIComponent(p.comprobante_url || '');
+    return `<div class="red-row" style="flex-wrap:wrap">
+      <div class="red-av">${initials(p.vendedor_nombre)}</div>
+      <div style="flex:1;min-width:120px">
+        <div style="font-weight:600">${esc(p.vendedor_nombre)}</div>
+        <div style="font-size:11px;color:var(--text-3)">${esc(p.vendedor_telefono||'')} · ${esc(p.plan_nombre||'plan')} · ${money(p.monto)}${p.referencia?' · ref: '+esc(p.referencia):''}</div>
+      </div>
+      <button class="btn btn--quiet" data-ver="${p.id}">Ver comprobante</button>
+      <button class="btn btn--primary" data-aprobar="${p.id}">Aprobar</button>
+      <button class="btn btn--danger" data-rechazar="${p.id}">Rechazar</button>
+      <div id="comp_${p.id}" style="display:none;width:100%;margin-top:8px">
+        ${esImg ? `<img class="red-comp" src="${url}" alt="comprobante">` : `<a class="btn btn--quiet" href="${url}" target="_blank">Abrir PDF del comprobante</a>`}
+      </div>
+    </div>`;
+  }
+
+  function asesorRow(a) {
+    const s = a.suscripcion || {};
+    const color = ESTADO_COLOR[s.estado] || 'var(--text-3)';
+    const nivel = a.nivel || {};
+    return `<div class="red-row">
+      <div class="red-av">${a.foto?`<img src="${esc(a.foto)}">`:initials(a.nombre)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${esc(a.nombre)}</div>
+        <div class="red-lvl">${nivel.emoji||'🥉'} ${esc(nivel.nombre||'Bronce')} · ${a.xp||0} XP · ${esc(a.telefono||'')}</div>
+      </div>
+      <span class="red-badge" style="background:${color}22;color:${color}">${esc(s.estado||'ninguna')}</span>
+      ${s.vence_at?`<span style="font-size:11px;color:var(--text-3)">vence ${new Date(s.vence_at.endsWith('Z')?s.vence_at:s.vence_at+'Z').toLocaleDateString('es-CO',{day:'2-digit',month:'short'})}</span>`:''}
+    </div>`;
+  }
+
+  cargar();
+})();
+</script>
+</body>
+</html>

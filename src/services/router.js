@@ -62,12 +62,17 @@ class MessageRouter {
       conversation = store.createConversation(channel, fromUserId, customer.id);
     }
 
-    // 5. Asignar vendedor si no tiene
+    // 5. Asignar vendedor si no tiene. Pasa por elegirVendedor (punto único) para que
+    // Messenger/Instagram respeten la cuota por grupo igual que WhatsApp — antes tomaban
+    // activos[0] a ciegas y se saltaban el reparto de la Red.
     let assignedVendedor = null;
     if (!conversation.assigned_to_id) {
       const activos = store.getVendedoresActivos();
       if (activos.length > 0) {
-        const siguiente = activos[0];
+        const leadVinc = conversation.lead_id ? store.getLeadById(conversation.lead_id) : null;
+        const grupoLead = leadVinc && leadVinc.grupo_id != null ? Number(leadVinc.grupo_id) : null;
+        const { vendedor: elegido } = require('./zonas').elegirVendedor(activos, grupoLead != null ? { grupo: grupoLead } : {});
+        const siguiente = elegido || activos[0];
         require('../db/adapter').run(
           'UPDATE conversations SET assigned_to_id = ?, status = ? WHERE id = ?',
           [siguiente.id, 'asignado', conversation.id]
@@ -282,7 +287,8 @@ class MessageRouter {
     // punto), así que sin lead vinculado se degrada al comportamiento de siempre.
     const { elegirVendedor } = require('./zonas');
     const leadVinculado = conversation.lead_id ? store.getLeadById(conversation.lead_id) : null;
-    const { vendedor: elegido } = elegirVendedor(activos, { zona: leadVinculado && leadVinculado.zona });
+    const grupoLead = leadVinculado && leadVinculado.grupo_id != null ? Number(leadVinculado.grupo_id) : null;
+    const { vendedor: elegido } = elegirVendedor(activos, { zona: leadVinculado && leadVinculado.zona, ...(grupoLead != null ? { grupo: grupoLead } : {}) });
     const siguiente = elegido || activos[0];
     require('../db/adapter').run(
       'UPDATE conversations SET assigned_to_id = ?, status = ?, updated_at = datetime(\'now\') WHERE id = ?',

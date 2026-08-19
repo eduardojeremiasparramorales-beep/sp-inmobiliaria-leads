@@ -305,6 +305,9 @@ function createSchema() {
   // resolver la conexión correcta a partir del token de la cookie).
   ensureColumn('sessions', 'empresa_id', 'INTEGER');
   ensureColumn('sessions', 'empresa_db_path', 'TEXT');
+  // Grupo del asesor (Red de externos): cacheado en la sesión para que el aislamiento
+  // por grupo no dispare una consulta por cada request autenticado.
+  ensureColumn('sessions', 'grupo_id', 'INTEGER');
 
   execSQL(`
     CREATE TABLE IF NOT EXISTS wa_templates (
@@ -560,6 +563,53 @@ function createSchema() {
   execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_fecha ON citas(fecha)`);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_citas_vendedor ON citas(vendedor_id)`);
 
+  // Meta Ads — mejoras detectadas (advisor + reglas contra baseline historico) con
+  // seguimiento de estado, y snapshots diarios de metricas — Meta no conserva
+  // historico eterno via Graph API y sin esto no se puede medir el antes/despues de
+  // cada mejora aplicada ni comparar contra el baseline de Tocaima (926 COP CPL).
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS meta_ads_mejoras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      clave_unica TEXT NOT NULL UNIQUE,
+      tipo TEXT NOT NULL,
+      severidad INTEGER NOT NULL DEFAULT 1,
+      campaign_id TEXT,
+      campaign_name TEXT,
+      mensaje TEXT NOT NULL,
+      metrica_json TEXT DEFAULT '{}',
+      estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente','aplicada','descartada','resuelta')),
+      nota TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      resuelta_at DATETIME
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_meta_ads_mejoras_estado ON meta_ads_mejoras(estado)`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_meta_ads_mejoras_campaign ON meta_ads_mejoras(campaign_id)`);
+
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS meta_ads_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fecha TEXT NOT NULL,
+      ambito TEXT NOT NULL DEFAULT 'cuenta' CHECK (ambito IN ('cuenta','campana')),
+      campaign_id TEXT,
+      spend REAL DEFAULT 0,
+      impressions INTEGER DEFAULT 0,
+      clicks INTEGER DEFAULT 0,
+      reach INTEGER DEFAULT 0,
+      frequency REAL DEFAULT 0,
+      leads_meta INTEGER DEFAULT 0,
+      leads_crm INTEGER DEFAULT 0,
+      ctr REAL DEFAULT 0,
+      cpm REAL DEFAULT 0,
+      cpl_meta REAL DEFAULT 0,
+      cpl_crm REAL DEFAULT 0,
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_meta_ads_snapshots_fecha ON meta_ads_snapshots(fecha)`);
+  execSQL(`CREATE INDEX IF NOT EXISTS idx_meta_ads_snapshots_campaign ON meta_ads_snapshots(campaign_id)`);
+
   execSQL(`
     CREATE TABLE IF NOT EXISTS pending_outbound (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -712,6 +762,126 @@ function createSchema() {
     );
   `);
   execSQL(`CREATE INDEX IF NOT EXISTS idx_insignias_vendedor ON insignias(vendedor_id)`);
+
+  // ═══════════════════ RED DE ASESORES EXTERNOS ═══════════════════
+  // Dos mundos en un mismo tenant: el equipo interno de SP Leons Group (grupo 1) y la
+  // Red de asesores externos (grupo 2) — mismo número de WhatsApp, mismas campañas, pero
+  // operación, reparto de leads, ranking y chat SEPARADOS. Todo el aislamiento se apoya
+  // en `grupo_id`: sellado en el lead al asignarlo (traza permanente de quién lo atendió).
+  // Con la Red en cuota_pct=0 y sin externos, el comportamiento es idéntico al de hoy.
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS grupos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      nombre TEXT NOT NULL,
+      tipo TEXT NOT NULL DEFAULT 'externo',
+      cuota_pct INTEGER NOT NULL DEFAULT 0,
+      marca_nombre TEXT DEFAULT '',
+      marca_logo TEXT DEFAULT '',
+      activo INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
+  // Seed idempotente con ids EXPLÍCITOS (mismo patrón que empresa #1 en platform.js):
+  // grupo 1 = Leons (interno, recibe el 100% del flujo mientras la Red esté en 0),
+  // grupo 2 = Red (externo, cuota 0 → no recibe nada hasta que el admin la suba).
+  try {
+    if (!one('SELECT id FROM grupos WHERE id = 1')) {
+      run("INSERT INTO grupos (id, slug, nombre, tipo, cuota_pct, marca_nombre) VALUES (1, 'leons', 'SP Leons Group', 'interno', 100, 'Leons Group')");
+    }
+    if (!one('SELECT id FROM grupos WHERE id = 2')) {
+      run("INSERT INTO grupos (id, slug, nombre, tipo, cuota_pct, marca_nombre) VALUES (2, 'red', 'Red de Asesores', 'externo', 0, 'Red Inmobiliaria')");
+    }
+  } catch (e) { console.error('[GRUPOS] seed:', e.message); }
+
+  // grupo_id en vendedores/leads: default 1 (Leons) para que toda fila preexistente
+  // quede en el equipo interno sin tocar nada. `terminos_at` sella la aceptación de los
+  // T&C del externo al registrarse (respaldo ante reclamos — ver plan, riesgo #1).
+  ensureColumn('vendedores', 'grupo_id', 'INTEGER DEFAULT 1');
+  ensureColumn('vendedores', 'terminos_at', 'DATETIME');
+  ensureColumn('leads', 'grupo_id', 'INTEGER');   // NULL hasta asignar; se sella con el grupo del asesor
+  // Sala del chat de equipo: 'leons' (canal interno de siempre) | 'red' (comunidad externa).
+  ensureColumn('team_messages', 'sala', "TEXT DEFAULT 'leons'");
+
+  // Backfill idempotente: cualquier fila vieja sin grupo pertenece a Leons (grupo 1).
+  try { execSQL('UPDATE vendedores SET grupo_id = 1 WHERE grupo_id IS NULL'); } catch (e) {}
+  try { execSQL("UPDATE team_messages SET sala = 'leons' WHERE sala IS NULL"); } catch (e) {}
+  // leads.grupo_id se deja NULL en los históricos a propósito: NULL = "lead de la época
+  // pre-Red", que a efectos de aislamiento cuenta como Leons (ver esLeadDelGrupo()).
+  execSQL('CREATE INDEX IF NOT EXISTS idx_vendedores_grupo ON vendedores(grupo_id)');
+  execSQL('CREATE INDEX IF NOT EXISTS idx_leads_grupo ON leads(grupo_id)');
+
+  // ── Suscripciones y cobro de la Red (Fase 2) ──
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS planes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      nombre TEXT NOT NULL,
+      precio REAL NOT NULL DEFAULT 0,
+      moneda TEXT DEFAULT 'COP',
+      dias_vigencia INTEGER NOT NULL DEFAULT 30,
+      dias_prueba INTEGER NOT NULL DEFAULT 0,
+      activo INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS suscripciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      plan_id INTEGER,
+      estado TEXT NOT NULL DEFAULT 'pendiente',
+      inicio_at DATETIME,
+      vence_at DATETIME,
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+    CREATE TABLE IF NOT EXISTS pagos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      suscripcion_id INTEGER,
+      plan_id INTEGER,
+      monto REAL NOT NULL DEFAULT 0,
+      moneda TEXT DEFAULT 'COP',
+      metodo TEXT NOT NULL DEFAULT 'comprobante',
+      referencia TEXT DEFAULT '',
+      comprobante_url TEXT DEFAULT '',
+      estado TEXT NOT NULL DEFAULT 'pendiente',
+      revisado_por INTEGER,
+      revisado_at DATETIME,
+      notas TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+  `);
+  execSQL('CREATE INDEX IF NOT EXISTS idx_suscripciones_vendedor ON suscripciones(vendedor_id)');
+  execSQL('CREATE INDEX IF NOT EXISTS idx_suscripciones_estado ON suscripciones(estado, vence_at)');
+  execSQL('CREATE INDEX IF NOT EXISTS idx_pagos_estado ON pagos(estado)');
+  execSQL('CREATE INDEX IF NOT EXISTS idx_pagos_vendedor ON pagos(vendedor_id)');
+  // Plan por defecto de la Red (solo si la tabla está vacía): cuota mensual fija.
+  try {
+    const np = one('SELECT COUNT(*) AS c FROM planes');
+    if (!np || !np.c) {
+      run("INSERT INTO planes (slug, nombre, precio, moneda, dias_vigencia, dias_prueba) VALUES ('red-mensual', 'Red Mensual', 50000, 'COP', 30, 7)");
+    }
+  } catch (e) { console.error('[PLANES] seed:', e.message); }
+
+  // ── Gamificación: XP append-only (Fase 3) ──
+  // Cada fila es un hecho verificable (venta confirmada, respuesta rápida, abandono).
+  // Nunca se borra ni se edita: el nivel del asesor es la suma de sus puntos, auditable.
+  execSQL(`
+    CREATE TABLE IF NOT EXISTS xp_eventos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendedor_id INTEGER NOT NULL,
+      tipo TEXT NOT NULL,
+      puntos INTEGER NOT NULL DEFAULT 0,
+      ref_id INTEGER,
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+    );
+  `);
+  execSQL('CREATE INDEX IF NOT EXISTS idx_xp_vendedor ON xp_eventos(vendedor_id)');
+  // Idempotencia de eventos únicos por (vendedor,tipo,ref): evita doble +100 si el admin
+  // edita/reguarda la misma venta. Parcial: solo cuando ref_id existe.
+  try { execSQL('CREATE UNIQUE INDEX IF NOT EXISTS idx_xp_unico ON xp_eventos(vendedor_id, tipo, ref_id) WHERE ref_id IS NOT NULL'); } catch (e) { console.error('[XP] unique index:', e.message); }
 }
 
 function getDB() { return adapter.getDB(); }
@@ -795,8 +965,17 @@ function assignLeadToVendedor(leadId, vendedor) {
   const vExists = one('SELECT id FROM vendedores WHERE id = ?', [vendedor.id]);
   if (!vExists) throw new Error(`Vendedor ${vendedor.id} no existe`);
 
-  const prev = one('SELECT assigned_to_id, customer_name FROM leads WHERE id = ?', [leadId]);
+  const prev = one('SELECT assigned_to_id, customer_name, grupo_id FROM leads WHERE id = ?', [leadId]);
   const esAsignacionInicial = !prev || prev.assigned_to_id == null || Number(prev.assigned_to_id) === 0;
+
+  // Sellar el grupo del lead con el del asesor si aún no tiene: es traza permanente (el
+  // aislamiento de la Fase 1 depende de que no se pise en reasignaciones futuras).
+  const grupoAsesor = (vendedor.grupo_id != null)
+    ? Number(vendedor.grupo_id)
+    : Number((one('SELECT grupo_id FROM vendedores WHERE id = ?', [vendedor.id]) || {}).grupo_id || 1);
+  if (prev && prev.grupo_id == null) {
+    run('UPDATE leads SET grupo_id = ? WHERE id = ?', [grupoAsesor, leadId]);
+  }
 
   run('UPDATE leads SET assigned_to_id = ?, assigned_to_phone = ?, status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [vendedor.id, vendedor.telefono, 'asignado', leadId]);
   run('UPDATE vendedores SET total_leads = total_leads + 1 WHERE id = ?', [vendedor.id]);
@@ -984,21 +1163,27 @@ function saveTeamMessage(fromVendedorId, fromNombre, body, opts = {}) {
   const replyTo = opts.replyToId != null ? Number(opts.replyToId) : null;
   const mediaType = opts.mediaType || null;
   const mediaUrl = opts.mediaUrl || null;
+  // sala: 'leons' (equipo interno, default) | 'red' (comunidad de externos).
+  const sala = opts.sala === 'red' ? 'red' : 'leons';
   // created_at explícito por la misma razón que en saveMessage() — no confiar en el
   // DEFAULT de la columna si la tabla en producción es más vieja que el esquema actual.
-  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))',
-    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo, mediaType, mediaUrl]);
+  run('INSERT INTO team_messages (from_vendedor_id, from_nombre, to_vendedor_id, body, mentions, lead_ref, reply_to_id, media_type, media_url, sala, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))',
+    [fromVendedorId, fromNombre || '', to, String(body).slice(0, 2000), mentions, leadRef, replyTo, mediaType, mediaUrl, sala]);
   return one('SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id ORDER BY tm.id DESC LIMIT 1');
 }
 // Canal general (to_vendedor_id IS NULL)
-function getTeamMessages(beforeId, limit) {
+function getTeamMessages(beforeId, limit, sala) {
   const lim = Math.min(Number(limit) || 50, 500);
+  const salaF = sala === 'red' ? 'red' : 'leons';
+  // COALESCE(sala,'leons') para que los mensajes históricos (sin columna sala) sigan
+  // apareciendo en el canal de Leons tras el backfill.
   const base = `SELECT tm.*, rt.body AS reply_to_body, rt.from_nombre AS reply_to_from, rt.deleted AS reply_deleted
-    FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id WHERE tm.to_vendedor_id IS NULL AND (tm.deleted IS NULL OR tm.deleted = 0)`;
+    FROM team_messages tm LEFT JOIN team_messages rt ON rt.id = tm.reply_to_id
+    WHERE tm.to_vendedor_id IS NULL AND COALESCE(tm.sala,'leons') = ? AND (tm.deleted IS NULL OR tm.deleted = 0)`;
   if (beforeId) {
-    return all(base + ' AND tm.id < ? ORDER BY tm.id DESC LIMIT ?', [beforeId, lim]).reverse();
+    return all(base + ' AND tm.id < ? ORDER BY tm.id DESC LIMIT ?', [salaF, beforeId, lim]).reverse();
   }
-  return all(base + ' ORDER BY tm.id DESC LIMIT ?', [lim]).reverse();
+  return all(base + ' ORDER BY tm.id DESC LIMIT ?', [salaF, lim]).reverse();
 }
 // Conversación directa entre dos asesores (ambos sentidos)
 function getTeamDirectMessages(vendedorA, vendedorB, beforeId, limit) {
@@ -1462,21 +1647,43 @@ function getWindowExpiresAt(leadId) {
   return new Date(lastMsg.getTime() + 24 * 60 * 60 * 1000);
 }
 
-function getVendedoresActivos() {
+function getVendedoresActivos(opts = {}) {
   // El admin y el supervisor NO reciben clientes del round-robin: el supervisor es
   // un rol operativo (observa y reasigna), no un asesor de captación. El jefe SÍ recibe
   // leads (decisión explícita del dueño del negocio, 2026-08-08) — a diferencia del
   // supervisor, el jefe también trabaja leads como cualquier asesor además de supervisar.
   // Se excluye solo a quien esté vinculado a un usuario con rol 'admin' o 'supervisor'.
+  //
+  // RED DE EXTERNOS (grupo 2): un asesor externo entra al pool SOLO si tiene una
+  // suscripción vigente (estado 'activa' o 'prueba' y sin vencer). "No paga → no recibe
+  // leads" queda garantizado en un único punto, sin condicionales regados por la app.
+  // Los asesores de Leons (grupo 1 o NULL) nunca pasan por este filtro. opts.grupoId
+  // acota el pool a un solo mundo (lo usa el reparto por cuota — services/reparto.js).
+  const params = ['cerrado', 'activo'];
+  let grupoCond = '';
+  if (opts && opts.grupoId != null) {
+    grupoCond = ' AND COALESCE(v.grupo_id, 1) = ?';
+    params.push(Number(opts.grupoId));
+  }
   return all(`
-    SELECT v.*, COUNT(l.id) as leads_activos
+    SELECT v.*, COUNT(l.id) as leads_activos,
+      (SELECT COALESCE(SUM(x.puntos),0) FROM xp_eventos x WHERE x.vendedor_id = v.id) AS xp
     FROM vendedores v
     LEFT JOIN leads l ON l.assigned_to_id = v.id AND l.status != ?
     WHERE v.estado = ?
       AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE vendedor_id IS NOT NULL AND rol IN ('admin','supervisor'))
+      AND (
+        COALESCE(v.grupo_id, 1) != 2
+        OR EXISTS (
+          SELECT 1 FROM suscripciones s
+          WHERE s.vendedor_id = v.id
+            AND s.estado IN ('activa','prueba')
+            AND (s.vence_at IS NULL OR s.vence_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        )
+      )${grupoCond}
     GROUP BY v.id
     ORDER BY leads_activos ASC
-  `, ['cerrado', 'activo']);
+  `, params);
 }
 
 function getLeadById(id) {
@@ -1511,7 +1718,18 @@ function reopenLead(leadId) {
 }
 
 function setFirstResponse(leadId) {
+  // Solo la PRIMERA respuesta cuenta (guard first_response_at IS NULL). Al pasar de NULL a
+  // valor, si el asesor es de la Red y respondio en < 5 min desde que entro el lead, gana
+  // XP de respuesta rapida (idempotente por ref_id=leadId).
+  const antes = one('SELECT first_response_at, created_at, assigned_to_id, grupo_id FROM leads WHERE id = ?', [leadId]);
   run('UPDATE leads SET first_response_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ? AND first_response_at IS NULL', [leadId]);
+  if (antes && !antes.first_response_at && antes.assigned_to_id && Number(antes.grupo_id) === 2) {
+    try {
+      const creado = antes.created_at ? Date.parse(String(antes.created_at).endsWith('Z') ? antes.created_at : antes.created_at + 'Z') : null;
+      const mins = creado ? (Date.now() - creado) / 60000 : Infinity;
+      if (mins <= 5) require('../services/niveles').otorgar(antes.assigned_to_id, 'respuesta_rapida', leadId);
+    } catch (e) { /* XP best-effort */ }
+  }
 }
 
 function getDuplicateGroups() {
@@ -1715,6 +1933,38 @@ function getLeadCountsByAdIds(adIds, days) {
   return map;
 }
 
+// Igual que countLeadsByAdIds/getLeadCountsByAdIds pero acotado a un rango explícito
+// [sinceISO, untilISO) en vez de "últimos N días" — necesario para comparar periodos
+// arbitrarios contra el baseline histórico (ver meta-ads.js getInsightsRange /
+// comparePeriods). sinceISO/untilISO ya deben venir en UTC (el caller convierte desde
+// el huso de la cuenta de Meta antes de llamar aquí — created_at se guarda en UTC).
+function countLeadsByAdIdsRange(adIds, sinceISO, untilISO) {
+  const ids = (adIds || []).filter(Boolean).map(String);
+  if (!ids.length) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  let sql = `SELECT COUNT(*) as c FROM leads WHERE ad_id IN (${placeholders})`;
+  const params = [...ids];
+  if (sinceISO) { sql += ' AND created_at >= ?'; params.push(sinceISO); }
+  if (untilISO) { sql += ' AND created_at < ?'; params.push(untilISO); }
+  const r = one(sql, params);
+  return r ? r.c : 0;
+}
+
+function getLeadCountsByAdIdsRange(adIds, sinceISO, untilISO) {
+  const ids = (adIds || []).filter(Boolean).map(String);
+  if (!ids.length) return {};
+  const placeholders = ids.map(() => '?').join(',');
+  let sql = `SELECT ad_id, COUNT(*) as c FROM leads WHERE ad_id IN (${placeholders})`;
+  const params = [...ids];
+  if (sinceISO) { sql += ' AND created_at >= ?'; params.push(sinceISO); }
+  if (untilISO) { sql += ' AND created_at < ?'; params.push(untilISO); }
+  sql += ' GROUP BY ad_id';
+  const rows = all(sql, params);
+  const map = {};
+  rows.forEach(r => { map[r.ad_id] = r.c; });
+  return map;
+}
+
 function getLeadCount() {
   const r = one("SELECT COUNT(*) as c FROM leads WHERE status != 'cerrado'");
   return r ? r.c : 0;
@@ -1728,10 +1978,10 @@ function incrementEscalation(leadId) {
   run('UPDATE leads SET escalation_level = escalation_level + 1 WHERE id = ?', [leadId]);
 }
 
-function addVendedor(nombre, telefono, estado) {
+function addVendedor(nombre, telefono, estado, grupoId) {
   let t = String(telefono).replace(/[\s-]/g, '');
   if (t.startsWith('57') && !t.startsWith('+')) t = '+' + t;
-  run('INSERT OR IGNORE INTO vendedores (nombre, telefono, estado) VALUES (?, ?, ?)', [nombre, t, estado || 'activo']);
+  run('INSERT OR IGNORE INTO vendedores (nombre, telefono, estado, grupo_id) VALUES (?, ?, ?, ?)', [nombre, t, estado || 'activo', grupoId != null ? Number(grupoId) : 1]);
   const r = one('SELECT id FROM vendedores WHERE telefono = ? LIMIT 1', [t]);
   return r ? r.id : null;
 }
@@ -1899,7 +2149,14 @@ function getAllPushSubscriptions() {
   return all('SELECT vendedor_id, tipo, substr(endpoint,1,30) as endpoint_preview, created_at FROM push_subscriptions ORDER BY created_at DESC');
 }
 
-function getVendedores() {
+function getVendedores(opts = {}) {
+  // Filtro opcional por grupo (Red de externos): sin opts.grupoId devuelve TODOS los
+  // asesores (comportamiento histórico), con él acota a un solo mundo — lo usan el
+  // ranking, las menciones/DM del chat y el selector de reasignación para no cruzar Leons
+  // con la Red.
+  if (opts && opts.grupoId != null) {
+    return all('SELECT * FROM vendedores WHERE COALESCE(grupo_id, 1) = ? ORDER BY nombre', [Number(opts.grupoId)]);
+  }
   return all('SELECT * FROM vendedores ORDER BY nombre');
 }
 
@@ -1918,7 +2175,7 @@ function setVendedorPin(id, pinHash) {
 // --- Sesiones persistentes en DB ---
 function createDBSession(token, data) {
   const now = Date.now();
-  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at, user_agent, last_seen_at, empresa_id, empresa_db_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+  run('INSERT OR REPLACE INTO sessions (token, user_id, vendedor_id, rol, nombre, email, created_at, user_agent, last_seen_at, empresa_id, empresa_db_path, grupo_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
     token,
     data.userId != null ? Number(data.userId) : null,
     data.vendedorId != null ? Number(data.vendedorId) : null,
@@ -1930,6 +2187,7 @@ function createDBSession(token, data) {
     now,
     data.empresaId != null ? Number(data.empresaId) : null,
     data.empresaDbPath || null,
+    data.grupoId != null ? Number(data.grupoId) : null,
   ]);
 }
 
@@ -3961,6 +4219,172 @@ function seedGaleria() {
   }
 }
 
+// ═══════════════════ GRUPOS (Red de externos vs Leons) ═══════════════════
+function getGrupos() { return all('SELECT * FROM grupos ORDER BY id'); }
+function getGrupoById(id) { return one('SELECT * FROM grupos WHERE id = ?', [Number(id)]); }
+function getGrupoBySlug(slug) { return one('SELECT * FROM grupos WHERE slug = ?', [String(slug)]); }
+function updateGrupo(id, f = {}) {
+  const sets = [], params = [];
+  if (f.nombre != null) { sets.push('nombre = ?'); params.push(String(f.nombre)); }
+  if (f.cuota_pct != null) { sets.push('cuota_pct = ?'); params.push(Math.max(0, Math.min(100, Number(f.cuota_pct)))); }
+  if (f.marca_nombre != null) { sets.push('marca_nombre = ?'); params.push(String(f.marca_nombre)); }
+  if (f.marca_logo != null) { sets.push('marca_logo = ?'); params.push(String(f.marca_logo)); }
+  if (f.activo != null) { sets.push('activo = ?'); params.push(f.activo ? 1 : 0); }
+  if (!sets.length) return getGrupoById(id);
+  params.push(Number(id));
+  run('UPDATE grupos SET ' + sets.join(', ') + ' WHERE id = ?', params);
+  return getGrupoById(id);
+}
+function setVendedorGrupo(vendedorId, grupoId) {
+  run('UPDATE vendedores SET grupo_id = ? WHERE id = ?', [Number(grupoId), Number(vendedorId)]);
+}
+function setVendedorTerminos(vendedorId) {
+  run("UPDATE vendedores SET terminos_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [Number(vendedorId)]);
+}
+// Grupo efectivo de un lead a efectos de aislamiento: NULL (histórico pre-Red) cuenta
+// como Leons (grupo 1). Fuente única para no repetir el COALESCE por todos lados.
+function getLeadGrupo(leadId) {
+  const r = one('SELECT grupo_id FROM leads WHERE id = ?', [Number(leadId)]);
+  return r ? (r.grupo_id != null ? Number(r.grupo_id) : 1) : null;
+}
+
+// SUSCRIPCIONES Y PAGOS (Red de externos)
+function getPlanes() { return all('SELECT * FROM planes WHERE activo = 1 ORDER BY precio'); }
+function getPlanById(id) { return one('SELECT * FROM planes WHERE id = ?', [Number(id)]); }
+function getPlanBySlug(slug) { return one('SELECT * FROM planes WHERE slug = ?', [String(slug)]); }
+function getPlanPorDefecto() { return one("SELECT * FROM planes WHERE activo = 1 ORDER BY id LIMIT 1"); }
+
+// Suscripcion vigente de un asesor: la de estado activa/prueba sin vencer. Es la que
+// consulta getVendedoresActivos (via EXISTS) y la pantalla de suscripcion del movil.
+function getSuscripcionVigente(vendedorId) {
+  return one(`SELECT * FROM suscripciones WHERE vendedor_id = ?
+    AND estado IN ('activa','prueba')
+    AND (vence_at IS NULL OR vence_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ORDER BY id DESC LIMIT 1`, [Number(vendedorId)]);
+}
+function getSuscripcionByVendedor(vendedorId) {
+  return one('SELECT * FROM suscripciones WHERE vendedor_id = ? ORDER BY id DESC LIMIT 1', [Number(vendedorId)]);
+}
+function crearSuscripcionPendiente(vendedorId, planId) {
+  const plan = planId ? getPlanById(planId) : getPlanPorDefecto();
+  run("INSERT INTO suscripciones (vendedor_id, plan_id, estado) VALUES (?, ?, 'pendiente')",
+    [Number(vendedorId), plan ? plan.id : null]);
+  return one('SELECT * FROM suscripciones WHERE vendedor_id = ? ORDER BY id DESC LIMIT 1', [Number(vendedorId)]);
+}
+// Activa (o renueva) la suscripcion: fija inicio, calcula vence_at = hoy + dias_vigencia,
+// y reactiva al asesor. Si aun tiene tiempo vigente, EXTIENDE desde vence_at.
+function activarSuscripcion(vendedorId, planId, dias) {
+  let sub = getSuscripcionByVendedor(vendedorId);
+  const plan = planId ? getPlanById(planId) : ((sub && sub.plan_id && getPlanById(sub.plan_id)) || getPlanPorDefecto());
+  const diasVig = Number(dias || (plan && plan.dias_vigencia) || 30);
+  const vigente = getSuscripcionVigente(vendedorId);
+  if (!sub) { sub = crearSuscripcionPendiente(vendedorId, plan ? plan.id : null); }
+  if (vigente && vigente.vence_at) {
+    run("UPDATE suscripciones SET estado='activa', plan_id=?, inicio_at=COALESCE(inicio_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')), vence_at=datetime(?, '+' || ? || ' days') WHERE id=?",
+      [plan ? plan.id : sub.plan_id, vigente.vence_at, diasVig, sub.id]);
+  } else {
+    run("UPDATE suscripciones SET estado='activa', plan_id=?, inicio_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), vence_at=datetime(strftime('%Y-%m-%dT%H:%M:%fZ','now'), '+' || ? || ' days') WHERE id=?",
+      [plan ? plan.id : sub.plan_id, diasVig, sub.id]);
+  }
+  run("UPDATE vendedores SET estado='activo' WHERE id=? AND estado IN ('pendiente','suspendido')", [Number(vendedorId)]);
+  return getSuscripcionByVendedor(vendedorId);
+}
+function marcarSuscripcionVencida(suscripcionId) {
+  run("UPDATE suscripciones SET estado='vencida' WHERE id=?", [Number(suscripcionId)]);
+}
+function getSuscripcionesVencidas() {
+  return all(`SELECT s.*, v.nombre AS vendedor_nombre FROM suscripciones s
+    JOIN vendedores v ON v.id = s.vendedor_id
+    WHERE s.estado IN ('activa','prueba') AND s.vence_at IS NOT NULL
+      AND s.vence_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now')`);
+}
+function getSuscripcionesPorVencer(dias) {
+  return all(`SELECT s.*, v.nombre AS vendedor_nombre FROM suscripciones s
+    JOIN vendedores v ON v.id = s.vendedor_id
+    WHERE s.estado IN ('activa','prueba') AND s.vence_at IS NOT NULL
+      AND s.vence_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      AND s.vence_at <= datetime(strftime('%Y-%m-%dT%H:%M:%fZ','now'), '+' || ? || ' days')`, [Number(dias)]);
+}
+
+function crearPago(vendedorId, d) {
+  d = d || {};
+  const sub = getSuscripcionByVendedor(vendedorId);
+  const plan = d.planId ? getPlanById(d.planId) : (sub && sub.plan_id ? getPlanById(sub.plan_id) : getPlanPorDefecto());
+  run(`INSERT INTO pagos (vendedor_id, suscripcion_id, plan_id, monto, moneda, metodo, referencia, comprobante_url, estado)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')`,
+    [Number(vendedorId), sub ? sub.id : null, plan ? plan.id : null,
+     Number(d.monto || (plan && plan.precio) || 0), d.moneda || 'COP',
+     d.metodo || 'comprobante', d.referencia || '', d.comprobanteUrl || '']);
+  return one('SELECT * FROM pagos WHERE vendedor_id = ? ORDER BY id DESC LIMIT 1', [Number(vendedorId)]);
+}
+function getPagoById(id) { return one('SELECT * FROM pagos WHERE id = ?', [Number(id)]); }
+function getPagosPendientes() {
+  return all(`SELECT p.*, v.nombre AS vendedor_nombre, v.telefono AS vendedor_telefono, pl.nombre AS plan_nombre
+    FROM pagos p JOIN vendedores v ON v.id = p.vendedor_id
+    LEFT JOIN planes pl ON pl.id = p.plan_id
+    WHERE p.estado = 'pendiente' ORDER BY p.created_at ASC`);
+}
+function getPagosByVendedor(vendedorId) {
+  return all('SELECT * FROM pagos WHERE vendedor_id = ? ORDER BY id DESC', [Number(vendedorId)]);
+}
+function aprobarPago(pagoId, adminId) {
+  const pago = getPagoById(pagoId);
+  if (!pago) return null;
+  if (pago.estado === 'aprobado') return pago;
+  run("UPDATE pagos SET estado='aprobado', revisado_por=?, revisado_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?", [adminId != null ? Number(adminId) : null, Number(pagoId)]);
+  activarSuscripcion(pago.vendedor_id, pago.plan_id);
+  return getPagoById(pagoId);
+}
+function rechazarPago(pagoId, adminId, notas) {
+  run("UPDATE pagos SET estado='rechazado', revisado_por=?, revisado_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), notas=? WHERE id=?",
+    [adminId != null ? Number(adminId) : null, String(notas || ''), Number(pagoId)]);
+  return getPagoById(pagoId);
+}
+
+// GAMIFICACION: XP (append-only) y ranking de la Red
+// addXpEvento es idempotente por (vendedor,tipo,ref_id) gracias al unique index parcial:
+// intentar sumar el mismo evento verificable dos veces (p. ej. reguardar la misma venta)
+// no duplica puntos. Sin ref_id (eventos sin referencia unica) siempre inserta.
+function addXpEvento(vendedorId, tipo, puntos, refId) {
+  try {
+    if (refId != null) {
+      run('INSERT OR IGNORE INTO xp_eventos (vendedor_id, tipo, puntos, ref_id) VALUES (?, ?, ?, ?)',
+        [Number(vendedorId), String(tipo), Number(puntos), Number(refId)]);
+    } else {
+      run('INSERT INTO xp_eventos (vendedor_id, tipo, puntos) VALUES (?, ?, ?)',
+        [Number(vendedorId), String(tipo), Number(puntos)]);
+    }
+    return true;
+  } catch (e) { console.error('[XP] addXpEvento:', e.message); return false; }
+}
+function getXpTotal(vendedorId) {
+  const r = one('SELECT COALESCE(SUM(puntos),0) AS xp FROM xp_eventos WHERE vendedor_id = ?', [Number(vendedorId)]);
+  return r ? Number(r.xp) : 0;
+}
+function getXpEventos(vendedorId, limite) {
+  return all('SELECT * FROM xp_eventos WHERE vendedor_id = ? ORDER BY id DESC LIMIT ?', [Number(vendedorId), Number(limite || 50)]);
+}
+// Desglose de XP por tipo (para el detalle de nivel en el perfil del asesor).
+function getXpDesglose(vendedorId) {
+  return all('SELECT tipo, COALESCE(SUM(puntos),0) AS puntos, COUNT(*) AS n FROM xp_eventos WHERE vendedor_id = ? GROUP BY tipo', [Number(vendedorId)]);
+}
+// Ranking crudo de un grupo: XP acumulado + ventas confirmadas (etiqueta 'vendido') +
+// leads activos. La capa de niveles (services/niveles.js) le pone nombre y peso al XP.
+function getRankingGrupo(grupoId) {
+  return all(`
+    SELECT v.id AS vendedor_id, v.nombre, v.foto,
+      COALESCE((SELECT SUM(x.puntos) FROM xp_eventos x WHERE x.vendedor_id = v.id), 0) AS xp,
+      (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.etiqueta = 'vendido') AS vendidos,
+      (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.etiqueta = 'vendido'
+         AND strftime('%Y-%m', COALESCE(l.updated_at, l.created_at)) = strftime('%Y-%m','now')) AS vendidos_mes,
+      (SELECT COUNT(*) FROM leads l WHERE l.assigned_to_id = v.id AND l.status != 'cerrado') AS activos
+    FROM vendedores v
+    WHERE COALESCE(v.grupo_id, 1) = ?
+      AND v.id NOT IN (SELECT vendedor_id FROM usuarios WHERE vendedor_id IS NOT NULL AND rol IN ('admin','supervisor'))
+    ORDER BY xp DESC, vendidos DESC
+  `, [Number(grupoId)]);
+}
+
 module.exports = {
   initDB, createSchema, getDB, saveLead, assignLeadToVendedor, saveMessage,
   all, one, run, execSQL,
@@ -3969,6 +4393,12 @@ module.exports = {
   getLeads, getLeadCount, getLeadsSinRespuesta, incrementEscalation,
   marcarLeido, setUnreadCount, setLeadNombre, setLeadOrigen, setLeadAdAttribution, countLeadsByAdIds,
   addVendedor, getVendedores, setVendedorEstado, setVendedorTelefono, setVendedorNombre, setVendedorFoto, getVendedorMetricas, getVendedorByTelefono, getVendedorById, setVendedorPin, setVendedor2FA,
+  getGrupos, getGrupoById, getGrupoBySlug, updateGrupo, setVendedorGrupo, setVendedorTerminos, getLeadGrupo,
+  getPlanes, getPlanById, getPlanBySlug, getPlanPorDefecto,
+  getSuscripcionVigente, getSuscripcionByVendedor, crearSuscripcionPendiente, activarSuscripcion,
+  marcarSuscripcionVencida, getSuscripcionesVencidas, getSuscripcionesPorVencer,
+  crearPago, getPagoById, getPagosPendientes, getPagosByVendedor, aprobarPago, rechazarPago,
+  addXpEvento, getXpTotal, getXpEventos, getXpDesglose, getRankingGrupo,
   createUsuario, getUsuarioByEmail, getUsuarioById, getUsuarioByVendedorId, getUsuarios,
   countUsuarios, updateUsuarioPassword, updateUsuarioVendedorId, updateUsuarioRol,
   getLeadsByVendedorId, getArchivedLeadsByVendedorId, getMessagesByLead, getMessageById, updateMessageStatus, setMessageError, setMessageErrorById, markMessageSent, setMessageButtonPayload,
@@ -3980,6 +4410,7 @@ module.exports = {
   createNotification, getNotifications, countUnreadNotifications, markNotificationRead, markAllNotificationsRead,
   getTareasByVendedor, createTarea, updateTarea, deleteTarea, getTareasVencidasSinNotificar, markTareaNotificada, setVendedorAbout, setVendedorChatBg,
   countMessagesByLead, getLeadAggregates, getLeadCountsByAdIds,
+  countLeadsByAdIdsRange, getLeadCountsByAdIdsRange,
   getConfig, setConfig, normalizePhone,
   getWATemplates, getWATemplatesAprobadas, addWATemplate, deleteWATemplate, getWATemplateById, getWATemplateByName,
   getWATemplateByNameIdioma, getWATemplateByMetaId, upsertWATemplateFull, upsertWATemplateByMetaId, setWATemplateMapping,

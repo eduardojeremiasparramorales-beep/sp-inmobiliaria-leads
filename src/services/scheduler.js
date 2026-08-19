@@ -284,6 +284,41 @@ function limpiarUploadsAntiguos() {
   return borrados;
 }
 
+// Corte diario de suscripciones de la Red (Fase 2): marca como 'vencida' toda suscripción
+// cuyo vencimiento ya pasó. El asesor CONSERVA sus leads actuales (no se deja clientes
+// colgados) pero deja de recibir nuevos — eso lo hace solo getVendedoresActivos, que ya
+// exige suscripción vigente. Además avisa a quienes vencen dentro de 5/3/1 días.
+async function procesarSuscripciones() {
+  let vencidas = 0, avisos = 0;
+  try {
+    for (const s of store.getSuscripcionesVencidas()) {
+      store.marcarSuscripcionVencida(s.id);
+      vencidas++;
+      try {
+        const { notify } = require('./notify');
+        notify({ vendedorId: s.vendedor_id, tipo: 'red_suscripcion_vencida', push: true,
+          titulo: '⛔ Suscripción vencida', cuerpo: 'Renueva para seguir recibiendo clientes nuevos.' }).catch(() => {});
+        events.emitToVendedor(s.vendedor_id, 'red_suscripcion', { estado: 'vencida', ts: Date.now() });
+      } catch (e) {}
+    }
+  } catch (e) { console.error('[SUSCRIPCIONES] vencidas:', e.message); }
+  try {
+    // Aviso una vez al día a quienes están dentro de la ventana de 5 días.
+    for (const s of store.getSuscripcionesPorVencer(5)) {
+      const dias = s.vence_at ? Math.max(0, Math.ceil((Date.parse(String(s.vence_at).endsWith('Z') ? s.vence_at : s.vence_at + 'Z') - Date.now()) / 86400000)) : 0;
+      if ([5, 3, 1].includes(dias)) {
+        avisos++;
+        try {
+          const { notify } = require('./notify');
+          notify({ vendedorId: s.vendedor_id, tipo: 'red_suscripcion_por_vencer', push: true,
+            titulo: '⏳ Tu suscripción vence pronto', cuerpo: `Te ${dias === 1 ? 'queda 1 día' : 'quedan ' + dias + ' días'}. Renueva para no perder clientes.` }).catch(() => {});
+        } catch (e) {}
+      }
+    }
+  } catch (e) { console.error('[SUSCRIPCIONES] por vencer:', e.message); }
+  return { vencidas, avisos };
+}
+
 async function tickDiario() {
   const hoy = new Date().toISOString().slice(0, 10);
   if (_ultimoDiario === hoy) return;
@@ -292,9 +327,10 @@ async function tickDiario() {
     const seg = crearSeguimientosAutomaticos();
     const cad = autoInscribirCadencia();
     const ins = insignias.recomputeAll();
+    const susc = await procesarSuscripciones();
     const media = limpiarMediaAntigua();
     const uploads = limpiarUploadsAntiguos();
-    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia, ${media} archivo(s) de media retirados, ${uploads} escaneo(s) temporal(es) retirado(s); insignias`, ins);
+    console.log(`[SCHEDULER] Diario: ${seg} seguimiento(s), ${cad} auto-inscripcion(es) en cadencia, ${media} archivo(s) de media retirados, ${uploads} escaneo(s) temporal(es) retirado(s), ${susc.vencidas} suscripcion(es) vencida(s) y ${susc.avisos} aviso(s) de renovacion; insignias`, ins);
   } catch (e) { console.error('[SCHEDULER] tickDiario:', e.message); }
 }
 

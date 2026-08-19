@@ -94,6 +94,7 @@
       { id: 'ai-agents', label: 'Agentes IA', icon: 'ai', href: '/os/ai-agents.html', admin: true },
       { id: 'intelligence', label: 'SP Intelligence', icon: 'spark', href: '/os/intelligence.html', admin: true },
       { id: 'team', label: 'Equipo', icon: 'team', href: '/os/equipo.html', admin: true },
+      { id: 'red', label: 'Red de Asesores', icon: 'team', href: '/os/red.html', admin: true },
       { id: 'team-chat', label: 'Chat Interno', icon: 'msg', href: '/os/equipo-interno.html', admin: true },
       { id: 'integrations', label: 'Integraciones', icon: 'api', href: '/os/integraciones.html' },
       { id: 'settings', label: 'Configuración', icon: 'settings', href: '/os/configuracion.html', admin: true },

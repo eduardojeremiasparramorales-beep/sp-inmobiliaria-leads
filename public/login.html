@@ -260,9 +260,25 @@
       <div class="field-wrap"><input type="password" id="regPin" placeholder="••••" inputmode="numeric" maxlength="4"></div>
     </div>
 
-    <!-- Selector de rol (Registro): por defecto asesor. Supervisor entra con autoregistro
-         + aprueba el admin después (mismo flujo pendiente que el asesor). -->
+    <!-- Selector de grupo: equipo INTERNO de Leons vs RED de asesores externos. El externo
+         paga suscripción y trabaja los mismos proyectos, pero en su propio mundo. -->
     <div class="field">
+      <label>¿A qué grupo perteneces?</label>
+      <div class="role-row" id="tipoRow">
+        <button type="button" class="role-chip active" data-tipo="interno">
+          <span class="role-chip__dot"></span>Equipo Leons
+          <small>soy del grupo interno</small>
+        </button>
+        <button type="button" class="role-chip" data-tipo="externo">
+          <span class="role-chip__dot"></span>Asesor externo
+          <small>otro grupo · suscripción</small>
+        </button>
+      </div>
+    </div>
+
+    <!-- Selector de rol (solo INTERNO): por defecto asesor. Supervisor entra con
+         autoregistro + aprueba el admin después. Los externos son siempre asesor. -->
+    <div class="field" id="rolField">
       <label>Quiero registrarme como</label>
       <div class="role-row" id="roleRow">
         <button type="button" class="role-chip active" data-role="asesor">
@@ -275,6 +291,12 @@
         </button>
       </div>
     </div>
+
+    <!-- Términos (solo EXTERNO): aceptación explícita, respaldo ante reclamos. -->
+    <label class="field hidden" id="terminosField" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer">
+      <input type="checkbox" id="regTerminos" style="margin-top:3px;width:18px;height:18px;accent-color:var(--gold);flex-shrink:0">
+      <span style="font-size:.78rem;color:var(--txt-2);line-height:1.4">Acepto los términos: soy asesor independiente, no represento a SP Leons Group ante mis clientes, y pago una suscripción mensual para recibir leads.</span>
+    </label>
 
     <div class="msg" id="msgReg"></div>
     <button class="btn-entrar" id="btnRegistrar" style="margin-top:6px">Solicitar cuenta</button>
@@ -554,24 +576,40 @@
     }
   });
 
-  // ── Crear cuenta (auto-registro de asesor / supervisor) ──
+  // ── Crear cuenta (auto-registro de asesor / supervisor / externo) ──
   let regFotoBase64 = '';
-  let regRol = 'asesor'; // default — el chip de seleccionar lo cambia
+  let regRol = 'asesor';   // rol interno — el chip lo cambia
+  let regTipo = 'interno'; // interno (Leons) | externo (Red)
 
-  // Selector de rol: actualiza la variable, el subtítulo y la UI .active
+  // Selector de rol (solo aplica a internos): actualiza variable, subtítulo y UI .active
   function setRegRol(rol){
     regRol = rol;
-    document.querySelectorAll('.role-chip').forEach(c=>c.classList.toggle('active', c.dataset.role === rol));
-    $('regSub').textContent = rol === 'supervisor' ? 'Crear cuenta de supervisor' : 'Crear cuenta de asesor';
+    document.querySelectorAll('#roleRow .role-chip').forEach(c=>c.classList.toggle('active', c.dataset.role === rol));
+    if(regTipo === 'interno') $('regSub').textContent = rol === 'supervisor' ? 'Crear cuenta de supervisor' : 'Crear cuenta de asesor';
   }
-  document.querySelectorAll('.role-chip').forEach(c=>{
+  document.querySelectorAll('#roleRow .role-chip').forEach(c=>{
     c.addEventListener('click', ()=> setRegRol(c.dataset.role));
+  });
+
+  // Selector de grupo: al elegir externo se oculta el rol (siempre asesor) y se pide T&C.
+  function setRegTipo(tipo){
+    regTipo = tipo;
+    document.querySelectorAll('#tipoRow .role-chip').forEach(c=>c.classList.toggle('active', c.dataset.tipo === tipo));
+    const externo = tipo === 'externo';
+    $('rolField').style.display = externo ? 'none' : '';
+    $('terminosField').classList.toggle('hidden', !externo);
+    if(externo){ regRol = 'asesor'; $('regSub').textContent = 'Crear cuenta de asesor externo'; }
+    else { setRegRol(regRol); }
+  }
+  document.querySelectorAll('#tipoRow .role-chip').forEach(c=>{
+    c.addEventListener('click', ()=> setRegTipo(c.dataset.tipo));
   });
 
   $('linkCrearCuenta').addEventListener('click', ()=>{
     $('s1').classList.add('hidden');
     $('s3').classList.remove('hidden');
-    setRegRol('asesor'); // resetear al valor por defecto al abrir
+    setRegTipo('interno'); // resetear al valor por defecto al abrir
+    setRegRol('asesor');
     $('regNombre').focus();
   });
   $('linkVolverLogin').addEventListener('click', ()=>{
@@ -606,22 +644,23 @@
     if(!nombre){ msgEl.textContent = 'Escribe tu nombre completo'; msgEl.className = 'msg err'; return; }
     if(telRaw.length < 10){ msgEl.textContent = 'Teléfono inválido'; msgEl.className = 'msg err'; return; }
     if(pinReg.length !== 4 || pinReg === '0000'){ msgEl.textContent = 'Elige un PIN de 4 dígitos distinto de 0000'; msgEl.className = 'msg err'; return; }
+    if(regTipo === 'externo' && !$('regTerminos').checked){ msgEl.textContent = 'Debes aceptar los términos para registrarte como externo'; msgEl.className = 'msg err'; return; }
     registrando = true;
     $('btnRegistrar').disabled = true;
     msgEl.textContent = 'Enviando…'; msgEl.className = 'msg';
     try{
       const res = await fetch('/api/vendedores/registro', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ nombre, telefono:'+57'+telRaw, pin:pinReg, foto: regFotoBase64 || undefined, rol: regRol }),
+        body: JSON.stringify({ nombre, telefono:'+57'+telRaw, pin:pinReg, foto: regFotoBase64 || undefined, rol: regRol, tipo: regTipo, terminos: regTipo === 'externo' ? true : undefined }),
       });
       const data = await res.json();
       if(!res.ok){
-        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde', rol_invalido:'Rol no válido' };
+        const errores = { telefono_ya_registrado:'Ese teléfono ya está registrado', pin_invalido:'PIN inválido', formato_telefono_invalido_debe_ser_57:'Teléfono inválido', demasiados_intentos_intenta_mas_tarde:'Demasiados intentos, intenta más tarde', rol_invalido:'Rol no válido', debes_aceptar_los_terminos:'Debes aceptar los términos' };
         msgEl.textContent = errores[data.error] || 'No se pudo registrar'; msgEl.className = 'msg err';
         registrando = false; $('btnRegistrar').disabled = false;
         return;
       }
-      const rolTexto = regRol === 'supervisor' ? 'supervisor' : 'asesor';
+      const rolTexto = regTipo === 'externo' ? 'asesor externo' : (regRol === 'supervisor' ? 'supervisor' : 'asesor');
       msgEl.textContent = `¡Listo! Tu cuenta de ${rolTexto} está en revisión — el admin te avisará cuando esté activa.`; msgEl.className = 'msg ok';
       setTimeout(()=>{
         $('s3').classList.add('hidden');
